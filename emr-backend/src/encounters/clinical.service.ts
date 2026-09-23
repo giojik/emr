@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
+import { AllergyCheckService } from '../allergies/allergy-check.service';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import type { AuthUser } from '../auth/roles';
 import { withPgErrors } from '../common/pg-errors';
@@ -18,7 +19,7 @@ const DX_ERRORS = {
 @Injectable()
 export class ClinicalService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService,
-              private readonly core: EncounterCoreService) {}
+              private readonly core: EncounterCoreService, private readonly allergyCheck: AllergyCheckService) {}
 
   addVitals(encounterId: string, dto: VitalsDto, user: AuthUser, ctx: AuditContext) {
     if (Object.values(dto).every((v) => v === undefined)) throw new BadRequestException('მინიმუმ ერთი პარამეტრი');
@@ -64,14 +65,46 @@ export class ClinicalService {
     });
   }
 
+  /**
+   * დანიშნულება + ალერგიის შემოწმება სერვერზე (UI-ს შემოწმებაზე დამოუკიდებლად).
+   * კონფლიქტისას 409 ALLERGY_CONFLICT — კლიენტი აჩვენებს და ხელახლა აგზავნის ack/reason/confirm-ით.
+   */
   addPrescription(encounterId: string, dto: PrescriptionDto, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
       this.core.assertClinicalWriter(e, user);
-      const rx = await trx.insertInto('prescriptions').values({ encounter_id: encounterId, prescribed_by: user.id, ...dto })
-        .returningAll().executeTakeFirstOrThrow();
+      const { allergy_ack, allergy_override_reason, allergy_confirm_severe, ...rxData } = dto;
+
+      const chk = await this.allergyCheck.check(e.patient_id, dto.medication_name, trx);
+      const missing =
+        (chk.requires_ack && !allergy_ack && !allergy_override_reason) ||
+        (chk.requires_reason && !allergy_override_reason?.trim()) ||
+        (chk.requires_severe_confirmation && !allergy_confirm_severe);
+      if (missing) {
+        throw new ConflictException({
+          code: 'ALLERGY_CONFLICT',
+          message: chk.level === 'block'
+            ? 'მძიმე ალერგიის კონფლიქტი — საჭიროა დასაბუთება და რისკის დადასტურება'
+            : chk.requires_reason ? 'ალერგიის კონფლიქტი — საჭიროა დასაბუთება' : 'ალერგიის გაფრთხილება — საჭიროა დადასტურება',
+          check: chk,
+        });
+      }
+
+      const overridden = chk.requires_ack;
+      const rx = await trx.insertInto('prescriptions').values({
+        encounter_id: encounterId, prescribed_by: user.id, ...rxData,
+        allergy_alert_level: chk.level,
+        allergy_matches: chk.matches.length ? JSON.stringify(chk.matches) : null,
+        allergy_override_reason: overridden ? (allergy_override_reason?.trim() || null) : null,
+        allergy_override_by: chk.requires_reason ? user.id : null,
+      }).returningAll().executeTakeFirstOrThrow();
+
       await this.audit.log(ctx, { action: 'ADD_PRESCRIPTION', entityName: 'prescriptions', entityId: rx.id, newData: rx }, trx);
-      return rx;
+      if (overridden) {
+        await this.audit.log(ctx, { action: 'ALLERGY_OVERRIDE', entityName: 'prescriptions', entityId: rx.id,
+          newData: { level: chk.level, reason: allergy_override_reason ?? null, matches: chk.matches } }, trx);
+      }
+      return { ...rx, allergy_check: chk };
     });
   }
 

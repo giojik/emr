@@ -5,6 +5,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthController } from './health/health.controller';
 import { DepartmentsModule } from './departments/departments.module';
 import { Icd10Module } from './icd10/icd10.module';
+import { AllergiesModule } from './allergies/allergies';
 import { AppointmentsModule } from './appointments/appointments';
 import { BillingModule } from './billing/billing';
 import { EncountersModule } from './encounters/encounters.module';
@@ -18,7 +19,7 @@ import { UsersModule } from './users/users.module';
 @Module({
   imports: [DatabaseModule, AuditModule, AuthModule, DepartmentsModule, UsersModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule],
   controllers: [HealthController],
 })
 export class AppModule {}

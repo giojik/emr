@@ -41,6 +41,24 @@ export type ReferralType = "hospitalization" | "imaging" | "lab" | "specialist_c
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AllergenCrossReactivity {
+  group_a: string;
+  group_b: string;
+}
+
+export interface AllergenGroups {
+  code: string;
+  name: string;
+  needs_review: Generated<boolean>;
+  reviewed_at: Timestamp | null;
+  reviewed_by: string | null;
+}
+
+export interface AllergenGroupTerms {
+  group_code: string;
+  term: string;
+}
+
 export interface Appointments {
   created_at: Generated<Timestamp>;
   created_by: string | null;
@@ -221,13 +239,15 @@ export interface Invoices {
 }
 
 export interface PatientAllergies {
+  allergy_type: Generated<string>;
   created_at: Generated<Timestamp>;
+  deactivated_reason: string | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
   patient_id: string;
   reaction_type: string | null;
   recorded_by: string | null;
-  severity: Generated<string>;
+  severity: string;
   substance: string;
 }
 
@@ -272,6 +292,10 @@ export interface Payments {
 }
 
 export interface Prescriptions {
+  allergy_alert_level: Generated<string>;
+  allergy_matches: Json | null;
+  allergy_override_by: string | null;
+  allergy_override_reason: string | null;
   created_at: Generated<Timestamp>;
   dosage: string;
   duration_days: number | null;
@@ -337,6 +361,9 @@ export interface Users {
 }
 
 export interface DB {
+  allergen_cross_reactivity: AllergenCrossReactivity;
+  allergen_group_terms: AllergenGroupTerms;
+  allergen_groups: AllergenGroups;
   appointments: Appointments;
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;

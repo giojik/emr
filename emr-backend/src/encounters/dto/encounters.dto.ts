@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 
 const num = ({ value }: { value: unknown }) => (typeof value === 'string' && value !== '' ? Number(value) : value);
 
@@ -51,6 +51,10 @@ export class PrescriptionDto {
   @IsString() @Length(1, 50) frequency: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(365) duration_days?: number;
   @IsOptional() @IsString() @MaxLength(2000) instructions?: string;
+  // ალერგიის კონფლიქტის გადალახვა (იხ. POST /patients/:id/allergy-check)
+  @IsOptional() @IsBoolean() allergy_ack?: boolean;                        // warning: "ვნახე"
+  @IsOptional() @IsString() @Length(10, 2000) allergy_override_reason?: string;  // warning_reason / block
+  @IsOptional() @IsBoolean() allergy_confirm_severe?: boolean;             // block: მძიმე რეაქციის რისკის ცნობიერი დადასტურება
 }
 
 export class ReferralDto {
