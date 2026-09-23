@@ -1,0 +1,97 @@
+# EMR Dev/Test გარემო — ინფრასტრუქტურული სერვისები
+# გაშვება: docker compose -f docker-compose.dev.yml up -d
+name: ${COMPOSE_PROJECT_NAME:-emr}
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: emr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EMR_APP_USER: ${EMR_APP_USER}
+      EMR_APP_PASSWORD: ${EMR_APP_PASSWORD}
+      TZ: Asia/Tbilisi
+      PGTZ: Asia/Tbilisi
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - log_min_duration_statement=500   # ნელი query-ების ლოგი (ms)
+      - -c
+      - timezone=Asia/Tbilisi
+    volumes:
+      - /data/postgres:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${BIND_IP}:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: emr-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - /data/redis:/data
+    ports:
+      - "${BIND_IP}:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: ${MINIO_IMAGE}
+    container_name: emr-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      TZ: Asia/Tbilisi
+    volumes:
+      - /data/minio:/data
+    ports:
+      - "${BIND_IP}:9000:9000"   # S3 API
+      - "${BIND_IP}:9001:9001"   # Web console
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ერთჯერადი: bucket-ის შექმნა + versioning
+  minio-init:
+    image: ${MINIO_IMAGE}      # server image-ში mc უკვე შედის
+    container_name: emr-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/${MINIO_BUCKET} &&
+      mc version enable local/${MINIO_BUCKET} &&
+      mc anonymous set none local/${MINIO_BUCKET} &&
+      echo 'MinIO bucket ready'
+      "
+    restart: "no"
+
+  # --- აპლიკაციის სერვისები დაემატება კოდის მომზადებისას ---
+  # emr-backend:
+  #   build: ../apps/backend
+  #   depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+  # emr-worker:
+  # emr-frontend:
+  # emr-reverse-proxy:
