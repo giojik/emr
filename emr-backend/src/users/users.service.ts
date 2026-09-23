@@ -13,7 +13,7 @@ import type { CreateUserDto, ListUsersQuery, UpdateUserDto } from './dto/users.d
 const SAFE = ['u.id', 'u.email', 'u.first_name', 'u.last_name', 'u.personal_number', 'u.phone', 'u.role',
   'u.department_id', 'u.specialty', 'u.license_number', 'u.auth_provider', 'u.ldap_username', 'u.is_active',
   'u.must_change_password', 'u.failed_login_count', 'u.locked_until', 'u.last_login_at',
-  'u.password_changed_at', 'u.created_at', 'u.updated_at'] as const;
+  'u.password_changed_at', 'u.consultation_tariff_id', 'u.created_at', 'u.updated_at'] as const;
 
 const UNIQUE_MSG: Record<string, string> = {
   users_email_key: 'ეს ელ-ფოსტა უკვე გამოყენებულია',
@@ -30,7 +30,8 @@ export class UsersService {
   private base(executor: Database | Transaction<DB> = this.db) {
     return executor.selectFrom('users as u')
       .leftJoin('departments as d', 'd.id', 'u.department_id')
-      .select([...SAFE, 'd.name as department_name',
+      .leftJoin('service_tariffs as t', 't.id', 'u.consultation_tariff_id')
+      .select([...SAFE, 'd.name as department_name', 't.title as consultation_tariff_title', 't.base_price as consultation_price',
         sql<boolean>`coalesce(u.locked_until > now(), false)`.as('is_locked')]);
   }
 
@@ -185,7 +186,7 @@ export class UsersService {
     try { return await fn(); } catch (e) {
       const err = e as { code?: string; constraint?: string };
       if (err.code === '23505') throw new ConflictException(UNIQUE_MSG[err.constraint ?? ''] ?? 'ჩანაწერი უკვე არსებობს');
-      if (err.code === '23503') throw new BadRequestException('მითითებული განყოფილება არ არსებობს');
+      if (err.code === '23503') throw new BadRequestException('მითითებული განყოფილება ან ტარიფი არ არსებობს');
       throw e;
     }
   }

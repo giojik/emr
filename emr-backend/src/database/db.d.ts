@@ -179,6 +179,7 @@ export interface InvoiceLineItems {
   line_total: Generated<Numeric | null>;
   original_price: Numeric | null;
   quantity: Generated<number>;
+  referral_id: string | null;
   tariff_id: string | null;
   unit_price: Numeric;
 }
@@ -287,6 +288,7 @@ export interface ServiceTariffs {
 
 export interface Users {
   auth_provider: Generated<AuthProvider>;
+  consultation_tariff_id: string | null;
   created_at: Generated<Timestamp>;
   department_id: string | null;
   email: string;

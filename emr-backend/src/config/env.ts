@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),          // runtime: emr_app როლი
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+  CLINIC_TZ: z.string().default('Asia/Tbilisi'),                            // "დღის" საზღვრები განრიგისთვის
 
   // --- JWT / სესიები ---
   JWT_SECRET: z.string().min(32, 'JWT_SECRET მინიმუმ 32 სიმბოლო (openssl rand -hex 32)'),
