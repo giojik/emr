@@ -7,6 +7,8 @@ import type { ColumnType } from "kysely";
 
 export type AppointmentStatus = "cancelled" | "checked_in" | "completed" | "confirmed" | "no_show" | "scheduled";
 
+export type AuthProvider = "ldap" | "local";
+
 export type EncounterStatus = "active" | "cancelled" | "discharged" | "planned";
 
 export type EncounterType = "emergency" | "inpatient" | "outpatient";
@@ -64,6 +66,19 @@ export interface AuditLogs {
   old_data: Json | null;
   user_agent: string | null;
   user_id: string | null;
+}
+
+export interface AuthSessions {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  family_id: string;
+  id: Generated<string>;
+  ip_address: string | null;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  token_hash: string;
+  user_agent: string | null;
+  user_id: string;
 }
 
 export interface Departments {
@@ -253,15 +268,22 @@ export interface ServiceTariffs {
 }
 
 export interface Users {
+  auth_provider: Generated<AuthProvider>;
   created_at: Generated<Timestamp>;
   department_id: string | null;
   email: string;
+  failed_login_count: Generated<number>;
   first_name: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  last_login_at: Timestamp | null;
   last_name: string;
+  ldap_username: string | null;
   license_number: string | null;
-  password_hash: string;
+  locked_until: Timestamp | null;
+  must_change_password: Generated<boolean>;
+  password_changed_at: Timestamp | null;
+  password_hash: string | null;
   personal_number: string;
   phone: string | null;
   role: string;
@@ -273,6 +295,7 @@ export interface Users {
 export interface DB {
   appointments: Appointments;
   audit_logs: AuditLogs;
+  auth_sessions: AuthSessions;
   departments: Departments;
   encounter_diagnoses: EncounterDiagnoses;
   encounter_payment_overrides: EncounterPaymentOverrides;

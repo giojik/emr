@@ -1,22 +1,20 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import type { AuditContext } from '../audit/audit.service';
+import { auditCtx } from '../audit/audit-context';
+import { Roles } from '../auth/decorators';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { PatientsService } from './patients.service';
-
-// TODO(auth): userId JWT-იდან, როცა ავტორიზაციის მოდული დაემატება
-const auditCtx = (req: Request): AuditContext => ({ userId: null, ip: req.ip, userAgent: req.get('user-agent') });
 
 @Controller('patients')
 export class PatientsController {
   constructor(private readonly patients: PatientsService) {}
 
-  @Get()
+  @Get() @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic')
   search(@Query('search') search = '') { return this.patients.search(search); }
 
-  @Post()
+  @Post() @Roles('admin', 'receptionist')
   create(@Body() dto: CreatePatientDto, @Req() req: Request) { return this.patients.create(dto, auditCtx(req)); }
 
-  @Get(':id')
+  @Get(':id') @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic')
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) { return this.patients.findOne(id, auditCtx(req)); }
 }

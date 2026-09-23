@@ -16,15 +16,21 @@
     "migration:run:dev": "tsx src/migrate.ts",
     "migration:new": "tsx scripts/new-migration.ts",
     "db:codegen": "kysely-codegen --dialect postgres --url \"env(MIGRATION_DATABASE_URL)\" --out-file src/database/db.d.ts --date-parser string --numeric-parser string --exclude-pattern schema_migrations",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "user": "node dist/cli/users.js",
+    "user:dev": "tsx src/cli/users.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.5",
     "@nestjs/core": "^11.2.5",
+    "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.2.5",
+    "argon2": "^0.45.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cookie-parser": "^1.4.7",
     "kysely": "~0.28.17",
+    "ldapts": "^7.4.0",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
@@ -32,6 +38,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",

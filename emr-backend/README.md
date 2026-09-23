@@ -19,3 +19,17 @@ src/patients/        მაგალითი-მოდული (MPI): ძე�
 5. კოდი + commit (migration + db.d.ts ერთად)
 
 გამოყენებული migration ფაილი **არასოდეს** იცვლება — runner checksum-ით აღმოაჩენს და გაჩერდება.
+
+## ავტორიზაცია
+- ყველა endpoint დახურულია ნაგულისხმევად; ღიაა მხოლოდ `@Public()` (login, refresh, logout, health).
+- როლები: `@Roles('doctor', 'admin')` — სია `src/auth/roles.ts`-ში, ემთხვევა DB constraint-ს.
+- პროვაიდერი თითოეულ მომხმარებელზეა (`users.auth_provider`): `local` (argon2id) ან `ldap` (AD bind).
+  კლინიკა ირთავს/თიშავს: `AUTH_LOCAL_ENABLED`, `AUTH_LDAP_ENABLED`.
+- Access token (JWT, 15 წთ) — `Authorization: Bearer`. Refresh — httpOnly cookie `emr_rt`, rotation + reuse detection.
+- **Break-glass:** ყოველთვის შეინახეთ ერთი ლოკალური admin — DC-ის გათიშვისას LDAP მომხმარებლები ვერ შევლენ.
+
+```bash
+npm run user -- create --email admin@clinic.ge --first-name ... --last-name ... --personal-number ... --role admin
+npm run user -- create ... --role doctor --provider ldap --ldap-username giojik
+npm run user -- reset-password --email ...   |   unlock --email ...   |   disable --email ...
+```
