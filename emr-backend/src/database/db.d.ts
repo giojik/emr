@@ -152,6 +152,24 @@ export interface GeneratedDocuments {
   verification_token: Generated<string>;
 }
 
+export interface Icd10Chapters {
+  code_from: string;
+  code_to: string;
+  id: number;
+  title: string;
+}
+
+export interface Icd10Codes {
+  category: Generated<string | null>;
+  chapter_id: number | null;
+  code: string;
+  is_active: Generated<boolean>;
+  is_asterisk: Generated<boolean>;
+  is_dagger: Generated<boolean>;
+  needs_review: Generated<boolean>;
+  title: string;
+}
+
 export interface InvoiceLineItems {
   adjusted_by: string | null;
   description: string;
@@ -302,6 +320,8 @@ export interface DB {
   encounter_vitals: EncounterVitals;
   encounters: Encounters;
   generated_documents: GeneratedDocuments;
+  icd10_chapters: Icd10Chapters;
+  icd10_codes: Icd10Codes;
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
   patient_allergies: PatientAllergies;
