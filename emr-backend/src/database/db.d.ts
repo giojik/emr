@@ -81,6 +81,17 @@ export interface AuthSessions {
   user_id: string;
 }
 
+export interface ClinicSettings {
+  address: string;
+  director_name: string;
+  director_title: Generated<string>;
+  email: string | null;
+  id: Generated<number>;
+  name: string;
+  phone: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Departments {
   code: string;
   created_at: Generated<Timestamp>;
@@ -89,6 +100,12 @@ export interface Departments {
   name: string;
   type: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface DocumentCounters {
+  document_type: string;
+  last_value: Generated<number>;
+  year: number;
 }
 
 export interface EncounterDiagnoses {
@@ -143,12 +160,19 @@ export interface EncounterVitals {
 }
 
 export interface GeneratedDocuments {
+  document_number: string | null;
   document_type: string;
   encounter_id: string;
   file_path: string;
+  file_sha256: string | null;
   generated_at: Generated<Timestamp>;
   generated_by: string | null;
   id: Generated<string>;
+  payload: Generated<Json>;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  status: Generated<string>;
   verification_token: Generated<string>;
 }
 
@@ -316,7 +340,9 @@ export interface DB {
   appointments: Appointments;
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;
+  clinic_settings: ClinicSettings;
   departments: Departments;
+  document_counters: DocumentCounters;
   encounter_diagnoses: EncounterDiagnoses;
   encounter_payment_overrides: EncounterPaymentOverrides;
   encounter_vitals: EncounterVitals;

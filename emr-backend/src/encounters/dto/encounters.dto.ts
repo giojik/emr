@@ -40,7 +40,7 @@ export class VitalsDto {
 export class DiagnosisDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase().replace(',', '.') : value))
   @Matches(/^[A-Z]\d{2}(\.\d{1,2})?$/, { message: 'ICD-10 კოდის ფორმატი: I21.0' }) icd10_code: string;
-  @IsIn(['primary', 'secondary', 'admission']) diagnosis_type: 'primary' | 'secondary' | 'admission';
+  @IsIn(['primary', 'secondary', 'complication', 'admission']) diagnosis_type: 'primary' | 'secondary' | 'complication' | 'admission';
   @IsOptional() @IsString() @MaxLength(2000) comment?: string;
 }
 

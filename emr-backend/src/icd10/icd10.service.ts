@@ -26,7 +26,11 @@ export class Icd10Service {
     const words = term.split(/\s+/).filter((w) => w.length >= 2).slice(0, 6);
     if (words.length === 0) throw new BadRequestException('მინიმუმ 2 სიმბოლო');
     for (const w of words) q = q.where('c.title', 'ilike', `%${w.replace(/[%_\\]/g, '\\$&')}%`);
-    return q.orderBy(sql`word_similarity(${term}, c.title)`, 'desc').orderBy('c.code').limit(limit).execute();
+    // 1) სათაური იწყება ძიების სიტყვით  2) მოკლე (ზოგადი) სათაურები  3) მსგავსება  4) კოდი
+    return q.orderBy(sql`c.title ilike ${words[0] + '%'}`, 'desc')
+      .orderBy(sql`length(c.title)`)
+      .orderBy(sql`word_similarity(${term}, c.title)`, 'desc')
+      .orderBy('c.code').limit(limit).execute();
   }
 
   async get(code: string) {

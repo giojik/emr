@@ -15,6 +15,7 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node assets ./assets
 USER node
 EXPOSE 3000
 # API:       node dist/main.js   (default)

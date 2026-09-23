@@ -11,6 +11,17 @@ const EnvSchema = z.object({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   CLINIC_TZ: z.string().default('Asia/Tbilisi'),                            // "დღის" საზღვრები განრიგისთვის
 
+  // --- ფაილსაცავი (MinIO / S3) ---
+  S3_ENDPOINT: z.string().url().default('http://127.0.0.1:9000'),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ACCESS_KEY: z.string().min(3),
+  S3_SECRET_KEY: z.string().min(8),
+  S3_BUCKET: z.string().default('emr-documents'),
+
+  // --- დოკუმენტების ვერიფიკაცია (QR) ---
+  // საჯარო მისამართი, რომელსაც QR-კოდი მიუთითებს (სადაზღვევო კომპანია ინტერნეტიდან ხსნის)
+  PUBLIC_VERIFY_BASE_URL: z.string().url().default('http://localhost:3000/api/public/verify'),
+
   // --- JWT / სესიები ---
   JWT_SECRET: z.string().min(32, 'JWT_SECRET მინიმუმ 32 სიმბოლო (openssl rand -hex 32)'),
   JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),     // 15 წთ
