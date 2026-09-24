@@ -9,13 +9,14 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
+  { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
   { to: '/admin/overrides', label: 'override-ები', roles: ['pharmacist'] },
 ];
 
 export function homeFor(role: Role) {
-  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : '/patients';
+  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' ? '/diagnostics' : '/patients';
 }
 
 export default function Shell() {

@@ -143,19 +143,23 @@ export class ClinicalService {
     }), { referrals_target_department_id_fkey: 'განყოფილება არ არსებობს' });
   }
 
-  /** დიაგნოსტიკის სამუშაო სია */
-  worklist(statuses: string[], departmentId?: string) {
-    let q = this.db.selectFrom('referrals as r')
+  /** დიაგნოსტიკის სამუშაო სია (ღია — ძველი ზემოთ; დასრულებული — ახალი ზემოთ, დღის ფილტრით) */
+  worklist(q: { statuses: string[]; departmentId?: string; type?: string; completedFrom?: Date; completedTo?: Date }) {
+    const onlyCompleted = q.statuses.length === 1 && q.statuses[0] === 'completed';
+    let query = this.db.selectFrom('referrals as r')
       .innerJoin('encounters as e', 'e.id', 'r.encounter_id')
       .innerJoin('patients as p', 'p.id', 'e.patient_id')
       .leftJoin('users as u', 'u.id', 'r.requested_by')
-      .select(['r.id', 'r.type', 'r.status', 'r.reason', 'r.created_at', 'r.target_department_id', 'r.encounter_id',
-        'p.first_name as patient_first_name', 'p.last_name as patient_last_name', 'p.personal_number', 'p.birth_date',
+      .select(['r.id', 'r.type', 'r.status', 'r.reason', 'r.result_text', 'r.created_at', 'r.completed_at', 'r.target_department_id', 'r.encounter_id',
+        'e.patient_id', 'p.first_name as patient_first_name', 'p.last_name as patient_last_name', 'p.personal_number', 'p.birth_date', 'p.gender',
         sql<string>`u.first_name || ' ' || u.last_name`.as('requested_by_name')])
-      .where('r.status', 'in', statuses as never[])
-      .orderBy('r.created_at').limit(500);
-    if (departmentId) q = q.where('r.target_department_id', '=', departmentId);
-    return q.execute();
+      .where('r.status', 'in', q.statuses as never[])
+      .orderBy('r.created_at', onlyCompleted ? 'desc' : 'asc').limit(500);
+    if (q.departmentId) query = query.where('r.target_department_id', '=', q.departmentId);
+    if (q.type) query = query.where('r.type', '=', q.type as never);
+    if (q.completedFrom) query = query.where('r.completed_at', '>=', q.completedFrom);
+    if (q.completedTo) query = query.where('r.completed_at', '<', q.completedTo);
+    return query.execute();
   }
 
   /**
@@ -169,7 +173,7 @@ export class ClinicalService {
       const e = await trx.selectFrom('encounters').select(['status', 'attending_doctor_id']).where('id', '=', r.encounter_id).executeTakeFirstOrThrow();
       if (e.status === 'cancelled') throw new ConflictException('ვიზიტი გაუქმებულია');
 
-      const allowed: Record<string, string[]> = { requested: ['in_progress', 'completed', 'cancelled'], in_progress: ['completed'] };
+      const allowed: Record<string, string[]> = { requested: ['in_progress', 'completed', 'cancelled'], in_progress: ['in_progress', 'completed'] };
       if (!allowed[r.status]?.includes(dto.status)) throw new ConflictException(`გადასვლა "${r.status}" → "${dto.status}" დაუშვებელია`);
 
       if (dto.status === 'cancelled') {

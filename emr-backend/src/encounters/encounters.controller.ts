@@ -87,8 +87,11 @@ export class ReferralsController {
   constructor(private readonly clinical: ClinicalService) {}
 
   @Get() @Roles('admin', 'diagnostic', 'doctor')
-  worklist(@Query('status') status = 'requested,in_progress', @Query('department_id') departmentId?: string) {
-    return this.clinical.worklist(status.split(',').filter(Boolean), departmentId);
+  worklist(@Query('status') status = 'requested,in_progress', @Query('department_id') departmentId?: string,
+           @Query('type') type?: string, @Query('completed_date') completedDate?: string) {
+    const range = completedDate && /^\d{4}-\d{2}-\d{2}$/.test(completedDate)
+      ? { completedFrom: new Date(`${completedDate}T00:00:00+04:00`), completedTo: new Date(new Date(`${completedDate}T00:00:00+04:00`).getTime() + 86_400_000) } : {};
+    return this.clinical.worklist({ statuses: status.split(',').filter(Boolean), departmentId, type, ...range });
   }
 
   @Patch(':id') @Roles('admin', 'diagnostic', 'doctor')

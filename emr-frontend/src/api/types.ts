@@ -120,3 +120,9 @@ export interface ConsentType {
   code: string; name: string; scope: 'patient' | 'encounter'; is_active: boolean; sort_order: number;
   version_id: string; version: number; body_text: string; text_approved: boolean; version_created_at: string;
 }
+
+export interface WorklistItem {
+  id: string; type: Referral['type']; status: Referral['status']; reason: string; result_text: string | null; created_at: string; completed_at: string | null;
+  encounter_id: string; patient_id: string; patient_first_name: string; patient_last_name: string; personal_number: string | null;
+  birth_date: string; gender: Gender; requested_by_name: string | null;
+}

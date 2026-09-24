@@ -6,6 +6,7 @@ import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
 import Cashier from './pages/Cashier';
 import ChangePassword from './pages/ChangePassword';
+import Diagnostics from './pages/Diagnostics';
 import DoctorQueue from './pages/DoctorQueue';
 import Encounter from './pages/Encounter';
 import Login from './pages/Login';
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/cashier/:encounterId" element={<Guard roles={['admin', 'receptionist', 'billing']}><Cashier /></Guard>} />
         <Route path="/doctor" element={<Guard roles={['doctor']}><DoctorQueue mine /></Guard>} />
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
+        <Route path="/diagnostics" element={<Guard roles={['admin', 'diagnostic']}><Diagnostics /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

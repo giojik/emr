@@ -96,7 +96,7 @@ export class AllergiesService {
 export class AllergiesController {
   constructor(private readonly allergies: AllergiesService, private readonly checker: AllergyCheckService) {}
 
-  @Get('patients/:id/allergies') @Roles('admin', 'doctor', 'nurse', 'receptionist', 'pharmacist')
+  @Get('patients/:id/allergies') @Roles('admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'diagnostic')
   list(@Param('id', ParseUUIDPipe) id: string) { return this.allergies.list(id); }
 
   @Post('patients/:id/allergies') @Roles('admin', 'doctor', 'nurse', 'receptionist')
