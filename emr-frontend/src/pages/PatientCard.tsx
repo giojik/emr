@@ -53,10 +53,8 @@ export default function PatientCard() {
           <div style={{ gridColumn: '1 / -1' }}><Info k="მისამართი" v={x.address ?? '—'} /></div>
         </section>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, alignItems: 'start' }}>
-          <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />
-          <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />
-        </div>
+        <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />
+        <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />
 
         <section className="card">
           <div className="card-head"><h2>ვიზიტების ისტორია</h2><span className="small muted">{visits.data?.length ?? 0}</span></div>

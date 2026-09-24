@@ -25,41 +25,47 @@ export default function ConsentsPanel({ patientId, encounterId, scope, canSign }
   });
   const items = (q.data ?? []).filter((c) => c.scope === scope);
   const missing = items.filter((c) => c.status === 'missing' || c.outdated).length;
+  const unapproved = items.some((c) => !c.text_approved);
 
   return (
     <section className="card">
       <div className="card-head"><h2 className="grow">თანხმობები</h2>{missing > 0 && <span className="chip warn">{missing} მოსაწესრიგებელი</span>}</div>
+      {unapproved && <div className="alert warn" style={{ margin: '12px 16px 0' }}>ზოგი თანხმობის ტექსტი ჯერ დამტკიცებული არ არის — დოკუმენტზე ჩანს შესაბამისი ნიშანი.</div>}
       <ErrorBox error={q.error ?? print.error ?? view.error ?? revoke.error} />
-      <table className="table">
-        <tbody>{items.map((c) => {
+      <div>
+        {items.map((c) => {
           const [cls, label] = STATUS[c.status];
           const l = c.latest;
           return (
-            <tr key={c.code}>
-              <td style={{ maxWidth: 360 }}>
-                <strong>{c.name}</strong>
-                {!c.text_approved && <div className="small" style={{ color: 'var(--warn-ink)' }}>ტექსტი ჯერ დამტკიცებული არ არის</div>}
-              </td>
-              <td><span className={`chip ${cls}`}>{label}</span>{c.outdated && <span className="chip warn" style={{ marginLeft: 6 }}>ძველი ვერსია</span>}</td>
-              <td className="small muted">
-                {l ? <>{tsDate(l.signed_at)} · v{l.version} · {l.method === 'electronic' ? 'ელექტრონული' : 'ქაღალდი'}
-                  {l.signer_type === 'representative' && <> · {l.representative_name} ({l.representative_relation})</>}
-                  {l.revoked_at && <div>გაუქმდა {tsDate(l.revoked_at)}: {l.revoke_reason}</div>}</> : '—'}
-              </td>
-              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+            <div key={c.code} className="consent-row">
+              <div className="stack grow" style={{ gap: 4, minWidth: 240 }}>
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <strong>{c.name}</strong>
+                  <span className={`chip ${cls}`}>{label}</span>
+                  {c.outdated && <span className="chip warn">ძველი ვერსია</span>}
+                </div>
+                {l && (
+                  <span className="small muted">
+                    {tsDate(l.signed_at)} · v{l.version} · {l.method === 'electronic' ? 'ელექტრონული' : 'ქაღალდი'}
+                    {l.signer_type === 'representative' && <> · {l.representative_name} ({l.representative_relation})</>}
+                    {l.revoked_at && <> · გაუქმდა {tsDate(l.revoked_at)}: {l.revoke_reason}</>}
+                  </span>
+                )}
+              </div>
+              <div className="consent-actions">
                 {l && <button className="btn sm" type="button" onClick={() => view.mutate(l.file_id)}>დოკუმენტი</button>}
-                {c.history.length > 1 && <button className="btn sm" type="button" style={{ marginLeft: 6 }} onClick={() => setHistory(c)}>ისტორია</button>}
+                {c.history.length > 1 && <button className="btn sm" type="button" onClick={() => setHistory(c)}>ისტორია</button>}
                 {canSign && <>
-                  <button className="btn sm" type="button" style={{ marginLeft: 6 }} onClick={() => print.mutate(c.code)}>ფორმის ბეჭდვა</button>
-                  <button className="btn sm primary" type="button" style={{ marginLeft: 6 }} onClick={() => setSigning(c)}>{c.status === 'missing' || c.outdated ? 'ხელმოწერა' : 'ხელახლა'}</button>
-                  {c.status === 'granted' && l && <button className="btn sm" type="button" style={{ marginLeft: 6 }}
+                  <button className="btn sm" type="button" onClick={() => print.mutate(c.code)}>ფორმის ბეჭდვა</button>
+                  {c.status === 'granted' && l && <button className="btn sm" type="button"
                     onClick={() => { const r = prompt('გაუქმების მიზეზი (მაგ. პაციენტის წერილობითი მოთხოვნა):'); if (r && r.trim().length >= 5) revoke.mutate({ id: l.id, reason: r.trim() }); }}>გაუქმება</button>}
+                  <button className="btn sm primary" type="button" onClick={() => setSigning(c)}>{c.status === 'missing' || c.outdated ? 'ხელმოწერა' : 'ხელახლა'}</button>
                 </>}
-              </td>
-            </tr>
+              </div>
+            </div>
           );
-        })}</tbody>
-      </table>
+        })}
+      </div>
       {signing && <SignDialog patientId={patientId} encounterId={encounterId} consent={signing} onClose={() => setSigning(null)} />}
       {history && (
         <Modal title={history.name} onClose={() => setHistory(null)} width={640}>
