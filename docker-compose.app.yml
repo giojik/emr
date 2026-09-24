@@ -1,0 +1,67 @@
+# EMR აპლიკაცია კონტეინერებში (backend + worker + frontend/nginx).
+# ინფრასტრუქტურასთან ერთად:
+#   docker compose -f docker-compose.dev.yml -f docker-compose.app.yml up -d --build
+# მოთხოვნა: /opt/emr/.env-ში JWT_SECRET (openssl rand -hex 32).
+# dev VM-ზე (http) — NODE_ENV=development და COOKIE_SECURE=false; production-ში https + true.
+
+x-backend-env: &backend-env
+  NODE_ENV: development
+  PORT: "3000"
+  TZ: Asia/Tbilisi
+  DATABASE_URL: postgresql://${EMR_APP_USER}:${EMR_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  S3_BUCKET: ${MINIO_BUCKET}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET არ არის /opt/emr/.env-ში}
+  COOKIE_SECURE: "false"
+  AUTH_LOCAL_ENABLED: "true"
+  AUTH_LDAP_ENABLED: "false"
+  PUBLIC_VERIFY_BASE_URL: ${PUBLIC_VERIFY_BASE_URL:-http://localhost/api/public/verify}
+
+services:
+  # ერთჯერადი: migration-ები backend-ის გაშვებამდე
+  emr-migrate:
+    build: ./emr-backend
+    image: emr-backend:local
+    container_name: emr-migrate
+    command: ["node", "dist/migrate.js"]
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  emr-backend:
+    image: emr-backend:local
+    container_name: emr-backend
+    environment: *backend-env
+    depends_on:
+      emr-migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  emr-worker:
+    image: emr-backend:local
+    container_name: emr-worker
+    command: ["node", "dist/worker.js"]
+    environment: *backend-env
+    depends_on:
+      emr-backend: { condition: service_healthy }
+    restart: unless-stopped
+
+  emr-frontend:
+    build: ./emr-frontend
+    image: emr-frontend:local
+    container_name: emr-frontend
+    depends_on:
+      emr-backend: { condition: service_healthy }
+    ports:
+      - "80:80"            # LAN: http://<VM IP>/  (UFW-ში 80 დაშვებულია ადმინ ქსელებიდან)
+    restart: unless-stopped

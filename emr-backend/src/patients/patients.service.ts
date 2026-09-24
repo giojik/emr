@@ -56,7 +56,7 @@ export class PatientsService {
       .selectAll('p')
       .select((eb) => [
         jsonArrayFrom(eb.selectFrom('patient_allergies as a')
-          .select(['a.id', 'a.substance', 'a.reaction_type', 'a.severity', 'a.created_at'])
+          .select(['a.id', 'a.substance', 'a.reaction_type', 'a.severity', 'a.allergy_type', 'a.created_at'])
           .whereRef('a.patient_id', '=', 'p.id').where('a.is_active', '=', true)
           .orderBy('a.created_at', 'desc')).as('allergies'),
         jsonArrayFrom(eb.selectFrom('patient_chronic_conditions as c')

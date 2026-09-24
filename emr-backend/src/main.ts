@@ -11,7 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
   app.use(cookieParser());
-  app.set('trust proxy', 'loopback');   // reverse proxy-ს მიღმა რეალური client IP აუდიტისთვის
+  // reverse proxy (nginx, docker-ის შიდა ქსელი) — რეალური client IP აუდიტისთვის X-Forwarded-For-იდან
+  app.set('trust proxy', ['loopback', 'uniquelocal']);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableShutdownHooks();
   await app.listen(env.PORT, '0.0.0.0');

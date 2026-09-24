@@ -50,6 +50,17 @@ export class UsersService {
     return query.orderBy('u.last_name').orderBy('u.first_name').limit(q.limit ?? 50).offset(q.offset ?? 0).execute();
   }
 
+  /** აქტიური ექიმები: სახელი, სპეციალობა, განყოფილება, კონსულტაციის ფასი */
+  doctors() {
+    return this.db.selectFrom('users as u')
+      .leftJoin('departments as d', 'd.id', 'u.department_id')
+      .leftJoin('service_tariffs as t', 't.id', 'u.consultation_tariff_id')
+      .select(['u.id', 'u.first_name', 'u.last_name', 'u.specialty', 'u.department_id', 'd.name as department_name',
+        't.base_price as consultation_price'])
+      .where('u.role', '=', 'doctor').where('u.is_active', '=', true)
+      .orderBy('d.name').orderBy('u.last_name').execute();
+  }
+
   async get(id: string, executor: Database | Transaction<DB> = this.db) {
     const u = await this.base(executor).where('u.id', '=', id).executeTakeFirst();
     if (!u) throw new NotFoundException('მომხმარებელი ვერ მოიძებნა');

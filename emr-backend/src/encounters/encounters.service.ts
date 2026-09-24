@@ -19,7 +19,7 @@ export class EncountersService {
               private readonly core: EncounterCoreService) {}
 
   /** ღია ვიზიტების სია (რეცეფცია/სალარო/ექიმი) — ინვოისის ჯამებით */
-  list(q: { status?: string[]; doctorId?: string; date?: string }) {
+  list(q: { status?: string[]; doctorId?: string; date?: string; patientId?: string }) {
     let query = this.db.selectFrom('encounters as e')
       .innerJoin('patients as p', 'p.id', 'e.patient_id')
       .leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
@@ -27,11 +27,13 @@ export class EncountersService {
       .select(['e.id', 'e.status', 'e.type', 'e.start_time', 'e.end_time', 'e.chief_complaint', 'e.department_id',
         'e.patient_id', 'p.first_name as patient_first_name', 'p.last_name as patient_last_name', 'p.personal_number',
         'e.attending_doctor_id', sql<string>`d.first_name || ' ' || d.last_name`.as('doctor_name'),
-        'i.invoice_number', 'i.total_amount', 'i.patient_share', 'i.paid_status',
+        'i.id as invoice_id', 'i.invoice_number', 'i.total_amount', 'i.patient_share', 'i.paid_status',
+        sql<string | null>`(SELECT d2.icd10_code || ' ' || d2.icd10_title FROM encounter_diagnoses d2 WHERE d2.encounter_id = e.id AND d2.diagnosis_type = 'primary' LIMIT 1)`.as('primary_diagnosis'),
         sql<string>`coalesce((SELECT sum(amount) FROM payments WHERE invoice_id = i.id), 0)`.as('paid_amount')])
       .orderBy('e.start_time', 'desc').limit(200);
     if (q.status?.length) query = query.where('e.status', 'in', q.status as never[]);
     if (q.doctorId) query = query.where('e.attending_doctor_id', '=', q.doctorId);
+    if (q.patientId) query = query.where('e.patient_id', '=', q.patientId);
     if (q.date) {
       const [from, to] = dayRange(q.date, this.tz);
       query = query.where('e.start_time', '>=', from).where('e.start_time', '<', to);
@@ -46,7 +48,7 @@ export class EncountersService {
       .select((eb) => [
         jsonObjectFrom(eb.selectFrom('patients as p')
           .select(['p.id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'p.gender', 'p.phone_number', 'p.blood_group',
-            (eb2) => jsonArrayFrom(eb2.selectFrom('patient_allergies as a').select(['a.substance', 'a.reaction_type', 'a.severity'])
+            (eb2) => jsonArrayFrom(eb2.selectFrom('patient_allergies as a').select(['a.id', 'a.substance', 'a.reaction_type', 'a.severity', 'a.allergy_type'])
               .whereRef('a.patient_id', '=', 'p.id').where('a.is_active', '=', true)).as('allergies'),
             (eb2) => jsonArrayFrom(eb2.selectFrom('patient_chronic_conditions as c').select(['c.icd10_code', 'c.condition_name'])
               .whereRef('c.patient_id', '=', 'p.id').where('c.is_active', '=', true)).as('chronic_conditions')])

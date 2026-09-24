@@ -43,3 +43,10 @@ export class UsersController {
   @Delete(':id/sessions')
   revokeSessions(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) { return this.users.revokeSessions(id, auditCtx(req)); }
 }
+
+/** ექიმების ცნობარი — განრიგისა და ჩაწერისთვის (ყველა ავტორიზებული მომხმარებელი) */
+@Controller('doctors')
+export class DoctorsController {
+  constructor(private readonly users: UsersService) {}
+  @Get() list() { return this.users.doctors(); }
+}
