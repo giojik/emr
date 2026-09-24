@@ -6,14 +6,17 @@ import type { Doctor, EncounterListItem, Patient } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
 import AllergyDialog from '../components/AllergyDialog';
+import AddressFields, { addressPayload } from '../components/AddressFields';
 import AppointmentDialog from '../components/AppointmentDialog';
+import ConsentsPanel from '../components/ConsentsPanel';
+import DocumentsPanel from '../components/DocumentsPanel';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, dateGe, initials, money, tsDate } from '../lib/format';
 
 export default function PatientCard() {
   const { id = '' } = useParams();
   const { user } = useAuth();
-  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | null>(null);
+  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | null>(null);
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
   const front = user?.role === 'admin' || user?.role === 'receptionist';
@@ -33,6 +36,7 @@ export default function PatientCard() {
           <span className="muted">{x.gender === 'male' ? 'მამრობითი' : x.gender === 'female' ? 'მდედრობითი' : '—'} · {age(x.birth_date)} წლის · <span className="mono">{x.personal_number ?? `პასპ. ${x.passport_number}`}</span>{x.blood_group ? ` · ${x.blood_group}` : ''}</span>
         </div>
         {front && <>
+          <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
           <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
@@ -48,6 +52,11 @@ export default function PatientCard() {
           <Info k="საგანგებო კონტაქტი" v={x.emergency_contact_name ? `${x.emergency_contact_name}${x.emergency_contact_phone ? `, ${x.emergency_contact_phone}` : ''}` : '—'} />
           <div style={{ gridColumn: '1 / -1' }}><Info k="მისამართი" v={x.address ?? '—'} /></div>
         </section>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, alignItems: 'start' }}>
+          <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />
+          <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />
+        </div>
 
         <section className="card">
           <div className="card-head"><h2>ვიზიტების ისტორია</h2><span className="small muted">{visits.data?.length ?? 0}</span></div>
@@ -74,7 +83,36 @@ export default function PatientCard() {
       {dlg === 'appt' && <AppointmentDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'walkin' && <WalkInDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={x.id} onClose={() => setDlg(null)} />}
+      {dlg === 'edit' && <EditPatientDialog patient={x} onClose={() => setDlg(null)} />}
     </>
+  );
+}
+
+function EditPatientDialog({ patient: p, onClose }: { patient: Patient; onClose: () => void }) {
+  const qc = useQueryClient();
+  const foreign = !p.personal_number;
+  const [f, setF] = useState({ first_name: p.first_name, last_name: p.last_name, birth_date: p.birth_date, phone_number: p.phone_number, blood_group: p.blood_group ?? '', emergency_contact_name: p.emergency_contact_name ?? '', emergency_contact_phone: p.emergency_contact_phone ?? '' });
+  const [addr, setAddr] = useState({ address_unit_code: p.address_unit_code ?? '', address_district_code: p.address_district_code ?? '', address_village: p.address_village ?? '', address_line: p.address_line ?? (p.address_unit_code ? '' : p.address ?? ''), address_country: p.address_country ?? '' });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const m = useMutation({
+    mutationFn: () => api(`/patients/${p.id}`, { method: 'PATCH', body: { ...f, blood_group: f.blood_group || null, emergency_contact_name: f.emergency_contact_name || null, emergency_contact_phone: f.emergency_contact_phone || null, ...addressPayload(addr, foreign) } }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['patient', p.id] }); onClose(); },
+  });
+  return (
+    <Modal title="პაციენტის მონაცემები" onClose={onClose} width={760}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="submit" form="ep" disabled={m.isPending}>შენახვა</button></>}>
+      <form id="ep" onSubmit={(e) => { e.preventDefault(); m.mutate(); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="სახელი" htmlFor="efn"><input id="efn" className="input" value={f.first_name} onChange={set('first_name')} required /></Field>
+        <Field label="გვარი" htmlFor="eln"><input id="eln" className="input" value={f.last_name} onChange={set('last_name')} required /></Field>
+        <Field label="დაბადების თარიღი" htmlFor="ebd"><input id="ebd" className="input" type="date" value={f.birth_date} onChange={set('birth_date')} required /></Field>
+        <Field label="ტელეფონი" htmlFor="eph"><input id="eph" className="input mono" value={f.phone_number} onChange={set('phone_number')} required /></Field>
+        <Field label="საგანგებო კონტაქტი" htmlFor="eec"><input id="eec" className="input" value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></Field>
+        <Field label="მისი ტელეფონი" htmlFor="eecp"><input id="eecp" className="input mono" value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></Field>
+        <div style={{ gridColumn: '1 / -1' }}><h3>მისამართი</h3></div>
+        <AddressFields value={addr} onChange={setAddr} foreign={foreign} />
+        <div style={{ gridColumn: '1 / -1' }}><span className="hint">ცვლილება აუდიტში იწერება ძველი და ახალი მნიშვნელობით.</span><ErrorBox error={m.error} /></div>
+      </form>
+    </Modal>
   );
 }
 

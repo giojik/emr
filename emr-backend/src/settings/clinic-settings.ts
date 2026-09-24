@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Injectable, Module, NotFoundException, Put, Req } from '@nestjs/common';
-import { IsEmail, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEmail, IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -13,6 +13,7 @@ export class ClinicSettingsDto {
   @IsOptional() @IsEmail() email?: string;
   @IsString() @Length(3, 200) director_name: string;
   @IsOptional() @IsString() @MaxLength(200) director_title?: string;
+  @IsOptional() @IsArray() @ArrayMinSize(1) @IsIn(['paper', 'electronic'], { each: true }) consent_methods?: ('paper' | 'electronic')[];
 }
 
 @Injectable()

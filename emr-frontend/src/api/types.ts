@@ -17,6 +17,7 @@ export interface Allergy {
 }
 export interface Patient extends PatientListItem {
   citizenship: string; blood_group: string | null; address: string | null;
+  address_unit_code: string | null; address_district_code: string | null; address_village: string | null; address_line: string | null; address_country: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; is_deceased: boolean;
   allergies: Allergy[]; chronic_conditions: { id: string; icd10_code: string | null; condition_name: string }[];
 }
@@ -70,4 +71,52 @@ export interface Form100Draft {
   encounter_status: EncounterStatus; recipient: string; workplace: string | null; conclusion: 'healthy' | 'practically_healthy' | null;
   diagnosis: { primary: { code: string; title: string }[]; secondary: { code: string; title: string }[]; complications: { code: string; title: string }[] };
   past_diseases: string | null; anamnesis: string | null; investigations: string | null; course: string | null; treatment: string | null; recommendations: string | null;
+}
+
+// ---------------------------------------------------------------- ადმინისტრირება
+export interface AdminUser {
+  id: string; email: string; first_name: string; last_name: string; personal_number: string; phone: string | null; role: string;
+  department_id: string | null; department_name: string | null; specialty: string | null; license_number: string | null;
+  auth_provider: 'local' | 'ldap'; ldap_username: string | null; is_active: boolean; must_change_password: boolean;
+  failed_login_count: number; locked_until: string | null; is_locked: boolean; last_login_at: string | null;
+  consultation_tariff_id: string | null; consultation_tariff_title: string | null; consultation_price: string | null;
+}
+export interface Tariff { id: string; code: string; title: string; base_price: string; is_active: boolean }
+export interface ReferralTypeTariff { type: string; tariff_id: string; code: string; title: string; base_price: string }
+export interface ClinicSettings { name: string; address: string; phone: string | null; email: string | null; director_name: string; director_title: string; consent_methods?: ('paper' | 'electronic')[] }
+export interface AllergenGroup {
+  code: string; name: string; needs_review: boolean; reviewed_by: string | null; reviewed_at: string | null;
+  terms: { term: string }[]; cross_reactive: { code: string }[];
+}
+export interface OverrideRow {
+  id: string; created_at: string; medication_name: string; dosage: string; allergy_alert_level: AlertLevel; allergy_override_reason: string | null;
+  allergy_matches: AllergyCheck['matches'] | null; encounter_id: string; patient_first_name: string; patient_last_name: string;
+  personal_number: string | null; doctor_name: string | null;
+}
+export interface AuditRow {
+  id: string; created_at: string; action: string; entity_name: string; entity_id: string; ip_address: string | null;
+  user_id: string | null; user_name: string | null; old_data: unknown; new_data: unknown;
+}
+
+// ---------------------------------------------------------------- მისამართი, დოკუმენტები, თანხმობები
+export interface AddressUnit { code: string; name: string; type: 'city' | 'municipality' | 'district'; parent_code: string | null; region: string }
+export interface AddressFieldsValue { address_unit_code: string; address_district_code: string; address_village: string; address_line: string; address_country: string }
+export type DocType = 'id_card' | 'passport' | 'birth_certificate' | 'residence_permit' | 'consent_scan' | 'consent_signed' | 'other';
+export interface PatientFile {
+  id: string; doc_type: DocType; mime_type: string; size_bytes: number; original_name: string | null; note: string | null;
+  is_active: boolean; created_at: string; uploaded_by_first: string | null; uploaded_by_last: string | null;
+}
+export type ConsentStatus = 'granted' | 'refused' | 'revoked' | 'missing';
+export interface ConsentRecord {
+  id: string; type_code: string; encounter_id: string | null; decision: 'granted' | 'refused'; method: 'paper' | 'electronic';
+  signer_type: 'patient' | 'representative'; representative_name: string | null; representative_relation: string | null;
+  file_id: string; signed_at: string; revoked_at: string | null; revoke_reason: string | null; version: number; text_approved: boolean; recorded_by_name: string | null;
+}
+export interface PatientConsent {
+  code: string; name: string; scope: 'patient' | 'encounter'; version: number; text_approved: boolean; status: ConsentStatus;
+  outdated: boolean; latest: ConsentRecord | null; history: ConsentRecord[];
+}
+export interface ConsentType {
+  code: string; name: string; scope: 'patient' | 'encounter'; is_active: boolean; sort_order: number;
+  version_id: string; version: number; body_text: string; text_approved: boolean; version_created_at: string;
 }

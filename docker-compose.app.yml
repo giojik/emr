@@ -64,4 +64,6 @@ services:
       emr-backend: { condition: service_healthy }
     ports:
       - "80:80"            # LAN: http://<VM IP>/  (UFW-ში 80 დაშვებულია ადმინ ქსელებიდან)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro   # nginx-ის ლოგები თბილისის დროით
     restart: unless-stopped

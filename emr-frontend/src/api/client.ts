@@ -80,3 +80,14 @@ export async function openBlob(path: string) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e) { win?.close(); throw e; }
 }
+
+/** multipart ატვირთვა (FormData) — იგივე ავტორიზაცია და refresh, რაც api()-ში */
+export async function apiUpload<T = unknown>(path: string, form: FormData, retried = false): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST', body: form, credentials: 'same-origin',
+    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (res.status === 401 && !retried) { const s = await refreshSession(); if (s) return apiUpload<T>(path, form, true); }
+  if (!res.ok) throw toError(res.status, await parse(res));
+  return (await parse(res)) as T;
+}

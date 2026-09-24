@@ -3,13 +3,15 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Patient, PatientListItem } from '../api/types';
+import AddressFields, { addressPayload, emptyAddress } from '../components/AddressFields';
 import { ErrorBox, Field, WarnIcon, useDebounced } from '../components/ui';
 import { dateGe } from '../lib/format';
 
 export default function PatientNew() {
   const nav = useNavigate();
   const [foreign, setForeign] = useState(false);
-  const [f, setF] = useState({ personal_number: '', passport_number: '', citizenship: 'GEO', first_name: '', last_name: '', birth_date: '', gender: '', phone_number: '', blood_group: '', address: '', emergency_contact_name: '', emergency_contact_phone: '' });
+  const [f, setF] = useState({ personal_number: '', passport_number: '', citizenship: 'GEO', first_name: '', last_name: '', birth_date: '', gender: '', phone_number: '', blood_group: '', emergency_contact_name: '', emergency_contact_phone: '' });
+  const [addr, setAddr] = useState(emptyAddress());
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const pnErr = !foreign && f.personal_number && !/^\d{11}$/.test(f.personal_number) ? `11 ციფრი (შეყვანილია ${f.personal_number.replace(/\D/g, '').length})` : undefined;
@@ -22,7 +24,8 @@ export default function PatientNew() {
       const body: Record<string, string> = {};
       for (const [k, v] of Object.entries(f)) if (v.trim()) body[k] = v.trim();
       if (foreign) delete body.personal_number; else delete body.passport_number;
-      return api<Patient>('/patients', { body });
+      const a = Object.fromEntries(Object.entries(addressPayload(addr, foreign)).filter(([, v]) => v));
+      return api<Patient>('/patients', { body: { ...body, ...a } });
     },
     onSuccess: (p) => nav(`/patients/${p.id}`, { replace: true }),
   });
@@ -66,7 +69,8 @@ export default function PatientNew() {
               {['0(I) Rh+', '0(I) Rh-', 'A(II) Rh+', 'A(II) Rh-', 'B(III) Rh+', 'B(III) Rh-', 'AB(IV) Rh+', 'AB(IV) Rh-'].map((g) => <option key={g} value={g.replace(' ', '')}>{g}</option>)}
             </select>
           </Field>
-          <div style={{ gridColumn: '1 / -1' }}><Field label="მისამართი" htmlFor="ad"><input id="ad" className="input" value={f.address} onChange={set('address')} /></Field></div>
+          <div style={{ gridColumn: '1 / -1' }}><h3 style={{ marginTop: 6 }}>მისამართი</h3></div>
+          <AddressFields value={addr} onChange={setAddr} foreign={foreign} />
           <Field label="საგანგებო კონტაქტი" htmlFor="ec" hint="სახელი, კავშირი"><input id="ec" className="input" value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></Field>
           <Field label="მისი ტელეფონი" htmlFor="ecp"><input id="ecp" className="input mono" type="tel" value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></Field>
 

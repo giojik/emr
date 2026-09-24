@@ -13,6 +13,15 @@ import PatientCard from './pages/PatientCard';
 import PatientNew from './pages/PatientNew';
 import Patients from './pages/Patients';
 import Reception from './pages/Reception';
+import AdminLayout from './pages/admin/AdminLayout';
+import Allergens from './pages/admin/Allergens';
+import Audit from './pages/admin/Audit';
+import Clinic from './pages/admin/Clinic';
+import ConsentTypes from './pages/admin/ConsentTypes';
+import Departments from './pages/admin/Departments';
+import Overrides from './pages/admin/Overrides';
+import Tariffs from './pages/admin/Tariffs';
+import Users from './pages/admin/Users';
 
 function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -22,6 +31,11 @@ function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   if (user.mustChangePassword && loc.pathname !== '/change-password') return <Navigate to="/change-password" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to={homeFor(user.role)} replace />;
   return <>{children}</>;
+}
+
+function AdminHome() {
+  const { user } = useAuth();
+  return <Navigate to={user?.role === 'pharmacist' ? '/admin/allergens' : user?.role === 'billing' ? '/admin/tariffs' : '/admin/users'} replace />;
 }
 
 export default function App() {
@@ -40,6 +54,17 @@ export default function App() {
         <Route path="/doctor" element={<Guard roles={['doctor']}><DoctorQueue mine /></Guard>} />
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
+        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing']}><AdminLayout /></Guard>}>
+          <Route index element={<AdminHome />} />
+          <Route path="users" element={<Guard roles={['admin']}><Users /></Guard>} />
+          <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
+          <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
+          <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
+          <Route path="consents" element={<Guard roles={['admin']}><ConsentTypes /></Guard>} />
+          <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
+          <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />
+          <Route path="audit" element={<Guard roles={['admin']}><Audit /></Guard>} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to={user ? homeFor(user.role) : '/login'} replace />} />
     </Routes>

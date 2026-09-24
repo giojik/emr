@@ -41,6 +41,15 @@ export type ReferralType = "hospitalization" | "imaging" | "lab" | "specialist_c
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AddressUnits {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  parent_code: string | null;
+  region: string;
+  type: string;
+}
+
 export interface AllergenCrossReactivity {
   group_a: string;
   group_b: string;
@@ -101,6 +110,7 @@ export interface AuthSessions {
 
 export interface ClinicSettings {
   address: string;
+  consent_methods: Generated<string[]>;
   director_name: string;
   director_title: Generated<string>;
   email: string | null;
@@ -108,6 +118,24 @@ export interface ClinicSettings {
   name: string;
   phone: string | null;
   updated_at: Generated<Timestamp>;
+}
+
+export interface ConsentTypes {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  scope: string;
+  sort_order: Generated<number>;
+}
+
+export interface ConsentTypeVersions {
+  body_text: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  text_approved: Generated<boolean>;
+  type_code: string;
+  version: number;
 }
 
 export interface Departments {
@@ -261,8 +289,49 @@ export interface PatientChronicConditions {
   recorded_by: string | null;
 }
 
+export interface PatientConsents {
+  decision: string;
+  encounter_id: string | null;
+  file_id: string;
+  id: Generated<string>;
+  method: string;
+  patient_id: string;
+  recorded_by: string;
+  representative_id_number: string | null;
+  representative_name: string | null;
+  representative_relation: string | null;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  signed_at: Generated<Timestamp>;
+  signer_type: string;
+  type_code: string;
+  version_id: string;
+}
+
+export interface PatientFiles {
+  created_at: Generated<Timestamp>;
+  deactivated_reason: string | null;
+  doc_type: string;
+  file_path: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  mime_type: string;
+  note: string | null;
+  original_name: string | null;
+  patient_id: string;
+  sha256: string;
+  size_bytes: number;
+  uploaded_by: string | null;
+}
+
 export interface Patients {
   address: string | null;
+  address_country: string | null;
+  address_district_code: string | null;
+  address_line: string | null;
+  address_unit_code: string | null;
+  address_village: string | null;
   birth_date: string;
   blood_group: string | null;
   citizenship: Generated<string>;
@@ -361,6 +430,7 @@ export interface Users {
 }
 
 export interface DB {
+  address_units: AddressUnits;
   allergen_cross_reactivity: AllergenCrossReactivity;
   allergen_group_terms: AllergenGroupTerms;
   allergen_groups: AllergenGroups;
@@ -368,6 +438,8 @@ export interface DB {
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;
   clinic_settings: ClinicSettings;
+  consent_type_versions: ConsentTypeVersions;
+  consent_types: ConsentTypes;
   departments: Departments;
   document_counters: DocumentCounters;
   encounter_diagnoses: EncounterDiagnoses;
@@ -381,6 +453,8 @@ export interface DB {
   invoices: Invoices;
   patient_allergies: PatientAllergies;
   patient_chronic_conditions: PatientChronicConditions;
+  patient_consents: PatientConsents;
+  patient_files: PatientFiles;
   patients: Patients;
   payments: Payments;
   prescriptions: Prescriptions;

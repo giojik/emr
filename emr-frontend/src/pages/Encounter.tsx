@@ -6,6 +6,7 @@ import type { EncounterDetail, EncounterListItem, Form100Draft } from '../api/ty
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
 import AllergyDialog from '../components/AllergyDialog';
+import ConsentsPanel from '../components/ConsentsPanel';
 import { CloseButton, ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, genderShort, hhmm, money, tsDate } from '../lib/format';
 import { Diagnoses, Notes, Referrals, VitalsStrip } from './encounter/Clinical';
@@ -15,7 +16,7 @@ export default function Encounter() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const q = useQuery({ queryKey: ['encounter', id], queryFn: () => api<EncounterDetail>(`/encounters/${id}`) });
-  const [dlg, setDlg] = useState<'discharge' | 'form100' | 'history' | 'allergy' | null>(null);
+  const [dlg, setDlg] = useState<'discharge' | 'form100' | 'history' | 'allergy' | 'consent' | null>(null);
 
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <div className="content"><ErrorBox error={q.error ?? 'ვიზიტი ვერ მოიძებნა'} /></div>;
@@ -38,6 +39,7 @@ export default function Encounter() {
           {active && <span className="small muted">{hhmm(e.start_time)}-დან</span>}
           <div className="row" style={{ marginLeft: 'auto' }}>
             <button className="btn" type="button" onClick={() => setDlg('history')}>წინა ვიზიტები</button>
+            <button className="btn" type="button" onClick={() => setDlg('consent')}>ინფორმირებული თანხმობა</button>
             {(isAttending && (active || e.status === 'discharged')) && <button className="btn" type="button" onClick={() => setDlg('form100')}>ფორმა №100/ა</button>}
             {canWrite && <button className="btn primary" type="button" onClick={() => setDlg('discharge')}>ვიზიტის დასრულება</button>}
           </div>
@@ -71,6 +73,11 @@ export default function Encounter() {
       {dlg === 'form100' && <Form100Dialog e={e} onClose={() => setDlg(null)} />}
       {dlg === 'history' && <HistoryDrawer patientId={e.patient.id} currentId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={e.patient.id} onClose={() => setDlg(null)} />}
+      {dlg === 'consent' && (
+        <Modal title="თანხმობები ამ ვიზიტზე" onClose={() => setDlg(null)} width={980}>
+          <ConsentsPanel patientId={e.patient.id} encounterId={e.id} scope="encounter" canSign={active && (isAttending || user?.role === 'nurse')} />
+        </Modal>
+      )}
     </>
   );
 }
