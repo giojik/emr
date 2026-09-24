@@ -26,7 +26,28 @@ export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slic
 
 export const ROLE_KA: Record<string, string> = {
   admin: 'ადმინისტრატორი', doctor: 'ექიმი', nurse: 'ექთანი', receptionist: 'რეგისტრატორი',
-  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა',
+  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი/რადიოლოგი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };
+
+export const SECTION_KA: Record<string, string> = { lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია' };
+export const DX_STATUS: Record<string, [string, string]> = {
+  ordered: ['info', 'შეკვეთილი'], collected: ['info', 'ნიმუში აღებულია'], in_progress: ['warn', 'მიმდინარე'],
+  resulted: ['warn', 'ვალიდაციას ელოდება'], validated: ['ok', 'მზადაა'], cancelled: ['', 'გაუქმებული'],
+};
+export const FLAG_UI: Record<string, { sym: string; cls: string; label: string }> = {
+  L: { sym: '↓', cls: 'warn', label: 'დაბალი' }, H: { sym: '↑', cls: 'warn', label: 'მაღალი' },
+  LL: { sym: '↓↓', cls: 'danger', label: 'კრიტიკული' }, HH: { sym: '↑↑', cls: 'danger', label: 'კრიტიკული' }, A: { sym: '!', cls: 'warn', label: 'გადახრა' },
+};
+export const refRange = (r: { ref_low?: string | null; ref_high?: string | null; ref_text?: string | null; low?: string | null; high?: string | null; normal_text?: string | null } | null) => {
+  if (!r) return '';
+  const lo = r.ref_low ?? r.low ?? null; const hi = r.ref_high ?? r.high ?? null; const t = r.ref_text ?? r.normal_text ?? null;
+  if (t) return t;
+  if (lo !== null && hi !== null) return `${Number(lo)} – ${Number(hi)}`;
+  if (lo !== null) return `> ${Number(lo)}`;
+  if (hi !== null) return `< ${Number(hi)}`;
+  return '';
+};
+const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+export const unitFmt = (u: string) => u.replace(/\^(\d+)/g, (_m, d: string) => d.split('').map((c) => SUP[c]).join(''));

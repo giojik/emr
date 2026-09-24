@@ -6,7 +6,8 @@ import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
 import Cashier from './pages/Cashier';
 import ChangePassword from './pages/ChangePassword';
-import Diagnostics from './pages/Diagnostics';
+import Collection from './pages/Collection';
+import DiagnosticsHub from './pages/DiagnosticsHub';
 import DoctorQueue from './pages/DoctorQueue';
 import Encounter from './pages/Encounter';
 import Login from './pages/Login';
@@ -17,6 +18,7 @@ import Reception from './pages/Reception';
 import AdminLayout from './pages/admin/AdminLayout';
 import Allergens from './pages/admin/Allergens';
 import Audit from './pages/admin/Audit';
+import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
@@ -36,7 +38,7 @@ function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
 
 function AdminHome() {
   const { user } = useAuth();
-  return <Navigate to={user?.role === 'pharmacist' ? '/admin/allergens' : user?.role === 'billing' ? '/admin/tariffs' : '/admin/users'} replace />;
+  return <Navigate to={user?.role === 'pharmacist' ? '/admin/allergens' : user?.role === 'billing' ? '/admin/tariffs' : user?.role === 'lab_doctor' || user?.role === 'lab_manager' ? '/admin/catalog' : '/admin/users'} replace />;
 }
 
 export default function App() {
@@ -54,14 +56,17 @@ export default function App() {
         <Route path="/cashier/:encounterId" element={<Guard roles={['admin', 'receptionist', 'billing']}><Cashier /></Guard>} />
         <Route path="/doctor" element={<Guard roles={['doctor']}><DoctorQueue mine /></Guard>} />
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
-        <Route path="/diagnostics" element={<Guard roles={['admin', 'diagnostic']}><Diagnostics /></Guard>} />
+        <Route path="/diagnostics" element={<Navigate to="/diagnostics/lab" replace />} />
+        <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager']}><DiagnosticsHub /></Guard>} />
+        <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
-        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing']}><AdminLayout /></Guard>}>
+        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />
           <Route path="users" element={<Guard roles={['admin']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
           <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
+          <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
           <Route path="consents" element={<Guard roles={['admin']}><ConsentTypes /></Guard>} />
           <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
           <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />

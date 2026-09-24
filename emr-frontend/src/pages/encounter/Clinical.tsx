@@ -136,13 +136,13 @@ export function Diagnoses({ e, canWrite }: { e: EncounterDetail; canWrite: boole
 // ------------------------------------------------------------------ მიმართვები
 export function Referrals({ e, canWrite }: { e: EncounterDetail; canWrite: boolean }) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false); const [type, setType] = useState('lab'); const [reason, setReason] = useState('');
+  const [open, setOpen] = useState(false); const [type, setType] = useState('specialist_consult'); const [reason, setReason] = useState('');
   const add = useMutation({ mutationFn: () => api(`/encounters/${e.id}/referrals`, { body: { type, reason } }), onSuccess: () => { setOpen(false); setReason(''); inval(qc, e.id); } });
   const cancel = useMutation({ mutationFn: (id: string) => api(`/referrals/${id}`, { method: 'PATCH', body: { status: 'cancelled' } }), onSuccess: () => inval(qc, e.id) });
   const shown = e.referrals.filter((r) => r.status !== 'cancelled');
   return (
     <section className="card card-pad stack">
-      <div className="row"><h2 className="grow">მიმართვები</h2>{canWrite && !open && <button className="btn sm" type="button" onClick={() => setOpen(true)}>+ მიმართვა</button>}</div>
+      <div className="row"><h2 className="grow">მიმართვები (კონსულტაცია / ჰოსპიტალიზაცია)</h2>{canWrite && !open && <button className="btn sm" type="button" onClick={() => setOpen(true)}>+ მიმართვა</button>}</div>
       {shown.map((r) => (
         <div key={r.id} className="stack" style={{ gap: 4, padding: '10px 12px', border: '1px solid var(--line-soft)', borderRadius: 8 }}>
           <div className="row"><strong className="grow" style={{ fontSize: 13 }}>{REFERRAL_KA[r.type]} · {r.reason}</strong><StatusChip status={r.status} /></div>
@@ -154,9 +154,11 @@ export function Referrals({ e, canWrite }: { e: EncounterDetail; canWrite: boole
       {open && (
         <form className="stack" onSubmit={(x) => { x.preventDefault(); add.mutate(); }}>
           <select aria-label="ტიპი" className="select" value={type} onChange={(x) => setType(x.target.value)}>
-            {Object.entries(REFERRAL_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            {/* ლაბორატორია/რადიოლოგია — "დიაგნოსტიკის" ბლოკიდან (კატალოგით) */}
+            <option value="specialist_consult">სპეციალისტის კონსულტაცია</option>
+            <option value="hospitalization">ჰოსპიტალიზაცია</option>
           </select>
-          <input aria-label="მიზეზი / კვლევა" className="input" placeholder="მაგ. ლიპიდური პროფილი" value={reason} onChange={(x) => setReason(x.target.value)} required minLength={3} />
+          <input aria-label="მიზეზი / კვლევა" className="input" placeholder="მაგ. ნევროლოგის კონსულტაცია" value={reason} onChange={(x) => setReason(x.target.value)} required minLength={3} />
           <div className="row"><button className="btn sm" type="button" onClick={() => setOpen(false)}>გაუქმება</button><button className="btn sm primary" type="submit" disabled={add.isPending}>დამატება</button></div>
           <span className="hint">ფასი ავტომატურად დაემატება ინვოისს.</span>
         </form>

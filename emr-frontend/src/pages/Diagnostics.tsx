@@ -6,10 +6,10 @@ import AllergyBanner from '../components/AllergyBanner';
 import { ErrorBox, Loading, StatusChip, useToast } from '../components/ui';
 import { age, genderShort, hhmm, REFERRAL_KA, todayISO, tsDate } from '../lib/format';
 
-const TYPES = ['lab', 'imaging', 'specialist_consult'] as const;
+const TYPES = ['specialist_consult', 'hospitalization', 'lab', 'imaging'] as const;
 
 /** დიაგნოსტიკის სამუშაო სია: ლაბორანტი / რადიოლოგი — მიმართვის მიღება, შედეგის შეტანა */
-export default function Diagnostics() {
+export default function Diagnostics({ embedded }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<'open' | 'done'>('open');
   const [type, setType] = useState<string>('');
   const [selId, setSelId] = useState<string | null>(null);
@@ -22,17 +22,18 @@ export default function Diagnostics() {
   const sel = items.find((x) => x.id === selId) ?? null;
   const counts = (t: string) => items.filter((x) => x.type === t).length;
 
-  return (
-    <>
-      <header className="topbar">
-        <h1>დიაგნოსტიკის სამუშაო სია</h1>
-        <div className="seg" role="group" aria-label="სია" style={{ marginLeft: 'auto' }}>
+  const seg = (
+        <div className="seg" role="group" aria-label="სია" style={{ marginLeft: embedded ? 0 : 'auto', width: 'max-content' }}>
           <button type="button" aria-pressed={tab === 'open'} onClick={() => { setTab('open'); setSelId(null); }}>ღია</button>
           <button type="button" aria-pressed={tab === 'done'} onClick={() => { setTab('done'); setSelId(null); }}>დასრულებული დღეს</button>
-        </div>
-      </header>
+        </div>);
+  return (
+    <>
+      {!embedded && <header className="topbar"><h1>მიმართვები</h1>{seg}</header>}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div className="content grow">
+          {embedded && seg}
+          <span className="hint">კონსულტაციისა და ჰოსპიტალიზაციის მიმართვები; ძველი (კატალოგამდე) ლაბორატორიული/რადიოლოგიური მიმართვებიც აქ ჩანს.</span>
           <div className="row" role="group" aria-label="ტიპი" style={{ flexWrap: 'wrap', gap: 6 }}>
             <button type="button" className={`btn sm${type === '' ? ' dark' : ''}`} onClick={() => setType('')}>ყველა{type === '' ? ` · ${items.length}` : ''}</button>
             {TYPES.map((t) => <button key={t} type="button" className={`btn sm${type === t ? ' dark' : ''}`} onClick={() => setType(t)}>{REFERRAL_KA[t]}{type === '' ? ` · ${counts(t)}` : ''}</button>)}

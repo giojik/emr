@@ -10,6 +10,7 @@ import ConsentsPanel from '../components/ConsentsPanel';
 import { CloseButton, ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, genderShort, hhmm, money, tsDate } from '../lib/format';
 import { Diagnoses, Notes, Referrals, VitalsStrip } from './encounter/Clinical';
+import DiagnosticsPanel from './encounter/DiagnosticsPanel';
 import Prescriptions from './encounter/Prescriptions';
 
 export default function Encounter() {
@@ -57,6 +58,7 @@ export default function Encounter() {
         </div>
         <aside className="stack" style={{ width: 420, flexShrink: 0, gap: 14 }}>
           <Diagnoses e={e} canWrite={canWrite} />
+          <DiagnosticsPanel encounterId={e.id} canWrite={canWrite} />
           <Referrals e={e} canWrite={canWrite} />
           {active && (
             <section className="card card-pad stack" aria-label="დასრულებისთვის">

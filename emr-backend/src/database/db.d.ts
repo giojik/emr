@@ -154,6 +154,47 @@ export interface DocumentCounters {
   year: number;
 }
 
+export interface DxOrderItems {
+  accession_number: string | null;
+  allergy_override_reason: string | null;
+  cancel_reason: string | null;
+  clinical_note: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  ordered_at: Generated<Timestamp>;
+  ordered_by: string;
+  patient_id: string;
+  priority: Generated<string>;
+  report_text: string | null;
+  resulted_at: Timestamp | null;
+  resulted_by: string | null;
+  section: string;
+  service_id: string;
+  specimen_id: string | null;
+  status: Generated<string>;
+  validated_at: Timestamp | null;
+  validated_by: string | null;
+}
+
+export interface DxServices {
+  body_part: string | null;
+  code: string;
+  container: string | null;
+  contrast: string | null;
+  external_lab: string | null;
+  group_name: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  modality: string | null;
+  name: string;
+  needs_review: Generated<boolean>;
+  performed_by: Generated<string>;
+  section: string;
+  sort_order: Generated<number>;
+  specimen_type: string | null;
+  tariff_id: string;
+}
+
 export interface EncounterDiagnoses {
   comment: string | null;
   created_at: Generated<Timestamp>;
@@ -244,6 +285,7 @@ export interface InvoiceLineItems {
   adjusted_by: string | null;
   description: string;
   discount_reason: string | null;
+  dx_order_item_id: string | null;
   id: Generated<string>;
   invoice_id: string;
   line_total: Generated<Numeric | null>;
@@ -264,6 +306,62 @@ export interface Invoices {
   patient_share: Numeric;
   state_share: Generated<Numeric>;
   total_amount: Numeric;
+}
+
+export interface LabAnalytes {
+  code: string;
+  critical_high: Numeric | null;
+  critical_low: Numeric | null;
+  decimals: number | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  options: string | null;
+  result_type: string;
+  service_id: string;
+  sort_order: Generated<number>;
+  unit: Generated<string>;
+}
+
+export interface LabReferenceRanges {
+  age_max_days: Generated<number>;
+  age_min_days: Generated<number>;
+  analyte_id: string;
+  high: Numeric | null;
+  id: Generated<string>;
+  low: Numeric | null;
+  normal_text: string | null;
+  sex: string | null;
+}
+
+export interface LabResults {
+  analyte_id: string;
+  entered_at: Generated<Timestamp>;
+  entered_by: string | null;
+  flag: string | null;
+  id: Generated<string>;
+  order_item_id: string;
+  ref_high: Numeric | null;
+  ref_low: Numeric | null;
+  ref_text: string | null;
+  unit: Generated<string>;
+  value_num: Numeric | null;
+  value_text: string | null;
+}
+
+export interface LabSpecimens {
+  barcode: string;
+  collected_at: Generated<Timestamp>;
+  collected_by: string | null;
+  container: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  patient_id: string;
+  received_at: Timestamp | null;
+  received_by: string | null;
+  reject_reason: string | null;
+  specimen_type: string;
+  status: Generated<string>;
 }
 
 export interface PatientAllergies {
@@ -442,6 +540,8 @@ export interface DB {
   consent_types: ConsentTypes;
   departments: Departments;
   document_counters: DocumentCounters;
+  dx_order_items: DxOrderItems;
+  dx_services: DxServices;
   encounter_diagnoses: EncounterDiagnoses;
   encounter_payment_overrides: EncounterPaymentOverrides;
   encounter_vitals: EncounterVitals;
@@ -451,6 +551,10 @@ export interface DB {
   icd10_codes: Icd10Codes;
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
+  lab_analytes: LabAnalytes;
+  lab_reference_ranges: LabReferenceRanges;
+  lab_results: LabResults;
+  lab_specimens: LabSpecimens;
   patient_allergies: PatientAllergies;
   patient_chronic_conditions: PatientChronicConditions;
   patient_consents: PatientConsents;

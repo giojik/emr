@@ -126,3 +126,30 @@ export interface WorklistItem {
   encounter_id: string; patient_id: string; patient_first_name: string; patient_last_name: string; personal_number: string | null;
   birth_date: string; gender: Gender; requested_by_name: string | null;
 }
+
+// ---------------------------------------------------------------- დიაგნოსტიკა
+export type DxSection = 'lab' | 'radiology' | 'endoscopy';
+export type DxStatus = 'ordered' | 'collected' | 'in_progress' | 'resulted' | 'validated' | 'cancelled';
+export interface DxService {
+  id: string; section: DxSection; code: string; name: string; group_name: string; performed_by: 'internal' | 'external'; external_lab: string | null;
+  specimen_type: string | null; container: string | null; modality: string | null; body_part: string | null; contrast: string | null;
+  is_active: boolean; needs_review: boolean; sort_order: number; base_price: string; tariff_id: string;
+}
+export type LabFlag = 'N' | 'L' | 'H' | 'LL' | 'HH' | 'A';
+export interface LabResultRow { analyte_id: string; code: string; name: string; value_num: string | null; value_text: string | null; unit: string; ref_low: string | null; ref_high: string | null; ref_text: string | null; flag: LabFlag | null }
+export interface DxItem {
+  id: string; encounter_id: string; patient_id: string; service_id: string; section: DxSection; status: DxStatus; priority: 'routine' | 'urgent';
+  clinical_note: string | null; accession_number: string | null; report_text: string | null; allergy_override_reason: string | null;
+  ordered_at: string; resulted_at: string | null; validated_at: string | null; cancel_reason: string | null;
+  service_code: string; service_name: string; group_name: string; performed_by: 'internal' | 'external'; external_lab: string | null; modality: string | null; contrast: string | null;
+  barcode: string | null; specimen_status: string | null; collected_at: string | null; received_at: string | null;
+  first_name: string; last_name: string; personal_number: string | null; birth_date: string; gender: Gender;
+  ordered_by_name: string | null; validated_by_name: string | null; results: LabResultRow[];
+}
+export interface LabAnalyteForm {
+  id: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals: number | null; options: string[] | null;
+  critical_low: string | null; critical_high: string | null; range: { low: string | null; high: string | null; normal_text: string | null } | null;
+}
+export interface LabItemDetail extends DxItem { analytes: LabAnalyteForm[] }
+export interface PendingCollection { encounter_id: string; patient_id: string; first_name: string; last_name: string; personal_number: string | null; birth_date: string; tests: number; names: string[]; urgent: boolean; ordered_at: string }
+export interface CollectedSpecimen { id: string; barcode: string; specimen_type: string; container: string | null; tests: string[]; external: boolean }

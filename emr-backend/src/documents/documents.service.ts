@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
+import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import type { AuthUser } from '../auth/roles';
@@ -40,7 +41,7 @@ export class DocumentsService {
       .where('e.id', '=', encounterId).executeTakeFirst();
     if (!e) throw new NotFoundException('ვიზიტი ვერ მოიძებნა');
 
-    const [dxRows, chronic, refs, rx] = await Promise.all([
+    const [dxRows, chronic, refs, rx, dxItems] = await Promise.all([
       this.db.selectFrom('encounter_diagnoses').select(['icd10_code', 'icd10_title', 'diagnosis_type'])
         .where('encounter_id', '=', encounterId).orderBy('created_at').execute(),
       this.db.selectFrom('patient_chronic_conditions').select(['icd10_code', 'condition_name'])
@@ -49,7 +50,19 @@ export class DocumentsService {
         .where('encounter_id', '=', encounterId).where('status', '=', 'completed').orderBy('completed_at').execute(),
       this.db.selectFrom('prescriptions').select(['medication_name', 'dosage', 'route', 'frequency', 'duration_days'])
         .where('encounter_id', '=', encounterId).orderBy('created_at').execute(),
+      this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
+        .select(['i.id', 'i.section', 's.name', 'i.report_text',
+          (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')
+            .select(['a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.flag']).whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results')])
+        .where('i.encounter_id', '=', encounterId).where('i.status', '=', 'validated').orderBy('i.ordered_at').execute(),
     ]);
+    // დიაგნოსტიკა: ლაბორატორია — მხოლოდ გადახრები (დანარჩენი "ნორმის ფარგლებში"); რადიოლოგია/ენდოსკოპია — დასკვნა
+    const arrow: Record<string, string> = { L: '(დაბ.)', H: '(მაღ.)', LL: '(კრიტ. დაბ.)', HH: '(კრიტ. მაღ.)', A: '(გადახრა)' };
+    const dxLines = dxItems.map((i) => {
+      if (i.section !== 'lab') return `${i.name}: ${i.report_text ?? ''}`;
+      const abn = i.results.filter((r) => r.flag && r.flag !== 'N');
+      return `${i.name}: ${abn.length ? abn.map((r) => `${r.name} ${r.value_num !== null ? Number(r.value_num) : r.value_text}${r.unit ? ` ${r.unit}` : ''} ${arrow[r.flag!] ?? ''}`.trim()).join('; ') : 'ნორმის ფარგლებში'}`;
+    });
     const pick = (t: string): DxItem[] => dxRows.filter((d) => d.diagnosis_type === t).map((d) => ({ code: d.icd10_code, title: d.icd10_title }));
 
     return {
@@ -61,7 +74,7 @@ export class DocumentsService {
       diagnosis_note: null as string | null,
       past_diseases: chronic.map((c) => (c.icd10_code ? `${c.condition_name} (${c.icd10_code})` : c.condition_name)).join('; ') || null,
       anamnesis: e.history_of_present_illness,
-      investigations: refs.map((r) => `${REFERRAL_KA[r.type] ?? r.type} — ${r.reason}${r.result_text ? `: ${r.result_text}` : ''}`).join('\n') || null,
+      investigations: [...dxLines, ...refs.map((r) => `${REFERRAL_KA[r.type] ?? r.type} — ${r.reason}${r.result_text ? `: ${r.result_text}` : ''}`)].join('\n') || null,
       course: null as Form100Payload['course'],
       treatment: rx.map((r) => `${r.medication_name} ${r.dosage}, ${r.frequency}${r.duration_days ? `, ${r.duration_days} დღე` : ''}`).join('; ') || null,
       recommendations: null as string | null,
