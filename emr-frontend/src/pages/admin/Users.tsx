@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../../api/client';
 import type { AdminUser, Department, Tariff } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
+import { copyText } from '../../lib/clipboard';
 import { money, ROLE_KA, tsDate } from '../../lib/format';
 
 const ROLES = Object.keys(ROLE_KA);
@@ -67,12 +68,22 @@ function UserStatus({ u }: { u: AdminUser }) {
 }
 
 function TempPassword({ value, who }: { value: string; who: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const box = useRef<HTMLDivElement>(null);
+  const copy = async () => {
+    const ok = await copyText(value);
+    setState(ok ? 'ok' : 'fail');
+    if (!ok && box.current) {   // ვერ დაკოპირდა — ტექსტს მაინც მოვნიშნავთ, რომ Ctrl+C-ით აიღონ
+      const r = document.createRange(); r.selectNodeContents(box.current);
+      const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(r);
+    }
+  };
   return (
     <div className="alert ok" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
       <strong>დროებითი პაროლი — {who}</strong>
-      <div className="row"><div className="secret grow">{value}</div>
-        <button className="btn" type="button" onClick={() => { void navigator.clipboard?.writeText(value); setCopied(true); }}>{copied ? 'დაკოპირდა' : 'კოპირება'}</button></div>
+      <div className="row"><div ref={box} className="secret grow">{value}</div>
+        <button className="btn" type="button" onClick={() => void copy()}>{state === 'ok' ? 'დაკოპირდა ✓' : 'კოპირება'}</button></div>
+      {state === 'fail' && <span className="small" style={{ color: 'var(--danger-ink)' }}>ავტომატური კოპირება ვერ მოხერხდა — პაროლი მონიშნულია, დააჭირეთ Ctrl+C.</span>}
       <span className="small">ნაჩვენებია მხოლოდ ერთხელ — სისტემაში არ ინახება. პირველი შესვლისას მომხმარებელი მას შეცვლის.</span>
     </div>
   );
