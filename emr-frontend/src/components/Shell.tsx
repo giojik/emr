@@ -27,7 +27,7 @@ const HOME: Record<Role, string> = {
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {
   const order = [...(user.roles[0]?.capabilities ?? []), ...user.caps];
   for (const c of order) if (HOME[c]) return HOME[c];
-  return '/patients';
+  return user.caps.length ? '/patients' : '/no-access';
 }
 
 export default function Shell() {

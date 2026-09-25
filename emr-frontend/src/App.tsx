@@ -38,6 +38,16 @@ function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   return <>{children}</>;
 }
 
+function NoAccess() {
+  const { user } = useAuth();
+  return (
+    <div className="content"><div className="card card-pad stack" style={{ maxWidth: 560 }}>
+      <h2>სისტემაში წვდომა არ გაქვთ</h2>
+      <span>თქვენს როლს ({user?.roles.map((r) => r.name).join(', ') || '—'}) EMR-ის მოდულებზე უფლება არ აქვს. საჭიროების შემთხვევაში მიმართეთ ადმინისტრატორს.</span>
+    </div></div>
+  );
+}
+
 function AdminHome() {
   const { user } = useAuth();
   return <Navigate to={can(user, 'admin') ? '/admin/users' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing') ? '/admin/tariffs' : '/admin/catalog'} replace />;
@@ -51,7 +61,8 @@ export default function App() {
       <Route path="/change-password" element={<Guard><ChangePassword /></Guard>} />
       <Route element={<Guard><Shell /></Guard>}>
         <Route path="/reception" element={<Guard roles={['admin', 'receptionist']}><Reception /></Guard>} />
-        <Route path="/patients" element={<Patients />} />
+        <Route path="/no-access" element={<NoAccess />} />
+        <Route path="/patients" element={<Guard roles={['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic']}><Patients /></Guard>} />
         <Route path="/patients/new" element={<Guard roles={['admin', 'receptionist']}><PatientNew /></Guard>} />
         <Route path="/patients/:id" element={<PatientCard />} />
         <Route path="/cashier" element={<Guard roles={['admin', 'receptionist', 'billing']}><Cashier /></Guard>} />

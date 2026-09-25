@@ -1,5 +1,5 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
-import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { Body, ConflictException, Controller, Delete, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { sql } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
@@ -33,13 +33,14 @@ class CreateRoleDto {
   @Matches(CODE, { message: 'კოდი: ლათინური პატარა ასოები, ციფრები, _ (მაგ. doctor_endo)' }) code: string;
   @IsString() @Length(2, 100) name: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string | null;
-  @IsArray() @ArrayMinSize(1) @IsIn(CAPABILITIES, { each: true }) capabilities: Capability[];
+  /** ცარიელი = პოზიცია უფლებების გარეშე (მძღოლი, სანიტარი, HR…) — სისტემაში წვდომას არ იძლევა */
+  @IsArray() @IsIn(CAPABILITIES, { each: true }) capabilities: Capability[];
   @IsOptional() @IsInt() sort_order?: number;
 }
 class UpdateRoleDto {
   @IsOptional() @IsString() @Length(2, 100) name?: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string | null;
-  @IsOptional() @IsArray() @ArrayMinSize(1) @IsIn(CAPABILITIES, { each: true }) capabilities?: Capability[];
+  @IsOptional() @IsArray() @IsIn(CAPABILITIES, { each: true }) capabilities?: Capability[];
   @IsOptional() @IsBoolean() is_active?: boolean;
   @IsOptional() @IsInt() sort_order?: number;
 }
@@ -132,7 +133,6 @@ export class RolesController {
   capabilities() { return this.roles.capabilities(); }
   @Post() @Roles('admin')
   create(@Body() dto: CreateRoleDto, @Req() req: Request) {
-    if (!dto.capabilities?.length) throw new BadRequestException('აირჩიეთ მინიმუმ ერთი უფლება');
     return this.roles.create(dto, auditCtx(req));
   }
   /** წაშლა — მხოლოდ კლინიკის როლი, რომელიც არცერთ მომხმარებელს არ აქვს (შეცდომით შექმნილი). სხვა შემთხვევაში — გათიშვა */

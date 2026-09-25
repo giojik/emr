@@ -4,6 +4,14 @@ import { api, type Role } from '../../api/client';
 import { useRoles, type RoleRow } from '../../components/RolePicker';
 import { ErrorBox, Field, Loading, Modal } from '../../components/ui';
 
+const KA: Record<string, string> = { 'ა': 'a', 'ბ': 'b', 'გ': 'g', 'დ': 'd', 'ე': 'e', 'ვ': 'v', 'ზ': 'z', 'თ': 't', 'ი': 'i', 'კ': 'k', 'ლ': 'l', 'მ': 'm', 'ნ': 'n', 'ო': 'o', 'პ': 'p',
+  'ჟ': 'zh', 'რ': 'r', 'ს': 's', 'ტ': 't', 'უ': 'u', 'ფ': 'p', 'ქ': 'k', 'ღ': 'gh', 'ყ': 'q', 'შ': 'sh', 'ჩ': 'ch', 'ც': 'ts', 'ძ': 'dz', 'წ': 'ts', 'ჭ': 'ch', 'ხ': 'kh', 'ჯ': 'j', 'ჰ': 'h' };
+/** დასახელება → კოდი: ქართული ტრანსლიტერაცია, მაგ. „სამედიცინო ინჟინერი“ → samedicino_inzhineri */
+const toCode = (name: string) => {
+  const c = name.toLowerCase().split('').map((ch) => KA[ch] ?? ch).join('').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'r_$1').slice(0, 40);
+  return c.length >= 2 ? c : '';
+};
+
 interface CapInfo { code: Role; group: string; name: string; grants: string }
 const useCaps = () => useQuery({ queryKey: ['capabilities'], queryFn: () => api<CapInfo[]>('/roles/capabilities'), staleTime: Infinity });
 
@@ -29,7 +37,7 @@ export default function RolesPage() {
             <tbody>{roles.data?.filter((r) => all || r.is_active).map((r) => (
               <tr key={r.id} className="clickable" onClick={() => setEdit(r)} style={r.is_active ? undefined : { opacity: 0.55 }}>
                 <td><strong>{r.name}</strong> <span className="mono small muted">{r.code}</span>{r.description && <div className="small muted">{r.description}</div>}</td>
-                <td><div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>{r.capabilities.map((c) => <span key={c} className={`chip${c === 'admin' ? ' danger' : ''}`} style={{ height: 20, fontSize: 11 }}>{capName(c)}</span>)}</div></td>
+                <td><div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>{!r.capabilities.length && <span className="chip" style={{ height: 20, fontSize: 11 }}>პოზიცია — სისტემაში წვდომის გარეშე</span>}{r.capabilities.map((c) => <span key={c} className={`chip${c === 'admin' ? ' danger' : ''}`} style={{ height: 20, fontSize: 11 }}>{capName(c)}</span>)}</div></td>
                 <td className="num">{r.active_users}</td>
                 <td>{r.is_system ? <span className="chip">სისტემური</span> : <span className="chip info">კლინიკის</span>}</td>
                 <td>{r.is_active ? <span className="chip ok">აქტიური</span> : <span className="chip">გათიშული</span>}</td>
@@ -44,6 +52,7 @@ export default function RolesPage() {
 
 function RoleDialog({ r, caps, onClose }: { r: RoleRow | null; caps: CapInfo[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const [codeTouched, setCodeTouched] = useState(!!r);
   const [f, setF] = useState({ code: r?.code ?? '', name: r?.name ?? '', description: r?.description ?? '', is_active: r?.is_active ?? true });
   const [sel, setSel] = useState<Role[]>(r?.capabilities ?? []);
   const locked = !!r?.is_system;
@@ -57,21 +66,22 @@ function RoleDialog({ r, caps, onClose }: { r: RoleRow | null; caps: CapInfo[]; 
   const groups = [...new Set(caps.map((c) => c.group))];
   const capsChanged = !!r && !locked && (sel.length !== r.capabilities.length || sel.some((c) => !r.capabilities.includes(c)));
   const deactivating = !!r && r.is_active && !f.is_active;
-  const valid = f.name.trim().length >= 2 && sel.length > 0 && (r || /^[a-z][a-z0-9_]{1,39}$/.test(f.code));
+  const valid = f.name.trim().length >= 2 && (r || /^[a-z][a-z0-9_]{1,39}$/.test(f.code));
   return (
     <Modal title={r ? r.name : 'ახალი როლი'} onClose={onClose} width={820}
       footer={<>{r && !r.is_system && <button className="btn" type="button" style={{ color: 'var(--danger)', marginRight: 'auto' }} disabled={del.isPending}
           onClick={() => { if (confirm(`წავშალოთ როლი „${r.name}“? (მხოლოდ თუ არავის აქვს მინიჭებული)`)) del.mutate(); }}>წაშლა</button>}
         <button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={!valid || m.isPending} onClick={() => m.mutate()}>შენახვა</button></>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="დასახელება" htmlFor="rn" required><input id="rn" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="მაგ. რეგისტრატორი-მოლარე" /></Field>
-        <Field label="კოდი" htmlFor="rc" required hint={r ? 'კოდი არ იცვლება' : 'ლათინური პატარა ასოები, ციფრები, _ — მაგ. reg_cashier'}>
-          <input id="rc" className="input mono" value={f.code} disabled={!!r} onChange={(e) => setF({ ...f, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} />
+        <Field label="დასახელება" htmlFor="rn" required><input id="rn" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value, ...(codeTouched ? {} : { code: toCode(e.target.value) }) })} placeholder="მაგ. ქირურგი, სანიტარი, რეგისტრატორი-მოლარე" /></Field>
+        <Field label="კოდი" htmlFor="rc" required hint={r ? 'კოდი არ იცვლება' : 'ივსება დასახელებიდან; ლათინური პატარა ასოები, ციფრები, _'}>
+          <input id="rc" className="input mono" value={f.code} disabled={!!r} onChange={(e) => { setCodeTouched(true); setF({ ...f, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') }); }} />
         </Field>
         <div style={{ gridColumn: '1 / -1' }}><Field label="აღწერა" htmlFor="rd"><input id="rd" className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field></div>
       </div>
       <div className="stack" style={{ gap: 6 }}>
-        <span className="label">უფლებები {locked && <span className="small muted">— სისტემური როლის უფლებები ფიქსირებულია</span>}</span>
+        <span className="label">უფლებები სისტემაში {locked ? <span className="small muted">— სისტემური როლის უფლებები ფიქსირებულია</span>
+          : <span className="small muted">— არასავალდებულო. უფლებების გარეშე როლი არის თანამშრომლის პოზიცია (მძღოლი, სანიტარი, HR…): ჩანს პერსონალის სიაში, მაგრამ სისტემაში წვდომას არ იძლევა</span>}</span>
         {groups.map((g) => (
           <div key={g} className="stack" style={{ gap: 2 }}>
             <span className="small muted" style={{ fontWeight: 600 }}>{g}</span>
@@ -85,6 +95,7 @@ function RoleDialog({ r, caps, onClose }: { r: RoleRow | null; caps: CapInfo[]; 
       </div>
       {r && r.code !== 'admin' && <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>}
       {(capsChanged || deactivating) && r!.active_users > 0 && <div className="alert warn small">ცვლილება შეეხება {r!.active_users} მომხმარებელს — მათ სისტემაში თავიდან შესვლა მოუწევთ.</div>}
+      {!sel.length && !locked && <div className="alert info small">უფლება არ არის მონიშნული — ამ როლით მომხმარებელი სისტემაში ვერაფერს ნახავს (თუ სხვა როლი არ აქვს). საჭიროების შემთხვევაში მიანიჭეთ მეორე როლიც — მაგ. „ქირურგი“ + „ექიმი“.</div>}
       {sel.includes('admin') && !locked && <div className="alert danger small">„ადმინისტრატორი“ სრულ წვდომას იძლევა — მიანიჭეთ მხოლოდ IT-ს.</div>}
       <ErrorBox error={m.error ?? del.error} />
     </Modal>

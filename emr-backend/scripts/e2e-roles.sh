@@ -49,8 +49,11 @@ R=$(api POST /roles "$ADM" -d "{\"code\":\"$RC\",\"name\":\"ტესტ-E2E რ
 RID=$(echo "$R" | jq -r '.id // empty'); [ -n "$RID" ] && { ok "როლი შეიქმნა (რეგისტრატურა + სალარო)"; CREATED_ROLES+=("$RID"); } || bad "როლის შექმნა" "$(echo "$R" | jq -rc .message)"
 chk "იგივე კოდი — 409" "$(code POST /roles "$ADM" -d "{\"code\":\"$RC\",\"name\":\"დუბლი\",\"capabilities\":[\"nurse\"]}")" "409"
 chk "უცნობი უფლება — 400" "$(code POST /roles "$ADM" -d "{\"code\":\"e2e_bad_$S\",\"name\":\"ცუდი\",\"capabilities\":[\"superuser\"]}")" "400"
-chk "უფლებების გარეშე — 400" "$(code POST /roles "$ADM" -d "{\"code\":\"e2e_empty_$S\",\"name\":\"ცარიელი\",\"capabilities\":[]}")" "400"
 chk "არასწორი კოდი (დიდი ასოები) — 400" "$(code POST /roles "$ADM" -d '{"code":"Bad-Code","name":"ცუდი","capabilities":["nurse"]}')" "400"
+
+PR="e2e_driver_$S"
+PRID=$(api POST /roles "$ADM" -d "{\"code\":\"$PR\",\"name\":\"ტესტ-E2E მძღოლი\",\"capabilities\":[]}" | jq -r '.id // empty')
+[ -n "$PRID" ] && { ok "პოზიცია უფლებების გარეშე (მძღოლი)"; CREATED_ROLES+=("$PRID"); } || bad "პოზიცია უფლებების გარეშე" "ვერ შეიქმნა"
 
 step "3. მომხმარებელი ახალი როლით"
 T1=$(mkuser "[\"$RC\"]" 71); read -r U1 E1 P1 < "$TMP/u"
@@ -73,6 +76,12 @@ chk "როლის შეცვლისას სესიები უქმ
 chk "ძირითადის შეცვლა: role=endoscopist" "$(api PATCH "/users/$U2" "$ADM" -d '{"role":"endoscopist"}' | jq -r '.role + ":" + ([.roles[].code]|length|tostring)')" "endoscopist:3"
 chk "როლების გარეშე — 400" "$(code PATCH "/users/$U2" "$ADM" -d '{"roles":[]}')" "400"
 chk "უცნობი როლი — 400" "$(code PATCH "/users/$U2" "$ADM" -d '{"roles":["no_such_role"]}')" "400"
+
+step "4ა. თანამშრომელი მხოლოდ პოზიციით"
+T4=$(mkuser "[\"$PR\"]" 74); read -r U4 E4 P4 < "$TMP/u"
+chk "შესვლა შესაძლებელია, უფლებები — ცარიელი" "$(login "$E4" "$P4" | jq -r '.user.caps|length')" "0"
+chk "პაციენტები — 403" "$(code GET "/patients?search=e2e" "$T4")" "403"
+chk "პოზიცია + ექიმი → ექიმის უფლება" "$(api PATCH "/users/$U4" "$ADM" -d "{\"role\":\"$PR\",\"roles\":[\"$PR\",\"doctor\"]}" | jq -r '.capabilities|join(",")')" "doctor"
 
 step "5. როლის უფლებების შეცვლა / გათიშვა"
 chk "+ ლაბორანტი (diagnostic)" "$(api PATCH "/roles/$RID" "$ADM" -d '{"capabilities":["receptionist","billing","diagnostic"]}' | jq -r '.capabilities|length')" "3"

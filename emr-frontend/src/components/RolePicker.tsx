@@ -24,7 +24,7 @@ export default function RolePicker({ value, onChange, disabled }: { value: strin
           <div key={r.code} className="row" style={{ gap: 8, padding: '3px 0' }}>
             <label className="row grow" style={{ gap: 8 }}>
               <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => toggle(r.code, e.target.checked)} />
-              <span>{r.name}{!r.is_system && <span className="chip info" style={{ marginLeft: 6, height: 18, fontSize: 10 }}>კლინიკის</span>}</span>
+              <span>{r.name}{!r.is_system && <span className="chip info" style={{ marginLeft: 6, height: 18, fontSize: 10 }}>კლინიკის</span>}{!r.capabilities.length && <span className="small muted" style={{ marginLeft: 6 }}>(წვდომის გარეშე)</span>}</span>
             </label>
             {on && (primary === r.code
               ? <span className="chip ok" style={{ height: 20, fontSize: 11 }}>ძირითადი</span>
