@@ -211,6 +211,12 @@ export class DiagnosticsService {
       }).returning(['invoice_number']).executeTakeFirstOrThrow();
       const r = await this.insertItems(trx, enc, dto.items, dto.allergy_override_reason, user, ctx);
       if ('conflict' in r) return r;
+      // 0 ₾ (უფასო / პროგრამით დაფარული) — გადახდა არ სჭირდება: ვიზიტი მაშინვე აქტიურია
+      const due = await trx.selectFrom('invoices').select('patient_share').where('encounter_id', '=', enc.id).executeTakeFirstOrThrow();
+      if (Number(due.patient_share) === 0) {
+        await trx.updateTable('encounters').set({ status: 'active' }).where('id', '=', enc.id).execute();
+        await this.audit.log(ctx, { action: 'ACTIVATE_ENCOUNTER', entityName: 'encounters', entityId: enc.id, newData: { via: 'zero_amount' } }, trx);
+      }
       await this.audit.log(ctx, { action: 'OPEN_LAB_VISIT', entityName: 'encounters', entityId: enc.id,
         newData: { patient_id: dto.patient_id, invoice_number: inv.invoice_number, external_referral: dto.external_referral ?? null } }, trx);
       return { encounter_id: enc.id, created: r.created };
