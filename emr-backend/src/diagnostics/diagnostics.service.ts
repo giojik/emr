@@ -66,7 +66,7 @@ export class DiagnosticsService {
   catalog(q: { section?: string; search?: string; includeInactive?: boolean }) {
     let query = this.db.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
       .select(['s.id', 's.section', 's.code', 's.name', 's.group_name', 's.performed_by', 's.external_lab', 's.specimen_type', 's.container',
-        's.modality', 's.body_part', 's.contrast', 's.is_active', 's.needs_review', 's.sort_order', 't.base_price', 's.tariff_id'])
+        's.modality', 's.body_part', 's.contrast', 's.is_active', 's.needs_review', 's.sort_order', 't.base_price', 's.tariff_id', 's.duration_minutes', 's.prep_instructions'])
       .orderBy('s.section').orderBy('s.group_name').orderBy('s.sort_order');
     if (q.section) query = query.where('s.section', '=', q.section);
     if (!q.includeInactive) query = query.where('s.is_active', '=', true);
@@ -120,6 +120,7 @@ export class DiagnosticsService {
   }
 
   async updateService(id: string, dto: { name?: string; group_name?: string; specimen_type?: string | null; container?: string | null; base_price?: number;
+    duration_minutes?: number | null; prep_instructions?: string | null;
     performed_by?: 'internal' | 'external'; external_lab?: string | null; is_active?: boolean; approve?: boolean }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('dx_services').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -131,7 +132,7 @@ export class DiagnosticsService {
       if (dto.base_price !== undefined && !canPrice) throw new ForbiddenException('ფასის შეცვლა შეუძლია მხოლოდ ადმინისტრატორს ან მოლარეს');
       if (dto.approve && !canApprove) throw new ForbiddenException('დამტკიცება შეუძლია ლაბორატორიის ექიმს / ხელმძღვანელს');
       const set: Record<string, unknown> = {};
-      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active'] as const) {
+      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions'] as const) {
         if (dto[k] !== undefined) {
           if (!canEdit) throw new ForbiddenException('კვლევის რედაქტირების უფლება არ გაქვთ');
           set[k] = typeof dto[k] === 'string' ? (dto[k] as string).trim() || null : dto[k];
@@ -262,8 +263,8 @@ export class DiagnosticsService {
     return { created } as const;
   }
 
-  /** ლაბორატორიული ვიზიტი იხურება, როცა ყველა კვლევა დასრულდა ან გაუქმდა */
-  private async maybeCompleteLabVisit(trx: Trx, encounterId: string) {
+  /** ვიზიტი ექიმის გარეშე (ლაბ./რადიოლოგია) იხურება, როცა ყველა კვლევა დასრულდა ან გაუქმდა */
+  async maybeCompleteLabVisit(trx: Trx, encounterId: string) {
     const e = await trx.selectFrom('encounters').select(['visit_kind', 'status']).where('id', '=', encounterId).executeTakeFirst();
     if (!e || e.visit_kind !== 'lab' || e.status !== 'active') return;
     const open = await trx.selectFrom('dx_order_items').select('id').where('encounter_id', '=', encounterId)
@@ -280,11 +281,11 @@ export class DiagnosticsService {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').selectAll().where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it) throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
-      if (it.status !== 'ordered') throw new ConflictException('გაუქმება შესაძლებელია მხოლოდ შესრულების დაწყებამდე');
+      if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('გაუქმება შესაძლებელია მხოლოდ შესრულების დაწყებამდე');
       const e = await trx.selectFrom('encounters').select(['attending_doctor_id', 'status']).where('id', '=', it.encounter_id).executeTakeFirstOrThrow();
       if (!(user.role === 'admin' || (user.role === 'doctor' && e.attending_doctor_id === user.id))) throw new ForbiddenException('გაუქმება შეუძლია მკურნალ ექიმს');
       await trx.deleteFrom('invoice_line_items').where('dx_order_item_id', '=', itemId).execute();
-      await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: reason }).where('id', '=', itemId).execute();
+      await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: reason, device_id: null, scheduled_start: null, scheduled_end: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'CANCEL_DX_ORDER', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);
       await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'cancelled' };
@@ -481,41 +482,27 @@ export class DiagnosticsService {
     });
   }
 
-  // =============================================================== რადიოლოგია / ენდოსკოპია (დასკვნა)
-  reportWorklist(section: 'radiology' | 'endoscopy', statuses: string[]) {
-    return this.itemsQuery().where('i.section', '=', section).where('i.status', 'in', statuses as never[])
-      .orderBy(sql`i.priority = 'urgent'`, 'desc').orderBy('i.ordered_at').limit(500).execute();
-  }
-
-  async saveReport(itemId: string, text: string, finalize: boolean, user: AuthUser, ctx: AuditContext) {
-    return this.db.transaction().execute(async (trx) => {
-      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
-      if (!it || it.section === 'lab') throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
-      if (['validated', 'cancelled'].includes(it.status)) throw new ConflictException('დასკვნა უკვე დასრულებულია');
-      if (finalize && !text.trim()) throw new BadRequestException('დასკვნა ცარიელია');
-      await trx.updateTable('dx_order_items').set({
-        report_text: text, status: finalize ? 'validated' : 'in_progress', resulted_by: user.id, resulted_at: sql`now()`,
-        ...(finalize ? { validated_by: user.id, validated_at: sql`now()` } : {}),
-      }).where('id', '=', itemId).execute();
-      await this.audit.log(ctx, { action: finalize ? 'FINALIZE_REPORT' : 'SAVE_REPORT_DRAFT', entityName: 'dx_order_items', entityId: itemId }, trx);
-      if (finalize) await this.maybeCompleteLabVisit(trx, it.encounter_id);
-      return { id: itemId, status: finalize ? 'validated' : 'in_progress' };
-    });
-  }
-
   // =============================================================== helpers
-  private itemsQuery() {
+  /** შეკვეთების საერთო SELECT (ლაბ. შედეგებით, აპარატით, დასკვნის სტატუსით) — გამოიყენება რადიოლოგიის სერვისშიც */
+  itemsQuery() {
     return this.db.selectFrom('dx_order_items as i')
       .innerJoin('dx_services as s', 's.id', 'i.service_id')
       .innerJoin('patients as p', 'p.id', 'i.patient_id')
       .leftJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id')
       .leftJoin('users as ob', 'ob.id', 'i.ordered_by')
       .leftJoin('users as vb', 'vb.id', 'i.validated_by')
+      .leftJoin('dx_devices as dev', 'dev.id', 'i.device_id')
+      .leftJoin('dx_reports as rep', 'rep.order_item_id', 'i.id')
+      .leftJoin('encounters as enc', 'enc.id', 'i.encounter_id')
       .select(['i.id', 'i.encounter_id', 'i.patient_id', 'i.service_id', 'i.section', 'i.status', 'i.priority', 'i.clinical_note', 'i.accession_number',
         'i.report_text', 'i.allergy_override_reason', 'i.ordered_at', 'i.resulted_at', 'i.validated_at', 'i.cancel_reason',
         's.code as service_code', 's.name as service_name', 's.group_name', 's.performed_by', 's.external_lab', 's.modality', 's.contrast',
         'sp.barcode', 'sp.status as specimen_status', 'sp.collected_at', 'sp.received_at',
         'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'p.gender',
+        'i.device_id', 'dev.name as device_name', 'i.scheduled_start', 'i.scheduled_end', 'i.arrived_at', 'i.performed_at',
+        'i.contrast_agent', 'i.contrast_volume_ml', 'i.dose_text', 'i.tech_note', 'i.collection_issue', 's.prep_instructions',
+        'rep.status as report_status', 'rep.version as report_version', 'rep.is_critical', 'rep.amend_reason', 'rep.updated_at as report_updated_at',
+        'enc.visit_kind', 'enc.external_referral',
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),
         sql<string | null>`vb.first_name || ' ' || vb.last_name`.as('validated_by_name'),
         (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')

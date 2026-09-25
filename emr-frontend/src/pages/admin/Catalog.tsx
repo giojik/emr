@@ -113,10 +113,10 @@ function CreateServiceDialog({ section, onClose, onCreated }: { section: DxSecti
 function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth();
   const q = useQuery({ queryKey: ['dx-service', id], queryFn: () => api<ServiceDetail>(`/dx/catalog/${id}`) });
-  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean } | null>(null);
+  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string } | null>(null);
   const [analyte, setAnalyte] = useState<Analyte | 'new' | null>(null);
   const s = q.data;
-  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active });
+  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '' });
   const role = user?.role;
   const canEdit = role === 'admin' || ((role === 'lab_manager' || role === 'lab_doctor') && s?.section === 'lab');
   const canPrice = role === 'admin' || role === 'billing';
@@ -125,7 +125,8 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const isAdmin = canEdit || canPrice;
   const save = useMutation({
     mutationFn: (approve: boolean) => api(`/dx/catalog/${id}`, { method: 'PATCH', body: {
-      ...(canEdit ? { name: f!.name, group_name: f!.group_name, ...(s!.section === 'lab' ? { container: f!.container || null } : {}), performed_by: f!.performed_by, external_lab: f!.performed_by === 'external' ? f!.external_lab || null : null, is_active: f!.is_active } : {}),
+      ...(canEdit ? { name: f!.name, group_name: f!.group_name, ...(s!.section === 'lab' ? { container: f!.container || null } : {}), performed_by: f!.performed_by, external_lab: f!.performed_by === 'external' ? f!.external_lab || null : null, is_active: f!.is_active,
+        ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : {}) } : {}),
       ...(canPrice ? { base_price: Number(f!.price) } : {}), ...(approve ? { approve: true } : {}),
     } }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-catalog-admin'] }); void qc.invalidateQueries({ queryKey: ['dx-catalog'] }); onClose(); },
@@ -142,6 +143,8 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
           <Field label="დასახელება" htmlFor="sn"><input id="sn" className="input" value={f.name} disabled={!canEdit} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
           <Field label="ფასი (₾)" htmlFor="sp" hint={canPrice ? undefined : 'ცვლის ადმინი / მოლარე'}><input id="sp" className="input mono" inputMode="decimal" value={f.price} disabled={!canPrice} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
           <Field label="ჯგუფი" htmlFor="sg"><input id="sg" className="input" value={f.group_name} disabled={!canEdit} onChange={(e) => setF({ ...f, group_name: e.target.value })} /></Field>
+          {s.section !== 'lab' && <Field label="ხანგრძლივობა (წთ)" htmlFor="sdur" hint="ცარიელი — აპარატის სლოტი"><input id="sdur" className="input mono" type="number" min={5} max={480} value={f.duration} disabled={!canEdit} onChange={(e) => setF({ ...f, duration: e.target.value })} /></Field>}
+          {s.section !== 'lab' && <div style={{ gridColumn: '1 / -1' }}><Field label="პაციენტის მომზადება" htmlFor="sprep" hint="იბეჭდება ჩაწერის ფურცელზე"><textarea id="sprep" className="textarea" rows={2} value={f.prep} disabled={!canEdit} onChange={(e) => setF({ ...f, prep: e.target.value })} /></Field></div>}
           {s.section === 'lab' && <Field label="სინჯარა" htmlFor="sc"><input id="sc" className="input" value={f.container} disabled={!canEdit} onChange={(e) => setF({ ...f, container: e.target.value })} /></Field>}
         </div>
         <div className="row" style={{ flexWrap: 'wrap' }}>

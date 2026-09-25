@@ -97,7 +97,7 @@ h3 { font-size: 14px; font-weight: 700; }
 .input, .select, .textarea { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--control); border-radius: 8px; padding: 0 12px; height: 44px; width: 100%; }
 .textarea { height: auto; padding: 10px 12px; line-height: 1.55; resize: vertical; }
 .input:focus, .select:focus, .textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-.input.invalid { border-color: var(--danger); }
+.input.invalid, .textarea.invalid { border-color: var(--danger); }
 .hint { font-size: 12px; color: var(--muted); }
 .hint.err { color: var(--danger); }
 .req { color: var(--danger); }

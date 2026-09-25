@@ -12,6 +12,8 @@ import { InjectDb, type Database } from '../database/database.module';
 import { ClinicSettingsModule, ClinicSettingsService } from '../settings/clinic-settings';
 import { renderLabels, renderLabReport } from './diagnostics.pdf';
 import { DiagnosticsService } from './diagnostics.service';
+import { RadiologyController } from './radiology.controller';
+import { RadiologyService } from './radiology.service';
 
 class OrderItemDto {
   @IsUUID() service_id: string;
@@ -38,7 +40,6 @@ class LabVisitDto {
 class ReceiveDto { @IsString() @Length(3, 30) barcode: string }
 class ResultValueDto { @IsUUID() analyte_id: string; @IsOptional() value: string | number | null }
 class ResultsDto { @IsArray() @ValidateNested({ each: true }) @Type(() => ResultValueDto) values: ResultValueDto[] }
-class ReportDto { @IsString() @MaxLength(50_000) text: string; @IsBoolean() finalize: boolean }
 class ServiceCreateDto {
   @IsIn(['lab', 'radiology', 'endoscopy']) section: 'lab' | 'radiology' | 'endoscopy';
   @IsString() @Length(2, 50) @Matches(/^[A-Za-z0-9_]+$/, { message: 'კოდი: ლათინური ასოები, ციფრები, _' }) code: string;
@@ -63,6 +64,8 @@ class ServiceUpdateDto {
   @IsOptional() @IsString() @MaxLength(200) external_lab?: string | null;
   @IsOptional() @IsBoolean() is_active?: boolean;
   @IsOptional() @IsBoolean() approve?: boolean;
+  @IsOptional() @IsInt() duration_minutes?: number | null;
+  @IsOptional() @IsString() @MaxLength(1000) prep_instructions?: string | null;
 }
 class RangeDto {
   @IsOptional() @IsIn(['male', 'female']) sex: 'male' | 'female' | null;
@@ -108,7 +111,7 @@ export class DiagnosticsController {
   order(@Param('id', ParseUUIDPipe) id: string, @Body() dto: OrderDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.order(id, dto, u, auditCtx(req)); }
 
   /** მკურნალი ექიმი ლაბორატორიულ შედეგს ხედავს მხოლოდ ვალიდაციის შემდეგ */
-  @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing')
+  @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist')
   async items(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const rows = await this.dx.encounterItems(id);
     const labStaff = ['admin', 'diagnostic', 'lab_doctor'].includes(u.role);
@@ -164,19 +167,10 @@ export class DiagnosticsController {
         validated_at: i.validated_at ? String(i.validated_at) : null, validated_by_name: i.validated_by_name, results: i.results })),
     }));
   }
-
-  // ---- რადიოლოგია / ენდოსკოპია
-  @Get('dx/report-worklist') @Roles('admin', 'diagnostic')
-  reportWorklist(@Query('section') section: string, @Query('status') status = 'ordered,in_progress') {
-    if (section !== 'radiology' && section !== 'endoscopy') throw new BadRequestException('section: radiology | endoscopy');
-    return this.dx.reportWorklist(section, status.split(',').filter(Boolean));
-  }
-  @Put('dx-orders/:id/report') @Roles('admin', 'diagnostic')
-  saveReport(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReportDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.saveReport(id, dto.text, dto.finalize, u, auditCtx(req)); }
 }
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule],
-  controllers: [DiagnosticsController], providers: [DiagnosticsService], exports: [DiagnosticsService],
+  controllers: [DiagnosticsController, RadiologyController], providers: [DiagnosticsService, RadiologyService], exports: [DiagnosticsService],
 })
 export class DiagnosticsModule {}

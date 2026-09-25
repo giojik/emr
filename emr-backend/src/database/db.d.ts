@@ -154,28 +154,113 @@ export interface DocumentCounters {
   year: number;
 }
 
+export interface DxDevices {
+  ae_title: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  modalities: string[];
+  name: string;
+  room: string | null;
+  section: Generated<string>;
+  slot_minutes: Generated<number>;
+  sort_order: Generated<number>;
+  work_end: Generated<string>;
+  work_start: Generated<string>;
+}
+
 export interface DxOrderItems {
   accession_number: string | null;
   allergy_override_reason: string | null;
+  arrived_at: Timestamp | null;
+  arrived_by: string | null;
   cancel_reason: string | null;
   clinical_note: string | null;
   collection_issue: string | null;
   collection_issue_at: Timestamp | null;
+  contrast_agent: string | null;
+  contrast_volume_ml: Numeric | null;
+  device_id: string | null;
+  dose_text: string | null;
   encounter_id: string;
   id: Generated<string>;
   ordered_at: Generated<Timestamp>;
   ordered_by: string;
   patient_id: string;
+  performed_at: Timestamp | null;
   priority: Generated<string>;
   report_text: string | null;
   resulted_at: Timestamp | null;
   resulted_by: string | null;
+  safety: Json | null;
+  scheduled_by: string | null;
+  scheduled_end: Timestamp | null;
+  scheduled_start: Timestamp | null;
   section: string;
   service_id: string;
   specimen_id: string | null;
   status: Generated<string>;
+  tech_note: string | null;
+  technician_id: string | null;
   validated_at: Timestamp | null;
   validated_by: string | null;
+}
+
+export interface DxReports {
+  amend_reason: string | null;
+  amended_at: Timestamp | null;
+  amended_by: string | null;
+  author_id: string | null;
+  created_at: Generated<Timestamp>;
+  critical_notified_at: Timestamp | null;
+  critical_notified_to: string | null;
+  findings: string | null;
+  impression: string | null;
+  is_critical: Generated<boolean>;
+  order_item_id: string;
+  recommendation: string | null;
+  signed_at: Timestamp | null;
+  signed_by: string | null;
+  status: Generated<string>;
+  technique: string | null;
+  template_id: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface DxReportTemplates {
+  body: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  findings: string | null;
+  id: Generated<string>;
+  impression: string | null;
+  is_active: Generated<boolean>;
+  kind: Generated<string>;
+  modality: string | null;
+  name: string;
+  owner_id: string | null;
+  recommendation: string | null;
+  section: string;
+  service_id: string | null;
+  sort_order: Generated<number>;
+  target: string | null;
+  technique: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface DxReportVersions {
+  amend_reason: string | null;
+  critical_notified_to: string | null;
+  findings: string | null;
+  id: Generated<string>;
+  impression: string;
+  is_critical: boolean;
+  order_item_id: string;
+  recommendation: string | null;
+  signed_at: Timestamp;
+  signed_by: string;
+  technique: string | null;
+  version: number;
 }
 
 export interface DxServices {
@@ -183,6 +268,7 @@ export interface DxServices {
   code: string;
   container: string | null;
   contrast: string | null;
+  duration_minutes: number | null;
   external_lab: string | null;
   group_name: string;
   id: Generated<string>;
@@ -191,6 +277,7 @@ export interface DxServices {
   name: string;
   needs_review: Generated<boolean>;
   performed_by: Generated<string>;
+  prep_instructions: string | null;
   section: string;
   sort_order: Generated<number>;
   specimen_type: string | null;
@@ -515,6 +602,7 @@ export interface Users {
   first_name: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  is_section_head: Generated<boolean>;
   last_login_at: Timestamp | null;
   last_name: string;
   ldap_username: string | null;
@@ -544,7 +632,11 @@ export interface DB {
   consent_types: ConsentTypes;
   departments: Departments;
   document_counters: DocumentCounters;
+  dx_devices: DxDevices;
   dx_order_items: DxOrderItems;
+  dx_report_templates: DxReportTemplates;
+  dx_report_versions: DxReportVersions;
+  dx_reports: DxReports;
   dx_services: DxServices;
   encounter_diagnoses: EncounterDiagnoses;
   encounter_payment_overrides: EncounterPaymentOverrides;

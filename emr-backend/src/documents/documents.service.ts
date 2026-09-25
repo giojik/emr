@@ -50,8 +50,8 @@ export class DocumentsService {
         .where('encounter_id', '=', encounterId).where('status', '=', 'completed').orderBy('completed_at').execute(),
       this.db.selectFrom('prescriptions').select(['medication_name', 'dosage', 'route', 'frequency', 'duration_days'])
         .where('encounter_id', '=', encounterId).orderBy('created_at').execute(),
-      this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
-        .select(['i.id', 'i.section', 's.name', 'i.report_text',
+      this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id').leftJoin('dx_reports as rep', 'rep.order_item_id', 'i.id')
+        .select(['i.id', 'i.section', 's.name', 'i.report_text', 'rep.impression',
           (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')
             .select(['a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.flag']).whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results')])
         .where('i.encounter_id', '=', encounterId).where('i.status', '=', 'validated').orderBy('i.ordered_at').execute(),
@@ -59,7 +59,7 @@ export class DocumentsService {
     // დიაგნოსტიკა: ლაბორატორია — მხოლოდ გადახრები (დანარჩენი "ნორმის ფარგლებში"); რადიოლოგია/ენდოსკოპია — დასკვნა
     const arrow: Record<string, string> = { L: '(დაბ.)', H: '(მაღ.)', LL: '(კრიტ. დაბ.)', HH: '(კრიტ. მაღ.)', A: '(გადახრა)' };
     const dxLines = dxItems.map((i) => {
-      if (i.section !== 'lab') return `${i.name}: ${i.report_text ?? ''}`;
+      if (i.section !== 'lab') return `${i.name}: ${i.impression ?? i.report_text ?? ''}`;   // ფორმა 100-ში — მხოლოდ „დასკვნა“
       const abn = i.results.filter((r) => r.flag && r.flag !== 'N');
       return `${i.name}: ${abn.length ? abn.map((r) => `${r.name} ${r.value_num !== null ? Number(r.value_num) : r.value_text}${r.unit ? ` ${r.unit}` : ''} ${arrow[r.flag!] ?? ''}`.trim()).join('; ') : 'ნორმის ფარგლებში'}`;
     });

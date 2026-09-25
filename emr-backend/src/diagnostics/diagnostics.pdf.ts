@@ -2,12 +2,12 @@ import bwipjs from 'bwip-js';
 import PDFDocument from 'pdfkit';
 import { join } from 'node:path';
 
-const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
+export const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
 const mm = (v: number) => (v * 72) / 25.4;
-const d = (iso: string) => { const [y, m, dd] = iso.slice(0, 10).split('-'); return `${dd}/${m}/${y}`; };
-const dt = (x: Date | string) => new Intl.DateTimeFormat('ka-GE', { timeZone: 'Asia/Tbilisi', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(x));
+export const d = (iso: string) => { const [y, m, dd] = iso.slice(0, 10).split('-'); return `${dd}/${m}/${y}`; };
+export const dt = (x: Date | string) => new Intl.DateTimeFormat('ka-GE', { timeZone: 'Asia/Tbilisi', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(x));
 
-function newDoc(size: [number, number] | 'A4', margins: number) {
+export function newDoc(size: [number, number] | 'A4', margins: number) {
   const doc = new PDFDocument({ size, margins: { top: margins, bottom: margins, left: margins, right: margins }, bufferPages: true, autoFirstPage: false });
   doc.registerFont('R', join(FONT_DIR, 'EmrSans-Regular.ttf')); doc.registerFont('B', join(FONT_DIR, 'EmrSans-Bold.ttf'));
   const chunks: Buffer[] = []; doc.on('data', (c: Buffer) => chunks.push(c));

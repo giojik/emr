@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Navigate, useParams } from 'react-router-dom';
+import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, openBlob } from '../api/client';
 import type { Allergy, DxItem, LabAnalyteForm, LabItemDetail } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
@@ -9,23 +9,32 @@ import { DxStatusChip, FlagBadge } from '../components/DxStatusChip';
 import { ErrorBox, Loading, useToast } from '../components/ui';
 import { age, genderShort, hhmm, refRange, tsDate, unitFmt } from '../lib/format';
 import ReferralsWorklist from './Diagnostics';
+import Reporting from './radiology/Reporting';
+import Schedule from './radiology/Schedule';
+import TechQueue from './radiology/TechQueue';
+import Templates from './radiology/Templates';
 
 /** დიაგნოსტიკის ჰაბი: /diagnostics/lab | radiology | endoscopy | referrals */
 export default function DiagnosticsHub() {
   const { section = '' } = useParams();
   const { user } = useAuth();
   const tabs = [['lab', 'ლაბორატორია'], ['radiology', 'რადიოლოგია'], ['endoscopy', 'ენდოსკოპია'], ['referrals', 'სხვა მიმართვები']] as const;
-  if (!tabs.some(([k]) => k === section)) return <Navigate to="/diagnostics/lab" replace />;
+  const role = user?.role ?? '';
+  const allowed = tabs.filter(([k]) => ({
+    lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist'],
+    endoscopy: ['admin', 'diagnostic'], referrals: ['admin', 'diagnostic'],
+  } as Record<string, string[]>)[k].includes(role));
+  if (!allowed.some(([k]) => k === section)) return <Navigate to={`/diagnostics/${allowed[0]?.[0] ?? 'lab'}`} replace />;
   return (
     <>
       <header className="topbar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingBottom: 0 }}>
-        <h1>დიაგნოსტიკა</h1>
+        <h1>{allowed.length === 1 ? allowed[0][1] : 'დიაგნოსტიკა'}</h1>
         <nav aria-label="დიაგნოსტიკა" className="row" style={{ gap: 2 }}>
-          {tabs.filter(([k]) => (user?.role !== 'lab_doctor' && user?.role !== 'lab_manager') || k === 'lab').map(([k, l]) => <NavLink key={k} to={`/diagnostics/${k}`} className="admin-tab">{l}</NavLink>)}
+          {allowed.length > 1 && allowed.map(([k, l]) => <NavLink key={k} to={`/diagnostics/${k}`} className="admin-tab">{l}</NavLink>)}
         </nav>
       </header>
       {section === 'lab' && <LabWorkspace />}
-      {(section === 'radiology' || section === 'endoscopy') && <ReportWorkspace key={section} section={section} />}
+      {(section === 'radiology' || section === 'endoscopy') && <ImagingWorkspace key={section} section={section} />}
       {section === 'referrals' && <ReferralsWorklist embedded />}
     </>
   );
@@ -183,74 +192,37 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 // ======================================================================= რადიოლოგია / ენდოსკოპია
-const TEMPLATES: Record<string, string> = {
-  CT: 'ტექნიკა:\n\nმიგნებები:\n\nდასკვნა:\n',
-  MR: 'ტექნიკა (მიმდევრობები):\n\nმიგნებები:\n\nდასკვნა:\n',
-  US: 'ორგანო / ზომები:\n\nექოსტრუქტურა:\n\nდასკვნა:\n',
-  DX: 'პროექცია:\n\nმიგნებები:\n\nდასკვნა:\n',
-  endoscopy: 'მომზადება:\nგამოკვლეული უბნები:\n\nმიგნებები:\n\nბიოფსია: არ აღებულა / აღებულია (ლოკალიზაცია):\n\nდასკვნა:\n',
-};
+const RAD_VIEWS: { key: string; label: string; roles: string[] }[] = [
+  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'radiographer', 'radiologist'] },
+  { key: 'queue', label: 'ტექნიკოსი — რიგი', roles: ['admin', 'radiographer', 'receptionist'] },
+  { key: 'reports', label: 'დასკვნები', roles: ['admin', 'radiologist', 'radiographer'] },
+  { key: 'templates', label: 'შაბლონები', roles: ['admin', 'radiologist'] },
+];
+const ENDO_VIEWS: typeof RAD_VIEWS = [
+  { key: 'reports', label: 'ოქმები', roles: ['admin', 'diagnostic'] },
+  { key: 'templates', label: 'შაბლონები', roles: ['admin', 'diagnostic'] },
+];
+/** როლის მიხედვით ნაგულისხმევი ხედი */
+const RAD_DEFAULT: Record<string, string> = { radiographer: 'queue', radiologist: 'reports', receptionist: 'schedule' };
 
-function ReportWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
-  const [done, setDone] = useState(false);
-  const [selId, setSelId] = useState<string | null>(null);
-  const q = useQuery({ queryKey: ['report-worklist', section, done], queryFn: () => api<DxItem[]>('/dx/report-worklist', { query: { section, status: done ? 'validated' : 'ordered,in_progress' } }), refetchInterval: 20_000 });
-  const items = q.data ?? [];
-  const sel = items.find((i) => i.id === selId) ?? null;
+function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
+  const { user } = useAuth();
+  const [sp, setSp] = useSearchParams();
+  const views = (section === 'radiology' ? RAD_VIEWS : ENDO_VIEWS).filter((v) => user && v.roles.includes(user.role));
+  const wanted = sp.get('view') ?? (section === 'radiology' ? RAD_DEFAULT[user?.role ?? ''] : undefined) ?? views[0]?.key;
+  const view = views.some((v) => v.key === wanted) ? wanted : views[0]?.key;
+  if (!view) return <div className="content"><div className="card empty">წვდომა არ გაქვთ.</div></div>;
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      <div className="content grow">
-        <div className="seg" role="group" aria-label="სტატუსი" style={{ width: 'max-content' }}>
-          <button type="button" aria-pressed={!done} onClick={() => { setDone(false); setSelId(null); }}>შესასრულებელი</button>
-          <button type="button" aria-pressed={done} onClick={() => { setDone(true); setSelId(null); }}>დასრულებული</button>
-        </div>
-        <ErrorBox error={q.error} />
-        {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
-          <div className="card">
-            <table className="table">
-              <thead><tr><th>შეკვეთა</th><th>პაციენტი</th><th>კვლევა</th>{section === 'radiology' && <th>Accession</th>}<th>სტატუსი</th></tr></thead>
-              <tbody>{items.map((i) => (
-                <tr key={i.id} className="clickable" onClick={() => setSelId(i.id)} style={i.id === selId ? { background: 'var(--accent-weak)' } : undefined}>
-                  <td className="mono small">{tsDate(i.ordered_at)} {hhmm(i.ordered_at)}</td>
-                  <td><strong>{i.first_name} {i.last_name}</strong><div className="small muted">{genderShort(i.gender)} · {age(i.birth_date)} წ</div></td>
-                  <td>{i.service_name}{i.priority === 'urgent' && <span className="chip danger" style={{ marginLeft: 6 }}>სასწრაფო</span>}{i.contrast && <span className="chip warn" style={{ marginLeft: 6 }}>კონტრასტი</span>}</td>
-                  {section === 'radiology' && <td className="mono small">{i.accession_number}</td>}
-                  <td><DxStatusChip status={i.status} /></td>
-                </tr>))}</tbody>
-            </table>
-          </div>
-        )}
+    <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      {views.length > 1 && <div className="row" style={{ padding: '10px 28px 0', gap: 6 }}>
+        <div className="seg" role="group" aria-label="ხედი">{views.map((v) => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setSp({ view: v.key }, { replace: true })}>{v.label}</button>)}</div>
+      </div>}
+      <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+        {view === 'schedule' && <Schedule />}
+        {view === 'queue' && <TechQueue />}
+        {view === 'reports' && <Reporting key={section} section={section} />}
+        {view === 'templates' && <Templates key={section} section={section} />}
       </div>
-      {sel && <ReportEditor key={sel.id} it={sel} section={section} onClose={() => setSelId(null)} />}
     </div>
-  );
-}
-
-function ReportEditor({ it, section, onClose }: { it: DxItem; section: 'radiology' | 'endoscopy'; onClose: () => void }) {
-  const qc = useQueryClient(); const toast = useToast();
-  const [text, setText] = useState(it.report_text ?? '');
-  const allergies = useQuery({ queryKey: ['allergies', it.patient_id], queryFn: () => api<Allergy[]>(`/patients/${it.patient_id}/allergies`) });
-  const m = useMutation({
-    mutationFn: (finalize: boolean) => api(`/dx-orders/${it.id}/report`, { method: 'PUT', body: { text, finalize } }),
-    onSuccess: (_d, fin) => { toast.show(fin ? 'დასკვნა დასრულდა — ექიმს გაეგზავნა' : 'შენახულია'); void qc.invalidateQueries({ queryKey: ['report-worklist'] }); if (fin) onClose(); },
-  });
-  const done = it.status === 'validated';
-  const tpl = section === 'endoscopy' ? TEMPLATES.endoscopy : TEMPLATES[it.modality === 'RF' || it.modality === 'MG' || it.modality === 'DXA' ? 'DX' : it.modality ?? 'DX'] ?? TEMPLATES.DX;
-  const active = (allergies.data ?? []).filter((a) => a.is_active !== false);
-  return (
-    <aside style={{ width: 560, flexShrink: 0, background: 'var(--surface)', borderLeft: '1px solid var(--line)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
-      <div className="row"><h2 className="grow" style={{ fontSize: 17 }}>{it.service_name}</h2><button className="icon-btn" type="button" aria-label="დახურვა" onClick={onClose}>×</button></div>
-      <span>{it.first_name} {it.last_name} · {genderShort(it.gender)} · {age(it.birth_date)} წ{it.accession_number && <> · <span className="mono">{it.accession_number}</span></>}</span>
-      <span className="small muted">შეკვეთა: {it.ordered_by_name}{it.clinical_note ? ` · „${it.clinical_note}“` : ''}</span>
-      {active.length > 0 && <AllergyBanner allergies={active} />}
-      {it.contrast === 'iodinated' && it.allergy_override_reason && <div className="alert danger">კონტრასტი ალერგიის მიუხედავად — ექიმის დასაბუთება: {it.allergy_override_reason}</div>}
-      <div className="row"><span className="label grow">დასკვნა</span>{!done && !text.trim() && <button className="btn sm" type="button" onClick={() => setText(tpl)}>შაბლონი</button>}</div>
-      <textarea aria-label="დასკვნა" className="textarea" style={{ flex: 1, minHeight: 320, fontSize: 15 }} readOnly={done} value={text} onChange={(e) => setText(e.target.value)} />
-      {section === 'radiology' && <span className="hint">DICOM სურათები (OHIF) და Worklist-თან კავშირი — შემდეგ ეტაპზე.</span>}
-      <ErrorBox error={m.error} />
-      {!done && <div className="row"><button className="btn grow" type="button" disabled={m.isPending} onClick={() => m.mutate(false)}>შენახვა</button>
-        <button className="btn primary grow" type="button" disabled={m.isPending || !text.trim()} onClick={() => m.mutate(true)}>დასრულება</button></div>}
-      {toast.node}
-    </aside>
   );
 }

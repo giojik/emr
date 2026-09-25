@@ -4,7 +4,7 @@ import { api, ApiError, openBlob } from '../../api/client';
 import type { AllergyCheck, DxItem, DxSection, DxService } from '../../api/types';
 import { DxStatusChip, FlagBadge } from '../../components/DxStatusChip';
 import { ErrorBox, Modal, useDebounced } from '../../components/ui';
-import { money, refRange, SECTION_KA, tsDate, unitFmt } from '../../lib/format';
+import { hhmm, money, refRange, SECTION_KA, tsDate, unitFmt } from '../../lib/format';
 
 /** ვიზიტის დიაგნოსტიკა: შეკვეთა + სტატუსები + შედეგები (ლაბ. — მხოლოდ ვალიდაციის შემდეგ) */
 export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterId: string; canWrite: boolean }) {
@@ -46,10 +46,14 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
                     </button>
                     {i.priority === 'urgent' && <span className="chip danger">სასწრაფო</span>}
                     {done && sec === 'lab' && (abnormal ? <span className="chip warn">{abnormal} გადახრა</span> : <span className="chip ok">ნორმა</span>)}
+                    {done && sec !== 'lab' && i.is_critical && <span className="chip danger">კრიტიკული</span>}
+                    {done && sec !== 'lab' && (i.report_version ?? 1) > 1 && <span className="chip warn">შესწორებული</span>}
                     <DxStatusChip status={i.status} />
-                    {canWrite && i.status === 'ordered' && <button className="icon-btn" type="button" aria-label={`გაუქმება: ${i.service_name}`} onClick={() => cancel.mutate(i.id)}>×</button>}
+                    {canWrite && (i.status === 'ordered' || i.status === 'scheduled') && <button className="icon-btn" type="button" aria-label={`გაუქმება: ${i.service_name}`} onClick={() => cancel.mutate(i.id)}>×</button>}
                   </div>
                   {i.performed_by === 'external' && <div className="small muted">გარე ლაბორატორია{i.external_lab ? `: ${i.external_lab}` : ''}</div>}
+                  {sec === 'radiology' && i.status === 'scheduled' && i.scheduled_start && <div className="small muted">ჩაწერილია: {tsDate(i.scheduled_start)} {hhmm(i.scheduled_start)} · {i.device_name}</div>}
+                  {sec !== 'lab' && !done && i.collection_issue && <div className="small" style={{ color: 'var(--warn-ink)' }}>⚠ {i.collection_issue}</div>}
                   {expanded === i.id && done && sec === 'lab' && (
                     <table className="table" style={{ marginTop: 6 }}>
                       <tbody>{i.results.map((r) => (
@@ -62,7 +66,10 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
                         </tr>))}</tbody>
                     </table>
                   )}
-                  {expanded === i.id && done && sec !== 'lab' && <div className="small" style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{i.report_text}</div>}
+                  {expanded === i.id && done && sec !== 'lab' && <>
+                    <div className="small" style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{i.report_text}</div>
+                    {i.report_version && <button className="btn sm" type="button" style={{ marginTop: 6 }} onClick={() => void openBlob(`/dx-orders/${i.id}/report.pdf`)}>ბლანკი (PDF)</button>}
+                  </>}
                   {done && i.validated_at && expanded === i.id && <div className="small muted" style={{ marginTop: 4 }}>{tsDate(i.validated_at)} · {i.validated_by_name}</div>}
                 </div>
               );
@@ -115,7 +122,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
   const toggle = (s: DxService) => setPicked((p) => { const n = { ...p }; if (n[s.id]) delete n[s.id]; else n[s.id] = s; return n; });
 
   return (
-    <Modal title={labVisit ? 'ლაბორატორიული ვიზიტი (ექიმის გარეშე)' : 'კვლევის შეკვეთა'} onClose={onClose} width={900}
+    <Modal title={labVisit ? 'დიაგნოსტიკური ვიზიტი (ექიმის გარეშე) — ლაბორატორია / რადიოლოგია' : 'კვლევის შეკვეთა'} onClose={onClose} width={900}
       footer={<>
         <span className="grow small muted">{sel.length ? `${sel.length} კვლევა · ${money(total)}` : 'აირჩიეთ კვლევები'}</span>
         <button className="btn" type="button" onClick={onClose}>გაუქმება</button>

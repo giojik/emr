@@ -42,7 +42,7 @@ export default function Users() {
                   <tr key={u.id} className="clickable" onClick={() => setEdit(u)}>
                     <td><strong>{u.last_name} {u.first_name}</strong>{u.specialty && <div className="small muted">{u.specialty}</div>}</td>
                     <td className="small">{u.auth_provider === 'ldap' ? <><span className="chip info">AD</span> {u.ldap_username}</> : u.email}</td>
-                    <td>{ROLE_KA[u.role] ?? u.role}</td>
+                    <td>{ROLE_KA[u.role] ?? u.role}{u.is_section_head && <span className="chip info" style={{ marginLeft: 6 }}>ხელმძღვანელი</span>}</td>
                     <td className="muted">{u.department_name ?? '—'}</td>
                     <td className="num">{u.role === 'doctor' ? (u.consultation_price ? money(u.consultation_price) : <span className="chip warn">ტარიფი არ აქვს</span>) : ''}</td>
                     <td><UserStatus u={u} /></td>
@@ -156,6 +156,8 @@ function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => vo
 function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; onClose: () => void }) {
   const qc = useQueryClient(); const tariffs = useTariffs(); const { user: me } = useAuth(); const toast = useToast();
   const [f, setF] = useState({ first_name: u.first_name, last_name: u.last_name, email: u.email, phone: u.phone ?? '', role: u.role, department_id: u.department_id ?? '', specialty: u.specialty ?? '', license_number: u.license_number ?? '', consultation_tariff_id: u.consultation_tariff_id ?? '' });
+  const [head, setHead] = useState(u.is_section_head);
+  const canHead = f.role === 'radiologist' || f.role === 'diagnostic';
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const [temp, setTemp] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['admin-users'] });
@@ -163,7 +165,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
     mutationFn: () => api(`/users/${u.id}`, { method: 'PATCH', body: {
       first_name: f.first_name, last_name: f.last_name, email: f.email, phone: f.phone || null, role: f.role,
       department_id: f.department_id || null, specialty: f.specialty || null, license_number: f.license_number || null,
-      consultation_tariff_id: f.consultation_tariff_id || null,
+      consultation_tariff_id: f.consultation_tariff_id || null, is_section_head: canHead && head,
     } }),
     onSuccess: () => { refresh(); onClose(); },
   });
@@ -214,6 +216,9 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
             </Field>
           </div>
         </>}
+        {f.role === 'radiologist' && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
+        {canHead && <label className="row" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
+          განყოფილების ხელმძღვანელი <span className="small muted">— მართავს საერთო შაბლონებს, ხსნის სხვის ხელმოწერილ დასკვნას</span></label>}
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={save.error} /></div>
       </form>
       {toast.node}

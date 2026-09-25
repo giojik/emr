@@ -26,14 +26,16 @@ export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slic
 
 export const ROLE_KA: Record<string, string> = {
   admin: 'ადმინისტრატორი', doctor: 'ექიმი', nurse: 'ექთანი', receptionist: 'რეგისტრატორი',
-  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი/რადიოლოგი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
+  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი / ენდოსკოპისტი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
+  radiographer: 'რენტგენ-ტექნიკოსი', radiologist: 'რადიოლოგი',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };
 
 export const SECTION_KA: Record<string, string> = { lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია' };
 export const DX_STATUS: Record<string, [string, string]> = {
-  ordered: ['info', 'შეკვეთილი'], collected: ['info', 'ნიმუში აღებულია'], in_progress: ['warn', 'მიმდინარე'],
+  ordered: ['info', 'შეკვეთილი'], scheduled: ['info', 'ჩაწერილი'], arrived: ['warn', 'მოვიდა'], performed: ['warn', 'შესრულდა — დასკვნას ელოდება'],
+  collected: ['info', 'ნიმუში აღებულია'], in_progress: ['warn', 'მიმდინარე'],
   resulted: ['warn', 'ვალიდაციას ელოდება'], validated: ['ok', 'მზადაა'], cancelled: ['', 'გაუქმებული'],
 };
 export const FLAG_UI: Record<string, { sym: string; cls: string; label: string }> = {
@@ -51,3 +53,7 @@ export const refRange = (r: { ref_low?: string | null; ref_high?: string | null;
 };
 const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
 export const unitFmt = (u: string) => u.replace(/\^(\d+)/g, (_m, d: string) => d.split('').map((c) => SUP[c]).join(''));
+
+export const MODALITY_KA: Record<string, string> = { CT: 'CT', MR: 'MRI', US: 'ულტრაბგერა', DX: 'რენტგენოგრაფია', RF: 'რენტგენოსკოპია', MG: 'მამოგრაფია', DXA: 'დენსიტომეტრია', ES: 'ენდოსკოპია' };
+export const REPORT_FIELDS = [['technique', 'ტექნიკა'], ['findings', 'აღწერა'], ['impression', 'დასკვნა'], ['recommendation', 'რეკომენდაცია']] as const;
+export type ReportField = (typeof REPORT_FIELDS)[number][0];

@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 export interface SessionUser { id: string; name: string; role: Role; authProvider: 'local' | 'ldap'; mustChangePassword: boolean }
-export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist';
+export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist' | 'radiographer' | 'radiologist';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;

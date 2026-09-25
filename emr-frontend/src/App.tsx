@@ -22,6 +22,7 @@ import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
+import Devices from './pages/admin/Devices';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/Tariffs';
 import Users from './pages/admin/Users';
@@ -56,8 +57,8 @@ export default function App() {
         <Route path="/cashier/:encounterId" element={<Guard roles={['admin', 'receptionist', 'billing']}><Cashier /></Guard>} />
         <Route path="/doctor" element={<Guard roles={['doctor']}><DoctorQueue mine /></Guard>} />
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
-        <Route path="/diagnostics" element={<Navigate to="/diagnostics/lab" replace />} />
-        <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager']}><DiagnosticsHub /></Guard>} />
+        <Route path="/diagnostics" element={<Navigate to={user?.role === 'radiographer' || user?.role === 'radiologist' ? '/diagnostics/radiology' : '/diagnostics/lab'} replace />} />
+        <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'receptionist']}><DiagnosticsHub /></Guard>} />
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager']}><AdminLayout /></Guard>}>
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="consents" element={<Guard roles={['admin']}><ConsentTypes /></Guard>} />
           <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
           <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />
+          <Route path="devices" element={<Guard roles={['admin']}><Devices /></Guard>} />
           <Route path="audit" element={<Guard roles={['admin']}><Audit /></Guard>} />
         </Route>
       </Route>

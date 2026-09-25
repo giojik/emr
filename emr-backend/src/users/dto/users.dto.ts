@@ -16,6 +16,7 @@ export class CreateUserDto {
   @IsOptional() @IsString() @MaxLength(100) specialty?: string;
   @IsOptional() @IsString() @MaxLength(50) license_number?: string;
   @IsOptional() @IsUUID() consultation_tariff_id?: string;
+  @IsOptional() @IsBoolean() is_section_head?: boolean;
   @IsOptional() @IsIn(['local', 'ldap']) auth_provider?: 'local' | 'ldap';
   @IsOptional() @Transform(lower) @Matches(LDAP_USER, { message: 'დომენის სახელი: ლათინური ასოები, ციფრები, . _ -' }) ldap_username?: string;
 }
@@ -31,6 +32,7 @@ export class UpdateUserDto {
   @IsOptional() @IsString() @MaxLength(100) specialty?: string | null;
   @IsOptional() @IsString() @MaxLength(50) license_number?: string | null;
   @IsOptional() @IsUUID() consultation_tariff_id?: string | null;
+  @IsOptional() @IsBoolean() is_section_head?: boolean;
   @IsOptional() @Transform(lower) @Matches(LDAP_USER) ldap_username?: string;
 }
 

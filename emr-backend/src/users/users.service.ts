@@ -13,7 +13,7 @@ import type { CreateUserDto, ListUsersQuery, UpdateUserDto } from './dto/users.d
 const SAFE = ['u.id', 'u.email', 'u.first_name', 'u.last_name', 'u.personal_number', 'u.phone', 'u.role',
   'u.department_id', 'u.specialty', 'u.license_number', 'u.auth_provider', 'u.ldap_username', 'u.is_active',
   'u.must_change_password', 'u.failed_login_count', 'u.locked_until', 'u.last_login_at',
-  'u.password_changed_at', 'u.consultation_tariff_id', 'u.created_at', 'u.updated_at'] as const;
+  'u.password_changed_at', 'u.consultation_tariff_id', 'u.is_section_head', 'u.created_at', 'u.updated_at'] as const;
 
 const UNIQUE_MSG: Record<string, string> = {
   users_email_key: 'ეს ელ-ფოსტა უკვე გამოყენებულია',

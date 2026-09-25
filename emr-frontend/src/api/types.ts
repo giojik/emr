@@ -79,7 +79,7 @@ export interface AdminUser {
   department_id: string | null; department_name: string | null; specialty: string | null; license_number: string | null;
   auth_provider: 'local' | 'ldap'; ldap_username: string | null; is_active: boolean; must_change_password: boolean;
   failed_login_count: number; locked_until: string | null; is_locked: boolean; last_login_at: string | null;
-  consultation_tariff_id: string | null; consultation_tariff_title: string | null; consultation_price: string | null;
+  consultation_tariff_id: string | null; consultation_tariff_title: string | null; consultation_price: string | null; is_section_head: boolean;
 }
 export interface Tariff { id: string; code: string; title: string; base_price: string; is_active: boolean }
 export interface ReferralTypeTariff { type: string; tariff_id: string; code: string; title: string; base_price: string }
@@ -129,11 +129,11 @@ export interface WorklistItem {
 
 // ---------------------------------------------------------------- დიაგნოსტიკა
 export type DxSection = 'lab' | 'radiology' | 'endoscopy';
-export type DxStatus = 'ordered' | 'collected' | 'in_progress' | 'resulted' | 'validated' | 'cancelled';
+export type DxStatus = 'scheduled' | 'arrived' | 'performed' | 'ordered' | 'collected' | 'in_progress' | 'resulted' | 'validated' | 'cancelled';
 export interface DxService {
   id: string; section: DxSection; code: string; name: string; group_name: string; performed_by: 'internal' | 'external'; external_lab: string | null;
   specimen_type: string | null; container: string | null; modality: string | null; body_part: string | null; contrast: string | null;
-  is_active: boolean; needs_review: boolean; sort_order: number; base_price: string; tariff_id: string;
+  is_active: boolean; needs_review: boolean; sort_order: number; base_price: string; tariff_id: string; duration_minutes: number | null; prep_instructions: string | null;
 }
 export type LabFlag = 'N' | 'L' | 'H' | 'LL' | 'HH' | 'A';
 export interface LabResultRow { analyte_id: string; code: string; name: string; value_num: string | null; value_text: string | null; unit: string; ref_low: string | null; ref_high: string | null; ref_text: string | null; flag: LabFlag | null }
@@ -145,6 +145,31 @@ export interface DxItem {
   barcode: string | null; specimen_status: string | null; collected_at: string | null; received_at: string | null;
   first_name: string; last_name: string; personal_number: string | null; birth_date: string; gender: Gender;
   ordered_by_name: string | null; validated_by_name: string | null; results: LabResultRow[];
+  device_id: string | null; device_name: string | null; scheduled_start: string | null; scheduled_end: string | null; arrived_at: string | null; performed_at: string | null;
+  contrast_agent: string | null; contrast_volume_ml: string | null; dose_text: string | null; tech_note: string | null; collection_issue: string | null; prep_instructions: string | null;
+  report_status: 'draft' | 'signed' | null; report_version: number | null; is_critical: boolean | null; amend_reason: string | null; report_updated_at: string | null;
+  visit_kind: 'consultation' | 'lab' | null; external_referral: string | null;
+}
+export interface DxDevice {
+  id: string; section: 'radiology' | 'endoscopy'; name: string; modalities: string[]; room: string | null; ae_title: string | null;
+  slot_minutes: number; work_start: string; work_end: string; is_active: boolean; sort_order: number;
+}
+export interface RadBoard { date: string; tz: string; devices: DxDevice[]; booked: DxItem[]; unscheduled: DxItem[] }
+export interface ReportSections { technique: string | null; findings: string | null; impression: string | null; recommendation: string | null }
+export interface DxReport extends ReportSections {
+  order_item_id: string; is_critical: boolean; critical_notified_to: string | null; critical_notified_at: string | null; version: number; status: 'draft' | 'signed';
+  template_id: string | null; author_name: string | null; signed_by_name: string | null; signed_at: string | null;
+  amend_reason: string | null; amended_by_name: string | null; amended_at: string | null; updated_at: string;
+}
+export interface DxReportVersion extends ReportSections { id: string; version: number; is_critical: boolean; critical_notified_to: string | null; amend_reason: string | null; signed_by_name: string; signed_at: string }
+export interface ReportDetail extends DxItem {
+  safety: { mr_screening?: boolean; pregnancy?: string; renal?: string; notes?: string } | null; technician_name: string | null;
+  report: DxReport | null; versions: DxReportVersion[];
+  priors: { id: string; service_name: string; modality: string | null; accession_number: string | null; performed_at: string | null; validated_at: string; impression: string | null; findings: string | null; report_text: string | null }[];
+}
+export interface ReportTemplate extends ReportSections {
+  id: string; section: 'radiology' | 'endoscopy'; kind: 'template' | 'phrase'; name: string; modality: string | null; service_id: string | null; service_name: string | null;
+  owner_id: string | null; owner_name: string | null; target: 'technique' | 'findings' | 'impression' | 'recommendation' | null; body: string | null; is_active: boolean; sort_order: number;
 }
 export interface LabAnalyteForm {
   id: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals: number | null; options: string[] | null;

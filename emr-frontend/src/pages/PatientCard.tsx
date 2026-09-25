@@ -39,7 +39,7 @@ export default function PatientCard() {
         </div>
         {front && <>
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
-          <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები</button>
+          <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button>
           <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
@@ -70,7 +70,7 @@ export default function PatientCard() {
                 {visits.data.map((v) => (
                   <tr key={v.id}>
                     <td className="mono">{tsDate(v.start_time)}</td>
-                    <td>{v.visit_kind === 'lab' ? <span className="muted">ლაბორატორიული ვიზიტი</span> : clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
+                    <td>{v.visit_kind === 'lab' ? <span className="muted">დიაგნოსტიკური ვიზიტი (ექიმის გარეშე)</span> : clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
                     <td>{v.primary_diagnosis ?? <span className="muted">—</span>}</td>
                     <td className="num">{v.total_amount ? money(v.total_amount) : '—'}</td>
                     <td><StatusChip status={v.status} /></td>

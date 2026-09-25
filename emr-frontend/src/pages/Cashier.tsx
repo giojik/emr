@@ -86,7 +86,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
         <div className="row-top">
           <div className="stack grow" style={{ gap: 4 }}>
             <div className="row"><h1>{e.patient.first_name} {e.patient.last_name}</h1><StatusChip status={i.paid_status} /></div>
-            <span className="muted"><span className="mono">{i.invoice_number}</span> · {e.doctor ? `${e.doctor.first_name} ${e.doctor.last_name}` : 'ლაბორატორიული ვიზიტი'}{e.external_referral ? ` · მიმართვა: ${e.external_referral}` : ''} · {tsDate(e.start_time)} · ვიზიტი: <StatusChip status={e.status} /></span>
+            <span className="muted"><span className="mono">{i.invoice_number}</span> · {e.doctor ? `${e.doctor.first_name} ${e.doctor.last_name}` : 'დიაგნოსტიკური ვიზიტი'}{e.external_referral ? ` · მიმართვა: ${e.external_referral}` : ''} · {tsDate(e.start_time)} · ვიზიტი: <StatusChip status={e.status} /></span>
           </div>
           <Link className="btn sm" to={`/patients/${e.patient.id}`}>ბარათი</Link>
         </div>
