@@ -166,7 +166,7 @@ export class RadiologyController {
       study: {
         name: it.service_name, accession: it.accession_number, performed_at: it.performed_at ? String(it.performed_at) : null, device: it.device_name,
         contrast: it.contrast_agent ? `${it.contrast_agent}${it.contrast_volume_ml ? `, ${Number(it.contrast_volume_ml)} მლ` : ''}` : null, dose: it.dose_text,
-        referrer: referrer.role === 'doctor' ? referrer.name : null, external_referral: referrer.external_referral, clinical_note: it.clinical_note,
+        referrer: referrer.visit_kind === 'consultation' ? referrer.name : null, external_referral: referrer.external_referral, clinical_note: it.clinical_note,
       },
       report: { version: v.version, technique: v.technique, findings: v.findings, impression: v.impression, recommendation: v.recommendation, is_critical: v.is_critical,
         critical_notified_to: v.critical_notified_to, amend_reason: v.amend_reason, signed_by_name: v.signed_by_name, signed_at: String(v.signed_at), superseded: !latest },

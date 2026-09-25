@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 
@@ -20,10 +20,11 @@ export class EncounterCoreService {
   async open(trx: Trx, p: { patientId: string; doctorId: string; departmentId?: string | null; chiefComplaint?: string | null }, ctx: AuditContext) {
     const doctor = await trx.selectFrom('users as u')
       .leftJoin('service_tariffs as t', (j) => j.onRef('t.id', '=', 'u.consultation_tariff_id').on('t.is_active', '=', true))
-      .select(['u.id', 'u.role', 'u.is_active', 'u.department_id', 'u.first_name', 'u.last_name',
+      .select(['u.id', 'u.is_active', 'u.department_id', 'u.first_name', 'u.last_name',
+        sql<boolean>`EXISTS (SELECT 1 FROM user_capabilities c WHERE c.user_id = u.id AND 'doctor' = ANY(c.capabilities))`.as('is_doctor'),
         't.id as tariff_id', 't.title as tariff_title', 't.base_price'])
       .where('u.id', '=', p.doctorId).executeTakeFirst();
-    if (!doctor || doctor.role !== 'doctor' || !doctor.is_active) throw new BadRequestException('მითითებული ექიმი არ არსებობს ან აქტიური არ არის');
+    if (!doctor || !doctor.is_doctor || !doctor.is_active) throw new BadRequestException('მითითებული ექიმი არ არსებობს ან აქტიური არ არის');
     if (!doctor.tariff_id) {
       throw new BadRequestException(`ექიმს (${doctor.first_name} ${doctor.last_name}) კონსულტაციის ტარიფი არ აქვს მინიჭებული — მიმართეთ ადმინისტრატორს`);
     }
@@ -67,9 +68,9 @@ export class EncounterCoreService {
 
   /** კლინიკური ჩანაწერი: მხოლოდ მკურნალი ექიმი (ან admin). ექთანს — მხოლოდ allowNurse-ზე (ვიტალები). */
   assertClinicalWriter(e: { attending_doctor_id: string | null }, user: AuthUser, allowNurse = false) {
-    if (user.role === 'admin') return;
-    if (allowNurse && user.role === 'nurse') return;
-    if (user.role === 'doctor' && e.attending_doctor_id === user.id) return;
+    if (has(user, 'admin')) return;
+    if (allowNurse && has(user, 'nurse')) return;
+    if (has(user, 'doctor') && e.attending_doctor_id === user.id) return;
     throw new ForbiddenException('ამ ვიზიტში ჩაწერა შეუძლია მხოლოდ მკურნალ ექიმს');
   }
 

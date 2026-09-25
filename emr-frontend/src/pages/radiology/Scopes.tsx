@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../../api/client';
+import { can, api } from '../../api/client';
 import type { EndoScope } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
@@ -12,7 +12,7 @@ interface HistoryEvent { kind: 'use' | 'reprocess'; at: string; first_name?: str
 /** ენდოსკოპები: მზადყოფნა, დეზინფექციის ჩაწერა, მიკვლევადობა */
 export default function Scopes() {
   const { user } = useAuth();
-  const canManage = user?.role === 'admin' || user?.role === 'endoscopy_nurse';
+  const canManage = can(user, 'admin') || can(user, 'endoscopy_nurse');
   const [all, setAll] = useState(false);
   const [edit, setEdit] = useState<EndoScope | 'new' | null>(null);
   const [reproc, setReproc] = useState<EndoScope | null>(null);

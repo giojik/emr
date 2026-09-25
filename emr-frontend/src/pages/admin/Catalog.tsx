@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../../api/client';
+import { can, api } from '../../api/client';
 import type { DxSection, DxService } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced } from '../../components/ui';
@@ -16,7 +16,7 @@ export default function Catalog() {
   const [edit, setEdit] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const { user } = useAuth();
-  const canCreate = user?.role === 'admin' || ((user?.role === 'lab_manager' || user?.role === 'lab_doctor') && section === 'lab');
+  const canCreate = can(user, 'admin') || ((can(user, 'lab_manager') || can(user, 'lab_doctor')) && section === 'lab');
   const ds = useDebounced(search.trim(), 250);
   const q = useQuery({ queryKey: ['dx-catalog-admin', section, ds, inactive], queryFn: () => api<DxService[]>('/dx/catalog', { query: { section, search: ds, include_inactive: inactive } }) });
   const unreviewed = q.data?.filter((s) => s.needs_review).length ?? 0;
@@ -63,7 +63,7 @@ function CreateServiceDialog({ section, onClose, onCreated }: { section: DxSecti
   const groups = useQuery({ queryKey: ['dx-groups', section], queryFn: () => api<string[]>('/dx/catalog/groups', { query: { section } }) });
   const [f, setF] = useState({ name: '', code: '', group_name: '', specimen_type: 'serum', container: 'Serum gel', modality: 'CT', performed_by: 'internal', external_lab: '', base_price: '' });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
-  const canPrice = user?.role === 'admin' || user?.role === 'billing';
+  const canPrice = can(user, 'admin') || can(user, 'billing');
   const prefix = section === 'lab' ? 'LAB_' : section === 'radiology' ? 'RAD_' : 'ENDO_';
   const m = useMutation({
     mutationFn: () => api<{ id: string }>('/dx/catalog', { body: {
@@ -117,11 +117,10 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const [analyte, setAnalyte] = useState<Analyte | 'new' | null>(null);
   const s = q.data;
   if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '' });
-  const role = user?.role;
-  const canEdit = role === 'admin' || ((role === 'lab_manager' || role === 'lab_doctor') && s?.section === 'lab');
-  const canPrice = role === 'admin' || role === 'billing';
-  const canApprove = role === 'admin' || (role === 'lab_doctor' && s?.section === 'lab');
-  const canAnalytes = role === 'admin' || role === 'lab_manager' || role === 'lab_doctor';
+  const canEdit = can(user, 'admin') || (can(user, 'lab_manager', 'lab_doctor') && s?.section === 'lab');
+  const canPrice = can(user, 'admin', 'billing');
+  const canApprove = can(user, 'admin') || (can(user, 'lab_doctor') && s?.section === 'lab');
+  const canAnalytes = can(user, 'admin', 'lab_manager', 'lab_doctor');
   const isAdmin = canEdit || canPrice;
   const save = useMutation({
     mutationFn: (approve: boolean) => api(`/dx/catalog/${id}`, { method: 'PATCH', body: {

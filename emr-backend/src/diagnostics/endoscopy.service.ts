@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
@@ -377,7 +377,7 @@ export class EndoscopyService {
   }
 
   assertEndoStaff(user: AuthUser) {
-    if (!['admin', 'endoscopist', 'endoscopy_nurse'].includes(user.role)) throw new ForbiddenException('ენდოსკოპიის პერსონალი');
+    if (!has(user, 'admin', 'endoscopist', 'endoscopy_nurse')) throw new ForbiddenException('ენდოსკოპიის პერსონალი');
   }
 }
 

@@ -687,12 +687,36 @@ export interface ReferralTypeTariffs {
   type: ReferralType;
 }
 
+export interface Roles {
+  capabilities: string[];
+  code: string;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_system: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface ServiceTariffs {
   base_price: Numeric;
   code: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
   title: string;
+}
+
+export interface UserCapabilities {
+  capabilities: string[] | null;
+  user_id: string | null;
+}
+
+export interface UserRoles {
+  created_at: Generated<Timestamp>;
+  role_id: string;
+  user_id: string;
 }
 
 export interface Users {
@@ -769,6 +793,9 @@ export interface DB {
   prescriptions: Prescriptions;
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
+  roles: Roles;
   service_tariffs: ServiceTariffs;
+  user_capabilities: UserCapabilities;
+  user_roles: UserRoles;
   users: Users;
 }

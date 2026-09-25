@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, ApiError, openBlob } from '../api/client';
+import { can, api, ApiError, openBlob } from '../api/client';
 import type { EncounterDetail, EncounterListItem, Form100Draft } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
@@ -23,9 +23,9 @@ export default function Encounter() {
   if (q.error || !q.data) return <div className="content"><ErrorBox error={q.error ?? 'ვიზიტი ვერ მოიძებნა'} /></div>;
   const e = q.data;
   const active = e.status === 'active';
-  const isAttending = user?.role === 'admin' || (user?.role === 'doctor' && user.id === e.attending_doctor_id);
+  const isAttending = can(user, 'admin') || (can(user, 'doctor') && user!.id === e.attending_doctor_id);
   const canWrite = active && isAttending;
-  const canVitals = active && (isAttending || user?.role === 'nurse');
+  const canVitals = active && (isAttending || can(user, 'nurse'));
   const openRefs = e.referrals.filter((r) => r.status === 'requested' || r.status === 'in_progress');
   const primary = e.diagnoses.find((d) => d.diagnosis_type === 'primary');
   const due = e.invoice ? Number(e.invoice.patient_share) - e.invoice.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
@@ -51,7 +51,7 @@ export default function Encounter() {
       <div className="content" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 16 }}>
         <div className="grow stack" style={{ gap: 14 }}>
           {!active && <div className="alert info">ვიზიტი {e.status === 'discharged' ? `დასრულებულია ${e.end_time ? tsDate(e.end_time) : ''}` : e.status === 'planned' ? 'გადახდას ელოდება' : 'გაუქმებულია'} — ჩანაწერები მხოლოდ სანახავად.</div>}
-          {active && !isAttending && user?.role === 'doctor' && <div className="alert info">თქვენ არ ხართ ამ ვიზიტის მკურნალი ექიმი — ჩანაწერები მხოლოდ სანახავად.</div>}
+          {active && !isAttending && can(user, 'doctor') && <div className="alert info">თქვენ არ ხართ ამ ვიზიტის მკურნალი ექიმი — ჩანაწერები მხოლოდ სანახავად.</div>}
           <VitalsStrip e={e} canAdd={canVitals} />
           <Notes key={e.id} e={e} canWrite={canWrite} />
           <Prescriptions e={e} canWrite={canWrite} />
@@ -77,7 +77,7 @@ export default function Encounter() {
       {dlg === 'allergy' && <AllergyDialog patientId={e.patient.id} onClose={() => setDlg(null)} />}
       {dlg === 'consent' && (
         <Modal title="თანხმობები ამ ვიზიტზე" onClose={() => setDlg(null)} width={980}>
-          <ConsentsPanel patientId={e.patient.id} encounterId={e.id} scope="encounter" canSign={active && (isAttending || user?.role === 'nurse')} />
+          <ConsentsPanel patientId={e.patient.id} encounterId={e.id} scope="encounter" canSign={active && (isAttending || can(user, 'nurse'))} />
         </Modal>
       )}
     </>
@@ -107,7 +107,7 @@ function DischargeDialog({ e, onClose }: { e: EncounterDetail; onClose: () => vo
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending} onClick={() => m.mutate()}>დასრულება</button></>}>
       <p style={{ margin: 0 }}>დასრულების შემდეგ ჩანაწერების შეცვლა აღარ იქნება შესაძლებელი. ფორმა №100/ა შეგიძლიათ გასცეთ დასრულების შემდეგაც.</p>
       <ErrorBox error={m.error} />
-      {openRefs && user?.role === 'admin' && <label className="row"><input type="checkbox" checked={force} onChange={(x) => setForce(x.target.checked)} /> მაინც დასრულება (ადმინისტრატორი)</label>}
+      {openRefs && can(user, 'admin') && <label className="row"><input type="checkbox" checked={force} onChange={(x) => setForce(x.target.checked)} /> მაინც დასრულება (ადმინისტრატორი)</label>}
     </Modal>
   );
 }

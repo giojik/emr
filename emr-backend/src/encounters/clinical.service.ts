@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { sql } from 'kysely';
 import { AllergyCheckService } from '../allergies/allergy-check.service';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DiagnosisDto, PrescriptionDto, ReferralDto, UpdateReferralDto, VitalsDto } from './dto/encounters.dto';
@@ -178,12 +178,12 @@ export class ClinicalService {
 
       if (dto.status === 'cancelled') {
         if (e.status !== 'active') throw new ConflictException('გაუქმება შესაძლებელია მხოლოდ აქტიურ ვიზიტზე');
-        if (!(user.role === 'admin' || (user.role === 'doctor' && e.attending_doctor_id === user.id))) {
+        if (!(has(user, 'admin') || (has(user, 'doctor') && e.attending_doctor_id === user.id))) {
           throw new ForbiddenException('მიმართვის გაუქმება შეუძლია მკურნალ ექიმს');
         }
         await trx.deleteFrom('invoice_line_items').where('referral_id', '=', id).execute();   // trigger: ინვოისის გადათვლა
       } else {
-        if (!['diagnostic', 'admin'].includes(user.role)) throw new ForbiddenException('შედეგის შეტანა შეუძლია დიაგნოსტიკის პერსონალს');
+        if (!has(user, 'diagnostic', 'admin')) throw new ForbiddenException('შედეგის შეტანა შეუძლია დიაგნოსტიკის პერსონალს');
         if (dto.status === 'completed' && !dto.result_text?.trim()) throw new BadRequestException('დასრულებას სჭირდება შედეგი (result_text)');
       }
 

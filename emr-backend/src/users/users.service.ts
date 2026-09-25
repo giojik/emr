@@ -3,7 +3,8 @@ import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { invalidateUserStatus } from '../auth/auth.guard';
 import { PasswordService } from '../auth/password.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser, type Role } from '../auth/roles';
+import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
@@ -32,12 +33,15 @@ export class UsersService {
       .leftJoin('departments as d', 'd.id', 'u.department_id')
       .leftJoin('service_tariffs as t', 't.id', 'u.consultation_tariff_id')
       .select([...SAFE, 'd.name as department_name', 't.title as consultation_tariff_title', 't.base_price as consultation_price',
-        sql<boolean>`coalesce(u.locked_until > now(), false)`.as('is_locked')]);
+        sql<boolean>`coalesce(u.locked_until > now(), false)`.as('is_locked'),
+        (eb) => jsonArrayFrom(eb.selectFrom('user_roles as ur').innerJoin('roles as r', 'r.id', 'ur.role_id')
+          .select(['r.code', 'r.name', 'r.is_active']).whereRef('ur.user_id', '=', 'u.id').orderBy('r.sort_order')).as('roles'),
+        (eb) => eb.selectFrom('user_capabilities as c').select('c.capabilities').whereRef('c.user_id', '=', 'u.id').as('capabilities')]);
   }
 
   async list(q: ListUsersQuery) {
     let query = this.base();
-    if (q.role) query = query.where('u.role', '=', q.role);
+    if (q.role) query = query.where(sql<boolean>`EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id AND r.code = ${q.role})`);
     if (q.department_id) query = query.where('u.department_id', '=', q.department_id);
     if (q.active !== undefined) query = query.where('u.is_active', '=', q.active);
     if (q.search?.trim()) {
@@ -57,7 +61,7 @@ export class UsersService {
       .leftJoin('service_tariffs as t', 't.id', 'u.consultation_tariff_id')
       .select(['u.id', 'u.first_name', 'u.last_name', 'u.specialty', 'u.department_id', 'd.name as department_name',
         't.base_price as consultation_price'])
-      .where('u.role', '=', 'doctor').where('u.is_active', '=', true)
+      .where(sql<boolean>`EXISTS (SELECT 1 FROM user_capabilities c WHERE c.user_id = u.id AND 'doctor' = ANY(c.capabilities))`).where('u.is_active', '=', true)
       .orderBy('d.name').orderBy('u.last_name').execute();
   }
 
@@ -72,14 +76,20 @@ export class UsersService {
     this.assertProviderEnabled(provider);
     if (provider === 'ldap' && !dto.ldap_username) throw new BadRequestException('LDAP მომხმარებელს სჭირდება ldap_username');
     const temp = provider === 'local' ? PasswordService.generateTemporary() : null;
+    const { roles: roleCodes, role: _p, ...all } = dto;
+    const rest = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as typeof all;
+    const codes = this.roleList(dto.role, roleCodes);
+    if (!codes.length) throw new BadRequestException('მიუთითეთ მინიმუმ ერთი როლი');
 
     return this.guard(() => this.db.transaction().execute(async (trx) => {
+      const roleRows = await this.resolveRoles(trx, codes);
       const { id } = await trx.insertInto('users').values({
-        ...dto, auth_provider: provider,
+        ...rest, role: codes[0], auth_provider: provider,
         ldap_username: provider === 'ldap' ? dto.ldap_username : null,
         password_hash: temp ? await this.passwords.hash(temp) : null,
         must_change_password: provider === 'local',
       }).returning('id').executeTakeFirstOrThrow();
+      await trx.insertInto('user_roles').values(roleRows.map((r) => ({ user_id: id, role_id: r.id }))).onConflict((oc) => oc.doNothing()).execute();
       const user = await this.get(id, trx);
       await this.audit.log(ctx, { action: 'CREATE_USER', entityName: 'users', entityId: id, newData: user }, trx);
       // დროებითი პაროლი ბრუნდება მხოლოდ ერთხელ — არსად ინახება ღია სახით
@@ -93,16 +103,32 @@ export class UsersService {
       if (dto.ldap_username !== undefined && old.auth_provider !== 'ldap') {
         throw new BadRequestException('ldap_username მხოლოდ LDAP მომხმარებლისთვის');
       }
-      const roleChanged = dto.role !== undefined && dto.role !== old.role;
-      if (roleChanged && old.role === 'admin') {
-        if (id === actor.id) throw new ForbiddenException('საკუთარი admin როლის მოხსნა შეუძლებელია');
-        await this.assertNotLastAdmin(trx, id);
+      const { roles: roleCodes, role: primary, ...all } = dto;
+      const rest = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as typeof all;
+      const oldCodes = old.roles.map((r) => r.code);
+      let codes = oldCodes;
+      if (roleCodes !== undefined || primary !== undefined) {
+        codes = this.roleList(primary ?? (roleCodes?.includes(old.role) ? old.role : undefined), roleCodes ?? oldCodes);
+        if (primary && !codes.includes(primary)) codes = [primary, ...codes];
+        if (!codes.length) throw new BadRequestException('მიუთითეთ მინიმუმ ერთი როლი');
       }
-      if (Object.keys(dto).length === 0) return old;
-
-      await trx.updateTable('users').set(dto).where('id', '=', id).execute();
-      // როლის შეცვლისას ძველი უფლებებით გაცემული სესიები უქმდება
-      if (roleChanged) { await this.revokeAll(trx, id, 'role_changed'); invalidateUserStatus(id); }
+      const rolesChanged = codes[0] !== old.role || codes.length !== oldCodes.length || codes.some((c) => !oldCodes.includes(c));
+      if (Object.keys(rest).length) await trx.updateTable('users').set(rest).where('id', '=', id).execute();
+      if (rolesChanged) {
+        const rows = await this.resolveRoles(trx, codes);
+        await trx.deleteFrom('user_roles').where('user_id', '=', id).execute();
+        await trx.insertInto('user_roles').values(rows.map((r) => ({ user_id: id, role_id: r.id }))).execute();
+        await trx.updateTable('users').set({ role: codes[0] }).where('id', '=', id).execute();
+        if (id === actor.id && has(actor, 'admin')) {
+          const me = await trx.selectFrom('user_capabilities').select('capabilities').where('user_id', '=', id).executeTakeFirst();
+          if (!me?.capabilities?.includes('admin')) throw new ForbiddenException('საკუთარი ადმინისტრატორის უფლების მოხსნა შეუძლებელია');
+        }
+        await this.assertAdminRemains(trx);
+        // როლის შეცვლისას ძველი უფლებებით გაცემული სესიები უქმდება
+        await this.revokeAll(trx, id, 'role_changed');
+        invalidateUserStatus(id);
+      }
+      if (!Object.keys(rest).length && !rolesChanged) return old;
       const user = await this.get(id, trx);
       await this.audit.log(ctx, { action: 'UPDATE_USER', entityName: 'users', entityId: id, oldData: old, newData: user }, trx);
       return user;
@@ -114,11 +140,11 @@ export class UsersService {
       const old = await this.lockUser(trx, id);
       if (!active) {
         if (id === actor.id) throw new ForbiddenException('საკუთარი ანგარიშის გათიშვა შეუძლებელია');
-        if (old.role === 'admin') await this.assertNotLastAdmin(trx, id);
       }
       if (old.is_active === active) return old;
       await trx.updateTable('users').set({ is_active: active, ...(active ? { failed_login_count: 0, locked_until: null } : {}) })
         .where('id', '=', id).execute();
+      if (!active) await this.assertAdminRemains(trx);
       if (!active) await this.revokeAll(trx, id, 'user_disabled');
       invalidateUserStatus(id);
       await this.audit.log(ctx, { action: active ? 'ENABLE_USER' : 'DISABLE_USER', entityName: 'users', entityId: id }, trx);
@@ -173,13 +199,24 @@ export class UsersService {
     return this.get(id, trx);
   }
 
-  /** ბოლო აქტიური admin-ის დაკარგვის აკრძალვა. FOR UPDATE — ორი ერთდროული ცვლილებისგან დაცვა. */
-  private async assertNotLastAdmin(trx: Transaction<DB>, id: string) {
-    const admins = await trx.selectFrom('users').select('id')
-      .where('role', '=', 'admin').where('is_active', '=', true).forUpdate().execute();
-    if (admins.length <= 1 && admins.some((a) => a.id === id)) {
-      throw new ConflictException('ეს ბოლო აქტიური ადმინისტრატორია — ჯერ სხვა admin დანიშნეთ');
-    }
+  /** ცვლილების შემდეგ (იმავე ტრანზაქციაში) მინიმუმ ერთი აქტიური მომხმარებელი admin უფლებით უნდა დარჩეს */
+  async assertAdminRemains(trx: Transaction<DB>) {
+    await sql`SELECT pg_advisory_xact_lock(72000002)`.execute(trx);   // ორი ერთდროული ცვლილებისგან დაცვა
+    const n = await trx.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id')
+      .select((eb) => eb.fn.countAll<string>().as('n')).where('u.is_active', '=', true).where(sql<boolean>`'admin' = ANY(c.capabilities)`).executeTakeFirstOrThrow();
+    if (!Number(n.n)) throw new ConflictException('ეს ბოლო აქტიური ადმინისტრატორია — ჯერ სხვას მიანიჭეთ ადმინისტრატორის როლი');
+  }
+
+  /** ძირითადი როლი პირველია, დუბლიკატების გარეშე */
+  private roleList(primary: string | undefined, all: string[] | undefined) {
+    return [...new Set([...(primary ? [primary] : []), ...(all ?? [])])];
+  }
+
+  private async resolveRoles(trx: Transaction<DB>, codes: string[]) {
+    const rows = await trx.selectFrom('roles').select(['id', 'code', 'is_active', 'capabilities']).where('code', 'in', codes).execute();
+    const missing = codes.filter((c) => !rows.some((r) => r.code === c && r.is_active));
+    if (missing.length) throw new BadRequestException(`როლი ვერ მოიძებნა ან გათიშულია: ${missing.join(', ')}`);
+    return rows as (typeof rows[number] & { capabilities: Role[] })[];
   }
 
   private async revokeAll(trx: Transaction<DB>, userId: string, reason: string) {

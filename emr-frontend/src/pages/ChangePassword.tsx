@@ -18,7 +18,7 @@ export default function ChangePassword() {
     setErr(null); setBusy(true);
     try {
       const s = await api<SessionResponse>('/auth/change-password', { body: { currentPassword: cur, newPassword: next } });
-      applySession(s); nav(homeFor(s.user.role), { replace: true });
+      applySession(s); nav(homeFor(s.user), { replace: true });
     } catch (x) { setErr(x); } finally { setBusy(false); }
   };
 

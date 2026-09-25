@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { api, openBlob } from '../../api/client';
+import { api, can, openBlob } from '../../api/client';
 import type { DxDevice, DxItem, RadBoard } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { DxStatusChip } from '../../components/DxStatusChip';
@@ -138,7 +138,7 @@ export default function Schedule({ section = 'radiology' }: { section?: 'radiolo
         )}
         {toast.node}
       </div>
-      {open && <BookingDialog it={open} canArrive={user?.role !== 'radiologist' && user?.role !== 'endoscopist'} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
+      {open && <BookingDialog it={open} canArrive={can(user, 'admin', 'receptionist', 'radiographer', 'endoscopy_nurse')} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
     </div>
   );
 }

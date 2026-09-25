@@ -13,13 +13,13 @@ export default function Login() {
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to={homeFor(user.role)} replace />;
+  if (user) return <Navigate to={homeFor(user)} replace />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setErr(null); setBusy(true);
     try {
       const u = await login(username, password);
-      nav(u.mustChangePassword ? '/change-password' : loc.state?.from ?? homeFor(u.role), { replace: true });
+      nav(u.mustChangePassword ? '/change-password' : loc.state?.from ?? homeFor(u), { replace: true });
     } catch (x) { setErr(x); } finally { setBusy(false); }
   };
 

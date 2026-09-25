@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AllergyCheckService } from '../allergies/allergy-check.service';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { EncounterCoreService } from '../encounters/encounter-core.service';
@@ -97,10 +97,10 @@ export class DiagnosticsService {
    */
   async createService(dto: { section: 'lab' | 'radiology' | 'endoscopy'; code: string; name: string; group_name: string; specimen_type?: string | null; container?: string | null;
     modality?: string | null; body_part?: string | null; contrast?: string | null; performed_by?: 'internal' | 'external'; external_lab?: string | null; base_price?: number }, user: AuthUser, ctx: AuditContext) {
-    const labRole = user.role === 'lab_manager' || user.role === 'lab_doctor';
+    const labRole = !has(user, 'admin') && has(user, 'lab_manager', 'lab_doctor');
     if (labRole && dto.section !== 'lab') throw new ForbiddenException('ლაბორატორიის როლს შეუძლია მხოლოდ ლაბორატორიული ანალიზის დამატება');
     if (dto.section === 'lab' && !dto.specimen_type) throw new BadRequestException('მიუთითეთ ნიმუშის ტიპი');
-    const price = user.role === 'admin' || user.role === 'billing' ? dto.base_price ?? 0 : 0;
+    const price = has(user, 'admin', 'billing') ? dto.base_price ?? 0 : 0;
     const code = dto.code.trim().toUpperCase();
     const newId = await this.db.transaction().execute(async (trx) => {
       const dup = await trx.selectFrom('service_tariffs').select('id').where('code', '=', code).executeTakeFirst();
@@ -125,10 +125,9 @@ export class DiagnosticsService {
     await this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('dx_services').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!old) throw new NotFoundException('კვლევა ვერ მოიძებნა');
-      const r = user.role;
-      const canPrice = r === 'admin' || r === 'billing';
-      const canEdit = r === 'admin' || ((r === 'lab_manager' || r === 'lab_doctor') && old.section === 'lab');
-      const canApprove = r === 'admin' || (r === 'lab_doctor' && old.section === 'lab');
+      const canPrice = has(user, 'admin', 'billing');
+      const canEdit = has(user, 'admin') || (has(user, 'lab_manager', 'lab_doctor') && old.section === 'lab');
+      const canApprove = has(user, 'admin') || (has(user, 'lab_doctor') && old.section === 'lab');
       if (dto.base_price !== undefined && !canPrice) throw new ForbiddenException('ფასის შეცვლა შეუძლია მხოლოდ ადმინისტრატორს ან მოლარეს');
       if (dto.approve && !canApprove) throw new ForbiddenException('დამტკიცება შეუძლია ლაბორატორიის ექიმს / ხელმძღვანელს');
       const set: Record<string, unknown> = {};
@@ -283,7 +282,7 @@ export class DiagnosticsService {
       if (!it) throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
       if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('გაუქმება შესაძლებელია მხოლოდ შესრულების დაწყებამდე');
       const e = await trx.selectFrom('encounters').select(['attending_doctor_id', 'status']).where('id', '=', it.encounter_id).executeTakeFirstOrThrow();
-      if (!(user.role === 'admin' || (user.role === 'doctor' && e.attending_doctor_id === user.id))) throw new ForbiddenException('გაუქმება შეუძლია მკურნალ ექიმს');
+      if (!(has(user, 'admin') || (has(user, 'doctor') && e.attending_doctor_id === user.id))) throw new ForbiddenException('გაუქმება შეუძლია მკურნალ ექიმს');
       await trx.deleteFrom('invoice_line_items').where('dx_order_item_id', '=', itemId).execute();
       await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: reason, device_id: null, scheduled_start: null, scheduled_end: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'CANCEL_DX_ORDER', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);

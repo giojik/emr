@@ -3,5 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { DoctorsController, UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
-@Module({ imports: [AuthModule], controllers: [UsersController, DoctorsController], providers: [UsersService] })
+export { UsersService };
+
+@Module({ imports: [AuthModule], controllers: [UsersController, DoctorsController], providers: [UsersService], exports: [UsersService] })
 export class UsersModule {}

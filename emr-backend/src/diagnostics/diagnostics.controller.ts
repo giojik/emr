@@ -5,7 +5,7 @@ import type { Request, Response } from 'express';
 import { AllergiesModule } from '../allergies/allergies';
 import { auditCtx } from '../audit/audit-context';
 import { CurrentUser, Roles } from '../auth/decorators';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { EncountersModule } from '../encounters/encounters.module';
 import { InjectDb, type Database } from '../database/database.module';
@@ -116,7 +116,7 @@ export class DiagnosticsController {
   @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
   async items(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const rows = await this.dx.encounterItems(id);
-    const labStaff = ['admin', 'diagnostic', 'lab_doctor'].includes(u.role);
+    const labStaff = has(u, 'admin', 'diagnostic', 'lab_doctor');
     return rows.map((r) => (r.section === 'lab' && r.status !== 'validated' && !labStaff ? { ...r, results: [] } : r));
   }
   @Post('dx-orders/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor')

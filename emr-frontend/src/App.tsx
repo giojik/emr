@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import type { Role } from './api/client';
+import { can, type Role } from './api/client';
 import { useAuth } from './auth/AuthContext';
 import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
@@ -23,6 +23,7 @@ import Clinic from './pages/admin/Clinic';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
+import RolesPage from './pages/admin/Roles';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/Tariffs';
 import Users from './pages/admin/Users';
@@ -33,13 +34,13 @@ function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   if (!ready) return <Loading />;
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   if (user.mustChangePassword && loc.pathname !== '/change-password') return <Navigate to="/change-password" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to={homeFor(user.role)} replace />;
+  if (roles && !can(user, ...roles)) return <Navigate to={homeFor(user)} replace />;
   return <>{children}</>;
 }
 
 function AdminHome() {
   const { user } = useAuth();
-  return <Navigate to={user?.role === 'pharmacist' ? '/admin/allergens' : user?.role === 'billing' ? '/admin/tariffs' : user?.role === 'lab_doctor' || user?.role === 'lab_manager' ? '/admin/catalog' : '/admin/users'} replace />;
+  return <Navigate to={can(user, 'admin') ? '/admin/users' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing') ? '/admin/tariffs' : '/admin/catalog'} replace />;
 }
 
 export default function App() {
@@ -57,7 +58,7 @@ export default function App() {
         <Route path="/cashier/:encounterId" element={<Guard roles={['admin', 'receptionist', 'billing']}><Cashier /></Guard>} />
         <Route path="/doctor" element={<Guard roles={['doctor']}><DoctorQueue mine /></Guard>} />
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
-        <Route path="/diagnostics" element={<Navigate to={user?.role === 'radiographer' || user?.role === 'radiologist' ? '/diagnostics/radiology' : user?.role === 'endoscopist' || user?.role === 'endoscopy_nurse' ? '/diagnostics/endoscopy' : '/diagnostics/lab'} replace />} />
+        <Route path="/diagnostics" element={<Navigate to={can(user, 'admin', 'diagnostic', 'lab_doctor', 'lab_manager') ? '/diagnostics/lab' : can(user, 'radiographer', 'radiologist', 'receptionist') ? '/diagnostics/radiology' : '/diagnostics/endoscopy'} replace />} />
         <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'receptionist']}><DiagnosticsHub /></Guard>} />
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
@@ -72,10 +73,11 @@ export default function App() {
           <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
           <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />
           <Route path="devices" element={<Guard roles={['admin']}><Devices /></Guard>} />
+          <Route path="roles" element={<Guard roles={['admin']}><RolesPage /></Guard>} />
           <Route path="audit" element={<Guard roles={['admin']}><Audit /></Guard>} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to={user ? homeFor(user.role) : '/login'} replace />} />
+      <Route path="*" element={<Navigate to={user ? homeFor(user) : '/login'} replace />} />
     </Routes>
   );
 }

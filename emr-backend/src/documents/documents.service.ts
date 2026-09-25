@@ -3,7 +3,7 @@ import { sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { ClinicSettingsService } from '../settings/clinic-settings';
@@ -96,7 +96,7 @@ export class DocumentsService {
         .where('e.id', '=', encounterId).forUpdate(['e']).executeTakeFirstOrThrow();
 
       if (!['active', 'discharged'].includes(e.status)) throw new ConflictException(`ცნობა ვერ გაიცემა ვიზიტის სტატუსზე "${e.status}"`);
-      if (!(user.role === 'admin' || (user.role === 'doctor' && user.id === e.attending_doctor_id))) {
+      if (!(has(user, 'admin') || (has(user, 'doctor') && user.id === e.attending_doctor_id))) {
         throw new ForbiddenException('ცნობას გასცემს მკურნალი ექიმი');
       }
       const conclusion = dto.conclusion ?? null;
@@ -191,7 +191,7 @@ export class DocumentsService {
       const d = await trx.selectFrom('generated_documents').select(['id', 'status', 'generated_by']).where('id', '=', id).forUpdate().executeTakeFirst();
       if (!d) throw new NotFoundException('დოკუმენტი ვერ მოიძებნა');
       if (d.status === 'revoked') throw new ConflictException('დოკუმენტი უკვე გაუქმებულია');
-      if (!(user.role === 'admin' || user.id === d.generated_by)) throw new ForbiddenException('გაუქმება შეუძლია გამცემ ექიმს ან ადმინისტრატორს');
+      if (!(has(user, 'admin') || user.id === d.generated_by)) throw new ForbiddenException('გაუქმება შეუძლია გამცემ ექიმს ან ადმინისტრატორს');
       await trx.updateTable('generated_documents').set({ status: 'revoked', revoked_at: sql`now()`, revoked_by: user.id, revoke_reason: reason })
         .where('id', '=', id).execute();
       await this.audit.log(ctx, { action: 'REVOKE_DOCUMENT', entityName: 'generated_documents', entityId: id, newData: { reason } }, trx);

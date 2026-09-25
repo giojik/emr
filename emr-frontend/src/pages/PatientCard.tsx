@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api } from '../api/client';
+import { can, api } from '../api/client';
 import type { Doctor, EncounterListItem, Patient } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
@@ -21,8 +21,8 @@ export default function PatientCard() {
   const nav = useNavigate();
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
-  const front = user?.role === 'admin' || user?.role === 'receptionist';
-  const clinical = user?.role === 'doctor' || user?.role === 'nurse' || user?.role === 'admin';
+  const front = can(user, 'admin') || can(user, 'receptionist');
+  const clinical = can(user, 'doctor') || can(user, 'nurse') || can(user, 'admin');
 
   if (p.isLoading) return <Loading />;
   if (p.error || !p.data) return <div className="content"><ErrorBox error={p.error ?? 'პაციენტი ვერ მოიძებნა'} /></div>;

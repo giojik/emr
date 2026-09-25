@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import type { Role } from '../api/client';
+import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { initials, ROLE_KA } from '../lib/format';
 
@@ -18,8 +18,16 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
   { to: '/admin/overrides', label: 'override-ები', roles: ['pharmacist'] },
 ];
 
-export function homeFor(role: Role) {
-  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' || role === 'lab_doctor' ? '/diagnostics/lab' : role === 'lab_manager' ? '/admin/catalog' : role === 'phlebotomist' ? '/collection' : role === 'radiographer' || role === 'radiologist' ? '/diagnostics/radiology' : role === 'endoscopist' || role === 'endoscopy_nurse' ? '/diagnostics/endoscopy' : '/patients';
+const HOME: Record<Role, string> = {
+  doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/admin/allergens',
+  diagnostic: '/diagnostics/lab', lab_doctor: '/diagnostics/lab', lab_manager: '/admin/catalog', phlebotomist: '/collection',
+  radiographer: '/diagnostics/radiology', radiologist: '/diagnostics/radiology', endoscopist: '/diagnostics/endoscopy', endoscopy_nurse: '/diagnostics/endoscopy',
+};
+/** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
+export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {
+  const order = [...(user.roles[0]?.capabilities ?? []), ...user.caps];
+  for (const c of order) if (HOME[c]) return HOME[c];
+  return '/patients';
 }
 
 export default function Shell() {
@@ -34,13 +42,13 @@ export default function Shell() {
           <div className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 14 }}>ინოვა მედიკალი</strong><span className="small muted">ამბულატორია</span></div>
         </div>
         <nav className="nav" aria-label="მთავარი მენიუ">
-          {NAV.filter((n) => n.roles.includes(user.role)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
+          {NAV.filter((n) => can(user, ...n.roles)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
         </nav>
         <div className="me">
           <div className="avatar" aria-hidden="true">{initials(user.name)}</div>
           <div className="stack grow" style={{ gap: 0 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
-            <span className="small muted">{ROLE_KA[user.role]}</span>
+            <span className="small muted" title={user.roles.map((r) => r.name).join(', ')}>{user.roles[0]?.name ?? ROLE_KA[user.role] ?? user.role}{user.roles.length > 1 ? ` +${user.roles.length - 1}` : ''}</span>
           </div>
           <button type="button" className="icon-btn" aria-label="გასვლა" title="გასვლა" onClick={async () => { await logout(); nav('/login'); }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 4h4v16h-4" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></svg>

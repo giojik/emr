@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../api/client';
+import { can, api } from '../../api/client';
 import type { OverrideRow } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Loading } from '../../components/ui';
@@ -34,7 +34,7 @@ export default function Overrides() {
                   <tr key={r.id}>
                     <td className="mono small">{tsDate(r.created_at)} {hhmm(r.created_at)}</td>
                     <td>{r.doctor_name}</td>
-                    <td>{user?.role === 'admin' ? <Link to={`/encounters/${r.encounter_id}`}>{r.patient_first_name} {r.patient_last_name}</Link> : `${r.patient_first_name} ${r.patient_last_name}`}</td>
+                    <td>{can(user, 'admin') ? <Link to={`/encounters/${r.encounter_id}`}>{r.patient_first_name} {r.patient_last_name}</Link> : `${r.patient_first_name} ${r.patient_last_name}`}</td>
                     <td><strong>{r.medication_name}</strong> <span className="small muted">{r.dosage}</span></td>
                     <td><span className={`chip ${cls}`}>{label}</span></td>
                     <td className="small">{r.allergy_matches?.map((m) => `${m.substance}${m.group ? ` (${m.group})` : ''}`).join('; ')}</td>

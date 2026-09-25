@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, apiUpload, openBlob } from '../../api/client';
+import { can, api, apiUpload, openBlob } from '../../api/client';
 import type { PathListRow, PathRequest } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Loading, useDebounced, useToast } from '../../components/ui';
@@ -78,7 +78,7 @@ function PathPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const cancel = useMutation({ mutationFn: (reason: string) => api(`/pathology/${id}/cancel`, { body: { reason } }), onSuccess: () => { refresh(); onClose(); } });
   const r = q.data;
   if (!r) return <aside style={{ width: 560, borderLeft: '1px solid var(--line)', background: 'var(--surface)' }}>{q.error ? <ErrorBox error={q.error} /> : <Loading />}</aside>;
-  const canSend = !!user && ['admin', 'endoscopist', 'endoscopy_nurse'].includes(user.role);
+  const canSend = can(user, 'admin', 'endoscopist', 'endoscopy_nurse');
   return (
     <aside style={{ width: 'min(580px, 50vw)', flexShrink: 0, background: 'var(--surface)', borderLeft: '1px solid var(--line)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
       <div className="row"><h2 className="grow" style={{ fontSize: 17 }}>მიმართვა <span className="mono">{r.request_no}</span></h2><button className="icon-btn" type="button" aria-label="დახურვა" onClick={onClose}>×</button></div>
@@ -116,7 +116,7 @@ function PathPanel({ id, onClose }: { id: string; onClose: () => void }) {
         {r.result_text && <div style={{ whiteSpace: 'pre-wrap' }}>{r.result_text}</div>}
         {r.result_file_path && <button className="btn sm" type="button" style={{ width: 'max-content' }} onClick={() => void openBlob(`/pathology/${id}/file`)}>სკანი</button>}
         {r.reviewed_at ? <span className="small muted">გაეცნო: {r.reviewed_by_name} · {tsDate(r.reviewed_at)}</span>
-          : (user?.role === 'endoscopist' || user?.role === 'admin') ? <button className="btn primary" type="button" disabled={review.isPending} onClick={() => review.mutate()}>გავეცანი</button>
+          : (can(user, 'endoscopist') || can(user, 'admin')) ? <button className="btn primary" type="button" disabled={review.isPending} onClick={() => review.mutate()}>გავეცანი</button>
           : <span className="chip warn" style={{ width: 'max-content' }}>ენდოსკოპისტი ჯერ არ გაცნობია</span>}
       </div>}
       <ErrorBox error={send.error ?? result.error ?? review.error ?? cancel.error} />

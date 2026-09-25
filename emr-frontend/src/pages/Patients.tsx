@@ -1,10 +1,11 @@
+import { can } from '../api/client';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import PatientSearch from '../components/PatientSearch';
 
 export default function Patients() {
   const nav = useNavigate(); const { user } = useAuth();
-  const canCreate = user?.role === 'admin' || user?.role === 'receptionist';
+  const canCreate = can(user, 'admin') || can(user, 'receptionist');
   return (
     <>
       <header className="topbar"><h1 className="grow">პაციენტები</h1>{canCreate && <Link className="btn primary" to="/patients/new">+ ახალი პაციენტი</Link>}</header>

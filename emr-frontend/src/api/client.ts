@@ -8,7 +8,17 @@ export class ApiError extends Error {
   }
 }
 
-export interface SessionUser { id: string; name: string; role: Role; authProvider: 'local' | 'ldap'; mustChangePassword: boolean }
+export interface SessionUser {
+  id: string; name: string;
+  /** ძირითადი როლის კოდი (ჩვენებისთვის) — უფლების შესამოწმებლად: can(user, …) */
+  role: string;
+  /** ეფექტური უფლებები — ყველა როლის გაერთიანება */
+  caps: Role[];
+  roles: { code: string; name: string; capabilities: Role[] }[];
+  authProvider: 'local' | 'ldap'; mustChangePassword: boolean;
+}
+/** აქვს თუ არა მომხმარებელს ჩამოთვლილთაგან ერთი უფლება მაინც (სერვერიც იმავეს ამოწმებს) */
+export const can = (u: Pick<SessionUser, 'caps'> | null | undefined, ...caps: Role[]) => !!u && caps.some((c) => u.caps.includes(c));
 export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist' | 'radiographer' | 'radiologist' | 'endoscopist' | 'endoscopy_nurse';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 

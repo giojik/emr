@@ -60,8 +60,9 @@ export class AppointmentsService {
     const start = new Date(dto.scheduled_start);
     const end = new Date(start.getTime() + (dto.duration_minutes ?? 20) * 60_000);
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
-      const doctor = await trx.selectFrom('users').select(['role', 'is_active', 'department_id']).where('id', '=', dto.doctor_id).executeTakeFirst();
-      if (!doctor || doctor.role !== 'doctor' || !doctor.is_active) throw new BadRequestException('ექიმი ვერ მოიძებნა ან აქტიური არ არის');
+      const doctor = await trx.selectFrom('users as u').select(['u.is_active', 'u.department_id', sql<boolean>`EXISTS (SELECT 1 FROM user_capabilities c WHERE c.user_id = u.id AND 'doctor' = ANY(c.capabilities))`.as('is_doctor')])
+        .where('u.id', '=', dto.doctor_id).executeTakeFirst();
+      if (!doctor || !doctor.is_doctor || !doctor.is_active) throw new BadRequestException('ექიმი ვერ მოიძებნა ან აქტიური არ არის');
       const departmentId = dto.department_id ?? doctor.department_id;
       if (!departmentId) throw new BadRequestException('ექიმს განყოფილება არ აქვს — მიუთითეთ department_id');
       const a = await trx.insertInto('appointments').values({

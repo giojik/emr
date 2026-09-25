@@ -5,9 +5,8 @@ import type { AdminUser, Department, Tariff } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { copyText } from '../../lib/clipboard';
-import { money, ROLE_KA, tsDate } from '../../lib/format';
-
-const ROLES = Object.keys(ROLE_KA);
+import { money, tsDate } from '../../lib/format';
+import RolePicker, { capsOf, useRoles } from '../../components/RolePicker';
 
 export default function Users() {
   const [search, setSearch] = useState(''); const [role, setRole] = useState(''); const [dept, setDept] = useState(''); const [active, setActive] = useState('true');
@@ -15,13 +14,14 @@ export default function Users() {
   const dq = useDebounced(search.trim(), 250);
   const users = useQuery({ queryKey: ['admin-users', dq, role, dept, active], queryFn: () => api<AdminUser[]>('/users', { query: { search: dq, role, department_id: dept, active, limit: 100 } }) });
   const depts = useQuery({ queryKey: ['departments', 'all'], queryFn: () => api<Department[]>('/departments', { query: { include_inactive: true } }) });
+  const roles = useRoles(true);
 
   return (
     <div className="content">
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <input aria-label="ძებნა" className="input" style={{ maxWidth: 320 }} placeholder="სახელი, ელ-ფოსტა, პირადი №" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="როლი" className="select" style={{ width: 180 }} value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">ყველა როლი</option>{ROLES.map((r) => <option key={r} value={r}>{ROLE_KA[r]}</option>)}
+          <option value="">ყველა როლი</option>{roles.data?.map((r) => <option key={r.code} value={r.code}>{r.name}{r.is_active ? '' : ' (გათიშული)'}</option>)}
         </select>
         <select aria-label="განყოფილება" className="select" style={{ width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
           <option value="">ყველა განყოფილება</option>{depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -42,9 +42,9 @@ export default function Users() {
                   <tr key={u.id} className="clickable" onClick={() => setEdit(u)}>
                     <td><strong>{u.last_name} {u.first_name}</strong>{u.specialty && <div className="small muted">{u.specialty}</div>}</td>
                     <td className="small">{u.auth_provider === 'ldap' ? <><span className="chip info">AD</span> {u.ldap_username}</> : u.email}</td>
-                    <td>{ROLE_KA[u.role] ?? u.role}{u.is_section_head && <span className="chip info" style={{ marginLeft: 6 }}>ხელმძღვანელი</span>}</td>
+                    <td>{[...u.roles].sort((a, b) => Number(b.code === u.role) - Number(a.code === u.role)).map((r, i) => <span key={r.code} className={i === 0 ? '' : 'small muted'} style={{ textDecoration: r.is_active ? undefined : 'line-through' }}>{i ? ', ' : ''}{r.name}</span>)}{u.is_section_head && <span className="chip info" style={{ marginLeft: 6 }}>ხელმძღვანელი</span>}</td>
                     <td className="muted">{u.department_name ?? '—'}</td>
-                    <td className="num">{u.role === 'doctor' ? (u.consultation_price ? money(u.consultation_price) : <span className="chip warn">ტარიფი არ აქვს</span>) : ''}</td>
+                    <td className="num">{u.capabilities?.includes('doctor') ? (u.consultation_price ? money(u.consultation_price) : <span className="chip warn">ტარიფი არ აქვს</span>) : ''}</td>
                     <td><UserStatus u={u} /></td>
                     <td className="small muted">{u.last_login_at ? tsDate(u.last_login_at) : '—'}</td>
                   </tr>
@@ -95,15 +95,18 @@ function useTariffs() {
 
 function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => void }) {
   const qc = useQueryClient(); const tariffs = useTariffs();
-  const [f, setF] = useState({ first_name: '', last_name: '', personal_number: '', email: '', phone: '', role: 'doctor', department_id: '', specialty: '', license_number: '', consultation_tariff_id: '', auth_provider: 'local', ldap_username: '' });
+  const roles = useRoles();
+  const [codes, setCodes] = useState<string[]>([]);
+  const caps = capsOf(codes, roles.data);
+  const [f, setF] = useState({ first_name: '', last_name: '', personal_number: '', email: '', phone: '', department_id: '', specialty: '', license_number: '', consultation_tariff_id: '', auth_provider: 'local', ldap_username: '' });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const m = useMutation({
     mutationFn: () => {
       const body: Record<string, string> = {};
       for (const [k, v] of Object.entries(f)) if (v.trim()) body[k] = v.trim();
       if (f.auth_provider === 'local') delete body.ldap_username;
-      if (f.role !== 'doctor') delete body.consultation_tariff_id;
-      return api<{ user: AdminUser; temporaryPassword: string | null }>('/users', { body });
+      if (!caps.includes('doctor')) delete body.consultation_tariff_id;
+      return api<{ user: AdminUser; temporaryPassword: string | null }>('/users', { body: { ...body, roles: codes } });
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
@@ -112,7 +115,7 @@ function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => vo
   return (
     <Modal title="ახალი მომხმარებელი" onClose={onClose} width={720}
       footer={done ? <button className="btn primary" type="button" onClick={onClose}>დახურვა</button>
-        : <><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="submit" form="cu" disabled={m.isPending}>შექმნა</button></>}>
+        : <><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="submit" form="cu" disabled={m.isPending || !codes.length}>შექმნა</button></>}>
       {done ? (
         done.temporaryPassword ? <TempPassword value={done.temporaryPassword} who={done.user.email} />
           : <div className="alert ok">შეიქმნა. შესვლა: დომენის სახელით „{done.user.ldap_username}“ და Windows პაროლით.</div>
@@ -131,13 +134,11 @@ function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => vo
           <Field label="ელ-ფოსტა" htmlFor="em" required><input id="em" className="input" type="email" value={f.email} onChange={set('email')} required /></Field>
           {f.auth_provider === 'ldap' && <Field label="დომენის სახელი" htmlFor="lu" required hint="Windows-ში შესვლის სახელი, მაგ. giojik"><input id="lu" className="input mono" value={f.ldap_username} onChange={set('ldap_username')} required /></Field>}
           <Field label="ტელეფონი" htmlFor="ph"><input id="ph" className="input mono" value={f.phone} onChange={set('phone')} /></Field>
-          <Field label="როლი" htmlFor="rl" required>
-            <select id="rl" className="select" value={f.role} onChange={set('role')}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_KA[r]}</option>)}</select>
-          </Field>
+          <div style={{ gridColumn: '1 / -1' }}><span className="label">როლები <span className="req">*</span></span><RolePicker value={codes} onChange={setCodes} /></div>
           <Field label="განყოფილება" htmlFor="dp">
             <select id="dp" className="select" value={f.department_id} onChange={set('department_id')}><option value="">—</option>{depts.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           </Field>
-          {f.role === 'doctor' && <>
+          {caps.includes('doctor') && <>
             <Field label="სპეციალობა" htmlFor="sp"><input id="sp" className="input" value={f.specialty} onChange={set('specialty')} placeholder="მაგ. კარდიოლოგი" /></Field>
             <Field label="სერტიფიკატის №" htmlFor="lc"><input id="lc" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>
             <div style={{ gridColumn: '1 / -1' }}>
@@ -155,15 +156,20 @@ function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => vo
 
 function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; onClose: () => void }) {
   const qc = useQueryClient(); const tariffs = useTariffs(); const { user: me } = useAuth(); const toast = useToast();
-  const [f, setF] = useState({ first_name: u.first_name, last_name: u.last_name, email: u.email, phone: u.phone ?? '', role: u.role, department_id: u.department_id ?? '', specialty: u.specialty ?? '', license_number: u.license_number ?? '', consultation_tariff_id: u.consultation_tariff_id ?? '' });
+  const [f, setF] = useState({ first_name: u.first_name, last_name: u.last_name, email: u.email, phone: u.phone ?? '', department_id: u.department_id ?? '', specialty: u.specialty ?? '', license_number: u.license_number ?? '', consultation_tariff_id: u.consultation_tariff_id ?? '' });
   const [head, setHead] = useState(u.is_section_head);
-  const canHead = f.role === 'radiologist' || f.role === 'endoscopist';
+  const roles = useRoles();
+  const initial = [u.role, ...u.roles.map((r) => r.code).filter((c) => c !== u.role)];
+  const [codes, setCodes] = useState<string[]>(initial);
+  const caps = capsOf(codes, roles.data);
+  const rolesChanged = codes.join(',') !== initial.join(',');
+  const canHead = caps.includes('radiologist') || caps.includes('endoscopist');
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const [temp, setTemp] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['admin-users'] });
   const save = useMutation({
     mutationFn: () => api(`/users/${u.id}`, { method: 'PATCH', body: {
-      first_name: f.first_name, last_name: f.last_name, email: f.email, phone: f.phone || null, role: f.role,
+      first_name: f.first_name, last_name: f.last_name, email: f.email, phone: f.phone || null, ...(rolesChanged ? { role: codes[0], roles: codes } : {}),
       department_id: f.department_id || null, specialty: f.specialty || null, license_number: f.license_number || null,
       consultation_tariff_id: f.consultation_tariff_id || null, is_section_head: canHead && head,
     } }),
@@ -181,7 +187,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const self = me?.id === u.id;
   return (
     <Modal title={`${u.last_name} ${u.first_name}`} onClose={onClose} width={760}
-      footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button><button className="btn primary" type="submit" form="eu" disabled={save.isPending}>შენახვა</button></>}>
+      footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button><button className="btn primary" type="submit" form="eu" disabled={save.isPending || !codes.length}>შენახვა</button></>}>
       {temp && <TempPassword value={temp} who={u.email} />}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <UserStatus u={u} />
@@ -201,13 +207,15 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
         <Field label="გვარი" htmlFor="eln"><input id="eln" className="input" value={f.last_name} onChange={set('last_name')} /></Field>
         <Field label="ელ-ფოსტა" htmlFor="eem"><input id="eem" className="input" type="email" value={f.email} onChange={set('email')} /></Field>
         <Field label="ტელეფონი" htmlFor="eph"><input id="eph" className="input mono" value={f.phone} onChange={set('phone')} /></Field>
-        <Field label="როლი" htmlFor="erl" hint={f.role !== u.role ? 'როლის შეცვლა მომხმარებლის ყველა სესიას დახურავს' : undefined}>
-          <select id="erl" className="select" value={f.role} onChange={set('role')} disabled={self}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_KA[r]}</option>)}</select>
-        </Field>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <span className="label">როლები</span>
+          <RolePicker value={codes} onChange={setCodes} />
+          {rolesChanged && <span className="hint">როლების შეცვლა მომხმარებლის ყველა სესიას დახურავს{self ? ' — ადმინისტრატორის როლს საკუთარ თავს ვერ მოხსნით' : ''}</span>}
+        </div>
         <Field label="განყოფილება" htmlFor="edp">
           <select id="edp" className="select" value={f.department_id} onChange={set('department_id')}><option value="">—</option>{depts.map((d) => <option key={d.id} value={d.id}>{d.name}{d.is_active ? '' : ' (გათიშული)'}</option>)}</select>
         </Field>
-        {f.role === 'doctor' && <>
+        {caps.includes('doctor') && <>
           <Field label="სპეციალობა" htmlFor="esp"><input id="esp" className="input" value={f.specialty} onChange={set('specialty')} /></Field>
           <Field label="სერტიფიკატის №" htmlFor="elc"><input id="elc" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>
           <div style={{ gridColumn: '1 / -1' }}>
@@ -216,7 +224,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
             </Field>
           </div>
         </>}
-        {(f.role === 'radiologist' || f.role === 'endoscopist') && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
+        {canHead && !caps.includes('doctor') && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
         {canHead && <label className="row" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
           განყოფილების ხელმძღვანელი <span className="small muted">— მართავს საერთო შაბლონებს, ხსნის სხვის ხელმოწერილ დასკვნას</span></label>}
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={save.error} /></div>

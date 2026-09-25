@@ -80,6 +80,7 @@ export interface AdminUser {
   auth_provider: 'local' | 'ldap'; ldap_username: string | null; is_active: boolean; must_change_password: boolean;
   failed_login_count: number; locked_until: string | null; is_locked: boolean; last_login_at: string | null;
   consultation_tariff_id: string | null; consultation_tariff_title: string | null; consultation_price: string | null; is_section_head: boolean;
+  roles: { code: string; name: string; is_active: boolean }[]; capabilities: string[] | null;
 }
 export interface Tariff { id: string; code: string; title: string; base_price: string; is_active: boolean }
 export interface ReferralTypeTariff { type: string; tariff_id: string; code: string; title: string; base_price: string }

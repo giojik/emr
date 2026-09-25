@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { sql, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { dayRange } from '../common/day-range';
 import { mapPgError } from '../common/pg-errors';
 import { loadEnv } from '../config/env';
@@ -53,14 +53,14 @@ export class RadiologyService {
 
   // =============================================================== უფლებები
   private isReporter(user: AuthUser, section: ImagingSection) {
-    return user.role === 'admin' || (section === 'radiology' ? user.role === 'radiologist' : user.role === 'endoscopist');
+    return has(user, 'admin', section === 'radiology' ? 'radiologist' : 'endoscopist');
   }
   private assertReporter(user: AuthUser, section: ImagingSection) {
     if (!this.isReporter(user, section)) throw new ForbiddenException(section === 'radiology' ? 'დასკვნას წერს რადიოლოგი' : 'ოქმს წერს ენდოსკოპისტი');
   }
   /** საერთო შაბლონები: admin ან განყოფილების ხელმძღვანელი (ცოცხალი შემოწმება ბაზაში) */
   async canManageShared(user: AuthUser, section: ImagingSection, executor: Database | Trx = this.db) {
-    if (user.role === 'admin') return true;
+    if (has(user, 'admin')) return true;
     if (!this.isReporter(user, section)) return false;
     const u = await executor.selectFrom('users').select('is_section_head').where('id', '=', user.id).executeTakeFirst();
     return !!u?.is_section_head;
@@ -326,7 +326,7 @@ export class RadiologyService {
       const it = await this.lockItem(trx, itemId);
       const rep = await trx.selectFrom('dx_reports').select(['status', 'version', 'signed_by']).where('order_item_id', '=', itemId).forUpdate().executeTakeFirst();
       if (!rep || rep.status !== 'signed') throw new ConflictException('ხელახლა გახსნა შეიძლება მხოლოდ ხელმოწერილი დასკვნის');
-      const allowed = user.role === 'admin' || (this.isReporter(user, it.section as ImagingSection) && (rep.signed_by === user.id || await this.canManageShared(user, it.section as ImagingSection, trx)));
+      const allowed = has(user, 'admin') || (this.isReporter(user, it.section as ImagingSection) && (rep.signed_by === user.id || await this.canManageShared(user, it.section as ImagingSection, trx)));
       if (!allowed) throw new ForbiddenException('ხელახლა გახსნა შეუძლია ხელმომწერს ან განყოფილების ხელმძღვანელს');
       await trx.updateTable('dx_reports').set({
         status: 'draft', version: rep.version + 1, amend_reason: reason, amended_by: user.id, amended_at: sql`now()`, signed_by: null, signed_at: null,
@@ -343,7 +343,7 @@ export class RadiologyService {
     const v = version ? d.versions.find((x) => x.version === version) : d.versions[0];
     if (!v) throw new BadRequestException('ხელმოწერილი დასკვნა არ არის');
     const referrer = await this.db.selectFrom('dx_order_items as i').innerJoin('users as u', 'u.id', 'i.ordered_by').leftJoin('encounters as e', 'e.id', 'i.encounter_id')
-      .select([sql<string>`u.first_name || ' ' || u.last_name`.as('name'), 'u.role', 'e.external_referral']).where('i.id', '=', itemId).executeTakeFirstOrThrow();
+      .select([sql<string>`u.first_name || ' ' || u.last_name`.as('name'), 'e.visit_kind', 'e.external_referral']).where('i.id', '=', itemId).executeTakeFirstOrThrow();
     return { item: d, version: v, latest: v.version === d.versions[0]?.version && d.report?.status === 'signed', referrer };
   }
 

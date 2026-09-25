@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import type { AuthUser } from '../auth/roles';
+import { has, type AuthUser } from '../auth/roles';
 import { dayRange } from '../common/day-range';
 import { withPgErrors } from '../common/pg-errors';
 import { loadEnv } from '../config/env';
@@ -156,7 +156,7 @@ export class EncountersService {
 
       const open = await trx.selectFrom('referrals').select(['id', 'type', 'status'])
         .where('encounter_id', '=', id).where('status', 'in', ['requested', 'in_progress']).execute();
-      if (open.length && !(force && user.role === 'admin')) {
+      if (open.length && !(force && has(user, 'admin'))) {
         if (force) throw new ForbiddenException('force დახურვა მხოლოდ ადმინისტრატორს შეუძლია');
         throw new ConflictException({ code: 'OPEN_REFERRALS_EXIST', message: 'ვიზიტს აქვს დაუსრულებელი მიმართვები', referrals: open });
       }

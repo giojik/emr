@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, openBlob } from '../api/client';
+import { can, type Role, api, openBlob } from '../api/client';
 import type { Allergy, DxItem, LabAnalyteForm, LabItemDetail } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
@@ -21,11 +21,10 @@ export default function DiagnosticsHub() {
   const { section = '' } = useParams();
   const { user } = useAuth();
   const tabs = [['lab', 'ლაბორატორია'], ['radiology', 'რადიოლოგია'], ['endoscopy', 'ენდოსკოპია'], ['referrals', 'სხვა მიმართვები']] as const;
-  const role = user?.role ?? '';
   const allowed = tabs.filter(([k]) => ({
     lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist'],
     endoscopy: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist'], referrals: ['admin', 'diagnostic'],
-  } as Record<string, string[]>)[k].includes(role));
+  } as Record<string, Role[]>)[k].some((c) => can(user, c)));
   if (!allowed.some(([k]) => k === section)) return <Navigate to={`/diagnostics/${allowed[0]?.[0] ?? 'lab'}`} replace />;
   return (
     <>
@@ -47,7 +46,7 @@ const LAB_TABS = [['collected,in_progress', 'შესასრულებე�
 
 function LabWorkspace() {
   const qc = useQueryClient(); const toast = useToast(); const { user } = useAuth();
-  const canReceive = user?.role !== 'lab_manager';
+  const canReceive = can(user, 'admin', 'diagnostic', 'lab_doctor');
   const [status, setStatus] = useState<string>(LAB_TABS[0][0]);
   const [search, setSearch] = useState('');
   const [selId, setSelId] = useState<string | null>(null);
@@ -135,9 +134,9 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
   const print = useMutation({ mutationFn: () => openBlob(`/encounters/${q.data!.encounter_id}/lab-report?item=${id}`) });
   if (q.isLoading || !q.data) return <aside style={{ width: 560, borderLeft: '1px solid var(--line)', background: 'var(--surface)' }}><Loading /></aside>;
   const it = q.data;
-  const canEnter = user?.role === 'admin' || user?.role === 'diagnostic' || user?.role === 'lab_doctor';
+  const canEnter = can(user, 'admin') || can(user, 'diagnostic') || can(user, 'lab_doctor');
   const locked = !canEnter || it.status === 'validated' || it.status === 'cancelled' || it.specimen_status === 'collected';
-  const isLabDoctor = user?.role === 'lab_doctor' || user?.role === 'admin';
+  const isLabDoctor = can(user, 'lab_doctor') || can(user, 'admin');
   const dirty = it.analytes.some((a) => { const r = it.results.find((x) => x.analyte_id === a.id); const cur = r ? (r.value_num !== null ? String(Number(r.value_num)) : r.value_text ?? '') : ''; return (vals[a.id] ?? '') !== cur; });
 
   return (
@@ -215,8 +214,10 @@ const ENDO_DEFAULT: Record<string, string> = { endoscopy_nurse: 'queue', endosco
 function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
   const { user } = useAuth();
   const [sp, setSp] = useSearchParams();
-  const views = (section === 'radiology' ? RAD_VIEWS : ENDO_VIEWS).filter((v) => user && v.roles.includes(user.role));
-  const wanted = sp.get('view') ?? (section === 'radiology' ? RAD_DEFAULT : ENDO_DEFAULT)[user?.role ?? ''] ?? views[0]?.key;
+  const views = (section === 'radiology' ? RAD_VIEWS : ENDO_VIEWS).filter((v) => can(user, ...(v.roles as Role[])));
+  const defaults = section === 'radiology' ? RAD_DEFAULT : ENDO_DEFAULT;
+  const byRole = [...(user?.roles[0]?.capabilities ?? []), ...(user?.caps ?? [])].map((c) => defaults[c]).find(Boolean);
+  const wanted = sp.get('view') ?? byRole ?? views[0]?.key;
   const view = views.some((v) => v.key === wanted) ? wanted : views[0]?.key;
   if (!view) return <div className="content"><div className="card empty">წვდომა არ გაქვთ.</div></div>;
   return (

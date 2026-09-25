@@ -1,6 +1,6 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
-import { ROLES, type Role } from '../../auth/roles';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
+const ROLE_CODE = /^[a-z][a-z0-9_]{1,39}$/;
 
 const lower = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 const LDAP_USER = /^[A-Za-z0-9._-]{1,64}$/;
@@ -10,7 +10,10 @@ export class CreateUserDto {
   @IsString() @Length(1, 100) first_name: string;
   @IsString() @Length(1, 100) last_name: string;
   @Matches(/^\d{11}$/, { message: 'პირადი ნომერი უნდა იყოს 11 ციფრი' }) personal_number: string;
-  @IsIn(ROLES) role: Role;
+  /** ძირითადი როლი (კოდი). თუ roles არ არის მითითებული — ერთადერთი როლი */
+  @IsOptional() @Matches(ROLE_CODE) role?: string;
+  /** ყველა როლი (კოდები); პირველი = ძირითადი, თუ role არ არის მითითებული */
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(10) @Matches(ROLE_CODE, { each: true }) roles?: string[];
   @IsOptional() @IsUUID() department_id?: string;
   @IsOptional() @IsString() @MaxLength(50) phone?: string;
   @IsOptional() @IsString() @MaxLength(100) specialty?: string;
@@ -26,7 +29,8 @@ export class UpdateUserDto {
   @IsOptional() @IsString() @Length(1, 100) first_name?: string;
   @IsOptional() @IsString() @Length(1, 100) last_name?: string;
   @IsOptional() @Matches(/^\d{11}$/) personal_number?: string;
-  @IsOptional() @IsIn(ROLES) role?: Role;
+  @IsOptional() @Matches(ROLE_CODE) role?: string;
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(10) @Matches(ROLE_CODE, { each: true }) roles?: string[];
   @IsOptional() @IsUUID() department_id?: string | null;
   @IsOptional() @IsString() @MaxLength(50) phone?: string | null;
   @IsOptional() @IsString() @MaxLength(100) specialty?: string | null;
@@ -38,7 +42,8 @@ export class UpdateUserDto {
 
 export class ListUsersQuery {
   @IsOptional() @IsString() @MaxLength(100) search?: string;
-  @IsOptional() @IsIn(ROLES) role?: Role;
+  /** როლის კოდი — მომხმარებლები, ვისაც ეს როლი აქვს (ნებისმიერი, არა მხოლოდ ძირითადი) */
+  @IsOptional() @Matches(ROLE_CODE) role?: string;
   @IsOptional() @IsUUID() department_id?: string;
   @IsOptional() @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : value) @IsBoolean() active?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number = 50;

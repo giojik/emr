@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../../api/client';
+import { can, api } from '../../api/client';
 import type { Allergy, DxDevice, DxItem } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import AllergyBanner from '../../components/AllergyBanner';
@@ -66,8 +66,8 @@ export default function TechQueue({ section = 'radiology' }: { section?: 'radiol
 
 function PerformPanel({ it, onClose }: { it: DxItem; onClose: () => void }) {
   const qc = useQueryClient(); const toast = useToast(); const { user } = useAuth();
-  const canPerform = user?.role === 'admin' || user?.role === 'radiographer';
-  const canArrive = canPerform || user?.role === 'receptionist';
+  const canPerform = can(user, 'admin') || can(user, 'radiographer');
+  const canArrive = canPerform || can(user, 'receptionist');
   const [identity, setIdentity] = useState(false);
   const [mr, setMr] = useState(false);
   const [preg, setPreg] = useState('');

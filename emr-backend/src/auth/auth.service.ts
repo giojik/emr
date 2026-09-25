@@ -19,7 +19,7 @@ export interface SessionTokens {
   expiresIn: number;
   refreshToken: string;            // კონტროლერი httpOnly cookie-ში სვამს, body-ში არ ბრუნდება
   refreshExpiresAt: Date;
-  user: { id: string; name: string; role: Role; authProvider: 'local' | 'ldap'; mustChangePassword: boolean };
+  user: { id: string; name: string; role: string; caps: Role[]; roles: { code: string; name: string; capabilities: string[] }[]; authProvider: 'local' | 'ldap'; mustChangePassword: boolean };
 }
 
 type UserRow = {
@@ -213,12 +213,15 @@ export class AuthService {
     }).execute();
 
     const name = `${user.first_name} ${user.last_name}`;
-    const payload: AccessTokenPayload = { sub: user.id, role: user.role as Role, name, mcp: user.must_change_password };
+    const payload: AccessTokenPayload = { sub: user.id, role: user.role, name, mcp: user.must_change_password };
+    const caps = await trx.selectFrom('user_capabilities').select('capabilities').where('user_id', '=', user.id).executeTakeFirst();
+    const roles = await trx.selectFrom('user_roles as ur').innerJoin('roles as r', 'r.id', 'ur.role_id').select(['r.code', 'r.name', 'r.capabilities'])
+      .where('ur.user_id', '=', user.id).where('r.is_active', '=', true).orderBy(sql`r.code = ${user.role}`, 'desc').orderBy('r.sort_order').execute();
     const accessToken = await this.jwt.signAsync(payload, { expiresIn: this.env.JWT_ACCESS_TTL_SEC, algorithm: 'HS256' });
 
     return {
       accessToken, expiresIn: this.env.JWT_ACCESS_TTL_SEC, refreshToken, refreshExpiresAt,
-      user: { id: user.id, name, role: user.role as Role, authProvider: user.auth_provider, mustChangePassword: user.must_change_password },
+      user: { id: user.id, name, role: user.role, caps: (caps?.capabilities ?? []) as Role[], roles, authProvider: user.auth_provider, mustChangePassword: user.must_change_password },
     };
   }
 

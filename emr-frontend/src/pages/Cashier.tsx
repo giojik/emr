@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api } from '../api/client';
+import { can, api } from '../api/client';
 import type { EncounterDetail, EncounterListItem, Invoice, InvoiceLine } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorBox, Field, Loading, StatusChip, useToast } from '../components/ui';
@@ -77,7 +77,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
   if (enc.isLoading || inv.isLoading) return <Loading />;
   if (enc.error || inv.error) return <div className="content"><ErrorBox error={enc.error ?? inv.error} /></div>;
   const e = enc.data!; const i = inv.data!;
-  const canAdjust = user?.role === 'admin' || user?.role === 'billing';
+  const canAdjust = can(user, 'admin') || can(user, 'billing');
   const cardNeedsRef = method === 'card_terminal' && !ref.trim();
 
   return (
