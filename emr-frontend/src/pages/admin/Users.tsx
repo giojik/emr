@@ -157,7 +157,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const qc = useQueryClient(); const tariffs = useTariffs(); const { user: me } = useAuth(); const toast = useToast();
   const [f, setF] = useState({ first_name: u.first_name, last_name: u.last_name, email: u.email, phone: u.phone ?? '', role: u.role, department_id: u.department_id ?? '', specialty: u.specialty ?? '', license_number: u.license_number ?? '', consultation_tariff_id: u.consultation_tariff_id ?? '' });
   const [head, setHead] = useState(u.is_section_head);
-  const canHead = f.role === 'radiologist' || f.role === 'diagnostic';
+  const canHead = f.role === 'radiologist' || f.role === 'endoscopist';
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const [temp, setTemp] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['admin-users'] });
@@ -216,7 +216,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
             </Field>
           </div>
         </>}
-        {f.role === 'radiologist' && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
+        {(f.role === 'radiologist' || f.role === 'endoscopist') && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
         {canHead && <label className="row" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
           განყოფილების ხელმძღვანელი <span className="small muted">— მართავს საერთო შაბლონებს, ხსნის სხვის ხელმოწერილ დასკვნას</span></label>}
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={save.error} /></div>

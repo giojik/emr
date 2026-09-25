@@ -13,6 +13,8 @@ import Reporting from './radiology/Reporting';
 import Schedule from './radiology/Schedule';
 import TechQueue from './radiology/TechQueue';
 import Templates from './radiology/Templates';
+import Pathology from './radiology/Pathology';
+import Scopes from './radiology/Scopes';
 
 /** დიაგნოსტიკის ჰაბი: /diagnostics/lab | radiology | endoscopy | referrals */
 export default function DiagnosticsHub() {
@@ -22,7 +24,7 @@ export default function DiagnosticsHub() {
   const role = user?.role ?? '';
   const allowed = tabs.filter(([k]) => ({
     lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist'],
-    endoscopy: ['admin', 'diagnostic'], referrals: ['admin', 'diagnostic'],
+    endoscopy: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist'], referrals: ['admin', 'diagnostic'],
   } as Record<string, string[]>)[k].includes(role));
   if (!allowed.some(([k]) => k === section)) return <Navigate to={`/diagnostics/${allowed[0]?.[0] ?? 'lab'}`} replace />;
   return (
@@ -199,17 +201,22 @@ const RAD_VIEWS: { key: string; label: string; roles: string[] }[] = [
   { key: 'templates', label: 'შაბლონები', roles: ['admin', 'radiologist'] },
 ];
 const ENDO_VIEWS: typeof RAD_VIEWS = [
-  { key: 'reports', label: 'ოქმები', roles: ['admin', 'diagnostic'] },
-  { key: 'templates', label: 'შაბლონები', roles: ['admin', 'diagnostic'] },
+  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'endoscopy_nurse', 'endoscopist'] },
+  { key: 'queue', label: 'ექთანი — პროცედურები', roles: ['admin', 'endoscopy_nurse', 'endoscopist', 'receptionist'] },
+  { key: 'reports', label: 'ოქმები', roles: ['admin', 'endoscopist', 'endoscopy_nurse'] },
+  { key: 'pathology', label: 'პათოლოგია', roles: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist'] },
+  { key: 'scopes', label: 'ენდოსკოპები', roles: ['admin', 'endoscopist', 'endoscopy_nurse'] },
+  { key: 'templates', label: 'შაბლონები', roles: ['admin', 'endoscopist'] },
 ];
 /** როლის მიხედვით ნაგულისხმევი ხედი */
 const RAD_DEFAULT: Record<string, string> = { radiographer: 'queue', radiologist: 'reports', receptionist: 'schedule' };
+const ENDO_DEFAULT: Record<string, string> = { endoscopy_nurse: 'queue', endoscopist: 'reports', receptionist: 'schedule' };
 
 function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
   const { user } = useAuth();
   const [sp, setSp] = useSearchParams();
   const views = (section === 'radiology' ? RAD_VIEWS : ENDO_VIEWS).filter((v) => user && v.roles.includes(user.role));
-  const wanted = sp.get('view') ?? (section === 'radiology' ? RAD_DEFAULT[user?.role ?? ''] : undefined) ?? views[0]?.key;
+  const wanted = sp.get('view') ?? (section === 'radiology' ? RAD_DEFAULT : ENDO_DEFAULT)[user?.role ?? ''] ?? views[0]?.key;
   const view = views.some((v) => v.key === wanted) ? wanted : views[0]?.key;
   if (!view) return <div className="content"><div className="card empty">წვდომა არ გაქვთ.</div></div>;
   return (
@@ -218,8 +225,10 @@ function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
         <div className="seg" role="group" aria-label="ხედი">{views.map((v) => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setSp({ view: v.key }, { replace: true })}>{v.label}</button>)}</div>
       </div>}
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-        {view === 'schedule' && <Schedule />}
-        {view === 'queue' && <TechQueue />}
+        {view === 'schedule' && <Schedule key={section} section={section} />}
+        {view === 'queue' && <TechQueue key={section} section={section} />}
+        {view === 'pathology' && <Pathology />}
+        {view === 'scopes' && <Scopes />}
         {view === 'reports' && <Reporting key={section} section={section} />}
         {view === 'templates' && <Templates key={section} section={section} />}
       </div>

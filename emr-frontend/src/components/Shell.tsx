@@ -10,8 +10,8 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
   { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },
-  { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist'] },
-  { to: '/diagnostics/radiology', label: 'რადიოლოგიის განრიგი', roles: ['receptionist'] },
+  { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] },
+  { to: '/diagnostics/radiology', label: 'დიაგნოსტიკის განრიგი', roles: ['receptionist'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
   { to: '/admin/catalog', label: 'ანალიზების კატალოგი', roles: ['lab_doctor', 'lab_manager'] },
@@ -19,7 +19,7 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
 ];
 
 export function homeFor(role: Role) {
-  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' || role === 'lab_doctor' ? '/diagnostics/lab' : role === 'lab_manager' ? '/admin/catalog' : role === 'phlebotomist' ? '/collection' : role === 'radiographer' || role === 'radiologist' ? '/diagnostics/radiology' : '/patients';
+  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' || role === 'lab_doctor' ? '/diagnostics/lab' : role === 'lab_manager' ? '/admin/catalog' : role === 'phlebotomist' ? '/collection' : role === 'radiographer' || role === 'radiologist' ? '/diagnostics/radiology' : role === 'endoscopist' || role === 'endoscopy_nurse' ? '/diagnostics/endoscopy' : '/patients';
 }
 
 export default function Shell() {

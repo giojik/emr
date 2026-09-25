@@ -116,7 +116,9 @@ MY=$(api POST /dx/report-templates "$RD" -d '{"section":"radiology","kind":"temp
 [ -n "$MY" ] && ok "პირადი შაბლონი შეიქმნა" || bad "პირადი შაბლონი" "ვერ შეიქმნა"
 chk "პირადი შაბლონი სხვა რადიოლოგს არ უჩანს" "$(api GET "/dx/report-templates?section=radiology" "$HD" | jq "[.items[]|select(.id==\"$MY\")]|length")" "0"
 chk "ხელმძღვანელი: საერთოს მართვა — კი" "$(api GET "/dx/report-templates?section=radiology" "$HD" | jq -r .can_manage_shared)" "true"
-chk "ხელმძღვანელი: საერთო ფრაზა" "$(api POST /dx/report-templates "$HD" -d '{"section":"radiology","kind":"phrase","name":"სინუსიტი","shared":true,"target":"findings","body":"ყბის წიაღებში ლორწოვანის გასქელება."}' | jq -r '.owner_id')" "null"
+PH=$(api POST /dx/report-templates "$HD" -d '{"section":"radiology","kind":"phrase","name":"ტესტ-E2E ფრაზა","shared":true,"target":"findings","body":"ყბის წიაღებში ლორწოვანის გასქელება."}')
+chk "ხელმძღვანელი: საერთო ფრაზა" "$(echo "$PH" | jq -r '.owner_id')" "null"
+PHID=$(echo "$PH" | jq -r '.id // empty')
 
 step "6. რადიოლოგი: დასკვნა"
 chk "აღსაწერ სიაში 3 კვლევა" "$(api GET "/dx/report-worklist?section=radiology&tab=todo" "$RD" | jq "[.[]|select(.encounter_id==\"$E\")]|length")" "3"
@@ -141,6 +143,8 @@ chk "ყველა ხელმოწერის შემდეგ ვიზ
 
 step "7. დასუფთავება"
 api POST "/dx-orders/$I2/cancel" "$ADM" -d '{"reason":"ტესტის დასრულება"}' >/dev/null
+[ -n "$PHID" ] && api PATCH "/dx/report-templates/$PHID" "$HD" -d '{"section":"radiology","kind":"phrase","name":"ტესტ-E2E ფრაზა","target":"findings","body":"x","is_active":false}' >/dev/null
+[ -n "$MY" ] && api PATCH "/dx/report-templates/$MY" "$RD" -d '{"section":"radiology","kind":"template","name":"ჩემი CT — ინსულტი","impression":"x","is_active":false}' >/dev/null
 for U in "${CREATED_USERS[@]}"; do api POST "/users/$U/disable" "$ADM" >/dev/null; done
 ok "სატესტო მომხმარებლები გაითიშა"
 

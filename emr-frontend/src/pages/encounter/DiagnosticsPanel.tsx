@@ -52,7 +52,13 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
                     {canWrite && (i.status === 'ordered' || i.status === 'scheduled') && <button className="icon-btn" type="button" aria-label={`გაუქმება: ${i.service_name}`} onClick={() => cancel.mutate(i.id)}>×</button>}
                   </div>
                   {i.performed_by === 'external' && <div className="small muted">გარე ლაბორატორია{i.external_lab ? `: ${i.external_lab}` : ''}</div>}
-                  {sec === 'radiology' && i.status === 'scheduled' && i.scheduled_start && <div className="small muted">ჩაწერილია: {tsDate(i.scheduled_start)} {hhmm(i.scheduled_start)} · {i.device_name}</div>}
+                  {sec !== 'lab' && i.status === 'scheduled' && i.scheduled_start && <div className="small muted">ჩაწერილია: {tsDate(i.scheduled_start)} {hhmm(i.scheduled_start)} · {i.device_name}</div>}
+                  {sec === 'endoscopy' && i.path_status && <div className="small" style={{ marginTop: 4 }}>
+                    ჰისტოლოგია <span className="mono muted">{i.path_request_no}</span>: {i.path_status === 'resulted'
+                      ? <><span className="chip ok" style={{ height: 20 }}>პასუხი მიღებულია</span>{i.path_has_file && <button className="btn sm" type="button" style={{ height: 22, marginLeft: 6 }} onClick={() => void openBlob(`/pathology/${i.path_request_id}/file`)}>სკანი</button>}
+                        {i.path_result_text && <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{i.path_result_text}</div>}</>
+                      : <span className="chip info" style={{ height: 20 }}>{i.path_status === 'sent' ? 'ლაბორატორიაშია' : 'გასაგზავნი'}</span>}
+                  </div>}
                   {sec !== 'lab' && !done && i.collection_issue && <div className="small" style={{ color: 'var(--warn-ink)' }}>⚠ {i.collection_issue}</div>}
                   {expanded === i.id && done && sec === 'lab' && (
                     <table className="table" style={{ marginTop: 6 }}>
@@ -122,7 +128,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
   const toggle = (s: DxService) => setPicked((p) => { const n = { ...p }; if (n[s.id]) delete n[s.id]; else n[s.id] = s; return n; });
 
   return (
-    <Modal title={labVisit ? 'დიაგნოსტიკური ვიზიტი (ექიმის გარეშე) — ლაბორატორია / რადიოლოგია' : 'კვლევის შეკვეთა'} onClose={onClose} width={900}
+    <Modal title={labVisit ? 'დიაგნოსტიკური ვიზიტი (ექიმის გარეშე)' : 'კვლევის შეკვეთა'} onClose={onClose} width={900}
       footer={<>
         <span className="grow small muted">{sel.length ? `${sel.length} კვლევა · ${money(total)}` : 'აირჩიეთ კვლევები'}</span>
         <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
@@ -130,7 +136,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
       </>}>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <div className="seg" role="group" aria-label="განყოფილება">
-          {(labVisit ? ['lab', 'radiology'] as DxSection[] : ['lab', 'radiology', 'endoscopy'] as DxSection[]).map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
+          {(labVisit ? ['lab', 'radiology', 'endoscopy'] as DxSection[] : ['lab', 'radiology', 'endoscopy'] as DxSection[]).map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
         </div>
         <input aria-label="ძებნა" className="input grow" style={{ height: 38 }} placeholder="ძებნა კატალოგში" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
       </div>

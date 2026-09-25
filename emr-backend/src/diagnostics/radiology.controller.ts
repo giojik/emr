@@ -9,6 +9,12 @@ import { ClinicSettingsService } from '../settings/clinic-settings';
 import { DiagnosticsService } from './diagnostics.service';
 import { renderAppointmentSlip, renderImagingReport } from './radiology.pdf';
 import { RadiologyService, type ImagingSection } from './radiology.service';
+import { EndoscopyService } from './endoscopy.service';
+
+const SEDATION_KA: Record<string, string> = { none: 'არ ჩატარებულა', topical: 'ადგილობრივი (სპრეი)', moderate: 'ზომიერი', deep: 'ღრმა', general: 'ზოგადი ანესთეზია' };
+const PREP_KA: Record<string, string> = { excellent: 'შესანიშნავი', good: 'კარგი', fair: 'დამაკმაყოფილებელი', poor: 'ცუდი' };
+export const INTERVENTION_KA: Record<string, string> = { biopsy: 'ბიოფსია', polypectomy: 'პოლიპექტომია', emr: 'ლორწოვანის რეზექცია (EMR)', hemostasis: 'ჰემოსტაზი', clip: 'კლიპირება',
+  banding: 'ლიგირება', injection: 'ინექცია', dilation: 'დილატაცია', foreign_body: 'უცხო სხეულის ამოღება', stent: 'სტენტირება', apc: 'არგონ-პლაზმური კოაგულაცია', other: 'სხვა' };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -70,16 +76,16 @@ class TemplateDto {
   @IsOptional() @IsBoolean() is_active?: boolean;
 }
 
-const SCHED = ['admin', 'receptionist', 'radiographer', 'radiologist'] as const;
-const REPORTERS = ['admin', 'radiologist', 'diagnostic'] as const;
-const IMAGING_READ = ['admin', 'radiologist', 'radiographer', 'diagnostic'] as const;
+const SCHED = ['admin', 'receptionist', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] as const;
+const REPORTERS = ['admin', 'radiologist', 'endoscopist'] as const;
+const IMAGING_READ = ['admin', 'radiologist', 'radiographer', 'endoscopist', 'endoscopy_nurse'] as const;
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
 const section = (s: string): ImagingSection => { if (s !== 'radiology' && s !== 'endoscopy') throw new BadRequestException('section: radiology | endoscopy'); return s; };
 const date = (s?: string) => { if (!s || !DATE.test(s)) throw new BadRequestException('date: YYYY-MM-DD'); return s; };
 
 @Controller()
 export class RadiologyController {
-  constructor(private readonly rad: RadiologyService, private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService) {}
+  constructor(private readonly rad: RadiologyService, private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService, private readonly endo: EndoscopyService) {}
 
   // ---- აპარატები
   @Get('dx/devices') @Roles(...SCHED, 'diagnostic', 'doctor')
@@ -91,7 +97,7 @@ export class RadiologyController {
 
   // ---- განრიგი
   @Get('radiology/board') @Roles(...SCHED)
-  board(@Query('date') d?: string) { return this.rad.board(date(d)); }
+  board(@Query('date') d?: string, @Query('section') s = 'radiology') { return this.rad.board(date(d), section(s)); }
   @Put('dx-orders/:id/schedule') @Roles(...SCHED)
   schedule(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ScheduleDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.schedule(id, dto, u, auditCtx(req)); }
   @Delete('dx-orders/:id/schedule') @Roles(...SCHED)
@@ -100,7 +106,7 @@ export class RadiologyController {
   /** ჩაწერის ფურცელი: ვიზიტის ყველა ჩაწერილი რადიოლოგიური კვლევა */
   @Get('encounters/:id/imaging-slip') @Roles(...SCHED, 'doctor')
   async slip(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
-    const items = (await this.dx.encounterItems(id)).filter((i) => i.section === 'radiology' && i.status === 'scheduled' && i.scheduled_start);
+    const items = (await this.dx.encounterItems(id)).filter((i) => (i.section === 'radiology' || i.section === 'endoscopy') && i.status === 'scheduled' && i.scheduled_start);
     if (!items.length) throw new BadRequestException('ჩაწერილი კვლევა არ არის');
     const devices = await this.rad.devices({ includeInactive: true });
     const p = items[0];
@@ -113,12 +119,12 @@ export class RadiologyController {
 
   // ---- ტექნიკოსი
   @Get('radiology/queue') @Roles(...SCHED)
-  queue(@Query('date') d?: string, @Query('device_id') dev?: string) { return this.rad.techQueue(date(d), dev && /^[0-9a-f-]{36}$/i.test(dev) ? dev : undefined); }
-  @Post('dx-orders/:id/arrive') @HttpCode(200) @Roles('admin', 'receptionist', 'radiographer')
+  queue(@Query('date') d?: string, @Query('device_id') dev?: string, @Query('section') s = 'radiology') { return this.rad.techQueue(date(d), dev && /^[0-9a-f-]{36}$/i.test(dev) ? dev : undefined, section(s)); }
+  @Post('dx-orders/:id/arrive') @HttpCode(200) @Roles('admin', 'receptionist', 'radiographer', 'endoscopy_nurse', 'endoscopist')
   arrive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AckDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.arrive(id, dto, u, auditCtx(req)); }
   @Post('dx-orders/:id/perform') @HttpCode(200) @Roles('admin', 'radiographer')
   perform(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PerformDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.perform(id, dto, u, auditCtx(req)); }
-  @Post('dx-orders/:id/exam-issue') @HttpCode(200) @Roles('admin', 'radiographer', 'receptionist')
+  @Post('dx-orders/:id/exam-issue') @HttpCode(200) @Roles('admin', 'radiographer', 'receptionist', 'endoscopy_nurse', 'endoscopist')
   issue(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.rad.issue(id, dto.reason, auditCtx(req)); }
 
   // ---- დასკვნა
@@ -139,7 +145,22 @@ export class RadiologyController {
   @Get('dx-orders/:id/report.pdf') @Roles(...IMAGING_READ, 'doctor', 'nurse', 'receptionist')
   async reportPdf(@Param('id', ParseUUIDPipe) id: string, @Query('version') version: string | undefined, @Res({ passthrough: true }) res: Response) {
     const { item: it, version: v, latest, referrer } = await this.rad.printData(id, version ? Number(version) : undefined);
+    const e = it.endo;
+    const endo = it.section === 'endoscopy' && e ? {
+      rows: [
+        ['სედაცია', [SEDATION_KA[e.sedation_type ?? ''] ?? null, (e.sedation_drugs as { drug: string; dose: number; unit: string }[]).map((x) => `${x.drug} ${x.dose} ${x.unit}`).join(', ') || null, e.sedation_by].filter(Boolean).join(' · ') || null],
+        ['ASA', e.asa_class ? String(e.asa_class) : null],
+        ['ენდოსკოპი', e.scope_name ? `${e.scope_name} (S/N ${e.scope_serial})` : null],
+        ['მომზადება', e.bowel_prep && e.bowel_prep !== 'na' ? `${PREP_KA[e.bowel_prep]}${e.bbps_score != null ? `, BBPS ${e.bbps_score}/9` : ''}` : e.bbps_score != null ? `BBPS ${e.bbps_score}/9` : null],
+        ['მიღწეული უბანი', [e.extent_reached, e.withdrawal_minutes ? `გამოყვანის დრო ${Number(e.withdrawal_minutes)} წთ` : null].filter(Boolean).join(' · ') || null],
+      ] as [string, string | null][],
+      interventions: (e.interventions as { type: string; site?: string; details?: string }[]).map((x) => [INTERVENTION_KA[x.type] ?? x.type, x.site, x.details].filter(Boolean).join(' — ')),
+      complications: e.complications === 'none' ? null : `${e.complications === 'major' ? 'მძიმე' : 'მსუბუქი'}: ${e.complication_note ?? ''}`,
+    } : undefined;
+    const images = it.images.some((g) => g.in_report) ? await this.endo.imageBuffers(id) : [];
     return pdf(res, await renderImagingReport({
+      endo, images, specimens: it.pathology?.status !== 'cancelled' ? it.pathology?.specimens : undefined,
+      pathology: it.pathology && it.pathology.status !== 'cancelled' ? { request_no: it.pathology.request_no, status: it.pathology.status, external_lab: it.pathology.external_lab, result_text: it.pathology.result_text } : null,
       clinic: await this.settings.get(), section: it.section as ImagingSection,
       patient: { name: `${it.first_name} ${it.last_name}`, birth_date: it.birth_date, gender: it.gender, id_number: it.personal_number },
       study: {

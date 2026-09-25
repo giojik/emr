@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
+import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import type { AuthUser } from '../auth/roles';
 import { dayRange } from '../common/day-range';
@@ -52,7 +53,7 @@ export class RadiologyService {
 
   // =============================================================== უფლებები
   private isReporter(user: AuthUser, section: ImagingSection) {
-    return user.role === 'admin' || (section === 'radiology' ? user.role === 'radiologist' : user.role === 'diagnostic');
+    return user.role === 'admin' || (section === 'radiology' ? user.role === 'radiologist' : user.role === 'endoscopist');
   }
   private assertReporter(user: AuthUser, section: ImagingSection) {
     if (!this.isReporter(user, section)) throw new ForbiddenException(section === 'radiology' ? 'დასკვნას წერს რადიოლოგი' : 'ოქმს წერს ენდოსკოპისტი');
@@ -103,14 +104,14 @@ export class RadiologyService {
 
   // =============================================================== განრიგი
   /** დღის განრიგი: აპარატები + ჩაწერილი კვლევები + დასაგეგმი (ჯერ დრო არ აქვს) */
-  async board(date: string) {
+  async board(date: string, section: ImagingSection = 'radiology') {
     const [from, to] = dayRange(date, this.tz);
     const [devices, booked, unscheduled] = await Promise.all([
-      this.devices({ section: 'radiology' }),
-      this.dx.itemsQuery().where('i.section', '=', 'radiology').where('i.device_id', 'is not', null)
+      this.devices({ section }),
+      this.dx.itemsQuery().where('i.section', '=', section).where('i.device_id', 'is not', null)
         .where('i.scheduled_start', '>=', from).where('i.scheduled_start', '<', to).where('i.status', '<>', 'cancelled')
         .orderBy('i.scheduled_start').execute(),
-      this.dx.itemsQuery().where('i.section', '=', 'radiology').where('i.status', '=', 'ordered')
+      this.dx.itemsQuery().where('i.section', '=', section).where('i.status', '=', 'ordered')
         .where('enc.status', 'in', ['planned', 'active']).orderBy(sql`i.priority = 'urgent'`, 'desc').orderBy('i.ordered_at').limit(300).execute(),
     ]);
     return { date, tz: this.tz, devices, booked, unscheduled };
@@ -120,10 +121,10 @@ export class RadiologyService {
     try {
       return await this.db.transaction().execute(async (trx) => {
         const it = await this.lockItem(trx, itemId);
-        if (it.section !== 'radiology') throw new BadRequestException('ჩაწერა დროზე — მხოლოდ რადიოლოგიური კვლევისთვის');
+        if (it.section !== 'radiology' && it.section !== 'endoscopy') throw new BadRequestException('ჩაწერა დროზე — რადიოლოგია / ენდოსკოპია');
         if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('კვლევა უკვე მიღებულია ან დასრულებულია — გადაწერა შეუძლებელია');
         const dev = await trx.selectFrom('dx_devices').selectAll().where('id', '=', dto.device_id).executeTakeFirst();
-        if (!dev || !dev.is_active) throw new BadRequestException('აპარატი ვერ მოიძებნა ან გათიშულია');
+        if (!dev || !dev.is_active || dev.section !== it.section) throw new BadRequestException('აპარატი / ოთახი ვერ მოიძებნა ან გათიშულია');
         if (!it.modality || !dev.modalities.includes(it.modality)) throw new BadRequestException(`აპარატზე „${dev.name}“ ${it.modality ?? '—'} კვლევა არ სრულდება`);
         const start = new Date(dto.start);
         if (Number.isNaN(start.getTime())) throw new BadRequestException('არასწორი დრო');
@@ -158,9 +159,9 @@ export class RadiologyService {
 
   // =============================================================== ტექნიკოსი
   /** რიგი: დღის ჩაწერები + მოსული პაციენტები + ცოცხალი რიგი (ჩაწერის გარეშე) + დღეს შესრულებული */
-  async techQueue(date: string, deviceId?: string) {
+  async techQueue(date: string, deviceId?: string, section: ImagingSection = 'radiology') {
     const [from, to] = dayRange(date, this.tz);
-    let q = this.dx.itemsQuery().where('i.section', '=', 'radiology').where((eb) => eb.or([
+    let q = this.dx.itemsQuery().where('i.section', '=', section).where((eb) => eb.or([
       eb.and([eb('i.status', '=', 'scheduled'), eb('i.scheduled_start', '>=', from), eb('i.scheduled_start', '<', to)]),
       eb('i.status', '=', 'arrived'),
       eb.and([eb('i.status', '=', 'ordered'), eb('enc.status', 'in', ['planned', 'active'])]),
@@ -174,7 +175,6 @@ export class RadiologyService {
   async arrive(itemId: string, dto: { unpaid_ack?: boolean }, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const it = await this.lockItem(trx, itemId);
-      if (it.section !== 'radiology') throw new BadRequestException('მხოლოდ რადიოლოგიური კვლევა');
       if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('პაციენტი უკვე მიღებულია');
       this.assertPayable(it, dto.unpaid_ack);
       await trx.updateTable('dx_order_items').set({ status: 'arrived', arrived_at: sql`now()`, arrived_by: user.id, collection_issue: null, collection_issue_at: null }).where('id', '=', itemId).execute();
@@ -227,8 +227,7 @@ export class RadiologyService {
   reportWorklist(section: ImagingSection, tab: 'todo' | 'done', q: { date?: string; search?: string } = {}) {
     let query = this.dx.itemsQuery().where('i.section', '=', section);
     if (tab === 'todo') {
-      query = query.where('i.status', 'in', section === 'radiology' ? ['performed', 'in_progress'] : ['ordered', 'in_progress']);
-      if (section === 'endoscopy') query = query.where('enc.status', 'in', ['planned', 'active', 'discharged']);
+      query = query.where('i.status', 'in', ['performed', 'in_progress']);
     } else {
       query = query.where('i.status', '=', 'validated');
       if (q.date) { const [from, to] = dayRange(q.date, this.tz); query = query.where('i.validated_at', '>=', from).where('i.validated_at', '<', to); }
@@ -259,7 +258,17 @@ export class RadiologyService {
       this.db.selectFrom('dx_order_items as i').leftJoin('users as t', 't.id', 'i.technician_id')
         .select(['i.safety', sql<string | null>`t.first_name || ' ' || t.last_name`.as('technician_name')]).where('i.id', '=', itemId).executeTakeFirst(),
     ]);
-    return { ...it, ...tech, report: report ?? null, versions, priors };
+    const [endo, images, pathology] = await Promise.all([
+      this.db.selectFrom('endo_procedures as ep').leftJoin('endo_scopes as sc', 'sc.id', 'ep.scope_id').leftJoin('users as n', 'n.id', 'ep.nurse_id')
+        .selectAll('ep').select(['sc.name as scope_name', 'sc.serial_number as scope_serial', sql<string | null>`n.first_name || ' ' || n.last_name`.as('nurse_name')])
+        .where('ep.order_item_id', '=', itemId).executeTakeFirst(),
+      this.db.selectFrom('dx_images').select(['id', 'source', 'caption', 'in_report', 'sort_order', 'mime_type', 'created_at'])
+        .where('order_item_id', '=', itemId).where('is_active', '=', true).orderBy('sort_order').orderBy('created_at').execute(),
+      this.db.selectFrom('path_requests as r').selectAll('r')
+        .select((eb) => jsonArrayFrom(eb.selectFrom('path_specimens as s').selectAll('s').whereRef('s.request_id', '=', 'r.id').orderBy('s.jar_no')).as('specimens'))
+        .where('r.order_item_id', '=', itemId).executeTakeFirst(),
+    ]);
+    return { ...it, ...tech, report: report ?? null, versions, priors, endo: endo ?? null, images, pathology: pathology ?? null };
   }
 
   private readonly SECTIONS = ['technique', 'findings', 'impression', 'recommendation'] as const;
@@ -290,6 +299,7 @@ export class RadiologyService {
       this.assertReportable(it);
       const rep = await trx.selectFrom('dx_reports').select(['status', 'version', 'amend_reason']).where('order_item_id', '=', itemId).forUpdate().executeTakeFirst();
       if (rep?.status === 'signed') throw new ConflictException('დასკვნა უკვე ხელმოწერილია');
+      if (it.section === 'endoscopy') await this.endoSignCheck(trx, itemId);
       await this.upsertReport(trx, itemId, dto, user, rep ? 'update' : 'insert');
       const signed = await trx.updateTable('dx_reports').set({
         status: 'signed', signed_by: user.id, signed_at: sql`now()`,
@@ -379,6 +389,15 @@ export class RadiologyService {
     });
   }
 
+  /** ენდოსკოპია: ხელმოწერამდე — ბიოფსია მითითებულია → ქილები სავალდებულოა */
+  private async endoSignCheck(trx: Trx, itemId: string) {
+    const p = await trx.selectFrom('endo_procedures').select(['interventions']).where('order_item_id', '=', itemId).executeTakeFirst();
+    const biopsy = ((p?.interventions ?? []) as { type?: string }[]).some((x) => x.type === 'biopsy' || x.type === 'polypectomy');
+    const jars = await trx.selectFrom('path_specimens as s').innerJoin('path_requests as r', 'r.id', 's.request_id')
+      .select((eb) => eb.fn.countAll<string>().as('n')).where('r.order_item_id', '=', itemId).where('r.status', '<>', 'cancelled').executeTakeFirst();
+    if (biopsy && !Number(jars?.n ?? 0)) throw new BadRequestException('მითითებულია ბიოფსია / პოლიპექტომია — დაამატეთ ნიმუშები (ქილები) პათოლოგიისთვის');
+  }
+
   // =============================================================== helpers
   private async lockItem(trx: Trx, itemId: string) {
     const it = await trx.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id').innerJoin('patients as p', 'p.id', 'i.patient_id')
@@ -394,10 +413,9 @@ export class RadiologyService {
     if (it.paid_status === 'unpaid' && !ack) throw new ConflictException({ code: 'UNPAID', message: 'კვლევა გადახდილი არ არის' });
   }
   private assertReportable(it: { section: string; status: string }) {
-    const ok = it.section === 'radiology' ? ['performed', 'in_progress'] : ['ordered', 'in_progress'];
-    if (!ok.includes(it.status)) {
-      throw new ConflictException(it.section === 'radiology' && ['ordered', 'scheduled', 'arrived'].includes(it.status)
-        ? 'კვლევა ჯერ არ არის შესრულებული (ტექნიკოსი)' : 'დასკვნის შეცვლა ამ სტატუსზე შეუძლებელია');
+    if (!['performed', 'in_progress'].includes(it.status)) {
+      throw new ConflictException(['ordered', 'scheduled', 'arrived'].includes(it.status)
+        ? (it.section === 'radiology' ? 'კვლევა ჯერ არ არის შესრულებული (ტექნიკოსი)' : 'პროცედურა ჯერ არ არის დასრულებული (ექთანი)') : 'დასკვნის შეცვლა ამ სტატუსზე შეუძლებელია');
     }
   }
   private async upsertReport(trx: Trx, itemId: string, dto: ReportInput, user: AuthUser, mode: 'insert' | 'update') {

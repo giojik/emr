@@ -7,6 +7,7 @@ import AllergyBanner from '../../components/AllergyBanner';
 import { DxStatusChip } from '../../components/DxStatusChip';
 import { ErrorBox, Loading, useToast } from '../../components/ui';
 import { age, dayTitle, genderShort, hhmm, shiftDay, todayISO } from '../../lib/format';
+import EndoProcedurePanel from './EndoProcedure';
 import { CONTRAST_KA, ContrastChip, errCode, needsPregnancy, PatientLine, StudyMeta, Urgent } from './common';
 
 const GROUPS: { key: string; title: string; match: (i: DxItem) => boolean }[] = [
@@ -17,12 +18,12 @@ const GROUPS: { key: string; title: string; match: (i: DxItem) => boolean }[] = 
 ];
 
 /** ტექნიკოსი: პაციენტის მიღება → იდენტიფიკაცია, უსაფრთხოება, კონტრასტი/დოზა → „შესრულდა“ (რადიოლოგის სიაში გადადის) */
-export default function TechQueue() {
+export default function TechQueue({ section = 'radiology' }: { section?: 'radiology' | 'endoscopy' }) {
   const [date, setDate] = useState(todayISO());
   const [device, setDevice] = useState('');
   const [selId, setSelId] = useState<string | null>(null);
-  const devices = useQuery({ queryKey: ['dx-devices', 'radiology'], queryFn: () => api<DxDevice[]>('/dx/devices', { query: { section: 'radiology' } }), staleTime: 60_000 });
-  const q = useQuery({ queryKey: ['rad-queue', date, device], queryFn: () => api<DxItem[]>('/radiology/queue', { query: { date, device_id: device } }), refetchInterval: 15_000 });
+  const devices = useQuery({ queryKey: ['dx-devices', section], queryFn: () => api<DxDevice[]>('/dx/devices', { query: { section } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ['rad-queue', section, date, device], queryFn: () => api<DxItem[]>('/radiology/queue', { query: { date, device_id: device, section } }), refetchInterval: 15_000 });
   const items = q.data ?? [];
   const sel = items.find((i) => i.id === selId) ?? null;
   return (
@@ -58,7 +59,7 @@ export default function TechQueue() {
           );
         })}
       </div>
-      {sel && <PerformPanel key={sel.id} it={sel} onClose={() => setSelId(null)} />}
+      {sel && (section === 'endoscopy' ? <EndoProcedurePanel key={sel.id} it={sel} onClose={() => setSelId(null)} /> : <PerformPanel key={sel.id} it={sel} onClose={() => setSelId(null)} />)}
     </div>
   );
 }

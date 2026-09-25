@@ -109,7 +109,7 @@ export class DiagnosticsService {
       const maxSort = await trx.selectFrom('dx_services').select((eb) => eb.fn.max('sort_order').as('m')).where('section', '=', dto.section).executeTakeFirst();
       const s = await trx.insertInto('dx_services').values({
         section: dto.section, code, name: dto.name.trim(), group_name: dto.group_name.trim(), tariff_id: t.id,
-        specimen_type: dto.specimen_type ?? null, container: dto.container?.trim() || null, modality: dto.modality ?? null, body_part: dto.body_part ?? null,
+        specimen_type: dto.specimen_type ?? null, container: dto.container?.trim() || null, modality: dto.section === 'endoscopy' ? 'ES' : dto.modality ?? null, body_part: dto.body_part ?? null,
         contrast: dto.contrast ?? null, performed_by: dto.performed_by ?? 'internal', external_lab: dto.performed_by === 'external' ? dto.external_lab?.trim() || null : null,
         sort_order: (Number(maxSort?.m ?? 0) || 0) + 10, needs_review: true,
       }).returning('id').executeTakeFirstOrThrow();
@@ -247,7 +247,7 @@ export class DiagnosticsService {
     const created = [];
     for (const it of items) {
       const s = services.find((x) => x.id === it.service_id)!;
-      const accession = s.section === 'radiology' ? (await sql<{ n: string }>`SELECT nextval('accession_seq') AS n`.execute(trx)).rows[0].n : null;
+      const accession = s.section !== 'lab' ? (await sql<{ n: string }>`SELECT nextval('accession_seq') AS n`.execute(trx)).rows[0].n : null;
       const row = await trx.insertInto('dx_order_items').values({
         encounter_id: enc.id, patient_id: enc.patient_id, service_id: s.id, section: s.section, priority: it.priority ?? 'routine',
         clinical_note: it.note?.trim() || null, ordered_by: user.id, accession_number: accession ? `A${accession}` : null,
@@ -494,6 +494,7 @@ export class DiagnosticsService {
       .leftJoin('dx_devices as dev', 'dev.id', 'i.device_id')
       .leftJoin('dx_reports as rep', 'rep.order_item_id', 'i.id')
       .leftJoin('encounters as enc', 'enc.id', 'i.encounter_id')
+      .leftJoin('path_requests as pr', (j) => j.onRef('pr.order_item_id', '=', 'i.id').on('pr.status', '<>', 'cancelled'))
       .select(['i.id', 'i.encounter_id', 'i.patient_id', 'i.service_id', 'i.section', 'i.status', 'i.priority', 'i.clinical_note', 'i.accession_number',
         'i.report_text', 'i.allergy_override_reason', 'i.ordered_at', 'i.resulted_at', 'i.validated_at', 'i.cancel_reason',
         's.code as service_code', 's.name as service_name', 's.group_name', 's.performed_by', 's.external_lab', 's.modality', 's.contrast',
@@ -503,6 +504,8 @@ export class DiagnosticsService {
         'i.contrast_agent', 'i.contrast_volume_ml', 'i.dose_text', 'i.tech_note', 'i.collection_issue', 's.prep_instructions',
         'rep.status as report_status', 'rep.version as report_version', 'rep.is_critical', 'rep.amend_reason', 'rep.updated_at as report_updated_at',
         'enc.visit_kind', 'enc.external_referral',
+        'pr.id as path_request_id', 'pr.request_no as path_request_no', 'pr.status as path_status', 'pr.result_text as path_result_text', 'pr.reviewed_at as path_reviewed_at',
+        sql<boolean>`pr.result_file_path IS NOT NULL`.as('path_has_file'),
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),
         sql<string | null>`vb.first_name || ' ' || vb.last_name`.as('validated_by_name'),
         (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')

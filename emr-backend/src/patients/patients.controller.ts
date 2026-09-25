@@ -24,6 +24,6 @@ export class PatientsController {
   @Patch(':id') @Roles('admin', 'receptionist')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto, @Req() req: Request) { return this.patients.update(id, dto, auditCtx(req)); }
 
-  @Get(':id') @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'radiographer', 'radiologist')
+  @Get(':id') @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) { return this.patients.findOne(id, auditCtx(req)); }
 }

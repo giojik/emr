@@ -7,6 +7,7 @@ import AllergyBanner from '../../components/AllergyBanner';
 import { DxStatusChip } from '../../components/DxStatusChip';
 import { ErrorBox, Loading, useDebounced, useToast } from '../../components/ui';
 import { age, genderShort, hhmm, REPORT_FIELDS, type ReportField, todayISO, tsDate } from '../../lib/format';
+import { BiopsyBlock, EndoFindingsBlock, ImagesBlock } from './ReportExtras';
 import { BLANK, ContrastChip, fillPlaceholders, PatientLine, PREGNANCY_KA, RENAL_KA, StudyMeta, Urgent } from './common';
 
 type Section = 'radiology' | 'endoscopy';
@@ -27,7 +28,7 @@ export default function Reporting({ section }: { section: Section }) {
       <div className="content grow" style={{ minWidth: 0, overflow: 'auto' }}>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="სია">
-            <button type="button" aria-pressed={tab === 'todo'} onClick={() => { setTab('todo'); setSelId(null); }}>{section === 'radiology' ? 'აღსაწერი' : 'შესასრულებელი'}</button>
+            <button type="button" aria-pressed={tab === 'todo'} onClick={() => { setTab('todo'); setSelId(null); }}>{section === 'radiology' ? 'აღსაწერი' : 'ოქმი დასაწერი'}</button>
             <button type="button" aria-pressed={tab === 'done'} onClick={() => { setTab('done'); setSelId(null); }}>ხელმოწერილი</button>
           </div>
           {tab === 'done' && <input type="date" className="input" style={{ width: 170, height: 38 }} value={date} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="თარიღი" />}
@@ -37,7 +38,7 @@ export default function Reporting({ section }: { section: Section }) {
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
             <table className="table">
-              <thead><tr><th>{tab === 'todo' ? (section === 'radiology' ? 'შესრულდა' : 'შეკვეთა') : 'ხელმოწერა'}</th><th>პაციენტი</th><th>კვლევა</th>{section === 'radiology' && <th>Accession</th>}<th>სტატუსი</th></tr></thead>
+              <thead><tr><th>{tab === 'todo' ? 'შესრულდა' : 'ხელმოწერა'}</th><th>პაციენტი</th><th>კვლევა</th>{section === 'radiology' && <th>Accession</th>}<th>სტატუსი</th></tr></thead>
               <tbody>{items.map((i) => {
                 const ts = tab === 'done' ? i.validated_at : i.performed_at ?? i.ordered_at;
                 return (
@@ -66,9 +67,11 @@ function ReportEditor({ id, section, onClose }: { id: string; section: Section; 
   const qc = useQueryClient(); const toast = useToast(); const { user } = useAuth();
   const q = useQuery({ queryKey: ['rad-report', id], queryFn: () => api<ReportDetail>(`/dx-orders/${id}/report`) });
   const it = q.data;
-  const isReporter = user?.role === 'admin' || (section === 'radiology' ? user?.role === 'radiologist' : user?.role === 'diagnostic');
+  const isReporter = user?.role === 'admin' || (section === 'radiology' ? user?.role === 'radiologist' : user?.role === 'endoscopist');
+  const canImages = !!user && ['admin', 'radiologist', 'radiographer', 'endoscopist', 'endoscopy_nurse'].includes(user.role);
+  const endoStaff = !!user && ['admin', 'endoscopist', 'endoscopy_nurse'].includes(user.role);
   const signed = it?.report?.status === 'signed';
-  const reportable = !!it && (section === 'radiology' ? ['performed', 'in_progress'] : ['ordered', 'in_progress']).includes(it.status);
+  const reportable = !!it && ['performed', 'in_progress'].includes(it.status);
   const editable = isReporter && reportable && !signed;
 
   const [f, setF] = useState<Record<ReportField, string>>(EMPTY);
@@ -92,6 +95,7 @@ function ReportEditor({ id, section, onClose }: { id: string; section: Section; 
   const dirty = editable && snapshot !== saved;
   const body = (): Partial<ReportSections> & Record<string, unknown> => ({ ...f, is_critical: critical, critical_notified_to: critical ? notified : null, template_id: templateId });
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['report-worklist'] }); };
+  const reload = () => { void qc.invalidateQueries({ queryKey: ['rad-report', id] }); };
 
   const draft = useMutation({
     mutationFn: (snap: string) => api(`/dx-orders/${id}/report`, { method: 'PUT', body: body() }).then(() => snap),
@@ -196,6 +200,7 @@ function ReportEditor({ id, section, onClose }: { id: string; section: Section; 
           </div>
         )}
 
+        {section === 'endoscopy' && <EndoFindingsBlock key={`f-${it.endo?.updated_at ?? ''}`} it={it} canEdit={editable} onChange={reload} />}
         {editable && (
           <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
             <select aria-label="შაბლონი" className="select" style={{ height: 34, maxWidth: 360 }} value="" onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) applyTemplate(t); }}>
@@ -232,6 +237,8 @@ function ReportEditor({ id, section, onClose }: { id: string; section: Section; 
         })}
         {!editable && !r && <div className="empty small">{section === 'radiology' && ['ordered', 'scheduled', 'arrived'].includes(it.status) ? 'კვლევა ჯერ არ არის შესრულებული.' : 'დასკვნა ჯერ არ დაწერილა.'}</div>}
 
+        <ImagesBlock it={it} canEdit={canImages && !signed && it.status !== 'cancelled'} onChange={reload} />
+        {section === 'endoscopy' && <BiopsyBlock key={`b-${it.pathology?.id ?? ''}-${it.pathology?.status ?? ''}`} it={it} canEdit={endoStaff && ['performed', 'in_progress', 'validated'].includes(it.status)} onChange={reload} />}
         {(editable || critical) && (
           <div className="stack" style={{ gap: 6, padding: 10, borderRadius: 10, border: `1px solid ${critical ? 'var(--danger-line)' : 'var(--line-soft)'}`, background: critical ? 'var(--danger-weak)' : undefined }}>
             <label className="row"><input type="checkbox" disabled={!editable} checked={critical} onChange={(e) => setCritical(e.target.checked)} /> <strong>კრიტიკული მიგნება</strong> <span className="small muted">— მკურნალ ექიმს დაუყოვნებლივ უნდა ეცნობოს</span></label>

@@ -26,8 +26,8 @@ export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slic
 
 export const ROLE_KA: Record<string, string> = {
   admin: 'ადმინისტრატორი', doctor: 'ექიმი', nurse: 'ექთანი', receptionist: 'რეგისტრატორი',
-  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი / ენდოსკოპისტი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
-  radiographer: 'რენტგენ-ტექნიკოსი', radiologist: 'რადიოლოგი',
+  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'ლაბორანტი', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
+  radiographer: 'რენტგენ-ტექნიკოსი', radiologist: 'რადიოლოგი', endoscopist: 'ენდოსკოპისტი', endoscopy_nurse: 'ენდოსკოპიის ექთანი',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };
@@ -57,3 +57,9 @@ export const unitFmt = (u: string) => u.replace(/\^(\d+)/g, (_m, d: string) => d
 export const MODALITY_KA: Record<string, string> = { CT: 'CT', MR: 'MRI', US: 'ულტრაბგერა', DX: 'რენტგენოგრაფია', RF: 'რენტგენოსკოპია', MG: 'მამოგრაფია', DXA: 'დენსიტომეტრია', ES: 'ენდოსკოპია' };
 export const REPORT_FIELDS = [['technique', 'ტექნიკა'], ['findings', 'აღწერა'], ['impression', 'დასკვნა'], ['recommendation', 'რეკომენდაცია']] as const;
 export type ReportField = (typeof REPORT_FIELDS)[number][0];
+
+export const INTERVENTION_KA: Record<string, string> = { biopsy: 'ბიოფსია', polypectomy: 'პოლიპექტომია', emr: 'ლორწოვანის რეზექცია (EMR)', hemostasis: 'ჰემოსტაზი', clip: 'კლიპირება',
+  banding: 'ლიგირება', injection: 'ინექცია', dilation: 'დილატაცია', foreign_body: 'უცხო სხეულის ამოღება', stent: 'სტენტირება', apc: 'არგონ-პლაზმური კოაგულაცია', other: 'სხვა' };
+export const SEDATION_KA: Record<string, string> = { none: 'არ ჩატარებულა', topical: 'ადგილობრივი (სპრეი)', moderate: 'ზომიერი', deep: 'ღრმა', general: 'ზოგადი ანესთეზია' };
+export const SCOPE_TYPE_KA: Record<string, string> = { gastroscope: 'გასტროსკოპი', colonoscope: 'კოლონოსკოპი', duodenoscope: 'დუოდენოსკოპი', bronchoscope: 'ბრონქოსკოპი', cystoscope: 'ცისტოსკოპი', enteroscope: 'ენტეროსკოპი', other: 'სხვა' };
+export const SCOPE_STATE: Record<string, [string, string]> = { ready: ['ok', 'მზადაა'], dirty: ['warn', 'საჭიროებს დეზინფექციას'], failed: ['danger', 'დეზინფექცია ჩავარდა'] };

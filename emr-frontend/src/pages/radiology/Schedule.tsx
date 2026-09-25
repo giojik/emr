@@ -17,12 +17,12 @@ const BLOCK: Record<string, [string, string]> = {
 };
 
 /** რადიოლოგიის განრიგი: სვეტები = აპარატები; მარცხნივ — დასაგეგმი კვლევები. აირჩიე კვლევა → დააჭირე თავისუფალ დროს */
-export default function Schedule() {
+export default function Schedule({ section = 'radiology' }: { section?: 'radiology' | 'endoscopy' }) {
   const qc = useQueryClient(); const toast = useToast(); const { user } = useAuth();
   const [date, setDate] = useState(todayISO());
   const [picked, setPicked] = useState<DxItem | null>(null);
   const [open, setOpen] = useState<DxItem | null>(null);
-  const q = useQuery({ queryKey: ['rad-board', date], queryFn: () => api<RadBoard>('/radiology/board', { query: { date } }), refetchInterval: 20_000 });
+  const q = useQuery({ queryKey: ['rad-board', section, date], queryFn: () => api<RadBoard>('/radiology/board', { query: { date, section } }), refetchInterval: 20_000 });
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['rad-board'] }); void qc.invalidateQueries({ queryKey: ['rad-queue'] }); };
 
   const schedule = useMutation({
@@ -88,7 +88,7 @@ export default function Schedule() {
           {picked && <span className="chip info" style={{ marginLeft: 'auto' }}>ირჩევთ დროს: {picked.last_name} — {picked.service_name} <button className="icon-btn" type="button" aria-label="გაუქმება" onClick={() => setPicked(null)}>×</button></span>}
         </div>
         <ErrorBox error={q.error ?? schedule.error} />
-        {q.isLoading || !data ? <Loading /> : !data.devices.length ? <div className="card empty">აპარატები არ არის — ადმინისტრირება → აპარატები.</div> : (
+        {q.isLoading || !data ? <Loading /> : !data.devices.length ? <div className="card empty">{section === 'radiology' ? 'აპარატები' : 'ოთახები'} არ არის — ადმინისტრირება → აპარატები / ოთახები.</div> : (
           <div className="card" style={{ overflow: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(${data.devices.length}, minmax(170px, 1fr))`, minWidth: 56 + data.devices.length * 170 }}>
               <div style={{ position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2, borderBottom: '1px solid var(--line)' }} />
@@ -138,7 +138,7 @@ export default function Schedule() {
         )}
         {toast.node}
       </div>
-      {open && <BookingDialog it={open} canArrive={user?.role !== 'radiologist'} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
+      {open && <BookingDialog it={open} canArrive={user?.role !== 'radiologist' && user?.role !== 'endoscopist'} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
     </div>
   );
 }

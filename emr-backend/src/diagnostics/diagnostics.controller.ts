@@ -12,6 +12,8 @@ import { InjectDb, type Database } from '../database/database.module';
 import { ClinicSettingsModule, ClinicSettingsService } from '../settings/clinic-settings';
 import { renderLabels, renderLabReport } from './diagnostics.pdf';
 import { DiagnosticsService } from './diagnostics.service';
+import { EndoscopyController } from './endoscopy.controller';
+import { EndoscopyService } from './endoscopy.service';
 import { RadiologyController } from './radiology.controller';
 import { RadiologyService } from './radiology.service';
 
@@ -111,7 +113,7 @@ export class DiagnosticsController {
   order(@Param('id', ParseUUIDPipe) id: string, @Body() dto: OrderDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.order(id, dto, u, auditCtx(req)); }
 
   /** მკურნალი ექიმი ლაბორატორიულ შედეგს ხედავს მხოლოდ ვალიდაციის შემდეგ */
-  @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist')
+  @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
   async items(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const rows = await this.dx.encounterItems(id);
     const labStaff = ['admin', 'diagnostic', 'lab_doctor'].includes(u.role);
@@ -171,6 +173,6 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule],
-  controllers: [DiagnosticsController, RadiologyController], providers: [DiagnosticsService, RadiologyService], exports: [DiagnosticsService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController], providers: [DiagnosticsService, RadiologyService, EndoscopyService], exports: [DiagnosticsService],
 })
 export class DiagnosticsModule {}

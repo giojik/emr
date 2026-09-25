@@ -168,6 +168,23 @@ export interface DxDevices {
   work_start: Generated<string>;
 }
 
+export interface DxImages {
+  caption: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  deactivated_reason: string | null;
+  file_path: string;
+  id: Generated<string>;
+  in_report: Generated<boolean>;
+  is_active: Generated<boolean>;
+  mime_type: string;
+  order_item_id: string;
+  sha256: string;
+  size_bytes: number;
+  sort_order: Generated<number>;
+  source: string;
+}
+
 export interface DxOrderItems {
   accession_number: string | null;
   allergy_override_reason: string | null;
@@ -337,6 +354,61 @@ export interface EncounterVitals {
   weight_kg: Numeric | null;
 }
 
+export interface EndoProcedures {
+  allergies_reviewed: Generated<boolean>;
+  anticoag_note: string | null;
+  anticoagulants: string | null;
+  asa_class: number | null;
+  bbps_score: number | null;
+  bowel_prep: string | null;
+  checklist_at: Timestamp | null;
+  checklist_by: string | null;
+  checklist_note: string | null;
+  complication_note: string | null;
+  complications: Generated<string>;
+  consent_confirmed: Generated<boolean>;
+  discharged_at: Timestamp | null;
+  ended_at: Timestamp | null;
+  extent_reached: string | null;
+  fasting_hours: Numeric | null;
+  interventions: Generated<Json>;
+  monitoring: Generated<Json>;
+  nurse_id: string | null;
+  order_item_id: string;
+  recovery_score: number | null;
+  scope_id: string | null;
+  scope_used_at: Timestamp | null;
+  sedation_by: string | null;
+  sedation_drugs: Generated<Json>;
+  sedation_type: string | null;
+  started_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  withdrawal_minutes: Numeric | null;
+}
+
+export interface EndoReprocessing {
+  disinfectant: string | null;
+  id: Generated<string>;
+  leak_test: boolean;
+  machine: string | null;
+  method: string;
+  note: string | null;
+  performed_at: Generated<Timestamp>;
+  performed_by: string;
+  result: string;
+  scope_id: string;
+}
+
+export interface EndoScopes {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  note: string | null;
+  scope_type: string;
+  serial_number: string;
+}
+
 export interface GeneratedDocuments {
   document_number: string | null;
   document_type: string;
@@ -453,6 +525,37 @@ export interface LabSpecimens {
   reject_reason: string | null;
   specimen_type: string;
   status: Generated<string>;
+}
+
+export interface PathRequests {
+  clinical_info: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  external_lab: string | null;
+  id: Generated<string>;
+  order_item_id: string;
+  patient_id: string;
+  request_no: string;
+  result_entered_by: string | null;
+  result_file_path: string | null;
+  result_received_at: Timestamp | null;
+  result_text: string | null;
+  reviewed_at: Timestamp | null;
+  reviewed_by: string | null;
+  sent_at: Timestamp | null;
+  sent_by: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PathSpecimens {
+  description: string | null;
+  fixative: Generated<string>;
+  id: Generated<string>;
+  jar_no: number;
+  pieces: Generated<number>;
+  request_id: string;
+  site: string;
 }
 
 export interface PatientAllergies {
@@ -633,6 +736,7 @@ export interface DB {
   departments: Departments;
   document_counters: DocumentCounters;
   dx_devices: DxDevices;
+  dx_images: DxImages;
   dx_order_items: DxOrderItems;
   dx_report_templates: DxReportTemplates;
   dx_report_versions: DxReportVersions;
@@ -642,6 +746,9 @@ export interface DB {
   encounter_payment_overrides: EncounterPaymentOverrides;
   encounter_vitals: EncounterVitals;
   encounters: Encounters;
+  endo_procedures: EndoProcedures;
+  endo_reprocessing: EndoReprocessing;
+  endo_scopes: EndoScopes;
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;
@@ -651,6 +758,8 @@ export interface DB {
   lab_reference_ranges: LabReferenceRanges;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
+  path_requests: PathRequests;
+  path_specimens: PathSpecimens;
   patient_allergies: PatientAllergies;
   patient_chronic_conditions: PatientChronicConditions;
   patient_consents: PatientConsents;

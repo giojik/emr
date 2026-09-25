@@ -149,6 +149,7 @@ export interface DxItem {
   contrast_agent: string | null; contrast_volume_ml: string | null; dose_text: string | null; tech_note: string | null; collection_issue: string | null; prep_instructions: string | null;
   report_status: 'draft' | 'signed' | null; report_version: number | null; is_critical: boolean | null; amend_reason: string | null; report_updated_at: string | null;
   visit_kind: 'consultation' | 'lab' | null; external_referral: string | null;
+  path_request_id: string | null; path_request_no: string | null; path_status: 'draft' | 'sent' | 'resulted' | null; path_result_text: string | null; path_reviewed_at: string | null; path_has_file: boolean;
 }
 export interface DxDevice {
   id: string; section: 'radiology' | 'endoscopy'; name: string; modalities: string[]; room: string | null; ae_title: string | null;
@@ -164,7 +165,7 @@ export interface DxReport extends ReportSections {
 export interface DxReportVersion extends ReportSections { id: string; version: number; is_critical: boolean; critical_notified_to: string | null; amend_reason: string | null; signed_by_name: string; signed_at: string }
 export interface ReportDetail extends DxItem {
   safety: { mr_screening?: boolean; pregnancy?: string; renal?: string; notes?: string } | null; technician_name: string | null;
-  report: DxReport | null; versions: DxReportVersion[];
+  report: DxReport | null; versions: DxReportVersion[]; endo: EndoProcedure | null; images: DxImage[]; pathology: PathRequest | null;
   priors: { id: string; service_name: string; modality: string | null; accession_number: string | null; performed_at: string | null; validated_at: string; impression: string | null; findings: string | null; report_text: string | null }[];
 }
 export interface ReportTemplate extends ReportSections {
@@ -189,3 +190,30 @@ export interface CollectionDetail {
   tubes: { specimen_type: string; container: string | null; external: boolean; tests: string[] }[];
 }
 export interface CollectedSpecimen { id: string; barcode: string; specimen_type: string; container: string | null; tests: string[]; external: boolean }
+
+export interface DxImage { id: string; source: 'upload' | 'capture'; caption: string | null; in_report: boolean; sort_order: number; mime_type: string; created_at: string }
+export interface EndoIntervention { type: string; site?: string; details?: string }
+export interface EndoProcedure {
+  order_item_id: string; consent_confirmed: boolean; fasting_hours: string | null; anticoagulants: 'none' | 'stopped' | 'continued' | null; anticoag_note: string | null;
+  allergies_reviewed: boolean; asa_class: number | null; bowel_prep: 'excellent' | 'good' | 'fair' | 'poor' | 'na' | null; checklist_note: string | null;
+  sedation_type: 'none' | 'topical' | 'moderate' | 'deep' | 'general' | null; sedation_by: string | null;
+  sedation_drugs: { drug: string; dose: number; unit: string; time?: string }[]; monitoring: { time: string; hr?: number; spo2?: number; sys?: number; dia?: number }[];
+  scope_id: string | null; scope_used_at: string | null; started_at: string | null; ended_at: string | null; extent_reached: string | null; withdrawal_minutes: string | null; bbps_score: number | null;
+  interventions: EndoIntervention[]; complications: 'none' | 'minor' | 'major'; complication_note: string | null; recovery_score: number | null; discharged_at: string | null;
+  scope_name?: string | null; scope_serial?: string | null; nurse_name?: string | null; updated_at: string;
+}
+export interface EndoScope {
+  id: string; name: string; scope_type: string; serial_number: string; is_active: boolean; note: string | null;
+  last_used_at: string | null; last_reproc_at: string | null; last_reproc_result: 'passed' | 'failed' | null; state: 'ready' | 'dirty' | 'failed';
+}
+export interface PathSpecimen { id?: string; jar_no: number; site: string; pieces: number; description: string | null; fixative?: string }
+export interface PathRequest {
+  id: string; order_item_id: string; request_no: string; external_lab: string | null; clinical_info: string | null; status: 'draft' | 'sent' | 'resulted' | 'cancelled';
+  sent_at: string | null; result_text: string | null; result_file_path: string | null; result_received_at: string | null; reviewed_at: string | null; specimens: PathSpecimen[];
+  first_name?: string; last_name?: string; birth_date?: string; gender?: Gender; personal_number?: string | null; service_name?: string; performed_at?: string | null;
+  sent_by_name?: string | null; reviewed_by_name?: string | null; ordered_by_name?: string | null; days_waiting?: number | null; encounter_id?: string; external_referral?: string | null;
+}
+export interface PathListRow {
+  id: string; order_item_id: string; request_no: string; status: string; external_lab: string | null; sent_at: string | null; result_received_at: string | null; reviewed_at: string | null; created_at: string;
+  first_name: string; last_name: string; personal_number: string | null; birth_date: string; gender: Gender; service_name: string; performed_at: string | null; jars: number; days_waiting: number | null;
+}

@@ -9,12 +9,18 @@ const MODS = ['CT', 'MR', 'US', 'DX', 'RF', 'MG', 'DXA'];
 
 /** რადიოლოგიის აპარატები / კაბინეტები — ჩაწერის განრიგის სვეტები */
 export default function Devices() {
-  const q = useQuery({ queryKey: ['dx-devices', 'all'], queryFn: () => api<DxDevice[]>('/dx/devices', { query: { section: 'radiology', include_inactive: true } }) });
+  const [section, setSection] = useState<'radiology' | 'endoscopy'>('radiology');
+  const q = useQuery({ queryKey: ['dx-devices', 'all', section], queryFn: () => api<DxDevice[]>('/dx/devices', { query: { section, include_inactive: true } }) });
   const [edit, setEdit] = useState<DxDevice | 'new' | null>(null);
   return (
     <div className="content">
-      <div className="row"><span className="muted grow">რადიოლოგიის აპარატები — განრიგის სვეტები. AE Title გამოიყენება dcm4chee-სთან კავშირისას (შემდეგი ეტაპი).</span>
-        <button className="btn primary" type="button" onClick={() => setEdit('new')}>+ აპარატი</button></div>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="seg" role="group" aria-label="განყოფილება">
+          <button type="button" aria-pressed={section === 'radiology'} onClick={() => setSection('radiology')}>რადიოლოგია — აპარატები</button>
+          <button type="button" aria-pressed={section === 'endoscopy'} onClick={() => setSection('endoscopy')}>ენდოსკოპია — ოთახები</button>
+        </div>
+        <span className="muted grow small">განრიგის სვეტები. AE Title — dcm4chee-სთან კავშირისთვის (შემდეგი ეტაპი).</span>
+        <button className="btn primary" type="button" onClick={() => setEdit('new')}>+ {section === 'radiology' ? 'აპარატი' : 'ოთახი'}</button></div>
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (
         <div className="card">
@@ -29,19 +35,19 @@ export default function Devices() {
           </table>
         </div>
       )}
-      {edit && <DeviceDialog d={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+      {edit && <DeviceDialog key={section} section={section} d={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
     </div>
   );
 }
 
-function DeviceDialog({ d, onClose }: { d: DxDevice | null; onClose: () => void }) {
+function DeviceDialog({ d, section, onClose }: { d: DxDevice | null; section: 'radiology' | 'endoscopy'; onClose: () => void }) {
   const qc = useQueryClient();
   const [f, setF] = useState({ name: d?.name ?? '', room: d?.room ?? '', ae_title: d?.ae_title ?? '', slot_minutes: d?.slot_minutes ?? 20,
     work_start: d?.work_start.slice(0, 5) ?? '09:00', work_end: d?.work_end.slice(0, 5) ?? '18:00', is_active: d?.is_active ?? true, sort_order: d?.sort_order ?? 0 });
-  const [mods, setMods] = useState<string[]>(d?.modalities ?? []);
+  const [mods, setMods] = useState<string[]>(d?.modalities ?? (section === 'endoscopy' ? ['ES'] : []));
   const m = useMutation({
     mutationFn: () => {
-      const body = { ...f, room: f.room || null, ae_title: f.ae_title || null, modalities: mods, section: 'radiology' };
+      const body = { ...f, room: f.room || null, ae_title: f.ae_title || null, modalities: mods, section };
       return d ? api(`/dx/devices/${d.id}`, { method: 'PATCH', body }) : api('/dx/devices', { body });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-devices'] }); onClose(); },
@@ -52,12 +58,12 @@ function DeviceDialog({ d, onClose }: { d: DxDevice | null; onClose: () => void 
       <form id="devf" onSubmit={(e) => { e.preventDefault(); m.mutate(); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
         <Field label="დასახელება" htmlFor="dvn" required><input id="dvn" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="მაგ. CT Siemens 64" /></Field>
         <Field label="კაბინეტი" htmlFor="dvr"><input id="dvr" className="input" value={f.room} onChange={(e) => setF({ ...f, room: e.target.value })} placeholder="მაგ. 104" /></Field>
-        <div style={{ gridColumn: '1 / -1' }}>
+        {section === 'radiology' && <div style={{ gridColumn: '1 / -1' }}>
           <span className="label">მოდალობა <span className="req">*</span></span>
           <div className="row" style={{ flexWrap: 'wrap', gap: 12, marginTop: 6 }}>
             {MODS.map((x) => <label key={x} className="row"><input type="checkbox" checked={mods.includes(x)} onChange={(e) => setMods(e.target.checked ? [...mods, x] : mods.filter((y) => y !== x))} />{MODALITY_KA[x]}</label>)}
           </div>
-        </div>
+        </div>}
         <Field label="სამუშაოს დასაწყისი" htmlFor="dvs"><input id="dvs" className="input mono" type="time" value={f.work_start} onChange={(e) => setF({ ...f, work_start: e.target.value })} /></Field>
         <Field label="სამუშაოს დასასრული" htmlFor="dve"><input id="dve" className="input mono" type="time" value={f.work_end} onChange={(e) => setF({ ...f, work_end: e.target.value })} /></Field>
         <Field label="სლოტი (წთ)" htmlFor="dvsl" hint="კვლევის ხანგრძლივობა, თუ კატალოგში სხვა არ წერია"><input id="dvsl" className="input mono" type="number" min={5} max={240} value={f.slot_minutes} onChange={(e) => setF({ ...f, slot_minutes: Number(e.target.value) })} /></Field>
