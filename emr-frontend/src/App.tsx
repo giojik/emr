@@ -58,7 +58,7 @@ export default function App() {
         <Route path="/visits" element={<Guard roles={['admin', 'nurse', 'doctor']}><DoctorQueue /></Guard>} />
         <Route path="/diagnostics" element={<Navigate to="/diagnostics/lab" replace />} />
         <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager']}><DiagnosticsHub /></Guard>} />
-        <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
+        <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

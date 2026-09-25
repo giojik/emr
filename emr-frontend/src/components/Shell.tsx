@@ -9,7 +9,7 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
-  { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse'] },
+  { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },
   { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
@@ -18,7 +18,7 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
 ];
 
 export function homeFor(role: Role) {
-  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' || role === 'lab_doctor' ? '/diagnostics/lab' : role === 'lab_manager' ? '/admin/catalog' : '/patients';
+  return role === 'doctor' ? '/doctor' : role === 'billing' ? '/cashier' : role === 'nurse' ? '/visits' : role === 'receptionist' || role === 'admin' ? '/reception' : role === 'pharmacist' ? '/admin/allergens' : role === 'diagnostic' || role === 'lab_doctor' ? '/diagnostics/lab' : role === 'lab_manager' ? '/admin/catalog' : role === 'phlebotomist' ? '/collection' : '/patients';
 }
 
 export default function Shell() {

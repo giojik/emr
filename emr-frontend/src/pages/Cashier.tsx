@@ -33,7 +33,7 @@ export default function Cashier() {
                 style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '14px 18px', border: 0, borderBottom: '1px solid var(--line-soft)', background: on ? 'var(--accent-weak)' : 'transparent', textAlign: 'left', font: 'inherit', cursor: 'pointer', color: 'var(--ink)' }}>
                 <span className="stack" style={{ gap: 2 }}>
                   <strong>{e.patient_first_name} {e.patient_last_name}</strong>
-                  <span className="small muted">{e.status === 'planned' ? 'საწყისი' : 'დამატებითი'} · {e.doctor_name} · {hhmm(e.start_time)}</span>
+                  <span className="small muted">{e.visit_kind === 'lab' ? 'ლაბორატორია' : e.status === 'planned' ? 'საწყისი' : 'დამატებითი'} · {e.visit_kind === 'lab' ? 'ანალიზები' : e.doctor_name} · {hhmm(e.start_time)}</span>
                 </span>
                 <span className="mono" style={{ fontWeight: 600 }}>{due.toFixed(2)}</span>
               </button>
@@ -63,13 +63,14 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
 
   const refresh = () => ['invoice', 'encounter', 'encounters'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
   const planned = enc.data?.status === 'planned';
+  const isLab = enc.data?.visit_kind === 'lab';
   const pay = useMutation({
     mutationFn: () => {
       const body = { amount: Number(amount), method, terminal_ref: method === 'card_terminal' ? ref : undefined };
       if (planned) return api(`/encounters/${encounterId}/pay-initial`, { body: due > 0 ? body : {} });
       return api(`/invoices/${inv.data!.id}/payments`, { body });
     },
-    onSuccess: () => { toast.show(planned ? 'გადახდა მიღებულია — პაციენტი ექიმთან გადაიგზავნა' : 'გადახდა მიღებულია'); setRef(''); refresh(); },
+    onSuccess: () => { toast.show(planned ? (isLab ? 'გადახდა მიღებულია — პაციენტი სისხლის ასაღებად' : 'გადახდა მიღებულია — პაციენტი ექიმთან გადაიგზავნა') : 'გადახდა მიღებულია'); setRef(''); refresh(); },
   });
   const submit = (e: FormEvent) => { e.preventDefault(); pay.mutate(); };
 
@@ -85,7 +86,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
         <div className="row-top">
           <div className="stack grow" style={{ gap: 4 }}>
             <div className="row"><h1>{e.patient.first_name} {e.patient.last_name}</h1><StatusChip status={i.paid_status} /></div>
-            <span className="muted"><span className="mono">{i.invoice_number}</span> · {e.doctor ? `${e.doctor.first_name} ${e.doctor.last_name}` : ''} · {tsDate(e.start_time)} · ვიზიტი: <StatusChip status={e.status} /></span>
+            <span className="muted"><span className="mono">{i.invoice_number}</span> · {e.doctor ? `${e.doctor.first_name} ${e.doctor.last_name}` : 'ლაბორატორიული ვიზიტი'}{e.external_referral ? ` · მიმართვა: ${e.external_referral}` : ''} · {tsDate(e.start_time)} · ვიზიტი: <StatusChip status={e.status} /></span>
           </div>
           <Link className="btn sm" to={`/patients/${e.patient.id}`}>ბარათი</Link>
         </div>
@@ -151,7 +152,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
           </>}
           <ErrorBox error={pay.error} />
           <button className="btn primary lg" type="submit" disabled={pay.isPending || (due > 0 && (!(Number(amount) > 0) || cardNeedsRef))}>
-            {planned ? (due > 0 ? 'გადახდა და ექიმთან გაგზავნა' : 'ექიმთან გაგზავნა') : 'გადახდის მიღება'}
+            {planned ? (isLab ? (due > 0 ? 'გადახდა → სისხლის აღება' : 'გაგზავნა სისხლის ასაღებად') : (due > 0 ? 'გადახდა და ექიმთან გაგზავნა' : 'ექიმთან გაგზავნა')) : 'გადახდის მიღება'}
           </button>
           {planned && <span className="hint" style={{ textAlign: 'center' }}>გადახდის გარეშე გააქტიურება — მხოლოდ ექიმი ან ადმინისტრატორი</span>}
         </>)}

@@ -156,7 +156,7 @@ export default function Reception() {
                     const due = Number(e.patient_share ?? 0) - Number(e.paid_amount ?? 0);
                     return (
                       <tr key={e.id}>
-                        <td><strong>{e.patient_first_name} {e.patient_last_name}</strong><div className="small muted">{e.doctor_name} · {hhmm(e.start_time)}</div></td>
+                        <td><strong>{e.patient_first_name} {e.patient_last_name}</strong><div className="small muted">{e.visit_kind === 'lab' ? 'ლაბორატორია' : e.doctor_name} · {hhmm(e.start_time)}</div></td>
                         <td className="num">{money(due)}</td>
                         <td style={{ textAlign: 'right' }}>
                           {e.status === 'planned' || due > 0

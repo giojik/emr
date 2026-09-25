@@ -24,7 +24,7 @@ export class EncountersService {
       .innerJoin('patients as p', 'p.id', 'e.patient_id')
       .leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
       .leftJoin('invoices as i', 'i.encounter_id', 'e.id')
-      .select(['e.id', 'e.status', 'e.type', 'e.start_time', 'e.end_time', 'e.chief_complaint', 'e.department_id',
+      .select(['e.id', 'e.status', 'e.type', 'e.start_time', 'e.end_time', 'e.chief_complaint', 'e.department_id', 'e.visit_kind', 'e.external_referral',
         'e.patient_id', 'p.first_name as patient_first_name', 'p.last_name as patient_last_name', 'p.personal_number',
         'e.attending_doctor_id', sql<string>`d.first_name || ' ' || d.last_name`.as('doctor_name'),
         'i.id as invoice_id', 'i.invoice_number', 'i.total_amount', 'i.patient_share', 'i.paid_status',
@@ -133,6 +133,7 @@ export class EncountersService {
       await this.core.lock(trx, id, ['planned']);
       const inv = await this.core.invoiceOf(trx, id);
       if (inv && inv.paid_status !== 'unpaid' && Number(inv.patient_share) > 0) throw new ConflictException('ვიზიტზე გადახდა უკვე მიღებულია');
+      await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: 'ვიზიტი გაუქმდა' }).where('encounter_id', '=', id).where('status', '=', 'ordered').execute();
       await trx.updateTable('encounters').set({ status: 'cancelled', end_time: sql`now()` }).where('id', '=', id).execute();
       await trx.updateTable('appointments').set({ status: 'cancelled' }).where('encounter_id', '=', id).execute();
       await this.audit.log(ctx, { action: 'CANCEL_ENCOUNTER', entityName: 'encounters', entityId: id, newData: { reason } }, trx);

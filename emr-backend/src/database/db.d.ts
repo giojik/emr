@@ -159,6 +159,8 @@ export interface DxOrderItems {
   allergy_override_reason: string | null;
   cancel_reason: string | null;
   clinical_note: string | null;
+  collection_issue: string | null;
+  collection_issue_at: Timestamp | null;
   encounter_id: string;
   id: Generated<string>;
   ordered_at: Generated<Timestamp>;
@@ -220,6 +222,7 @@ export interface Encounters {
   created_at: Generated<Timestamp>;
   department_id: string;
   end_time: Timestamp | null;
+  external_referral: string | null;
   history_of_present_illness: string | null;
   id: Generated<string>;
   objective_status: string | null;
@@ -228,6 +231,7 @@ export interface Encounters {
   status: Generated<EncounterStatus>;
   type: EncounterType;
   updated_at: Generated<Timestamp>;
+  visit_kind: Generated<string>;
 }
 
 export interface EncounterVitals {

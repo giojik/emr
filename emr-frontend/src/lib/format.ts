@@ -26,7 +26,7 @@ export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slic
 
 export const ROLE_KA: Record<string, string> = {
   admin: 'ადმინისტრატორი', doctor: 'ექიმი', nurse: 'ექთანი', receptionist: 'რეგისტრატორი',
-  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი/რადიოლოგი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი',
+  billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'დიაგნოსტიკა (ლაბორანტი/რადიოლოგი)', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };

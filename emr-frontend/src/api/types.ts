@@ -29,7 +29,7 @@ export interface Appointment {
 }
 export type EncounterStatus = 'planned' | 'active' | 'discharged' | 'cancelled';
 export interface EncounterListItem {
-  id: string; status: EncounterStatus; type: string; start_time: string; end_time: string | null; chief_complaint: string | null;
+  id: string; status: EncounterStatus; visit_kind?: 'consultation' | 'lab'; external_referral?: string | null; type: string; start_time: string; end_time: string | null; chief_complaint: string | null;
   department_id: string; patient_id: string; patient_first_name: string; patient_last_name: string; personal_number: string | null;
   attending_doctor_id: string | null; doctor_name: string | null; invoice_id: string | null; invoice_number: string | null;
   total_amount: string | null; patient_share: string | null; paid_status: string | null; paid_amount: string; primary_diagnosis: string | null;
@@ -54,7 +54,7 @@ export interface Invoice {
   paid_status: 'unpaid' | 'partially_paid' | 'paid'; lines: InvoiceLine[]; payments: Payment[]; paid_amount?: string; balance_due?: string;
 }
 export interface EncounterDetail {
-  id: string; status: EncounterStatus; start_time: string; end_time: string | null; attending_doctor_id: string | null;
+  id: string; status: EncounterStatus; visit_kind?: 'consultation' | 'lab'; external_referral?: string | null; start_time: string; end_time: string | null; attending_doctor_id: string | null;
   chief_complaint: string | null; history_of_present_illness: string | null; objective_status: string | null;
   patient: Pick<Patient, 'id' | 'first_name' | 'last_name' | 'personal_number' | 'birth_date' | 'gender' | 'phone_number' | 'blood_group' | 'allergies' | 'chronic_conditions'>;
   doctor: { id: string; first_name: string; last_name: string; specialty: string | null } | null;
@@ -151,5 +151,16 @@ export interface LabAnalyteForm {
   critical_low: string | null; critical_high: string | null; range: { low: string | null; high: string | null; normal_text: string | null } | null;
 }
 export interface LabItemDetail extends DxItem { analytes: LabAnalyteForm[] }
-export interface PendingCollection { encounter_id: string; patient_id: string; first_name: string; last_name: string; personal_number: string | null; birth_date: string; tests: number; names: string[]; urgent: boolean; ordered_at: string }
+export interface PendingCollection {
+  encounter_id: string; patient_id: string; first_name: string; last_name: string; personal_number: string | null; birth_date: string;
+  visit_kind: 'consultation' | 'lab'; encounter_status: string; paid_status: 'unpaid' | 'partially_paid' | 'paid' | null;
+  tests: number; names: string[]; urgent: boolean; ordered_at: string; collection_issue: string | null;
+}
+export interface CollectionDetail {
+  encounter_id: string; encounter_status: string; visit_kind: 'consultation' | 'lab'; external_referral: string | null; doctor_name: string | null;
+  first_name: string; last_name: string; birth_date: string; gender: Gender; personal_number: string | null; passport_number: string | null;
+  paid_status: 'unpaid' | 'partially_paid' | 'paid' | null;
+  items: { id: string; priority: 'routine' | 'urgent'; clinical_note: string | null; collection_issue: string | null; name: string; code: string; specimen_type: string | null; container: string | null; performed_by: string; external_lab: string | null }[];
+  tubes: { specimen_type: string; container: string | null; external: boolean; tests: string[] }[];
+}
 export interface CollectedSpecimen { id: string; barcode: string; specimen_type: string; container: string | null; tests: string[]; external: boolean }

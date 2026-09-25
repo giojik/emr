@@ -35,6 +35,26 @@ export function computeFlag(a: AnalyteDef, range: RangeRow | null, num: number |
   return null;
 }
 
+/** სინჯარების აღების სტანდარტული რიგი (order of draw, CLSI GP41) */
+const DRAW_ORDER = ['citrate', 'serum', 'heparin', 'edta', 'fluoride'];
+const drawRank = (container: string | null, specimen: string | null) => {
+  const c = (container ?? '').toLowerCase();
+  const i = DRAW_ORDER.findIndex((k) => c.includes(k));
+  if (i >= 0) return i;
+  return specimen === 'urine' || specimen === 'stool' || specimen === 'swab' ? 20 : 10;
+};
+/** ანალიზები → სინჯარები (ნიმუში + კონტეინერი + შიდა/გარე), აღების რიგით */
+export function tubesInOrder<T extends { specimen_type: string | null; container: string | null; performed_by: string; name: string }>(items: T[]) {
+  const groups = new Map<string, { specimen_type: string; container: string | null; external: boolean; items: T[] }>();
+  for (const it of items) {
+    const key = `${it.specimen_type}|${it.container ?? ''}|${it.performed_by}`;
+    const g = groups.get(key) ?? { specimen_type: it.specimen_type ?? 'other', container: it.container, external: it.performed_by === 'external', items: [] };
+    g.items.push(it); groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => drawRank(a.container, a.specimen_type) - drawRank(b.container, b.specimen_type))
+    .map((g) => ({ ...g, tests: g.items.map((i) => i.name) }));
+}
+
 const ageDays = (birth: string, at: Date) => Math.floor((at.getTime() - new Date(`${birth}T00:00:00Z`).getTime()) / 86_400_000);
 
 @Injectable()
@@ -161,46 +181,88 @@ export class DiagnosticsService {
     const res = await this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
       this.core.assertClinicalWriter(e, user);
-      const ids = [...new Set(dto.items.map((i) => i.service_id))];
-      const services = await trx.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
-        .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price']).where('s.id', 'in', ids).execute();
-      if (services.length !== ids.length || services.some((s) => !s.is_active)) throw new BadRequestException('ზოგიერთი კვლევა ვერ მოიძებნა ან გათიშულია');
-      const labIds = services.filter((s) => s.section === 'lab').map((s) => s.id);
-      if (labIds.length) {
-        const withAnalytes = await trx.selectFrom('lab_analytes').select('service_id').distinct().where('service_id', 'in', labIds).where('is_active', '=', true).execute();
-        const empty = services.filter((s) => s.section === 'lab' && !withAnalytes.some((w) => w.service_id === s.id));
-        if (empty.length) throw new BadRequestException(`ანალიზს კომპონენტები ჯერ არ აქვს: ${empty.map((e) => e.name).join(', ')}`);
-      }
-
-      // იოდშემცველი კონტრასტი → ალერგიის შემოწმება (იგივე პოლიტიკა, რაც დანიშნულებაზე)
-      if (services.some((s) => s.contrast === 'iodinated')) {
-        const chk = await this.allergy.check(e.patient_id, 'იოდშემცველი კონტრასტი', trx);
-        if (chk.requires_ack && !dto.allergy_override_reason?.trim()) {
-          return { conflict: chk } as const;
-        }
-      }
-      const inv = await trx.selectFrom('invoices').select('id').where('encounter_id', '=', encounterId).forUpdate().executeTakeFirstOrThrow();
-      const created = [];
-      for (const it of dto.items) {
-        const s = services.find((x) => x.id === it.service_id)!;
-        const accession = s.section === 'radiology'
-          ? (await sql<{ n: string }>`SELECT nextval('accession_seq') AS n`.execute(trx)).rows[0].n : null;
-        const row = await trx.insertInto('dx_order_items').values({
-          encounter_id: encounterId, patient_id: e.patient_id, service_id: s.id, section: s.section, priority: it.priority ?? 'routine',
-          clinical_note: it.note?.trim() || null, ordered_by: user.id, accession_number: accession ? `A${accession}` : null,
-          allergy_override_reason: s.contrast === 'iodinated' ? dto.allergy_override_reason?.trim() || null : null,
-        }).returning(['id', 'section', 'status', 'accession_number']).executeTakeFirstOrThrow();
-        await trx.insertInto('invoice_line_items').values({
-          invoice_id: inv.id, tariff_id: s.tariff_id, dx_order_item_id: row.id, description: s.name, quantity: 1, unit_price: s.base_price, original_price: s.base_price,
-        }).execute();
-        created.push({ ...row, name: s.name });
-      }
-      await this.audit.log(ctx, { action: 'ORDER_DIAGNOSTICS', entityName: 'encounters', entityId: encounterId,
-        newData: { items: created.map((c) => c.name), allergy_override: dto.allergy_override_reason ?? null } }, trx);
-      return { created } as const;
+      return this.insertItems(trx, { id: encounterId, patient_id: e.patient_id }, dto.items, dto.allergy_override_reason, user, ctx);
     });
     if ('conflict' in res) throw new ConflictException({ code: 'ALLERGY_CONFLICT', message: 'პაციენტს აქვს ალერგია კონტრასტზე — საჭიროა დასაბუთება', check: res.conflict });
     return res.created;
+  }
+
+  /**
+   * ლაბორატორიული ვიზიტი ექიმის გარეშე (რეგისტრატურა): ვიზიტი planned + ინვოისი ანალიზების ხაზებით.
+   * გადახდის შემდეგ (pay-initial) → active → ფლებოტომისტის რიგში. ყველა შედეგის დასრულებისას ვიზიტი ავტომატურად იხურება.
+   */
+  async labVisit(dto: { patient_id: string; items: { service_id: string; priority?: 'routine' | 'urgent'; note?: string }[]; external_referral?: string; department_id?: string; allergy_override_reason?: string }, user: AuthUser, ctx: AuditContext) {
+    if (!dto.items?.length) throw new BadRequestException('აირჩიეთ მინიმუმ ერთი ანალიზი');
+    const res = await this.db.transaction().execute(async (trx) => {
+      const patient = await trx.selectFrom('patients').select(['id', 'is_deceased']).where('id', '=', dto.patient_id).executeTakeFirst();
+      if (!patient) throw new NotFoundException('პაციენტი ვერ მოიძებნა');
+      if (patient.is_deceased) throw new BadRequestException('პაციენტი გარდაცვლილად არის მონიშნული');
+      const dept = dto.department_id
+        ? await trx.selectFrom('departments').select('id').where('id', '=', dto.department_id).where('is_active', '=', true).executeTakeFirst()
+        : await trx.selectFrom('departments').select('id').where('type', '=', 'diagnostic').where('is_active', '=', true).orderBy('name').executeTakeFirst();
+      if (!dept) throw new BadRequestException('ლაბორატორიის (დიაგნოსტიკური) განყოფილება არ არის შექმნილი — ადმინისტრირება → განყოფილებები');
+      const enc = await trx.insertInto('encounters').values({
+        patient_id: dto.patient_id, attending_doctor_id: null, department_id: dept.id, type: 'outpatient', status: 'planned',
+        visit_kind: 'lab', external_referral: dto.external_referral?.trim() || null,
+      }).returning(['id', 'patient_id']).executeTakeFirstOrThrow();
+      const inv = await trx.insertInto('invoices').values({
+        encounter_id: enc.id, invoice_number: sql<string>`'INV-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('invoice_number_seq')::text, 6, '0')`,
+        total_amount: '0', patient_share: '0',
+      }).returning(['invoice_number']).executeTakeFirstOrThrow();
+      const r = await this.insertItems(trx, enc, dto.items, dto.allergy_override_reason, user, ctx);
+      if ('conflict' in r) return r;
+      await this.audit.log(ctx, { action: 'OPEN_LAB_VISIT', entityName: 'encounters', entityId: enc.id,
+        newData: { patient_id: dto.patient_id, invoice_number: inv.invoice_number, external_referral: dto.external_referral ?? null } }, trx);
+      return { encounter_id: enc.id, created: r.created };
+    });
+    if ('conflict' in res) throw new ConflictException({ code: 'ALLERGY_CONFLICT', message: 'პაციენტს აქვს ალერგია კონტრასტზე — საჭიროა დასაბუთება', check: res.conflict });
+    return res;
+  }
+
+  private async insertItems(trx: Trx, enc: { id: string; patient_id: string }, items: { service_id: string; priority?: 'routine' | 'urgent'; note?: string }[],
+                            overrideReason: string | undefined, user: AuthUser, ctx: AuditContext) {
+    const ids = [...new Set(items.map((i) => i.service_id))];
+    const services = await trx.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
+      .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price']).where('s.id', 'in', ids).execute();
+    if (services.length !== ids.length || services.some((s) => !s.is_active)) throw new BadRequestException('ზოგიერთი კვლევა ვერ მოიძებნა ან გათიშულია');
+    const labIds = services.filter((s) => s.section === 'lab').map((s) => s.id);
+    if (labIds.length) {
+      const withAnalytes = await trx.selectFrom('lab_analytes').select('service_id').distinct().where('service_id', 'in', labIds).where('is_active', '=', true).execute();
+      const empty = services.filter((s) => s.section === 'lab' && !withAnalytes.some((w) => w.service_id === s.id));
+      if (empty.length) throw new BadRequestException(`ანალიზს კომპონენტები ჯერ არ აქვს: ${empty.map((e) => e.name).join(', ')}`);
+    }
+    // იოდშემცველი კონტრასტი → ალერგიის შემოწმება (იგივე პოლიტიკა, რაც დანიშნულებაზე)
+    if (services.some((s) => s.contrast === 'iodinated')) {
+      const chk = await this.allergy.check(enc.patient_id, 'იოდშემცველი კონტრასტი', trx);
+      if (chk.requires_ack && !overrideReason?.trim()) return { conflict: chk } as const;
+    }
+    const inv = await trx.selectFrom('invoices').select('id').where('encounter_id', '=', enc.id).forUpdate().executeTakeFirstOrThrow();
+    const created = [];
+    for (const it of items) {
+      const s = services.find((x) => x.id === it.service_id)!;
+      const accession = s.section === 'radiology' ? (await sql<{ n: string }>`SELECT nextval('accession_seq') AS n`.execute(trx)).rows[0].n : null;
+      const row = await trx.insertInto('dx_order_items').values({
+        encounter_id: enc.id, patient_id: enc.patient_id, service_id: s.id, section: s.section, priority: it.priority ?? 'routine',
+        clinical_note: it.note?.trim() || null, ordered_by: user.id, accession_number: accession ? `A${accession}` : null,
+        allergy_override_reason: s.contrast === 'iodinated' ? overrideReason?.trim() || null : null,
+      }).returning(['id', 'section', 'status', 'accession_number']).executeTakeFirstOrThrow();
+      await trx.insertInto('invoice_line_items').values({
+        invoice_id: inv.id, tariff_id: s.tariff_id, dx_order_item_id: row.id, description: s.name, quantity: 1, unit_price: s.base_price, original_price: s.base_price,
+      }).execute();
+      created.push({ ...row, name: s.name });
+    }
+    await this.audit.log(ctx, { action: 'ORDER_DIAGNOSTICS', entityName: 'encounters', entityId: enc.id,
+      newData: { items: created.map((c) => c.name), allergy_override: overrideReason ?? null } }, trx);
+    return { created } as const;
+  }
+
+  /** ლაბორატორიული ვიზიტი იხურება, როცა ყველა კვლევა დასრულდა ან გაუქმდა */
+  private async maybeCompleteLabVisit(trx: Trx, encounterId: string) {
+    const e = await trx.selectFrom('encounters').select(['visit_kind', 'status']).where('id', '=', encounterId).executeTakeFirst();
+    if (!e || e.visit_kind !== 'lab' || e.status !== 'active') return;
+    const open = await trx.selectFrom('dx_order_items').select('id').where('encounter_id', '=', encounterId)
+      .where('status', 'not in', ['validated', 'cancelled']).executeTakeFirst();
+    if (!open) await trx.updateTable('encounters').set({ status: 'discharged', end_time: sql`now()` }).where('id', '=', encounterId).execute();
   }
 
   /** ვიზიტის ყველა დიაგნოსტიკური შეკვეთა შედეგებით (ექიმის ეკრანი) */
@@ -218,56 +280,86 @@ export class DiagnosticsService {
       await trx.deleteFrom('invoice_line_items').where('dx_order_item_id', '=', itemId).execute();
       await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: reason }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'CANCEL_DX_ORDER', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);
+      await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'cancelled' };
     });
   }
 
-  // =============================================================== ნიმუშის აღება (ექთანი)
-  /** აღებას დაელოდება: ლაბორატორიული შეკვეთები status=ordered (შიდა და გარე) */
-  pendingCollection(date?: { from: Date; to: Date }) {
-    let q = this.db.selectFrom('dx_order_items as i')
+  // =============================================================== ნიმუშის აღება (ფლებოტომისტი / ექთანი)
+  /** რიგი: პაციენტები, ვისაც ლაბ. ანალიზი აქვს დანიშნული და ნიმუში არ აუღია (+ გადახდის სტატუსი) */
+  pendingCollection(q: { search?: string } = {}) {
+    let query = this.db.selectFrom('dx_order_items as i')
       .innerJoin('dx_services as s', 's.id', 'i.service_id')
       .innerJoin('patients as p', 'p.id', 'i.patient_id')
       .innerJoin('encounters as e', 'e.id', 'i.encounter_id')
-      .select(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date',
-        sql<number>`count(*)::int`.as('tests'), sql<string[]>`array_agg(s.name ORDER BY s.sort_order)`.as('names'),
-        sql<boolean>`bool_or(i.priority = 'urgent')`.as('urgent'), sql<Date>`min(i.ordered_at)`.as('ordered_at')])
-      .where('i.section', '=', 'lab').where('i.status', '=', 'ordered').where('e.status', 'in', ['active', 'discharged'])
-      .groupBy(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date'])
+      .leftJoin('invoices as inv', 'inv.encounter_id', 'e.id')
+      .select(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status as encounter_status',
+        'inv.paid_status', sql<number>`count(*)::int`.as('tests'), sql<string[]>`array_agg(s.name ORDER BY s.sort_order)`.as('names'),
+        sql<boolean>`bool_or(i.priority = 'urgent')`.as('urgent'), sql<Date>`min(i.ordered_at)`.as('ordered_at'),
+        sql<string | null>`max(i.collection_issue)`.as('collection_issue')])
+      .where('i.section', '=', 'lab').where('i.status', '=', 'ordered').where('e.status', 'in', ['planned', 'active', 'discharged'])
+      .groupBy(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status', 'inv.paid_status'])
       .orderBy(sql`bool_or(i.priority = 'urgent')`, 'desc').orderBy(sql`min(i.ordered_at)`);
-    if (date) q = q.where('i.ordered_at', '>=', date.from).where('i.ordered_at', '<', date.to);
-    return q.execute();
+    if (q.search?.trim()) {
+      const t = q.search.trim();
+      query = query.where((eb) => eb.or([eb('p.personal_number', '=', t), eb('p.last_name', 'ilike', `${t}%`), eb('p.first_name', 'ilike', `${t}%`)]));
+    }
+    return query.execute();
+  }
+
+  /** არჩეული პაციენტი: იდენტიფიკაცია + მხოლოდ დანიშნული ანალიზები + სინჯარები აღების რიგით */
+  async collectionDetail(encounterId: string) {
+    const e = await this.db.selectFrom('encounters as e').innerJoin('patients as p', 'p.id', 'e.patient_id').leftJoin('invoices as inv', 'inv.encounter_id', 'e.id')
+      .leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
+      .select(['e.id as encounter_id', 'e.status as encounter_status', 'e.visit_kind', 'e.external_referral', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
+        'p.personal_number', 'p.passport_number', 'inv.paid_status', sql<string | null>`d.first_name || ' ' || d.last_name`.as('doctor_name')])
+      .where('e.id', '=', encounterId).executeTakeFirst();
+    if (!e) throw new NotFoundException('ვიზიტი ვერ მოიძებნა');
+    const items = await this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
+      .select(['i.id', 'i.priority', 'i.clinical_note', 'i.collection_issue', 's.name', 's.code', 's.specimen_type', 's.container', 's.performed_by', 's.external_lab'])
+      .where('i.encounter_id', '=', encounterId).where('i.section', '=', 'lab').where('i.status', '=', 'ordered').orderBy('s.sort_order').execute();
+    return { ...e, items, tubes: tubesInOrder(items) };
   }
 
   /**
-   * აღება: შეკვეთები ჯგუფდება სინჯარის მიხედვით (ნიმუშის ტიპი + კონტეინერი) → თითო სინჯარას თითო შტრიხკოდი.
-   * მაგ. ლიპიდური + ღვიძლის სინჯები = ერთი Serum gel სინჯარა; სისხლის საერთო = EDTA.
+   * აღება: ანალიზები სინჯარებად (ნიმუში + კონტეინერი + შიდა/გარე) → თითო სინჯარას თითო შტრიხკოდი.
+   * სავალდებულო: პაციენტის იდენტიფიკაციის დადასტურება; გადაუხდელზე — ცალკე დადასტურება.
    */
-  async collect(encounterId: string, itemIds: string[] | undefined, user: AuthUser, ctx: AuditContext) {
-    return this.db.transaction().execute(async (trx) => {
+  async collect(encounterId: string, dto: { item_ids?: string[]; identity_confirmed?: boolean; unpaid_ack?: boolean }, user: AuthUser, ctx: AuditContext) {
+    if (!dto.identity_confirmed) throw new BadRequestException('დაადასტურეთ პაციენტის იდენტიფიკაცია (სახელი და დაბადების თარიღი)');
+    const specimens = await this.db.transaction().execute(async (trx) => {
+      const inv = await trx.selectFrom('invoices').select('paid_status').where('encounter_id', '=', encounterId).executeTakeFirst();
+      if (inv?.paid_status === 'unpaid' && !dto.unpaid_ack) throw new ConflictException({ code: 'UNPAID', message: 'ანალიზები გადახდილი არ არის' });
       let q = trx.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
         .select(['i.id', 'i.patient_id', 's.specimen_type', 's.container', 's.name', 's.performed_by'])
         .where('i.encounter_id', '=', encounterId).where('i.section', '=', 'lab').where('i.status', '=', 'ordered').forUpdate(['i']);
-      if (itemIds?.length) q = q.where('i.id', 'in', itemIds);
+      if (dto.item_ids?.length) q = q.where('i.id', 'in', dto.item_ids);
       const items = await q.execute();
       if (!items.length) throw new ConflictException('ასაღები ლაბორატორიული შეკვეთა არ არის');
-      const groups = new Map<string, typeof items>();
-      for (const it of items) {
-        const key = `${it.specimen_type}|${it.container ?? ''}|${it.performed_by}`;
-        groups.set(key, [...(groups.get(key) ?? []), it]);
-      }
-      const specimens = [];
-      for (const [, g] of groups) {
+      const out = [];
+      for (const g of tubesInOrder(items)) {
         const { rows: [{ n }] } = await sql<{ n: string }>`SELECT nextval('lab_barcode_seq') AS n`.execute(trx);
         const sp = await trx.insertInto('lab_specimens').values({
-          barcode: String(n), encounter_id: encounterId, patient_id: g[0].patient_id, specimen_type: g[0].specimen_type!, container: g[0].container, collected_by: user.id,
+          barcode: String(n), encounter_id: encounterId, patient_id: items[0].patient_id, specimen_type: g.specimen_type, container: g.container, collected_by: user.id,
         }).returning(['id', 'barcode', 'specimen_type', 'container']).executeTakeFirstOrThrow();
-        await trx.updateTable('dx_order_items').set({ status: 'collected', specimen_id: sp.id }).where('id', 'in', g.map((x) => x.id)).execute();
-        specimens.push({ ...sp, tests: g.map((x) => x.name), external: g[0].performed_by === 'external' });
+        await trx.updateTable('dx_order_items').set({ status: 'collected', specimen_id: sp.id, collection_issue: null, collection_issue_at: null })
+          .where('id', 'in', g.items.map((x) => x.id)).execute();
+        out.push({ ...sp, tests: g.items.map((x) => x.name), external: g.external });
       }
-      await this.audit.log(ctx, { action: 'COLLECT_SPECIMENS', entityName: 'encounters', entityId: encounterId, newData: { specimens: specimens.map((s) => s.barcode) } }, trx);
-      return specimens;
+      await this.audit.log(ctx, { action: 'COLLECT_SPECIMENS', entityName: 'encounters', entityId: encounterId,
+        newData: { specimens: out.map((s) => s.barcode), identity_confirmed: true, unpaid_ack: inv?.paid_status === 'unpaid' ? true : undefined } }, trx);
+      return out;
     });
+    return specimens;
+  }
+
+  /** "ვერ აიღო" — შეკვეთა ღია რჩება, მიზეზი ჩანს რიგში */
+  async collectionIssue(encounterId: string, reason: string, ctx: AuditContext) {
+    const r = await this.db.updateTable('dx_order_items').set({ collection_issue: reason, collection_issue_at: sql`now()` })
+      .where('encounter_id', '=', encounterId).where('section', '=', 'lab').where('status', '=', 'ordered').executeTakeFirst();
+    if (!Number(r.numUpdatedRows)) throw new NotFoundException('ასაღები შეკვეთა არ არის');
+    await this.audit.log(ctx, { action: 'COLLECTION_ISSUE', entityName: 'encounters', entityId: encounterId, newData: { reason } });
+    return { encounter_id: encounterId, reason };
   }
 
   async labelsData(specimenIds: string[]) {
@@ -362,11 +454,12 @@ export class DiagnosticsService {
   /** ვალიდაცია — ლაბორატორიის ექიმი / უფროსი. შედეგს მხოლოდ ამის შემდეგ ხედავს მკურნალი ექიმი */
   async validate(itemId: string, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
-      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section']).where('id', '=', itemId).forUpdate().executeTakeFirst();
+      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
       if (it.status !== 'resulted') throw new ConflictException('ვალიდაციისთვის ყველა კომპონენტი უნდა იყოს შევსებული');
       await trx.updateTable('dx_order_items').set({ status: 'validated', validated_by: user.id, validated_at: sql`now()` }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId }, trx);
+      await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'validated' };
     });
   }
@@ -390,7 +483,7 @@ export class DiagnosticsService {
 
   async saveReport(itemId: string, text: string, finalize: boolean, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
-      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section']).where('id', '=', itemId).forUpdate().executeTakeFirst();
+      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section === 'lab') throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
       if (['validated', 'cancelled'].includes(it.status)) throw new ConflictException('დასკვნა უკვე დასრულებულია');
       if (finalize && !text.trim()) throw new BadRequestException('დასკვნა ცარიელია');
@@ -399,6 +492,7 @@ export class DiagnosticsService {
         ...(finalize ? { validated_by: user.id, validated_at: sql`now()` } : {}),
       }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: finalize ? 'FINALIZE_REPORT' : 'SAVE_REPORT_DRAFT', entityName: 'dx_order_items', entityId: itemId }, trx);
+      if (finalize) await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: finalize ? 'validated' : 'in_progress' };
     });
   }

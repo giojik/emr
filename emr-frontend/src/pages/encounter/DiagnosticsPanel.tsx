@@ -76,8 +76,13 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
   );
 }
 
-function OrderDialog({ encounterId, onClose }: { encounterId: string; onClose: () => void }) {
+/**
+ * კვლევის შეკვეთა: ექიმის ვიზიტიდან (encounterId) ან ლაბორატორიული ვიზიტი რეგისტრატურიდან (patientId, ექიმის გარეშე).
+ */
+export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { encounterId?: string; patientId?: string; onClose: () => void; onLabVisit?: (encounterId: string) => void }) {
   const qc = useQueryClient();
+  const labVisit = !!patientId && !encounterId;
+  const [referral, setReferral] = useState('');
   const [section, setSection] = useState<DxSection>('lab');
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<Record<string, DxService>>({});
@@ -95,25 +100,30 @@ function OrderDialog({ encounterId, onClose }: { encounterId: string; onClose: (
   const sel = Object.values(picked);
   const total = sel.reduce((s, x) => s + Number(x.base_price), 0);
   const m = useMutation({
-    mutationFn: () => api(`/encounters/${encounterId}/dx-orders`, { body: {
-      items: sel.map((s) => ({ service_id: s.id, priority: urgent ? 'urgent' : 'routine', note: note || undefined })),
-      allergy_override_reason: reason.trim() || undefined,
-    } }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-items', encounterId] }); void qc.invalidateQueries({ queryKey: ['encounter', encounterId] }); onClose(); },
+    mutationFn: () => {
+      const items = sel.map((s) => ({ service_id: s.id, priority: urgent ? 'urgent' : 'routine', note: note || undefined }));
+      return labVisit
+        ? api<{ encounter_id: string }>('/lab-visits', { body: { patient_id: patientId, items, external_referral: referral.trim() || undefined, allergy_override_reason: reason.trim() || undefined } })
+        : api<{ encounter_id?: string }>(`/encounters/${encounterId}/dx-orders`, { body: { items, allergy_override_reason: reason.trim() || undefined } });
+    },
+    onSuccess: (r) => {
+      if (labVisit) { void qc.invalidateQueries({ queryKey: ['encounters'] }); onLabVisit?.((r as { encounter_id: string }).encounter_id); return; }
+      void qc.invalidateQueries({ queryKey: ['dx-items', encounterId] }); void qc.invalidateQueries({ queryKey: ['encounter', encounterId] }); onClose();
+    },
     onError: (e) => { if (e instanceof ApiError && e.code === 'ALLERGY_CONFLICT') setConflict(e.body?.check as AllergyCheck); },
   });
   const toggle = (s: DxService) => setPicked((p) => { const n = { ...p }; if (n[s.id]) delete n[s.id]; else n[s.id] = s; return n; });
 
   return (
-    <Modal title="კვლევის შეკვეთა" onClose={onClose} width={900}
+    <Modal title={labVisit ? 'ლაბორატორიული ვიზიტი (ექიმის გარეშე)' : 'კვლევის შეკვეთა'} onClose={onClose} width={900}
       footer={<>
         <span className="grow small muted">{sel.length ? `${sel.length} კვლევა · ${money(total)}` : 'აირჩიეთ კვლევები'}</span>
         <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
-        <button className="btn primary" type="button" disabled={!sel.length || m.isPending || (!!conflict && reason.trim().length < 10)} onClick={() => m.mutate()}>შეკვეთა</button>
+        <button className="btn primary" type="button" disabled={!sel.length || m.isPending || (!!conflict && reason.trim().length < 10)} onClick={() => m.mutate()}>{labVisit ? 'გახსნა და სალარო' : 'შეკვეთა'}</button>
       </>}>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <div className="seg" role="group" aria-label="განყოფილება">
-          {(['lab', 'radiology', 'endoscopy'] as DxSection[]).map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
+          {(labVisit ? ['lab', 'radiology'] as DxSection[] : ['lab', 'radiology', 'endoscopy'] as DxSection[]).map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
         </div>
         <input aria-label="ძებნა" className="input grow" style={{ height: 38 }} placeholder="ძებნა კატალოგში" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
       </div>
@@ -137,7 +147,8 @@ function OrderDialog({ encounterId, onClose }: { encounterId: string; onClose: (
           <span className="label">არჩეული</span>
           {sel.map((s) => <div key={s.id} className="row small"><span className="grow">{s.name}</span><button className="icon-btn" type="button" aria-label="მოხსნა" onClick={() => toggle(s)}>×</button></div>)}
           <label className="row"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} /> სასწრაფო (cito)</label>
-          <textarea aria-label="კლინიკური შენიშვნა" className="textarea" rows={3} placeholder="კლინიკური შენიშვნა (მაგ. უზმოზე, საეჭვო დიაგნოზი)" value={note} onChange={(e) => setNote(e.target.value)} />
+          <textarea aria-label="კლინიკური შენიშვნა" className="textarea" rows={3} placeholder="შენიშვნა (მაგ. უზმოზე, საეჭვო დიაგნოზი)" value={note} onChange={(e) => setNote(e.target.value)} />
+          {labVisit && <input aria-label="გარე მიმართვა" className="input" style={{ height: 38 }} placeholder="მიმართვა: ექიმი / დაწესებულება (თუ აქვს)" value={referral} onChange={(e) => setReferral(e.target.value)} />}
         </div>
       </div>
       {conflict && (

@@ -10,13 +10,15 @@ import AddressFields, { addressPayload } from '../components/AddressFields';
 import AppointmentDialog from '../components/AppointmentDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
 import DocumentsPanel from '../components/DocumentsPanel';
+import { OrderDialog } from './encounter/DiagnosticsPanel';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, dateGe, initials, money, tsDate } from '../lib/format';
 
 export default function PatientCard() {
   const { id = '' } = useParams();
   const { user } = useAuth();
-  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | null>(null);
+  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | 'lab' | null>(null);
+  const nav = useNavigate();
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
   const front = user?.role === 'admin' || user?.role === 'receptionist';
@@ -37,6 +39,7 @@ export default function PatientCard() {
         </div>
         {front && <>
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
+          <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები</button>
           <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
@@ -67,7 +70,7 @@ export default function PatientCard() {
                 {visits.data.map((v) => (
                   <tr key={v.id}>
                     <td className="mono">{tsDate(v.start_time)}</td>
-                    <td>{clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
+                    <td>{v.visit_kind === 'lab' ? <span className="muted">ლაბორატორიული ვიზიტი</span> : clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
                     <td>{v.primary_diagnosis ?? <span className="muted">—</span>}</td>
                     <td className="num">{v.total_amount ? money(v.total_amount) : '—'}</td>
                     <td><StatusChip status={v.status} /></td>
@@ -82,6 +85,7 @@ export default function PatientCard() {
       {dlg === 'walkin' && <WalkInDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={x.id} onClose={() => setDlg(null)} />}
       {dlg === 'edit' && <EditPatientDialog patient={x} onClose={() => setDlg(null)} />}
+      {dlg === 'lab' && <OrderDialog patientId={x.id} onClose={() => setDlg(null)} onLabVisit={(eid) => nav(`/cashier/${eid}`)} />}
     </>
   );
 }

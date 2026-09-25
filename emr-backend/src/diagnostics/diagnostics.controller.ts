@@ -6,7 +6,6 @@ import { AllergiesModule } from '../allergies/allergies';
 import { auditCtx } from '../audit/audit-context';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
-import { dayRange } from '../common/day-range';
 import { loadEnv } from '../config/env';
 import { EncountersModule } from '../encounters/encounters.module';
 import { InjectDb, type Database } from '../database/database.module';
@@ -24,7 +23,18 @@ class OrderDto {
   @IsOptional() @IsString() @Length(10, 2000) allergy_override_reason?: string;
 }
 class ReasonDto { @IsString() @Length(5, 1000) reason: string }
-class CollectDto { @IsOptional() @IsArray() @IsUUID('4', { each: true }) item_ids?: string[] }
+class CollectDto {
+  @IsOptional() @IsArray() @IsUUID('4', { each: true }) item_ids?: string[];
+  @IsOptional() @IsBoolean() identity_confirmed?: boolean;
+  @IsOptional() @IsBoolean() unpaid_ack?: boolean;
+}
+class LabVisitDto {
+  @IsUUID() patient_id: string;
+  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => OrderItemDto) items: OrderItemDto[];
+  @IsOptional() @IsString() @MaxLength(500) external_referral?: string;
+  @IsOptional() @IsUUID() department_id?: string;
+  @IsOptional() @IsString() @Length(10, 2000) allergy_override_reason?: string;
+}
 class ReceiveDto { @IsString() @Length(3, 30) barcode: string }
 class ResultValueDto { @IsUUID() analyte_id: string; @IsOptional() value: string | number | null }
 class ResultsDto { @IsArray() @ValidateNested({ each: true }) @Type(() => ResultValueDto) values: ResultValueDto[] }
@@ -72,6 +82,7 @@ class AnalyteDto {
 
 const LAB = ['admin', 'diagnostic', 'lab_doctor'] as const;
 const LAB_READ = [...LAB, 'lab_manager'] as const;
+const COLLECT = ['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor'] as const;
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
 
 @Controller()
@@ -106,16 +117,20 @@ export class DiagnosticsController {
   @Post('dx-orders/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.cancel(id, dto.reason, u, auditCtx(req)); }
 
-  // ---- ნიმუშის აღება
-  @Get('dx/collection') @Roles('admin', 'nurse', 'diagnostic', 'lab_doctor')
-  pending(@Query('date') date?: string) {
-    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BadRequestException('date: YYYY-MM-DD');
-    const r = date ? dayRange(date, this.tz) : null;
-    return this.dx.pendingCollection(r ? { from: new Date(`${date}T00:00:00+04:00`), to: new Date(new Date(`${date}T00:00:00+04:00`).getTime() + 86_400_000) } : undefined);
-  }
-  @Post('encounters/:id/dx-collect') @Roles('admin', 'nurse', 'diagnostic', 'lab_doctor')
-  collect(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CollectDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.collect(id, dto.item_ids, u, auditCtx(req)); }
-  @Get('dx/labels') @Roles('admin', 'nurse', 'diagnostic', 'lab_doctor')
+  // ---- ლაბორატორიული ვიზიტი (რეგისტრატურა, ექიმის გარეშე)
+  @Post('lab-visits') @Roles('admin', 'receptionist')
+  labVisit(@Body() dto: LabVisitDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.labVisit(dto, u, auditCtx(req)); }
+
+  // ---- ნიმუშის აღება (ფლებოტომისტი / ექთანი)
+  @Get('dx/collection') @Roles(...COLLECT)
+  pending(@Query('search') search?: string) { return this.dx.pendingCollection({ search }); }
+  @Get('dx/collection/:encounterId') @Roles(...COLLECT)
+  collectionDetail(@Param('encounterId', ParseUUIDPipe) id: string) { return this.dx.collectionDetail(id); }
+  @Post('encounters/:id/dx-collect') @Roles(...COLLECT)
+  collect(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CollectDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.collect(id, dto, u, auditCtx(req)); }
+  @Post('dx/collection/:encounterId/issue') @HttpCode(200) @Roles(...COLLECT)
+  issue(@Param('encounterId', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.collectionIssue(id, dto.reason, auditCtx(req)); }
+  @Get('dx/labels') @Roles(...COLLECT)
   async labels(@Query('ids') ids = '', @Res({ passthrough: true }) res: Response) {
     const list = ids.split(',').filter((x) => /^[0-9a-f-]{36}$/i.test(x));
     if (!list.length) throw new BadRequestException('ids');
