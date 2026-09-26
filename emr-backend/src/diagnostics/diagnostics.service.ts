@@ -433,8 +433,9 @@ export class DiagnosticsService {
     };
   }
 
-  async saveResults(itemId: string, values: { analyte_id: string; value: string | number | null }[], user: AuthUser, ctx: AuditContext,
-    meta: { pregnancy_weeks?: number | null; lab_method_id?: string | null } = {}) {
+  /** user = null → შედეგი ანალიზატორიდან (meta.instrument_id; emr-lab-gateway) */
+  async saveResults(itemId: string, values: { analyte_id: string; value: string | number | null }[], user: AuthUser | null, ctx: AuditContext,
+    meta: { pregnancy_weeks?: number | null; lab_method_id?: string | null; instrument_id?: string } = {}) {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items as i').innerJoin('patients as p', 'p.id', 'i.patient_id').leftJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id')
         .innerJoin('dx_services as s', 's.id', 'i.service_id')
@@ -476,7 +477,7 @@ export class DiagnosticsService {
         }
         const r = pickRange(a.ranges, rctx);
         const row = { value_num: num?.toString() ?? null, value_text: text, unit: a.unit, ref_low: r?.low ?? null, ref_high: r?.high ?? null, ref_text: r?.normal_text ?? null,
-          flag: computeFlag(a, r, num, text), norm_version: a.norm_version, recalculated_at: null, entered_by: user.id, entered_at: sql<Date>`now()` };
+          flag: computeFlag(a, r, num, text), norm_version: a.norm_version, recalculated_at: null, entered_by: user?.id ?? null, instrument_id: meta.instrument_id ?? null, entered_at: sql<Date>`now()` };
         await trx.insertInto('lab_results').values({ order_item_id: itemId, analyte_id: a.id, ...row })
           .onConflict((oc) => oc.columns(['order_item_id', 'analyte_id']).doUpdateSet(row)).execute();
       }
@@ -495,10 +496,10 @@ export class DiagnosticsService {
       const required = defs.filter((d) => d.is_active && d.result_type !== 'text');
       const complete = required.every((d) => filled.some((f) => f.analyte_id === d.id));
       const status = complete ? 'resulted' : 'in_progress';
-      await trx.updateTable('dx_order_items').set({ status, ...(complete ? { resulted_by: user.id, resulted_at: sql`now()` } : {}) }).where('id', '=', itemId).execute();
+      await trx.updateTable('dx_order_items').set({ status, ...(complete ? { resulted_by: user?.id ?? null, resulted_at: sql`now()` } : {}) }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'ENTER_LAB_RESULTS', entityName: 'dx_order_items', entityId: itemId,
         oldData: old.length ? old.map((o) => ({ a: o.analyte_id, v: o.value_num ?? o.value_text })) : undefined,
-        newData: { status, ...metaSet, values: values.map((v) => ({ a: v.analyte_id, v: v.value })) } }, trx);
+        newData: { status, ...metaSet, ...(meta.instrument_id ? { instrument_id: meta.instrument_id } : {}), values: values.map((v) => ({ a: v.analyte_id, v: v.value })) } }, trx);
       return { id: itemId, status };
     });
   }
@@ -558,7 +559,7 @@ export class DiagnosticsService {
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),
         sql<string | null>`vb.first_name || ' ' || vb.last_name`.as('validated_by_name'),
         (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')
-          .select(['r.analyte_id', 'a.code', 'a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.ref_low', 'r.ref_high', 'r.ref_text', 'r.flag'])
+          .select(['r.analyte_id', 'a.code', 'a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.ref_low', 'r.ref_high', 'r.ref_text', 'r.flag', 'r.instrument_id'])
           .whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results')]);
   }
 

@@ -547,6 +547,88 @@ export interface LabBlankVersions {
   version: number;
 }
 
+export interface LabGatewayState {
+  heartbeat_at: Timestamp;
+  hostname: string | null;
+  id: Generated<number>;
+  started_at: Timestamp;
+  version: string | null;
+}
+
+export interface LabInstrumentCodes {
+  analyte_id: string | null;
+  code: string;
+  factor: Generated<Numeric>;
+  id: Generated<string>;
+  instrument_id: string;
+  send_order: Generated<boolean>;
+  service_id: string | null;
+}
+
+export interface LabInstrumentMessages {
+  created_at: Generated<Timestamp>;
+  direction: string;
+  error: string | null;
+  id: Generated<Int8>;
+  instrument_id: string;
+  kind: string;
+  raw: string;
+  summary: string | null;
+}
+
+export interface LabInstrumentOrders {
+  attempts: Generated<number>;
+  codes: string[];
+  created_at: Generated<Timestamp>;
+  error: string | null;
+  id: Generated<Int8>;
+  instrument_id: string;
+  sent_at: Timestamp | null;
+  specimen_id: string;
+  status: Generated<string>;
+}
+
+export interface LabInstrumentResults {
+  analyte_id: string | null;
+  barcode: string | null;
+  code: string;
+  created_at: Generated<Timestamp>;
+  flags: string | null;
+  id: Generated<Int8>;
+  instrument_id: string;
+  measured_at: Timestamp | null;
+  message_id: Int8 | null;
+  order_item_id: string | null;
+  processed_at: Timestamp | null;
+  reason: string | null;
+  rerun: Generated<boolean>;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  result_status: string | null;
+  status: Generated<string>;
+  unit: string | null;
+  value: string | null;
+}
+
+export interface LabInstruments {
+  conn_mode: string;
+  created_at: Generated<Timestamp>;
+  host: string | null;
+  id: Generated<string>;
+  is_enabled: Generated<boolean>;
+  last_error: string | null;
+  last_message_at: Timestamp | null;
+  method_id: string;
+  order_mode: Generated<string>;
+  peer: string | null;
+  port: number;
+  protocol: string;
+  settings: Generated<Json>;
+  status: Generated<string>;
+  status_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface LabMethods {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -592,6 +674,7 @@ export interface LabResults {
   entered_by: string | null;
   flag: string | null;
   id: Generated<string>;
+  instrument_id: string | null;
   norm_version: number | null;
   order_item_id: string;
   recalculated_at: Timestamp | null;
@@ -875,6 +958,12 @@ export interface DB {
   lab_blank_images: LabBlankImages;
   lab_blank_templates: LabBlankTemplates;
   lab_blank_versions: LabBlankVersions;
+  lab_gateway_state: LabGatewayState;
+  lab_instrument_codes: LabInstrumentCodes;
+  lab_instrument_messages: LabInstrumentMessages;
+  lab_instrument_orders: LabInstrumentOrders;
+  lab_instrument_results: LabInstrumentResults;
+  lab_instruments: LabInstruments;
   lab_methods: LabMethods;
   lab_norm_versions: LabNormVersions;
   lab_reference_ranges: LabReferenceRanges;

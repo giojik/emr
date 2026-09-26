@@ -25,7 +25,7 @@ ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შ�
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 S=$(date +%s | tail -c 7)
-CREATED_USERS=()
+CREATED_USERS=(); TRACK=$(mktemp)   # mkuser ეშვება $(…)-ში (subshell) — ID-ები ფაილში
 
 step "0. გარემო"
 chk "API ხელმისაწვდომია" "$(curl -s "$B/health" | jq -r .status)" "ok"
@@ -36,7 +36,7 @@ mkuser() { # $1 role, $2 prefix-digits, $3 section_head(true/false)
   local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\",\"is_section_head\":$3}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
-  CREATED_USERS+=("$id")
+  echo "$id" >> "$TRACK"
   local t; t=$(login "e2e.$1.$2.$S@test.local" "$tmp")
   api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"E2e-$S-pass$RANDOM\"}" | jq -r '.accessToken // empty'
 }
@@ -143,7 +143,7 @@ api PUT "/lab/blanks/$BLK/assignments" "$HEAD" -d '{"groups":[],"service_ids":[]
 chk "სატესტო შაბლონი გაითიშა" "$(api PUT "/lab/blanks/$BLK" "$HEAD" -d '{"is_active":false}' | jq -r .is_active)" "false"
 api PATCH "/dx/catalog/$SVC" "$ADM" -d '{"is_active":false}' >/dev/null
 api PATCH "/lab/methods/$MID" "$LM" -d '{"is_active":false}' >/dev/null
-for U in "${CREATED_USERS[@]}"; do api POST "/users/$U/disable" "$ADM" >/dev/null; done
+for U in $(cat "$TRACK"); do api POST "/users/$U/disable" "$ADM" >/dev/null; done
 ok "სატესტო ანალიზი, ანალიზატორი და მომხმარებლები გათიშულია (ისტორია რჩება — სახელი: ტესტ-E2E)"
 
 printf '\n\033[1mშედეგი: \033[32m%d გავიდა\033[0m, \033[31m%d ჩავარდა\033[0m\n' "$PASS" "$FAIL"

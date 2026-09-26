@@ -29,7 +29,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 echo '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAAwAEADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCKiiivMPrQoqzZWUt9N5cfCj7znoorbh0KzjX94GlJAyS2PyxQRKajuc3RXTSaJYuuFRoznqrHP65rFv8ATpbBxk7426OBjn0PpQKNSMtCnRRRQaBRRRQB11laiztEhGMgZYjue9WKitp1urZJl4DjOPQ9xUtM4He+oVHNClxC8UgyrjBqSmu6xxtI5wqgkn0FAHHSxmGV4mIJRipx7UypJ5POnklxjexbGemTUdI7kFFFFAy7p2ovYyYOWiY/Mv8AUe9b0OqWUy5E6qcDIc7SPz/pXKUUGcqalqdbJqVlEu5rmMjOPlO4/pWHqWqte/u4gyQjqD1Y+9Z1FAo01F3Ciiig1P/Z' | base64 -d > "$TMP/img.jpg"
 printf '%%PDF-1.4\n%% ტესტ\n1 0 obj<<>>endobj\ntrailer<<>>\n%%%%EOF\n' > "$TMP/scan.pdf"
 echo "not an image" > "$TMP/bad.txt"
-CREATED_USERS=(); CREATED_SCOPES=()
+CREATED_USERS=(); TRACK=$(mktemp)   # mkuser ეშვება $(…)-ში (subshell) — ID-ები ფაილში; CREATED_SCOPES=()
 TOMORROW=$(date -d tomorrow +%F); at() { echo "${TOMORROW}T$1:00+04:00"; }
 NOW=$(date -u +%FT%TZ); AGO=$(date -u -d '-25 min' +%FT%TZ)
 
@@ -45,7 +45,7 @@ mkuser() {
   local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
-  CREATED_USERS+=("$id")
+  echo "$id" >> "$TRACK"
   local t; t=$(login "e2e.$1.$2.$S@test.local" "$tmp")
   api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"E2e-$S-pass$RANDOM\"}" | jq -r '.accessToken // empty'
 }
@@ -138,7 +138,7 @@ step "7. დასუფთავება"
 api POST "/dx-orders/$IG/report/sign" "$EN" -d '{"impression":"ზედა კუჭ-ნაწლავის ტრაქტის პათოლოგია არ ვლინდება."}' >/dev/null
 chk "ორივე ოქმის შემდეგ ვიზიტი დაიხურა" "$(api GET "/encounters?patient_id=$PAT" "$ADM" | jq -r "[.[]|select(.id==\"$E\")][0].status")" "discharged"
 for X in "${CREATED_SCOPES[@]}"; do api PATCH "/endo/scopes/$X" "$ADM" -d '{"is_active":false}' >/dev/null; done
-for U in "${CREATED_USERS[@]}"; do api POST "/users/$U/disable" "$ADM" >/dev/null; done
+for U in $(cat "$TRACK"); do api POST "/users/$U/disable" "$ADM" >/dev/null; done
 ok "სატესტო მომხმარებლები და ენდოსკოპები გაითიშა"
 printf '\n\033[1mშედეგი: \033[32m%d გავიდა\033[0m, \033[31m%d ჩავარდა\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

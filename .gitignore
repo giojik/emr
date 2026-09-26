@@ -6,3 +6,7 @@ dist/
 *.dump
 *.patch
 *.zip
+
+# ანალიზატორის ჩანაწერები და patch-ები — repo-ში არ ინახება
+capture-*.log
+patches/

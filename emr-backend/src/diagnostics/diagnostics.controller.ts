@@ -16,6 +16,9 @@ import { EndoscopyController } from './endoscopy.controller';
 import { EndoscopyService } from './endoscopy.service';
 import { LabConfigController, PublicLabVerifyController } from './lab-config.controller';
 import { LabConfigService } from './lab-config.service';
+import { LabIngestService } from '../lab-gateway/lab-ingest.service';
+import { LabInstrumentsController } from './lab-instruments.controller';
+import { LabInstrumentsService } from './lab-instruments.service';
 import { RadiologyController } from './radiology.controller';
 import { RadiologyService } from './radiology.service';
 
@@ -181,7 +184,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService], exports: [DiagnosticsService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

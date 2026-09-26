@@ -21,6 +21,8 @@ const EnvSchema = z.object({
   // --- დოკუმენტების ვერიფიკაცია (QR) ---
   // საჯარო მისამართი, რომელსაც QR-კოდი მიუთითებს (სადაზღვევო კომპანია ინტერნეტიდან ხსნის)
   PUBLIC_VERIFY_BASE_URL: z.string().url().default('http://localhost:3000/api/public/verify'),
+  /** emr-lab-gateway: სერვერის რეჟიმის პორტების დიაპაზონი (docker-compose-ში გამოქვეყნებული) */
+  LAB_GATEWAY_PORTS: z.string().regex(/^\d+-\d+$/).default('4100-4109'),
 
   // --- JWT / სესიები ---
   JWT_SECRET: z.string().min(32, 'JWT_SECRET მინიმუმ 32 სიმბოლო (openssl rand -hex 32)'),

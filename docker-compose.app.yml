@@ -56,6 +56,18 @@ services:
       emr-backend: { condition: service_healthy }
     restart: unless-stopped
 
+  # ანალიზატორების მიერთება (ASTM / HL7, ორმხრივი) — კონფიგურაცია: კატალოგი → ლაბორატორია → ანალიზატორები
+  emr-lab-gateway:
+    image: emr-backend:local
+    container_name: emr-lab-gateway
+    command: ["node", "dist/lab-gateway.js"]
+    environment: *backend-env
+    depends_on:
+      emr-backend: { condition: service_healthy }
+    ports:
+      - "4100-4109:4100-4109"   # სერვერის რეჟიმი: ანალიზატორი/Moxa უკავშირდება EMR-ს. UFW — მხოლოდ ანალიზატორების ქსელიდან
+    restart: unless-stopped
+
   emr-frontend:
     build: ./emr-frontend
     image: emr-frontend:local

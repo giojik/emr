@@ -27,7 +27,7 @@ ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შ�
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 S=$(date +%s | tail -c 7)
-CREATED_USERS=()
+CREATED_USERS=(); TRACK=$(mktemp)   # mkuser ეშვება $(…)-ში (subshell) — ID-ები ფაილში
 TOMORROW=$(date -d tomorrow +%F)
 # ხვალ, კლინიკის დროით (Asia/Tbilisi, UTC+4)
 at() { echo "${TOMORROW}T$1:00+04:00"; }
@@ -46,7 +46,7 @@ mkuser() { # $1 role, $2 prefix-digits, $3 extra json
   local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
-  CREATED_USERS+=("$id")
+  echo "$id" >> "$TRACK"
   local t; t=$(login "e2e.$1.$2.$S@test.local" "$tmp")
   local np="E2e-$S-pass$RANDOM"
   api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"$np\"}" | jq -r '.accessToken // empty'
@@ -145,7 +145,7 @@ step "7. დასუფთავება"
 api POST "/dx-orders/$I2/cancel" "$ADM" -d '{"reason":"ტესტის დასრულება"}' >/dev/null
 [ -n "$PHID" ] && api PATCH "/dx/report-templates/$PHID" "$HD" -d '{"section":"radiology","kind":"phrase","name":"ტესტ-E2E ფრაზა","target":"findings","body":"x","is_active":false}' >/dev/null
 [ -n "$MY" ] && api PATCH "/dx/report-templates/$MY" "$RD" -d '{"section":"radiology","kind":"template","name":"ჩემი CT — ინსულტი","impression":"x","is_active":false}' >/dev/null
-for U in "${CREATED_USERS[@]}"; do api POST "/users/$U/disable" "$ADM" >/dev/null; done
+for U in $(cat "$TRACK"); do api POST "/users/$U/disable" "$ADM" >/dev/null; done
 ok "სატესტო მომხმარებლები გაითიშა"
 
 printf '\n\033[1mშედეგი: \033[32m%d გავიდა\033[0m, \033[31m%d ჩავარდა\033[0m\n' "$PASS" "$FAIL"

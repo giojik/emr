@@ -16,6 +16,7 @@ import Templates from './radiology/Templates';
 import Pathology from './radiology/Pathology';
 import Scopes from './radiology/Scopes';
 import { PREG_KA, useLabMethods, type Pregnancy } from './admin/lab/common';
+import { InstrumentInbox, useInboxCount } from './admin/lab/Instruments';
 
 /** 0018: ნორმის კრიტერიუმები შეკვეთაზე (ორსულობა, ანალიზატორი) */
 type LabItemX = Omit<LabItemDetail, 'analytes'> & {
@@ -60,6 +61,7 @@ function LabWorkspace() {
   const [barcode, setBarcode] = useState('');
   const scan = useRef<HTMLInputElement>(null);
   const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000 });
+  const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(false);
   const receive = useMutation({
     mutationFn: (bc: string) => api<{ barcode: string; already_received: boolean }>('/lab/receive', { body: { barcode: bc } }),
     onSuccess: (r) => {
@@ -84,7 +86,10 @@ function LabWorkspace() {
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="სტატუსი">{LAB_TABS.map(([k, l]) => <button key={k} type="button" aria-pressed={status === k} onClick={() => { setStatus(k); setSelId(null); }}>{l}</button>)}</div>
           <input aria-label="ძებნა" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="შტრიხკოდი, პირადი №, გვარი" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <button className="btn" type="button" style={{ marginLeft: 'auto' }} onClick={() => setInboxOpen(true)}>
+            ანალიზატორები{inbox.data?.unmatched ? <span className="chip warn" style={{ marginLeft: 6 }}>დასამუშავებელი: {inbox.data.unmatched}</span> : null}</button>
         </div>
+        {inboxOpen && <InstrumentInbox onClose={() => setInboxOpen(false)} />}
         <ErrorBox error={q.error} />
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
@@ -179,7 +184,12 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
             const crit = f === 'LL' || f === 'HH';
             return (
               <tr key={a.id} style={crit ? { background: 'var(--danger-weak)' } : undefined}>
-                <td><label htmlFor={`an-${a.id}`}>{a.name}</label></td>
+                <td><label htmlFor={`an-${a.id}`}>{a.name}</label>
+                  {(() => {   // მნიშვნელობა ანალიზატორიდან (ხელით შეცვლამდე)
+                    const r = it.results.find((x) => x.analyte_id === a.id) as (typeof it.results[number] & { instrument_id?: string | null }) | undefined;
+                    const stored = r ? (r.value_num !== null ? String(Number(r.value_num)) : r.value_text ?? '') : '';
+                    return r?.instrument_id && v === stored ? <div className="small muted">ანალიზატორიდან</div> : null;
+                  })()}</td>
                 <td>{a.result_type === 'select' && a.options ? (
                   <select id={`an-${a.id}`} className="select" style={{ height: 34, fontSize: 14 }} disabled={locked} value={v} onChange={(e) => setVals({ ...vals, [a.id]: e.target.value })}>
                     <option value="">—</option>{a.options.map((o) => <option key={o} value={o}>{o}</option>)}

@@ -27,7 +27,7 @@ A="authorization: Bearer $ADM"
 api() { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 S=$(date +%s | tail -c 7)
-CREATED_USERS=()
+CREATED_USERS=(); TRACK=$(mktemp)   # mkuser ეშვება $(…)-ში (subshell) — ID-ები ფაილში
 
 step "0. გარემო"
 chk "API ხელმისაწვდომია" "$(curl -s "$B/health" | jq -r .status)" "ok"
@@ -43,7 +43,7 @@ mkuser() { # $1 role, $2 prefix-digits
   local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
-  CREATED_USERS+=("$id")
+  echo "$id" >> "$TRACK"
   local t; t=$(login "e2e.$1.$S@test.local" "$tmp")
   local np="E2e-$S-pass$RANDOM"
   api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"$np\"}" | jq -r '.accessToken // empty'
@@ -112,7 +112,7 @@ chk "ყველა დადასტურდა → ვიზიტი ა�
 chk "აუდიტში: აღება იდენტიფიკაციით" "$(api GET "/audit-logs?action=COLLECT_SPECIMENS&entity_id=$E" "$ADM" | jq -r '.[0].new_data.identity_confirmed')" "true"
 
 step "გასუფთავება"
-for U in "${CREATED_USERS[@]}"; do api POST "/users/$U/disable" "$ADM" >/dev/null; done
+for U in $(cat "$TRACK"); do api POST "/users/$U/disable" "$ADM" >/dev/null; done
 ok "სატესტო მომხმარებლები გათიშულია (პაციენტი და ჩანაწერები რჩება ისტორიაში — სახელი: ტესტ-E2E)"
 
 printf '\n\033[1mშედეგი: \033[32m%d გავიდა\033[0m, \033[31m%d ჩავარდა\033[0m\n' "$PASS" "$FAIL"
