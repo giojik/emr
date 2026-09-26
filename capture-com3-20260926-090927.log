@@ -1,0 +1,8 @@
+2026-09-26 09:09:27.950 --    # connecting 10.10.5.220:4001
+                        HEX 
+2026-09-26 09:09:28.348 --    # error: [Errno 111] Connection refused — ხელახლა ცდა 5 წამში
+                        HEX 
+2026-09-26 09:09:33.349 --    # connecting 10.10.5.220:4001
+                        HEX 
+2026-09-26 09:09:33.748 --    # error: [Errno 111] Connection refused — ხელახლა ცდა 5 წამში
+                        HEX 
