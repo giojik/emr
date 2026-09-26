@@ -15,6 +15,13 @@ import TechQueue from './radiology/TechQueue';
 import Templates from './radiology/Templates';
 import Pathology from './radiology/Pathology';
 import Scopes from './radiology/Scopes';
+import { PREG_KA, useLabMethods, type Pregnancy } from './admin/lab/common';
+
+/** 0018: ნორმის კრიტერიუმები შეკვეთაზე (ორსულობა, ანალიზატორი) */
+type LabItemX = Omit<LabItemDetail, 'analytes'> & {
+  pregnancy_weeks: number | null; lab_method_id: string | null; default_method_id: string | null; effective_method_id: string | null; norm_recalculated_at: string | null;
+  analytes: (LabAnalyteForm & { range: (LabAnalyteForm['range'] & { pregnancy?: Pregnancy | null; method_id?: string | null }) | null })[];
+};
 
 /** დიაგნოსტიკის ჰაბი: /diagnostics/lab | radiology | endoscopy | referrals */
 export default function DiagnosticsHub() {
@@ -117,16 +124,21 @@ function previewFlag(a: LabAnalyteForm, raw: string): string | null {
 
 function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth(); const toast = useToast();
-  const q = useQuery({ queryKey: ['lab-item', id], queryFn: () => api<LabItemDetail>(`/lab/items/${id}`) });
+  const q = useQuery({ queryKey: ['lab-item', id], queryFn: () => api<LabItemX>(`/lab/items/${id}`) });
   const [vals, setVals] = useState<Record<string, string>>({});
+  const [preg, setPreg] = useState(''); const [method, setMethod] = useState('');
+  const methods = useLabMethods();
   useEffect(() => {
     if (!q.data) return;
+    setPreg(q.data.pregnancy_weeks ? String(q.data.pregnancy_weeks) : ''); setMethod(q.data.lab_method_id ?? q.data.default_method_id ?? '');
     setVals(Object.fromEntries(q.data.analytes.map((a) => { const r = q.data!.results.find((x) => x.analyte_id === a.id); return [a.id, r ? (r.value_num !== null ? String(Number(r.value_num)) : r.value_text ?? '') : '']; })));
   }, [q.data]);
   const allergies = useQuery({ queryKey: ['allergies', q.data?.patient_id], queryFn: () => api<Allergy[]>(`/patients/${q.data!.patient_id}/allergies`), enabled: !!q.data });
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['lab-item', id] }); void qc.invalidateQueries({ queryKey: ['lab-worklist'] }); };
   const save = useMutation({
-    mutationFn: () => api<{ status: string }>(`/lab/items/${id}/results`, { method: 'PUT', body: { values: Object.entries(vals).map(([analyte_id, value]) => ({ analyte_id, value })) } }),
+    mutationFn: () => api<{ status: string }>(`/lab/items/${id}/results`, { method: 'PUT', body: {
+      values: Object.entries(vals).map(([analyte_id, value]) => ({ analyte_id, value })),
+      pregnancy_weeks: preg ? Number(preg) : null, lab_method_id: method || null } }),
     onSuccess: (r) => { toast.show(r.status === 'resulted' ? 'შენახულია — ვალიდაციას ელოდება' : 'შენახულია (შეუვსებელი კომპონენტებით)'); refresh(); },
   });
   const validate = useMutation({ mutationFn: () => api(`/lab/items/${id}/validate`, { method: 'POST' }), onSuccess: () => { toast.show('დადასტურებულია — შედეგი ექიმს გაეგზავნა'); refresh(); } });
@@ -137,7 +149,8 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
   const canEnter = can(user, 'admin') || can(user, 'diagnostic') || can(user, 'lab_doctor');
   const locked = !canEnter || it.status === 'validated' || it.status === 'cancelled' || it.specimen_status === 'collected';
   const isLabDoctor = can(user, 'lab_doctor') || can(user, 'admin');
-  const dirty = it.analytes.some((a) => { const r = it.results.find((x) => x.analyte_id === a.id); const cur = r ? (r.value_num !== null ? String(Number(r.value_num)) : r.value_text ?? '') : ''; return (vals[a.id] ?? '') !== cur; });
+  const metaDirty = (preg ? Number(preg) : null) !== it.pregnancy_weeks || (method || null) !== (it.lab_method_id ?? it.default_method_id ?? null);
+  const dirty = metaDirty || it.analytes.some((a) => { const r = it.results.find((x) => x.analyte_id === a.id); const cur = r ? (r.value_num !== null ? String(Number(r.value_num)) : r.value_text ?? '') : ''; return (vals[a.id] ?? '') !== cur; });
 
   return (
     <aside style={{ width: 560, flexShrink: 0, background: 'var(--surface)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -147,6 +160,16 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
         <span className="small muted">შეკვეთა: {it.ordered_by_name} · {tsDate(it.ordered_at)} {hhmm(it.ordered_at)}{it.clinical_note ? ` · „${it.clinical_note}“` : ''}</span>
         {allergies.data && allergies.data.filter((a) => a.is_active !== false).length > 0 && <AllergyBanner allergies={allergies.data.filter((a) => a.is_active !== false)} />}
         {it.specimen_status === 'collected' && <div className="alert warn">სინჯარა ჯერ არ არის მიღებული — დაასკანერეთ შტრიხკოდი.</div>}
+        <div className="row small" style={{ flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
+          <label className="row" style={{ gap: 6 }}>ანალიზატორი
+            <select className="select" style={{ height: 30, fontSize: 13, maxWidth: 200 }} disabled={locked} value={method} onChange={(e) => setMethod(e.target.value)} aria-label="ანალიზატორი">
+              <option value="">—</option>{methods.data?.filter((m) => m.is_active || m.id === method).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+          {it.gender === 'female' && <label className="row" style={{ gap: 6 }}>ორსულობა (კვ.)
+            <input className="input mono" style={{ height: 30, width: 56, fontSize: 13 }} inputMode="numeric" readOnly={locked} placeholder="—" value={preg} aria-label="ორსულობის კვირა"
+              onChange={(e) => setPreg(e.target.value.replace(/\D/g, '').slice(0, 2))} /></label>}
+          {metaDirty && <span className="muted">ნორმა შეიცვლება შენახვისას</span>}
+        </div>
+        {it.norm_recalculated_at && it.status !== 'validated' && <div className="alert info">ნორმა შეიცვალა ({tsDate(it.norm_recalculated_at)}) — ნიშნები ახალი ნორმით გადაითვალა. გადაამოწმეთ ვალიდაციამდე.</div>}
       </div>
       <form style={{ flex: 1, overflow: 'auto', padding: '8px 20px' }} onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
         <table className="table">
@@ -166,13 +189,13 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
                     inputMode={a.result_type === 'numeric' ? 'decimal' : 'text'} readOnly={locked} value={v} onChange={(e) => setVals({ ...vals, [a.id]: e.target.value })} />
                 )}</td>
                 <td className="small muted">{unitFmt(a.unit)}</td>
-                <td className="small muted">{refRange(a.range)}</td>
+                <td className="small muted">{refRange(a.range)}{a.range?.pregnancy && <div>{PREG_KA[a.range.pregnancy]}</div>}{a.range?.method_id && <div>{methods.data?.find((m) => m.id === a.range?.method_id)?.name ?? 'ანალიზატორის ნორმა'}</div>}</td>
                 <td>{f === 'ERR' ? <span className="chip danger">რიცხვი?</span> : <FlagBadge flag={f} />}</td>
               </tr>
             );
           })}</tbody>
         </table>
-        <span className="hint">ნიშნები ავტომატურად ითვლება პაციენტის სქესისა და ასაკის ნორმით. ↑↑/↓↓ — კრიტიკული მნიშვნელობა: აცნობეთ მკურნალ ექიმს.</span>
+        <span className="hint">ნიშნები ავტომატურად ითვლება ნორმით (სქესი, ასაკი, ორსულობა, ანალიზატორი). ↑↑/↓↓ — კრიტიკული მნიშვნელობა: აცნობეთ მკურნალ ექიმს.</span>
       </form>
       <div className="stack" style={{ padding: '12px 20px', borderTop: '1px solid var(--line)' }}>
         <ErrorBox error={save.error ?? validate.error ?? reopen.error ?? print.error} />

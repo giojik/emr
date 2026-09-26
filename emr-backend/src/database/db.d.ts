@@ -190,6 +190,7 @@ export interface DxOrderItems {
   allergy_override_reason: string | null;
   arrived_at: Timestamp | null;
   arrived_by: string | null;
+  blank_version_id: string | null;
   cancel_reason: string | null;
   clinical_note: string | null;
   collection_issue: string | null;
@@ -200,10 +201,12 @@ export interface DxOrderItems {
   dose_text: string | null;
   encounter_id: string;
   id: Generated<string>;
+  lab_method_id: string | null;
   ordered_at: Generated<Timestamp>;
   ordered_by: string;
   patient_id: string;
   performed_at: Timestamp | null;
+  pregnancy_weeks: number | null;
   priority: Generated<string>;
   report_text: string | null;
   resulted_at: Timestamp | null;
@@ -220,6 +223,7 @@ export interface DxOrderItems {
   technician_id: string | null;
   validated_at: Timestamp | null;
   validated_by: string | null;
+  verify_token: string | null;
 }
 
 export interface DxReports {
@@ -281,10 +285,12 @@ export interface DxReportVersions {
 }
 
 export interface DxServices {
+  blank_template_id: string | null;
   body_part: string | null;
   code: string;
   container: string | null;
   contrast: string | null;
+  default_method_id: string | null;
   duration_minutes: number | null;
   external_lab: string | null;
   group_name: string;
@@ -295,6 +301,7 @@ export interface DxServices {
   needs_review: Generated<boolean>;
   performed_by: Generated<string>;
   prep_instructions: string | null;
+  report_comment: string | null;
   section: string;
   sort_order: Generated<number>;
   specimen_type: string | null;
@@ -496,11 +503,74 @@ export interface LabAnalytes {
   id: Generated<string>;
   is_active: Generated<boolean>;
   name: string;
+  norm_version: Generated<number>;
   options: string | null;
   result_type: string;
   service_id: string;
   sort_order: Generated<number>;
   unit: Generated<string>;
+}
+
+export interface LabBlankGroupAssignments {
+  group_name: string;
+  template_id: string;
+}
+
+export interface LabBlankImages {
+  data: Buffer;
+  height: number;
+  id: Generated<string>;
+  mime: string;
+  sha256: string;
+  uploaded_at: Generated<Timestamp>;
+  uploaded_by: string | null;
+  width: number;
+}
+
+export interface LabBlankTemplates {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  current_version: Generated<number>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_default: Generated<boolean>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface LabBlankVersions {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  settings: Json;
+  template_id: string;
+  version: number;
+}
+
+export interface LabMethods {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: Generated<string>;
+  manufacturer: string | null;
+  name: string;
+  note: string | null;
+  serial_number: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface LabNormVersions {
+  analyte_id: string;
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  critical_high: Numeric | null;
+  critical_low: Numeric | null;
+  id: Generated<string>;
+  ranges: Json;
+  reason: string;
+  recalculated: Generated<number>;
+  unit: Generated<string>;
+  version: number;
 }
 
 export interface LabReferenceRanges {
@@ -510,7 +580,9 @@ export interface LabReferenceRanges {
   high: Numeric | null;
   id: Generated<string>;
   low: Numeric | null;
+  method_id: string | null;
   normal_text: string | null;
+  pregnancy: string | null;
   sex: string | null;
 }
 
@@ -520,7 +592,9 @@ export interface LabResults {
   entered_by: string | null;
   flag: string | null;
   id: Generated<string>;
+  norm_version: number | null;
   order_item_id: string;
+  recalculated_at: Timestamp | null;
   ref_high: Numeric | null;
   ref_low: Numeric | null;
   ref_text: string | null;
@@ -797,6 +871,12 @@ export interface DB {
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
   lab_analytes: LabAnalytes;
+  lab_blank_group_assignments: LabBlankGroupAssignments;
+  lab_blank_images: LabBlankImages;
+  lab_blank_templates: LabBlankTemplates;
+  lab_blank_versions: LabBlankVersions;
+  lab_methods: LabMethods;
+  lab_norm_versions: LabNormVersions;
   lab_reference_ranges: LabReferenceRanges;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;

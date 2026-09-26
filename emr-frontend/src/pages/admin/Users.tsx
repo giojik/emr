@@ -176,7 +176,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const [codes, setCodes] = useState<string[]>(initial);
   const caps = capsOf(codes, roles.data);
   const rolesChanged = codes.join(',') !== initial.join(',');
-  const canHead = caps.includes('radiologist') || caps.includes('endoscopist');
+  const canHead = caps.includes('radiologist') || caps.includes('endoscopist') || caps.includes('lab_doctor');
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const [temp, setTemp] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['admin-users'] });

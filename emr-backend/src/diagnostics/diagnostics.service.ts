@@ -7,18 +7,13 @@ import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { EncounterCoreService } from '../encounters/encounter-core.service';
+import { AGE_MAX_DAYS, normalizeRanges, pickRange, validateRanges, type RangeRow } from './lab-norms';
 
 type Trx = Transaction<DB>;
 export type Flag = 'N' | 'L' | 'H' | 'LL' | 'HH' | 'A';
 
-export interface RangeRow { sex: string | null; age_min_days: number; age_max_days: number; low: string | null; high: string | null; normal_text: string | null }
+export { pickRange, type RangeRow } from './lab-norms';
 export interface AnalyteDef { id: string; result_type: string; unit: string; critical_low: string | null; critical_high: string | null; ranges: RangeRow[] }
-
-/** შესაბამისი ნორმა: სქესის სპეციფიკური უპირატესია ზოგადზე */
-export function pickRange(ranges: RangeRow[], sex: string, ageDays: number): RangeRow | null {
-  const fit = ranges.filter((r) => (r.sex === null || r.sex === sex) && ageDays >= r.age_min_days && ageDays <= r.age_max_days);
-  return fit.find((r) => r.sex === sex) ?? fit[0] ?? null;
-}
 
 /** ნიშანი: LL/HH — კრიტიკული, L/H — ნორმის გარეთ, A — ხარისხობრივი გადახრა */
 export function computeFlag(a: AnalyteDef, range: RangeRow | null, num: number | null, text: string | null): Flag | null {
@@ -55,7 +50,7 @@ export function tubesInOrder<T extends { specimen_type: string | null; container
     .map((g) => ({ ...g, tests: g.items.map((i) => i.name) }));
 }
 
-const ageDays = (birth: string, at: Date) => Math.floor((at.getTime() - new Date(`${birth}T00:00:00Z`).getTime()) / 86_400_000);
+export const ageDays = (birth: string, at: Date) => Math.floor((at.getTime() - new Date(`${birth}T00:00:00Z`).getTime()) / 86_400_000);
 
 @Injectable()
 export class DiagnosticsService {
@@ -78,7 +73,7 @@ export class DiagnosticsService {
     const s = await this.db.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
       .selectAll('s').select(['t.base_price'])
       .select((eb) => jsonArrayFrom(eb.selectFrom('lab_analytes as a').selectAll('a')
-        .select((eb2) => jsonArrayFrom(eb2.selectFrom('lab_reference_ranges as r').selectAll('r').whereRef('r.analyte_id', '=', 'a.id').orderBy('r.sex')).as('ranges'))
+        .select((eb2) => jsonArrayFrom(eb2.selectFrom('lab_reference_ranges as r').selectAll('r').whereRef('r.analyte_id', '=', 'a.id').orderBy('r.sex').orderBy('r.pregnancy').orderBy('r.age_min_days')).as('ranges'))
         .whereRef('a.service_id', '=', 's.id').orderBy('a.sort_order')).as('analytes'))
       .where('s.id', '=', id).executeTakeFirst();
     if (!s) throw new NotFoundException('კვლევა ვერ მოიძებნა');
@@ -120,7 +115,7 @@ export class DiagnosticsService {
   }
 
   async updateService(id: string, dto: { name?: string; group_name?: string; specimen_type?: string | null; container?: string | null; base_price?: number;
-    duration_minutes?: number | null; prep_instructions?: string | null;
+    duration_minutes?: number | null; prep_instructions?: string | null; report_comment?: string | null; default_method_id?: string | null;
     performed_by?: 'internal' | 'external'; external_lab?: string | null; is_active?: boolean; approve?: boolean }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('dx_services').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -131,7 +126,7 @@ export class DiagnosticsService {
       if (dto.base_price !== undefined && !canPrice) throw new ForbiddenException('ფასის შეცვლა შეუძლია მხოლოდ ადმინისტრატორს ან მოლარეს');
       if (dto.approve && !canApprove) throw new ForbiddenException('დამტკიცება შეუძლია ლაბორატორიის ექიმს / ხელმძღვანელს');
       const set: Record<string, unknown> = {};
-      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions'] as const) {
+      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions', 'report_comment', 'default_method_id'] as const) {
         if (dto[k] !== undefined) {
           if (!canEdit) throw new ForbiddenException('კვლევის რედაქტირების უფლება არ გაქვთ');
           set[k] = typeof dto[k] === 'string' ? (dto[k] as string).trim() || null : dto[k];
@@ -150,27 +145,42 @@ export class DiagnosticsService {
     return this.serviceDetail(id);
   }
 
-  /** კომპონენტი + ნორმები (ნორმები მთლიანად იცვლება) */
+  /**
+   * კომპონენტი. ახალს — საწყისი ნორმებით (ვერსია 1). არსებულის ნორმები/კრიტიკული ზღვრები აქ არ იცვლება —
+   * მხოლოდ ლაბორატორიის ხელმძღვანელი, მიზეზით (PUT /lab/analytes/:id/norms). ერთეული იბლოკება, თუ შედეგები უკვე არსებობს.
+   */
   async saveAnalyte(serviceId: string, dto: { id?: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals?: number | null;
     options?: string | null; critical_low?: number | null; critical_high?: number | null; sort_order?: number; is_active?: boolean;
-    ranges: { sex: 'male' | 'female' | null; age_min_days?: number; age_max_days?: number; low?: number | null; high?: number | null; normal_text?: string | null }[] }, ctx: AuditContext) {
+    ranges?: { sex: 'male' | 'female' | null; age_min_days?: number; age_max_days?: number; pregnancy?: 'P' | 'T1' | 'T2' | 'T3' | null; method_id?: string | null;
+      low?: number | null; high?: number | null; normal_text?: string | null }[] }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const svc = await trx.selectFrom('dx_services').select(['section']).where('id', '=', serviceId).executeTakeFirst();
       if (!svc || svc.section !== 'lab') throw new BadRequestException('კომპონენტები მხოლოდ ლაბორატორიულ კვლევას აქვს');
-      const vals = { code: dto.code, name: dto.name, unit: dto.unit ?? '', result_type: dto.result_type, decimals: dto.decimals ?? null, options: dto.options ?? null,
-        critical_low: dto.critical_low?.toString() ?? null, critical_high: dto.critical_high?.toString() ?? null, sort_order: dto.sort_order ?? 0, is_active: dto.is_active ?? true };
-      const a = dto.id
-        ? await trx.updateTable('lab_analytes').set(vals).where('id', '=', dto.id).where('service_id', '=', serviceId).returning('id').executeTakeFirstOrThrow()
-        : await trx.insertInto('lab_analytes').values({ service_id: serviceId, ...vals }).returning('id').executeTakeFirstOrThrow();
-      await trx.deleteFrom('lab_reference_ranges').where('analyte_id', '=', a.id).execute();
-      if (dto.ranges.length) {
-        await trx.insertInto('lab_reference_ranges').values(dto.ranges.map((r) => ({
-          analyte_id: a.id, sex: r.sex, age_min_days: r.age_min_days ?? 0, age_max_days: r.age_max_days ?? 54750,
-          low: r.low?.toString() ?? null, high: r.high?.toString() ?? null, normal_text: r.normal_text ?? null,
-        }))).execute();
+      const base = { code: dto.code, name: dto.name, unit: dto.unit ?? '', result_type: dto.result_type, decimals: dto.decimals ?? null, options: dto.options ?? null,
+        sort_order: dto.sort_order ?? 0, is_active: dto.is_active ?? true };
+      if (dto.id) {
+        const old = await trx.selectFrom('lab_analytes').selectAll().where('id', '=', dto.id).where('service_id', '=', serviceId).forUpdate().executeTakeFirst();
+        if (!old) throw new NotFoundException('კომპონენტი ვერ მოიძებნა');
+        const used = await trx.selectFrom('lab_results').select('id').where('analyte_id', '=', old.id).limit(1).executeTakeFirst();
+        if (used && (base.unit !== old.unit || base.result_type !== old.result_type)) {
+          throw new ConflictException('კომპონენტს უკვე აქვს შედეგები — ერთეულის/ტიპის შეცვლა აურევს ძველ და ახალ მნიშვნელობებს. შექმენით ახალი კომპონენტი და ძველი გათიშეთ.');
+        }
+        await trx.updateTable('lab_analytes').set(base).where('id', '=', old.id).execute();
+        await this.audit.log(ctx, { action: 'SAVE_LAB_ANALYTE', entityName: 'lab_analytes', entityId: old.id, oldData: old, newData: base }, trx);
+      } else {
+        const ranges = (dto.ranges ?? []).map((r) => ({
+          sex: r.sex ?? null, age_min_days: r.age_min_days ?? 0, age_max_days: r.age_max_days ?? AGE_MAX_DAYS, pregnancy: r.pregnancy ?? null, method_id: r.method_id ?? null,
+          low: r.low?.toString() ?? null, high: r.high?.toString() ?? null, normal_text: r.normal_text?.trim() || null }));
+        const errs = validateRanges(ranges, dto.result_type);
+        if (errs.length) throw new BadRequestException(errs.join('; '));
+        const a = await trx.insertInto('lab_analytes').values({ service_id: serviceId, ...base, critical_low: dto.critical_low?.toString() ?? null, critical_high: dto.critical_high?.toString() ?? null })
+          .returning('id').executeTakeFirstOrThrow();
+        if (ranges.length) await trx.insertInto('lab_reference_ranges').values(ranges.map((r) => ({ analyte_id: a.id, ...r }))).execute();
+        await trx.insertInto('lab_norm_versions').values({ analyte_id: a.id, version: 1, ranges: JSON.stringify(normalizeRanges(ranges)), unit: base.unit,
+          critical_low: dto.critical_low?.toString() ?? null, critical_high: dto.critical_high?.toString() ?? null, reason: 'ახალი კომპონენტი', changed_by: user.id }).execute();
+        await this.audit.log(ctx, { action: 'CREATE_LAB_ANALYTE', entityName: 'lab_analytes', entityId: a.id, newData: dto }, trx);
       }
       await trx.updateTable('dx_services').set({ needs_review: true }).where('id', '=', serviceId).execute();
-      await this.audit.log(ctx, { action: 'SAVE_LAB_ANALYTE', entityName: 'lab_analytes', entityId: a.id, newData: dto }, trx);
     });
     return this.serviceDetail(serviceId);
   }
@@ -331,7 +341,7 @@ export class DiagnosticsService {
    * აღება: ანალიზები სინჯარებად (ნიმუში + კონტეინერი + შიდა/გარე) → თითო სინჯარას თითო შტრიხკოდი.
    * სავალდებულო: პაციენტის იდენტიფიკაციის დადასტურება; გადაუხდელზე — ცალკე დადასტურება.
    */
-  async collect(encounterId: string, dto: { item_ids?: string[]; identity_confirmed?: boolean; unpaid_ack?: boolean }, user: AuthUser, ctx: AuditContext) {
+  async collect(encounterId: string, dto: { item_ids?: string[]; identity_confirmed?: boolean; unpaid_ack?: boolean; pregnancy_weeks?: number | null }, user: AuthUser, ctx: AuditContext) {
     if (!dto.identity_confirmed) throw new BadRequestException('დაადასტურეთ პაციენტის იდენტიფიკაცია (სახელი და დაბადების თარიღი)');
     const specimens = await this.db.transaction().execute(async (trx) => {
       const inv = await trx.selectFrom('invoices').select('paid_status').where('encounter_id', '=', encounterId).executeTakeFirst();
@@ -348,12 +358,13 @@ export class DiagnosticsService {
         const sp = await trx.insertInto('lab_specimens').values({
           barcode: String(n), encounter_id: encounterId, patient_id: items[0].patient_id, specimen_type: g.specimen_type, container: g.container, collected_by: user.id,
         }).returning(['id', 'barcode', 'specimen_type', 'container']).executeTakeFirstOrThrow();
-        await trx.updateTable('dx_order_items').set({ status: 'collected', specimen_id: sp.id, collection_issue: null, collection_issue_at: null })
+        await trx.updateTable('dx_order_items').set({ status: 'collected', specimen_id: sp.id, collection_issue: null, collection_issue_at: null,
+          ...(dto.pregnancy_weeks ? { pregnancy_weeks: dto.pregnancy_weeks } : {}) })
           .where('id', 'in', g.items.map((x) => x.id)).execute();
         out.push({ ...sp, tests: g.items.map((x) => x.name), external: g.external });
       }
       await this.audit.log(ctx, { action: 'COLLECT_SPECIMENS', entityName: 'encounters', entityId: encounterId,
-        newData: { specimens: out.map((s) => s.barcode), identity_confirmed: true, unpaid_ack: inv?.paid_status === 'unpaid' ? true : undefined } }, trx);
+        newData: { specimens: out.map((s) => s.barcode), identity_confirmed: true, pregnancy_weeks: dto.pregnancy_weeks ?? undefined, unpaid_ack: inv?.paid_status === 'unpaid' ? true : undefined } }, trx);
       return out;
     });
     return specimens;
@@ -400,37 +411,62 @@ export class DiagnosticsService {
     return q.execute();
   }
 
-  /** შედეგის ფორმა: კომპონენტები + პაციენტისთვის შესაბამისი ნორმები + უკვე შეყვანილი მნიშვნელობები */
+  /** შედეგის ფორმა: კომპონენტები + პაციენტისთვის შესაბამისი ნორმები (სქესი, ასაკი, ორსულობა, ანალიზატორი) + შეყვანილი მნიშვნელობები */
   async labItem(itemId: string) {
     const it = await this.itemsQuery().where('i.id', '=', itemId).executeTakeFirst();
     if (!it) throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
     const analytes = await this.analyteDefs(it.service_id);
     const at = it.collected_at ? new Date(it.collected_at) : new Date();
-    const days = ageDays(it.birth_date, at);
+    const ctx = { sex: it.gender, ageDays: ageDays(it.birth_date, at), pregnancyWeeks: it.pregnancy_weeks, methodId: it.lab_method_id ?? it.default_method_id };
+    const norm_recalculated = await this.db.selectFrom('lab_results').select(['recalculated_at']).where('order_item_id', '=', itemId)
+      .where('recalculated_at', 'is not', null).orderBy('recalculated_at', 'desc').limit(1).executeTakeFirst();
     return {
       ...it,
+      effective_method_id: ctx.methodId,
+      norm_recalculated_at: norm_recalculated?.recalculated_at ?? null,
       analytes: analytes.map((a) => {
-        const r = pickRange(a.ranges, it.gender, days);
+        const r = pickRange(a.ranges, ctx);
         return { id: a.id, code: a.code, name: a.name, unit: a.unit, result_type: a.result_type, decimals: a.decimals, options: a.options?.split('|') ?? null,
-          critical_low: a.critical_low, critical_high: a.critical_high, range: r ? { low: r.low, high: r.high, normal_text: r.normal_text } : null };
+          critical_low: a.critical_low, critical_high: a.critical_high, norm_version: a.norm_version,
+          range: r ? { low: r.low, high: r.high, normal_text: r.normal_text, pregnancy: r.pregnancy ?? null, method_id: r.method_id ?? null } : null };
       }),
     };
   }
 
-  async saveResults(itemId: string, values: { analyte_id: string; value: string | number | null }[], user: AuthUser, ctx: AuditContext) {
+  async saveResults(itemId: string, values: { analyte_id: string; value: string | number | null }[], user: AuthUser, ctx: AuditContext,
+    meta: { pregnancy_weeks?: number | null; lab_method_id?: string | null } = {}) {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items as i').innerJoin('patients as p', 'p.id', 'i.patient_id').leftJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id')
-        .select(['i.id', 'i.status', 'i.service_id', 'i.section', 'p.gender', 'p.birth_date', 'sp.collected_at']).where('i.id', '=', itemId).forUpdate(['i']).executeTakeFirst();
+        .innerJoin('dx_services as s', 's.id', 'i.service_id')
+        .select(['i.id', 'i.status', 'i.service_id', 'i.section', 'i.pregnancy_weeks', 'i.lab_method_id', 's.default_method_id', 'p.gender', 'p.birth_date', 'sp.collected_at'])
+        .where('i.id', '=', itemId).forUpdate(['i']).executeTakeFirst();
       if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
       if (!['in_progress', 'resulted', 'collected'].includes(it.status)) throw new ConflictException(`სტატუსზე "${it.status}" შედეგის შეტანა დაუშვებელია`);
+      // ორსულობა / ანალიზატორი — ნორმის შესარჩევად (undefined = უცვლელი, null = გასუფთავება)
+      const metaSet: { pregnancy_weeks?: number | null; lab_method_id?: string | null } = {};
+      if (meta.pregnancy_weeks !== undefined) {
+        if (meta.pregnancy_weeks !== null && it.gender === 'male') throw new BadRequestException('ორსულობა მამრობითი სქესის პაციენტს');
+        metaSet.pregnancy_weeks = meta.pregnancy_weeks;
+      }
+      if (meta.lab_method_id !== undefined) {
+        if (meta.lab_method_id) {
+          const m = await trx.selectFrom('lab_methods').select('is_active').where('id', '=', meta.lab_method_id).executeTakeFirst();
+          if (!m?.is_active) throw new BadRequestException('ანალიზატორი ვერ მოიძებნა ან გათიშულია');
+        }
+        metaSet.lab_method_id = meta.lab_method_id;
+      }
+      if (Object.keys(metaSet).length) await trx.updateTable('dx_order_items').set(metaSet).where('id', '=', itemId).execute();
+      const pregnancyWeeks = metaSet.pregnancy_weeks !== undefined ? metaSet.pregnancy_weeks : it.pregnancy_weeks;
+      const methodId = (metaSet.lab_method_id !== undefined ? metaSet.lab_method_id : it.lab_method_id) ?? it.default_method_id;
       const defs = await this.analyteDefs(it.service_id, trx);
-      const days = ageDays(it.birth_date, it.collected_at ?? new Date());
+      const rctx = { sex: it.gender, ageDays: ageDays(it.birth_date, it.collected_at ?? new Date()), pregnancyWeeks, methodId };
       const old = await trx.selectFrom('lab_results').selectAll().where('order_item_id', '=', itemId).execute();
 
       for (const v of values) {
         const a = defs.find((d) => d.id === v.analyte_id);
         if (!a) throw new BadRequestException('უცნობი კომპონენტი');
-        const raw = v.value === null || v.value === undefined ? '' : String(v.value).trim().replace(',', '.');
+        const raw0 = v.value === null || v.value === undefined ? '' : String(v.value).trim();
+        const raw = a.result_type === 'numeric' ? raw0.replace(',', '.') : raw0;   // ტექსტში მძიმე რჩება
         if (!raw) { await trx.deleteFrom('lab_results').where('order_item_id', '=', itemId).where('analyte_id', '=', a.id).execute(); continue; }
         let num: number | null = null; let text: string | null = null;
         if (a.result_type === 'numeric') {
@@ -438,11 +474,21 @@ export class DiagnosticsService {
         } else {
           text = raw; if (a.result_type === 'select' && a.options && !a.options.split('|').includes(text)) throw new BadRequestException(`${a.name}: დაუშვებელი მნიშვნელობა`);
         }
-        const r = pickRange(a.ranges, it.gender, days);
+        const r = pickRange(a.ranges, rctx);
         const row = { value_num: num?.toString() ?? null, value_text: text, unit: a.unit, ref_low: r?.low ?? null, ref_high: r?.high ?? null, ref_text: r?.normal_text ?? null,
-          flag: computeFlag(a, r, num, text), entered_by: user.id, entered_at: sql<Date>`now()` };
+          flag: computeFlag(a, r, num, text), norm_version: a.norm_version, recalculated_at: null, entered_by: user.id, entered_at: sql<Date>`now()` };
         await trx.insertInto('lab_results').values({ order_item_id: itemId, analyte_id: a.id, ...row })
           .onConflict((oc) => oc.columns(['order_item_id', 'analyte_id']).doUpdateSet(row)).execute();
+      }
+      // ორსულობა/ანალიზატორი შეიცვალა → უკვე შეყვანილი (ამ მოთხოვნაში არგადმოცემული) მნიშვნელობების ნორმა/ნიშანი თავიდან
+      if (Object.keys(metaSet).length) {
+        const sent = new Set(values.map((v) => v.analyte_id));
+        for (const r0 of await trx.selectFrom('lab_results').selectAll().where('order_item_id', '=', itemId).execute()) {
+          const a = defs.find((d) => d.id === r0.analyte_id); if (!a || sent.has(a.id)) continue;
+          const r = pickRange(a.ranges, rctx);
+          await trx.updateTable('lab_results').set({ ref_low: r?.low ?? null, ref_high: r?.high ?? null, ref_text: r?.normal_text ?? null, norm_version: a.norm_version,
+            flag: computeFlag(a, r, r0.value_num === null ? null : Number(r0.value_num), r0.value_text) }).where('id', '=', r0.id).execute();
+        }
       }
       // ყველა სავალდებულო (რიცხვითი/არჩევითი) კომპონენტი შევსებულია → resulted (ვალიდაციას ელოდება)
       const filled = await trx.selectFrom('lab_results').select('analyte_id').where('order_item_id', '=', itemId).execute();
@@ -452,7 +498,7 @@ export class DiagnosticsService {
       await trx.updateTable('dx_order_items').set({ status, ...(complete ? { resulted_by: user.id, resulted_at: sql`now()` } : {}) }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'ENTER_LAB_RESULTS', entityName: 'dx_order_items', entityId: itemId,
         oldData: old.length ? old.map((o) => ({ a: o.analyte_id, v: o.value_num ?? o.value_text })) : undefined,
-        newData: { status, values: values.map((v) => ({ a: v.analyte_id, v: v.value })) } }, trx);
+        newData: { status, ...metaSet, values: values.map((v) => ({ a: v.analyte_id, v: v.value })) } }, trx);
       return { id: itemId, status };
     });
   }
@@ -463,7 +509,10 @@ export class DiagnosticsService {
       const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
       if (it.status !== 'resulted') throw new ConflictException('ვალიდაციისთვის ყველა კომპონენტი უნდა იყოს შევსებული');
-      await trx.updateTable('dx_order_items').set({ status: 'validated', validated_by: user.id, validated_at: sql`now()` }).where('id', '=', itemId).execute();
+      // ბლანკის ვერსია ფიქსირდება ვალიდაციის მომენტში — ხელახალი ბეჭდვა იმავე სახით; QR-ის ტოკენი — ახალი ყოველ ვალიდაციაზე
+      const blank = await sql<{ id: string | null }>`SELECT lab_blank_version_for(${itemId}::uuid) AS id`.execute(trx);
+      await trx.updateTable('dx_order_items').set({ status: 'validated', validated_by: user.id, validated_at: sql`now()`,
+        blank_version_id: blank.rows[0]?.id ?? null, verify_token: sql`uuid_generate_v4()` }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId }, trx);
       await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'validated' };
@@ -475,7 +524,7 @@ export class DiagnosticsService {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab' || it.status !== 'validated') throw new ConflictException('შესწორება შეიძლება მხოლოდ ვალიდირებული შედეგის');
-      await trx.updateTable('dx_order_items').set({ status: 'resulted', validated_by: null, validated_at: null }).where('id', '=', itemId).execute();
+      await trx.updateTable('dx_order_items').set({ status: 'resulted', validated_by: null, validated_at: null, blank_version_id: null, verify_token: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'REOPEN_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);
       return { id: itemId, status: 'resulted' };
     });
@@ -503,6 +552,7 @@ export class DiagnosticsService {
         'i.contrast_agent', 'i.contrast_volume_ml', 'i.dose_text', 'i.tech_note', 'i.collection_issue', 's.prep_instructions',
         'rep.status as report_status', 'rep.version as report_version', 'rep.is_critical', 'rep.amend_reason', 'rep.updated_at as report_updated_at',
         'enc.visit_kind', 'enc.external_referral',
+        'i.pregnancy_weeks', 'i.lab_method_id', 's.default_method_id', 's.report_comment', 'i.blank_version_id', 'i.verify_token',
         'pr.id as path_request_id', 'pr.request_no as path_request_no', 'pr.status as path_status', 'pr.result_text as path_result_text', 'pr.reviewed_at as path_reviewed_at',
         sql<boolean>`pr.result_file_path IS NOT NULL`.as('path_has_file'),
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),
@@ -514,7 +564,7 @@ export class DiagnosticsService {
 
   private async analyteDefs(serviceId: string, executor: Database | Trx = this.db) {
     return executor.selectFrom('lab_analytes as a').selectAll('a')
-      .select((eb) => jsonArrayFrom(eb.selectFrom('lab_reference_ranges as r').select(['r.sex', 'r.age_min_days', 'r.age_max_days', 'r.low', 'r.high', 'r.normal_text'])
+      .select((eb) => jsonArrayFrom(eb.selectFrom('lab_reference_ranges as r').select(['r.sex', 'r.age_min_days', 'r.age_max_days', 'r.pregnancy', 'r.method_id', 'r.low', 'r.high', 'r.normal_text'])
         .whereRef('r.analyte_id', '=', 'a.id')).as('ranges'))
       .where('a.service_id', '=', serviceId).where('a.is_active', '=', true).orderBy('a.sort_order').execute();
   }

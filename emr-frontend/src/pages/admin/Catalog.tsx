@@ -1,16 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { can, api } from '../../api/client';
 import type { DxSection, DxService } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced } from '../../components/ui';
 import { money, SECTION_KA, unitFmt } from '../../lib/format';
+import Blanks from './lab/Blanks';
+import { criteria, fromRow, rangeAgeText, RangesEditor, rowErrors, toRow, useLabMethods, valueText, type NormRange, type RangeRow } from './lab/common';
+import Methods from './lab/Methods';
+import Norms from './lab/Norms';
 
-interface Range { sex: 'male' | 'female' | null; age_min_days: number; age_max_days: number; low: string | null; high: string | null; normal_text: string | null }
-interface Analyte { id: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals: number | null; options: string | null; critical_low: string | null; critical_high: string | null; sort_order: number; is_active: boolean; ranges: Range[] }
-type ServiceDetail = DxService & { analytes: Analyte[] };
+interface Analyte { id: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals: number | null; options: string | null; critical_low: string | null; critical_high: string | null; sort_order: number; is_active: boolean; norm_version: number; ranges: NormRange[] }
+type ServiceDetail = DxService & { analytes: Analyte[]; report_comment: string | null; default_method_id: string | null };
 
+const LAB_TABS = [['catalog', 'კვლევები'], ['norms', 'ნორმები'], ['blanks', 'ბლანკები'], ['methods', 'ანალიზატორები']] as const;
+
+/** კატალოგი; ლაბორატორიის როლებს — დამატებით: ნორმები, ბლანკები, ანალიზატორები */
 export default function Catalog() {
+  const { user } = useAuth();
+  const [sp, setSp] = useSearchParams();
+  const labUser = can(user, 'admin', 'lab_doctor', 'lab_manager');
+  const tab = labUser ? (LAB_TABS.find(([k]) => k === sp.get('tab'))?.[0] ?? 'catalog') : 'catalog';
+  if (!labUser) return <CatalogList />;
+  return (
+    <>
+      <div className="row" style={{ padding: '12px 24px 0' }}>
+        <div className="seg" role="tablist" aria-label="ლაბორატორია">{LAB_TABS.map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-pressed={tab === k} aria-selected={tab === k} onClick={() => setSp(k === 'catalog' ? {} : { tab: k }, { replace: true })}>{l}</button>))}</div>
+      </div>
+      {tab === 'catalog' ? <CatalogList /> : <div className="content">{tab === 'norms' ? <Norms /> : tab === 'blanks' ? <Blanks /> : <Methods />}</div>}
+    </>
+  );
+}
+
+function CatalogList() {
   const [section, setSection] = useState<DxSection>('lab');
   const [search, setSearch] = useState(''); const [inactive, setInactive] = useState(false);
   const [edit, setEdit] = useState<string | null>(null);
@@ -113,10 +137,11 @@ function CreateServiceDialog({ section, onClose, onCreated }: { section: DxSecti
 function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth();
   const q = useQuery({ queryKey: ['dx-service', id], queryFn: () => api<ServiceDetail>(`/dx/catalog/${id}`) });
-  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string } | null>(null);
+  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string; comment: string; method: string } | null>(null);
+  const methods = useLabMethods(true);
   const [analyte, setAnalyte] = useState<Analyte | 'new' | null>(null);
   const s = q.data;
-  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '' });
+  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '', comment: s.report_comment ?? '', method: s.default_method_id ?? '' });
   const canEdit = can(user, 'admin') || (can(user, 'lab_manager', 'lab_doctor') && s?.section === 'lab');
   const canPrice = can(user, 'admin', 'billing');
   const canApprove = can(user, 'admin') || (can(user, 'lab_doctor') && s?.section === 'lab');
@@ -125,7 +150,7 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const save = useMutation({
     mutationFn: (approve: boolean) => api(`/dx/catalog/${id}`, { method: 'PATCH', body: {
       ...(canEdit ? { name: f!.name, group_name: f!.group_name, ...(s!.section === 'lab' ? { container: f!.container || null } : {}), performed_by: f!.performed_by, external_lab: f!.performed_by === 'external' ? f!.external_lab || null : null, is_active: f!.is_active,
-        ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : {}) } : {}),
+        ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : { report_comment: f!.comment.trim() || null, default_method_id: f!.method || null }) } : {}),
       ...(canPrice ? { base_price: Number(f!.price) } : {}), ...(approve ? { approve: true } : {}),
     } }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-catalog-admin'] }); void qc.invalidateQueries({ queryKey: ['dx-catalog'] }); onClose(); },
@@ -145,6 +170,11 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
           {s.section !== 'lab' && <Field label="ხანგრძლივობა (წთ)" htmlFor="sdur" hint="ცარიელი — აპარატის სლოტი"><input id="sdur" className="input mono" type="number" min={5} max={480} value={f.duration} disabled={!canEdit} onChange={(e) => setF({ ...f, duration: e.target.value })} /></Field>}
           {s.section !== 'lab' && <div style={{ gridColumn: '1 / -1' }}><Field label="პაციენტის მომზადება" htmlFor="sprep" hint="იბეჭდება ჩაწერის ფურცელზე"><textarea id="sprep" className="textarea" rows={2} value={f.prep} disabled={!canEdit} onChange={(e) => setF({ ...f, prep: e.target.value })} /></Field></div>}
           {s.section === 'lab' && <Field label="სინჯარა" htmlFor="sc"><input id="sc" className="input" value={f.container} disabled={!canEdit} onChange={(e) => setF({ ...f, container: e.target.value })} /></Field>}
+          {s.section === 'lab' && <Field label="ნაგულისხმევი ანალიზატორი" htmlFor="smt" hint="ლაბორანტს შეუძლია შეცვალოს შედეგის შეტანისას">
+            <select id="smt" className="select" value={f.method} disabled={!canEdit} onChange={(e) => setF({ ...f, method: e.target.value })}>
+              <option value="">— არ არის მითითებული</option>{methods.data?.filter((m) => m.is_active || m.id === f.method).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>}
+          {s.section === 'lab' && <div style={{ gridColumn: '1 / -1' }}><Field label="კომენტარი ბლანკზე" htmlFor="scm" hint="იბეჭდება ანალიზის შედეგების ქვეშ (მაგ. ინტერპრეტაცია, მომზადების პირობა)">
+            <textarea id="scm" className="textarea" rows={2} value={f.comment} disabled={!canEdit} onChange={(e) => setF({ ...f, comment: e.target.value })} /></Field></div>}
         </div>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="შესრულება">
@@ -165,11 +195,11 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 <tr key={a.id} className={canAnalytes ? 'clickable' : undefined} onClick={() => canAnalytes && setAnalyte(a)} style={a.is_active ? undefined : { opacity: 0.5 }}>
                   <td><strong>{a.name}</strong> <span className="mono small muted">{a.code}</span></td>
                   <td className="small">{unitFmt(a.unit)}</td>
-                  <td className="small">{a.ranges.map((r, i) => <div key={i}>{r.sex ? (r.sex === 'male' ? 'მ: ' : 'ქ: ') : ''}{r.normal_text ?? `${r.low ?? '…'} – ${r.high ?? '…'}`}</div>)}</td>
+                  <td className="small">{a.ranges.map((r, i) => <div key={i}><span className="muted">{criteria(r, (mid) => methods.data?.find((m) => m.id === mid)?.name ?? 'ანალიზატორი')}{rangeAgeText(r) !== 'ყველა ასაკი' ? ` · ${rangeAgeText(r)}` : ''}:</span> {valueText(r)}</div>)}</td>
                   <td className="small">{a.critical_low ?? ''}{a.critical_low || a.critical_high ? ' / ' : ''}{a.critical_high ?? ''}</td>
                 </tr>))}</tbody>
             </table>
-            <span className="hint">კომპონენტის ან ნორმის შეცვლა კვლევას ხელახლა „გადასამოწმებლად“ აბრუნებს. უკვე შეყვანილი შედეგები ინახავს იმ ნორმას, რომელიც შეყვანის მომენტში მოქმედებდა.</span>
+            <span className="hint">კომპონენტის შეცვლა კვლევას ხელახლა „გადასამოწმებლად“ აბრუნებს. არსებული კომპონენტის ნორმებს ცვლის ლაბორატორიის ხელმძღვანელი — ჩანართი „ნორმები“ (მიზეზით, ისტორიით).</span>
           </div>
         )}
         <ErrorBox error={save.error} />
@@ -181,52 +211,53 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
 
 function AnalyteDialog({ serviceId, a, onClose }: { serviceId: string; a: Analyte | null; onClose: () => void }) {
   const qc = useQueryClient();
+  const methods = useLabMethods(true);
   const [f, setF] = useState({ code: a?.code ?? '', name: a?.name ?? '', unit: a?.unit ?? '', result_type: a?.result_type ?? 'numeric', decimals: a?.decimals?.toString() ?? '1',
     options: a?.options ?? '', critical_low: a?.critical_low ?? '', critical_high: a?.critical_high ?? '', sort_order: String(a?.sort_order ?? 99), is_active: a?.is_active ?? true });
-  const [ranges, setRanges] = useState<Range[]>(a?.ranges ?? [{ sex: null, age_min_days: 0, age_max_days: 54750, low: null, high: null, normal_text: null }]);
+  // ახალ კომპონენტს — საწყისი ნორმები; არსებულის ნორმები იცვლება „ნორმები“ ჩანართში (ხელმძღვანელი)
+  const [rows, setRows] = useState<RangeRow[]>(() => [toRow({ sex: null, age_min_days: 0, age_max_days: 54750, pregnancy: null, method_id: null, low: null, high: null, normal_text: null })]);
+  const numeric = f.result_type === 'numeric';
+  const errs = a ? [] : rowErrors(rows, numeric);
   const num = (v: string | null) => (v === null || v === '' ? null : Number(v));
   const m = useMutation({
     mutationFn: () => api(`/dx/catalog/${serviceId}/analytes`, { body: {
-      id: a?.id, code: f.code, name: f.name, unit: f.unit, result_type: f.result_type, decimals: f.result_type === 'numeric' ? Number(f.decimals) : null,
-      options: f.result_type === 'select' ? f.options : null, critical_low: num(f.critical_low), critical_high: num(f.critical_high), sort_order: Number(f.sort_order), is_active: f.is_active,
-      ranges: ranges.map((r) => ({ sex: r.sex, age_min_days: Number(r.age_min_days), age_max_days: Number(r.age_max_days), low: num(r.low), high: num(r.high), normal_text: r.normal_text || null })),
+      id: a?.id, code: f.code, name: f.name, unit: f.unit, result_type: f.result_type, decimals: numeric ? Number(f.decimals) : null,
+      options: f.result_type === 'select' ? f.options : null, sort_order: Number(f.sort_order), is_active: f.is_active,
+      ...(a ? {} : { critical_low: numeric ? num(f.critical_low) : null, critical_high: numeric ? num(f.critical_high) : null, ranges: rows.map((r) => fromRow(r, numeric)) }),
     } }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-service', serviceId] }); onClose(); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-service', serviceId] }); void qc.invalidateQueries({ queryKey: ['lab-norms'] }); onClose(); },
   });
-  const setR = (i: number, k: keyof Range, v: string | null) => setRanges(ranges.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const mName = (id: string) => methods.data?.find((x) => x.id === id)?.name ?? 'ანალიზატორი';
   return (
-    <Modal title={a ? a.name : 'ახალი კომპონენტი'} onClose={onClose} width={820}
-      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={!f.code || !f.name || m.isPending} onClick={() => m.mutate()}>შენახვა</button></>}>
+    <Modal title={a ? a.name : 'ახალი კომპონენტი'} onClose={onClose} width={a ? 820 : 1000}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={!f.code || !f.name || errs.length > 0 || m.isPending} onClick={() => m.mutate()}>შენახვა</button></>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 10 }}>
         <Field label="კოდი" htmlFor="ac"><input id="ac" className="input mono" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} /></Field>
         <Field label="დასახელება" htmlFor="an"><input id="an" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-        <Field label="ერთეული" htmlFor="au"><input id="au" className="input mono" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} placeholder="10^9/L" /></Field>
+        <Field label="ერთეული" htmlFor="au" hint={a ? 'შედეგების შემდეგ არ იცვლება' : undefined}><input id="au" className="input mono" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} placeholder="10^9/L" /></Field>
         <Field label="ტიპი" htmlFor="at"><select id="at" className="select" value={f.result_type} onChange={(e) => setF({ ...f, result_type: e.target.value as Analyte['result_type'] })}><option value="numeric">რიცხვი</option><option value="select">არჩევანი</option><option value="text">ტექსტი</option></select></Field>
         {f.result_type === 'select' && <div style={{ gridColumn: '1 / -1' }}><Field label="ვარიანტები (| -ით)" htmlFor="ao"><input id="ao" className="input" value={f.options} onChange={(e) => setF({ ...f, options: e.target.value })} placeholder="უარყოფითი|დადებითი" /></Field></div>}
-        {f.result_type === 'numeric' && <>
+        {numeric && <>
           <Field label="ათწილადი" htmlFor="ad"><input id="ad" className="input mono" value={f.decimals} onChange={(e) => setF({ ...f, decimals: e.target.value })} /></Field>
-          <Field label="კრიტ. ქვედა" htmlFor="acl"><input id="acl" className="input mono" value={f.critical_low} onChange={(e) => setF({ ...f, critical_low: e.target.value })} /></Field>
-          <Field label="კრიტ. ზედა" htmlFor="ach"><input id="ach" className="input mono" value={f.critical_high} onChange={(e) => setF({ ...f, critical_high: e.target.value })} /></Field>
+          {!a && <Field label="კრიტ. ქვედა" htmlFor="acl"><input id="acl" className="input mono" value={f.critical_low} onChange={(e) => setF({ ...f, critical_low: e.target.value })} /></Field>}
+          {!a && <Field label="კრიტ. ზედა" htmlFor="ach"><input id="ach" className="input mono" value={f.critical_high} onChange={(e) => setF({ ...f, critical_high: e.target.value })} /></Field>}
         </>}
         <Field label="რიგი" htmlFor="as"><input id="as" className="input mono" value={f.sort_order} onChange={(e) => setF({ ...f, sort_order: e.target.value })} /></Field>
       </div>
       <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>
-      <div className="row"><h3 className="grow">ნორმები</h3><button className="btn sm" type="button" onClick={() => setRanges([...ranges, { sex: null, age_min_days: 0, age_max_days: 54750, low: null, high: null, normal_text: null }])}>+ ნორმა</button></div>
-      <table className="table">
-        <thead><tr><th>სქესი</th><th>ასაკი (დღე) დან</th><th>მდე</th>{f.result_type === 'numeric' ? <><th>ქვედა</th><th>ზედა</th></> : <th>ნორმალური მნიშვნელობა</th>}<th /></tr></thead>
-        <tbody>{ranges.map((r, i) => (
-          <tr key={i}>
-            <td><select aria-label="სქესი" className="select" style={{ height: 34 }} value={r.sex ?? ''} onChange={(e) => setR(i, 'sex', e.target.value || null)}><option value="">ორივე</option><option value="male">მამრ.</option><option value="female">მდედრ.</option></select></td>
-            <td><input aria-label="ასაკი დან" className="input mono" style={{ height: 34 }} value={r.age_min_days} onChange={(e) => setR(i, 'age_min_days', e.target.value)} /></td>
-            <td><input aria-label="ასაკი მდე" className="input mono" style={{ height: 34 }} value={r.age_max_days} onChange={(e) => setR(i, 'age_max_days', e.target.value)} /></td>
-            {f.result_type === 'numeric' ? <>
-              <td><input aria-label="ქვედა" className="input mono" style={{ height: 34 }} value={r.low ?? ''} onChange={(e) => setR(i, 'low', e.target.value)} /></td>
-              <td><input aria-label="ზედა" className="input mono" style={{ height: 34 }} value={r.high ?? ''} onChange={(e) => setR(i, 'high', e.target.value)} /></td>
-            </> : <td><input aria-label="ნორმა" className="input" style={{ height: 34 }} value={r.normal_text ?? ''} onChange={(e) => setR(i, 'normal_text', e.target.value)} /></td>}
-            <td><button className="icon-btn" type="button" aria-label="წაშლა" onClick={() => setRanges(ranges.filter((_, j) => j !== i))}>×</button></td>
-          </tr>))}</tbody>
-      </table>
-      <span className="hint">ასაკი დღეებში: 1 წელი = 365, 18 წელი = 6570. ბავშვების ნორმებისთვის დაამატეთ ცალკე ხაზები.</span>
+      {a ? (
+        <div className="stack" style={{ gap: 6 }}>
+          <h3>ნორმები <span className="small muted">v{a.norm_version}</span></h3>
+          {a.ranges.length ? <table className="table"><tbody>{a.ranges.map((r, i) => <tr key={i}><td className="small">{criteria(r, mName)} · {rangeAgeText(r)}</td><td className="small mono">{valueText(r)}</td></tr>)}</tbody></table>
+            : <div className="alert warn">ნორმა არ არის.</div>}
+          <span className="small muted">კრიტიკული: {a.critical_low ?? '—'} / {a.critical_high ?? '—'}</span>
+          <div className="alert info">ნორმებს და კრიტიკულ ზღვრებს ცვლის ლაბორატორიის ხელმძღვანელი: ლაბორატორია → „ნორმები“ (მიზეზით; ძველი ვერსია ისტორიაში რჩება).</div>
+        </div>
+      ) : (<>
+        <h3>საწყისი ნორმები</h3>
+        <RangesEditor rows={rows} onChange={setRows} numeric={numeric} methods={methods.data ?? []} />
+        {errs.length > 0 && <div className="alert warn">{errs.join(' · ')}</div>}
+      </>)}
       <ErrorBox error={m.error} />
     </Modal>
   );

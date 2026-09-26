@@ -59,10 +59,11 @@ function CollectPanel({ encounterId, onDone }: { encounterId: string; onDone: ()
   const d = useQuery({ queryKey: ['collection-detail', encounterId], queryFn: () => api<CollectionDetail>(`/dx/collection/${encounterId}`) });
   const [idOk, setIdOk] = useState(false);
   const [unpaidOk, setUnpaidOk] = useState(false);
+  const [preg, setPreg] = useState('');   // ორსულობის კვირა — ნორმის შესარჩევად
   const [done, setDone] = useState<CollectedSpecimen[] | null>(null);
   const labels = useMutation({ mutationFn: (ids: string[]) => openBlob(`/dx/labels?ids=${ids.join(',')}`) });
   const collect = useMutation({
-    mutationFn: () => api<CollectedSpecimen[]>(`/encounters/${encounterId}/dx-collect`, { body: { identity_confirmed: idOk, unpaid_ack: unpaidOk || undefined } }),
+    mutationFn: () => api<CollectedSpecimen[]>(`/encounters/${encounterId}/dx-collect`, { body: { identity_confirmed: idOk, unpaid_ack: unpaidOk || undefined, pregnancy_weeks: preg ? Number(preg) : undefined } }),
     onSuccess: (sp) => { setDone(sp); labels.mutate(sp.map((s) => s.id)); void qc.invalidateQueries({ queryKey: ['collection'] }); },
   });
   const issue = useMutation({
@@ -138,6 +139,14 @@ function CollectPanel({ encounterId, onDone }: { encounterId: string; onDone: ()
           <input type="checkbox" style={{ width: 20, height: 20, marginTop: 2 }} checked={idOk} onChange={(e) => setIdOk(e.target.checked)} />
           <span>პაციენტმა <strong>თავად დაასახელა</strong> სახელი, გვარი და დაბადების თარიღი — ემთხვევა ეკრანს</span>
         </label>
+        {x.gender === 'female' && age(x.birth_date) >= 10 && age(x.birth_date) <= 55 && (
+          <label className="row small" style={{ flexWrap: 'wrap' }}>
+            ორსულობა (კვირა):
+            <input className="input mono" style={{ width: 80, height: 34 }} inputMode="numeric" placeholder="—" value={preg}
+              onChange={(e) => setPreg(e.target.value.replace(/\D/g, '').slice(0, 2))} aria-label="ორსულობის კვირა" />
+            <span className="muted">ცარიელი — არ არის ორსული / უცნობია. ნორმა შეირჩევა ტრიმესტრით.</span>
+          </label>
+        )}
         {unpaid && (
           <div className="alert danger" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <strong>ანალიზები გადახდილი არ არის.</strong>
@@ -148,7 +157,7 @@ function CollectPanel({ encounterId, onDone }: { encounterId: string; onDone: ()
         <ErrorBox error={issue.error} />
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn" type="button" onClick={() => { const r = prompt('რატომ ვერ აიღეთ? (მაგ. ვენა ვერ მოიძებნა, პაციენტმა უარი თქვა, არ არის უზმოზე)'); if (r && r.trim().length >= 5) issue.mutate(r.trim()); }}>ვერ აიღო</button>
-          <button className="btn primary lg" type="button" style={{ marginLeft: 'auto' }} disabled={!idOk || (unpaid && !unpaidOk) || collect.isPending} onClick={() => collect.mutate()}>
+          <button className="btn primary lg" type="button" style={{ marginLeft: 'auto' }} disabled={!idOk || (unpaid && !unpaidOk) || (!!preg && (Number(preg) < 1 || Number(preg) > 45)) || collect.isPending} onClick={() => collect.mutate()}>
             სისხლი აღებულია — სტიკერების ბეჭდვა
           </button>
         </div>
