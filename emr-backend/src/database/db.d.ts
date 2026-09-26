@@ -409,6 +409,23 @@ export interface EndoScopes {
   serial_number: string;
 }
 
+export interface Expenses {
+  amount: Numeric;
+  category: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  description: string | null;
+  doc_number: string | null;
+  expense_date: string;
+  id: Generated<string>;
+  is_void: Generated<boolean>;
+  payment_method: Generated<string>;
+  supplier: string | null;
+  updated_at: Generated<Timestamp>;
+  void_reason: string | null;
+}
+
 export interface GeneratedDocuments {
   document_number: string | null;
   document_type: string;
@@ -773,6 +790,7 @@ export interface DB {
   endo_procedures: EndoProcedures;
   endo_reprocessing: EndoReprocessing;
   endo_scopes: EndoScopes;
+  expenses: Expenses;
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;

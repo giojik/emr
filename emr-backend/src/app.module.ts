@@ -20,9 +20,10 @@ import { StorageModule } from './storage/storage.service';
 import { TariffsModule } from './tariffs/tariffs';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles';
+import { ManagementReportsModule } from './reports/management';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, Icd10Module, PatientsModule,
+  imports: [DatabaseModule, AuditModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
     StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule],
   controllers: [HealthController],

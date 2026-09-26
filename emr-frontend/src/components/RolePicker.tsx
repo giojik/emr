@@ -5,10 +5,12 @@ export interface RoleRow {
   id: string; code: string; name: string; description: string | null; is_system: boolean; capabilities: Role[]; is_active: boolean; sort_order: number;
   active_users: number; primary_users: number;
 }
-export const useRoles = (all = false) => useQuery({ queryKey: ['roles', all], queryFn: () => api<RoleRow[]>('/roles', { query: all ? {} : { active: true } }), staleTime: 60_000 });
+export const useRolesOpts = (all = false) => ({ queryKey: ['roles', all], queryFn: () => api<RoleRow[]>('/roles', { query: all ? {} : { active: true } }), staleTime: 60_000 });
+export const useRoles = (all = false) => useQuery(useRolesOpts(all));
 
 /** როლების არჩევა (რამდენიმე) + ძირითადი როლი. value: კოდები, პირველი = ძირითადი */
-export default function RolePicker({ value, onChange, disabled }: { value: string[]; onChange: (codes: string[]) => void; disabled?: boolean }) {
+/** lockAdmin: ადმინისტრატორის უფლების შემცველი როლების მინიჭება აკრძალულია (HR) */
+export default function RolePicker({ value, onChange, disabled, lockAdmin }: { value: string[]; onChange: (codes: string[]) => void; disabled?: boolean; lockAdmin?: boolean }) {
   const roles = useRoles();
   const list = roles.data ?? [];
   const primary = value[0];
@@ -20,10 +22,11 @@ export default function RolePicker({ value, onChange, disabled }: { value: strin
     <div className="stack" style={{ gap: 4, maxHeight: 280, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10, padding: '6px 10px' }}>
       {list.map((r) => {
         const on = value.includes(r.code);
+        const locked = !!lockAdmin && r.capabilities.includes('admin');
         return (
-          <div key={r.code} className="row" style={{ gap: 8, padding: '3px 0' }}>
+          <div key={r.code} className="row" style={{ gap: 8, padding: '3px 0', opacity: locked ? 0.45 : 1 }} title={locked ? 'ადმინისტრატორის უფლებას მხოლოდ ადმინისტრატორი ანიჭებს' : undefined}>
             <label className="row grow" style={{ gap: 8 }}>
-              <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => toggle(r.code, e.target.checked)} />
+              <input type="checkbox" checked={on} disabled={disabled || (locked && !on)} onChange={(e) => toggle(r.code, e.target.checked)} />
               <span>{r.name}{!r.is_system && <span className="chip info" style={{ marginLeft: 6, height: 18, fontSize: 10 }}>კლინიკის</span>}{!r.capabilities.length && <span className="small muted" style={{ marginLeft: 6 }}>(წვდომის გარეშე)</span>}</span>
             </label>
             {on && (primary === r.code

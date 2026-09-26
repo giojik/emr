@@ -4,7 +4,8 @@
  * `@Roles(...)` decorator ამოწმებს: აქვს თუ არა მომხმარებელს ჩამოთვლილთაგან ერთი უფლება მაინც.
  */
 export const ROLES = ['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'pharmacist', 'diagnostic', 'lab_doctor', 'lab_manager', 'phlebotomist',
-  'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] as const;
+  'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse',
+  'accountant', 'manager', 'hr', 'med_engineer', 'viewer'] as const;
 export type Role = (typeof ROLES)[number];
 export const CAPABILITIES = ROLES;
 export type Capability = Role;

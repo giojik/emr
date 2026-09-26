@@ -22,8 +22,8 @@ export default function DiagnosticsHub() {
   const { user } = useAuth();
   const tabs = [['lab', 'ლაბორატორია'], ['radiology', 'რადიოლოგია'], ['endoscopy', 'ენდოსკოპია'], ['referrals', 'სხვა მიმართვები']] as const;
   const allowed = tabs.filter(([k]) => ({
-    lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist'],
-    endoscopy: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist'], referrals: ['admin', 'diagnostic'],
+    lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist', 'manager', 'viewer'],
+    endoscopy: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist', 'manager', 'viewer', 'med_engineer'], referrals: ['admin', 'diagnostic'],
   } as Record<string, Role[]>)[k].some((c) => can(user, c)));
   if (!allowed.some(([k]) => k === section)) return <Navigate to={`/diagnostics/${allowed[0]?.[0] ?? 'lab'}`} replace />;
   return (
@@ -194,22 +194,22 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
 
 // ======================================================================= რადიოლოგია / ენდოსკოპია
 const RAD_VIEWS: { key: string; label: string; roles: string[] }[] = [
-  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'radiographer', 'radiologist'] },
+  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'radiographer', 'radiologist', 'manager', 'viewer'] },
   { key: 'queue', label: 'ტექნიკოსი — რიგი', roles: ['admin', 'radiographer', 'receptionist'] },
   { key: 'reports', label: 'დასკვნები', roles: ['admin', 'radiologist', 'radiographer'] },
   { key: 'templates', label: 'შაბლონები', roles: ['admin', 'radiologist'] },
 ];
 const ENDO_VIEWS: typeof RAD_VIEWS = [
-  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'endoscopy_nurse', 'endoscopist'] },
+  { key: 'schedule', label: 'განრიგი', roles: ['admin', 'receptionist', 'endoscopy_nurse', 'endoscopist', 'manager', 'viewer'] },
   { key: 'queue', label: 'ექთანი — პროცედურები', roles: ['admin', 'endoscopy_nurse', 'endoscopist', 'receptionist'] },
   { key: 'reports', label: 'ოქმები', roles: ['admin', 'endoscopist', 'endoscopy_nurse'] },
   { key: 'pathology', label: 'პათოლოგია', roles: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist'] },
-  { key: 'scopes', label: 'ენდოსკოპები', roles: ['admin', 'endoscopist', 'endoscopy_nurse'] },
+  { key: 'scopes', label: 'ენდოსკოპები', roles: ['admin', 'endoscopist', 'endoscopy_nurse', 'med_engineer'] },
   { key: 'templates', label: 'შაბლონები', roles: ['admin', 'endoscopist'] },
 ];
 /** როლის მიხედვით ნაგულისხმევი ხედი */
-const RAD_DEFAULT: Record<string, string> = { radiographer: 'queue', radiologist: 'reports', receptionist: 'schedule' };
-const ENDO_DEFAULT: Record<string, string> = { endoscopy_nurse: 'queue', endoscopist: 'reports', receptionist: 'schedule' };
+const RAD_DEFAULT: Record<string, string> = { radiographer: 'queue', radiologist: 'reports', receptionist: 'schedule', manager: 'schedule', viewer: 'schedule' };
+const ENDO_DEFAULT: Record<string, string> = { endoscopy_nurse: 'queue', endoscopist: 'reports', receptionist: 'schedule', manager: 'schedule', viewer: 'schedule', med_engineer: 'scopes' };
 
 function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
   const { user } = useAuth();

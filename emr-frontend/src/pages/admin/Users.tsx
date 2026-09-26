@@ -1,35 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
-import { api } from '../../api/client';
+import { api, can, type Role } from '../../api/client';
 import type { AdminUser, Department, Tariff } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { copyText } from '../../lib/clipboard';
 import { money, tsDate } from '../../lib/format';
-import RolePicker, { capsOf, useRoles } from '../../components/RolePicker';
+import RolePicker, { capsOf, useRoles, useRolesOpts } from '../../components/RolePicker';
+
+/** admin — ყველაფერი; hr — ყველა, ადმინისტრატორის უფლების მქონეების გარდა; manager — საკუთარი განყოფილება, მხოლოდ ქმედებები */
+const canActOn = (me: { caps: Role[] } | null, u: AdminUser) => {
+  const t = u.capabilities ?? [];
+  if (can(me, 'admin')) return true;
+  if (can(me, 'hr')) return !t.includes('admin');
+  return !t.some((c) => c === 'admin' || c === 'hr' || c === 'manager');
+};
 
 export default function Users() {
+  const { user: me } = useAuth();
+  const full = can(me, 'admin', 'hr');
   const [search, setSearch] = useState(''); const [role, setRole] = useState(''); const [dept, setDept] = useState(''); const [active, setActive] = useState('true');
   const [edit, setEdit] = useState<AdminUser | null>(null); const [creating, setCreating] = useState(false);
   const dq = useDebounced(search.trim(), 250);
   const users = useQuery({ queryKey: ['admin-users', dq, role, dept, active], queryFn: () => api<AdminUser[]>('/users', { query: { search: dq, role, department_id: dept, active, limit: 100 } }) });
   const depts = useQuery({ queryKey: ['departments', 'all'], queryFn: () => api<Department[]>('/departments', { query: { include_inactive: true } }) });
-  const roles = useRoles(true);
+  const roles = useQuery({ ...useRolesOpts(true), enabled: full });
 
   return (
     <div className="content">
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <input aria-label="ძებნა" className="input" style={{ maxWidth: 320 }} placeholder="სახელი, ელ-ფოსტა, პირადი №" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select aria-label="როლი" className="select" style={{ width: 180 }} value={role} onChange={(e) => setRole(e.target.value)}>
+        {full && <select aria-label="როლი" className="select" style={{ width: 180 }} value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="">ყველა როლი</option>{roles.data?.map((r) => <option key={r.code} value={r.code}>{r.name}{r.is_active ? '' : ' (გათიშული)'}</option>)}
-        </select>
-        <select aria-label="განყოფილება" className="select" style={{ width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
+        </select>}
+        {full && <select aria-label="განყოფილება" className="select" style={{ width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
           <option value="">ყველა განყოფილება</option>{depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
+        </select>}
         <select aria-label="სტატუსი" className="select" style={{ width: 150 }} value={active} onChange={(e) => setActive(e.target.value)}>
           <option value="true">აქტიური</option><option value="false">გათიშული</option><option value="">ყველა</option>
         </select>
-        <button className="btn primary" type="button" style={{ marginLeft: 'auto' }} onClick={() => setCreating(true)}>+ მომხმარებელი</button>
+        {!full && <span className="small muted">ნაჩვენებია თქვენი განყოფილების თანამშრომლები</span>}
+        {full && <button className="btn primary" type="button" style={{ marginLeft: 'auto' }} onClick={() => setCreating(true)}>+ მომხმარებელი</button>}
       </div>
       <ErrorBox error={users.error} />
       {users.isLoading ? <Loading /> : (
@@ -94,7 +105,7 @@ function useTariffs() {
 }
 
 function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => void }) {
-  const qc = useQueryClient(); const tariffs = useTariffs();
+  const qc = useQueryClient(); const tariffs = useTariffs(); const { user: me } = useAuth();
   const roles = useRoles();
   const [codes, setCodes] = useState<string[]>([]);
   const caps = capsOf(codes, roles.data);
@@ -134,7 +145,7 @@ function CreateUser({ depts, onClose }: { depts: Department[]; onClose: () => vo
           <Field label="ელ-ფოსტა" htmlFor="em" required><input id="em" className="input" type="email" value={f.email} onChange={set('email')} required /></Field>
           {f.auth_provider === 'ldap' && <Field label="დომენის სახელი" htmlFor="lu" required hint="Windows-ში შესვლის სახელი, მაგ. giojik"><input id="lu" className="input mono" value={f.ldap_username} onChange={set('ldap_username')} required /></Field>}
           <Field label="ტელეფონი" htmlFor="ph"><input id="ph" className="input mono" value={f.phone} onChange={set('phone')} /></Field>
-          <div style={{ gridColumn: '1 / -1' }}><span className="label">როლები <span className="req">*</span></span><RolePicker value={codes} onChange={setCodes} /></div>
+          <div style={{ gridColumn: '1 / -1' }}><span className="label">როლები <span className="req">*</span></span><RolePicker value={codes} onChange={setCodes} lockAdmin={!can(me, 'admin')} /></div>
           <Field label="განყოფილება" htmlFor="dp">
             <select id="dp" className="select" value={f.department_id} onChange={set('department_id')}><option value="">—</option>{depts.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           </Field>
@@ -158,7 +169,9 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const qc = useQueryClient(); const tariffs = useTariffs(); const { user: me } = useAuth(); const toast = useToast();
   const [f, setF] = useState({ first_name: u.first_name, last_name: u.last_name, email: u.email, phone: u.phone ?? '', department_id: u.department_id ?? '', specialty: u.specialty ?? '', license_number: u.license_number ?? '', consultation_tariff_id: u.consultation_tariff_id ?? '' });
   const [head, setHead] = useState(u.is_section_head);
-  const roles = useRoles();
+  const full = can(me, 'admin', 'hr') && canActOn(me, u);   // პროფილისა და როლების რედაქტირება
+  const acts = canActOn(me, u);
+  const roles = useQuery({ ...useRolesOpts(false), enabled: full });
   const initial = [u.role, ...u.roles.map((r) => r.code).filter((c) => c !== u.role)];
   const [codes, setCodes] = useState<string[]>(initial);
   const caps = capsOf(codes, roles.data);
@@ -187,29 +200,35 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const self = me?.id === u.id;
   return (
     <Modal title={`${u.last_name} ${u.first_name}`} onClose={onClose} width={760}
-      footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button><button className="btn primary" type="submit" form="eu" disabled={save.isPending || !codes.length}>შენახვა</button></>}>
+      footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button>{full && <button className="btn primary" type="submit" form="eu" disabled={save.isPending || !codes.length}>შენახვა</button>}</>}>
       {temp && <TempPassword value={temp} who={u.email} />}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <UserStatus u={u} />
         <span className="small muted">{u.auth_provider === 'ldap' ? `დომენი: ${u.ldap_username}` : 'EMR-ის ანგარიში'}</span>
-        <div className="row" style={{ marginLeft: 'auto', flexWrap: 'wrap', gap: 6 }}>
+        {acts && <div className="row" style={{ marginLeft: 'auto', flexWrap: 'wrap', gap: 6 }}>
           {u.auth_provider === 'local' && u.is_active && <button className="btn sm" type="button" onClick={() => act.mutate('reset')}>პაროლის აღდგენა</button>}
           {u.is_locked && <button className="btn sm" type="button" onClick={() => act.mutate('unlock')}>განბლოკვა</button>}
           <button className="btn sm" type="button" onClick={() => act.mutate('sessions')}>სესიების დახურვა</button>
           {!self && (u.is_active
             ? <button className="btn sm" type="button" style={{ color: 'var(--danger)' }} onClick={() => { if (confirm(`გავთიშოთ ${u.email}?`)) act.mutate('disable'); }}>გათიშვა</button>
             : <button className="btn sm" type="button" onClick={() => act.mutate('enable')}>ჩართვა</button>)}
-        </div>
+        </div>}
       </div>
+      {!acts && <div className="alert info small">ამ მომხმარებლის მართვა შეუძლია მხოლოდ {u.capabilities?.includes('admin') ? 'ადმინისტრატორს' : 'ადმინისტრატორს ან HR-ს'}.</div>}
+      {!full && <div className="stack small" style={{ gap: 4 }}>
+        <div><span className="muted">ელ-ფოსტა:</span> {u.email}{u.phone ? ` · ${u.phone}` : ''}</div>
+        <div><span className="muted">როლები:</span> {u.roles.map((r) => r.name).join(', ')}</div>
+        <div><span className="muted">განყოფილება:</span> {u.department_name ?? '—'}{u.specialty ? ` · ${u.specialty}` : ''}</div>
+      </div>}
       <ErrorBox error={act.error} />
-      <form id="eu" onSubmit={(e) => { e.preventDefault(); save.mutate(); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+      {full && <form id="eu" onSubmit={(e) => { e.preventDefault(); save.mutate(); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
         <Field label="სახელი" htmlFor="efn"><input id="efn" className="input" value={f.first_name} onChange={set('first_name')} /></Field>
         <Field label="გვარი" htmlFor="eln"><input id="eln" className="input" value={f.last_name} onChange={set('last_name')} /></Field>
         <Field label="ელ-ფოსტა" htmlFor="eem"><input id="eem" className="input" type="email" value={f.email} onChange={set('email')} /></Field>
         <Field label="ტელეფონი" htmlFor="eph"><input id="eph" className="input mono" value={f.phone} onChange={set('phone')} /></Field>
         <div style={{ gridColumn: '1 / -1' }}>
           <span className="label">როლები</span>
-          <RolePicker value={codes} onChange={setCodes} />
+          <RolePicker value={codes} onChange={setCodes} lockAdmin={!can(me, 'admin')} />
           {rolesChanged && <span className="hint">როლების შეცვლა მომხმარებლის ყველა სესიას დახურავს{self ? ' — ადმინისტრატორის როლს საკუთარ თავს ვერ მოხსნით' : ''}</span>}
         </div>
         <Field label="განყოფილება" htmlFor="edp">
@@ -228,7 +247,7 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
         {canHead && <label className="row" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
           განყოფილების ხელმძღვანელი <span className="small muted">— მართავს საერთო შაბლონებს, ხსნის სხვის ხელმოწერილ დასკვნას</span></label>}
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={save.error} /></div>
-      </form>
+      </form>}
       {toast.node}
     </Modal>
   );

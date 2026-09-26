@@ -12,7 +12,8 @@ interface HistoryEvent { kind: 'use' | 'reprocess'; at: string; first_name?: str
 /** ენდოსკოპები: მზადყოფნა, დეზინფექციის ჩაწერა, მიკვლევადობა */
 export default function Scopes() {
   const { user } = useAuth();
-  const canManage = can(user, 'admin') || can(user, 'endoscopy_nurse');
+  const canManage = can(user, 'admin', 'endoscopy_nurse', 'med_engineer');
+  const canReproc = can(user, 'admin', 'endoscopist', 'endoscopy_nurse');
   const [all, setAll] = useState(false);
   const [edit, setEdit] = useState<EndoScope | 'new' | null>(null);
   const [reproc, setReproc] = useState<EndoScope | null>(null);
@@ -42,7 +43,7 @@ export default function Scopes() {
                   <td className="small">{s.last_used_at ? `${tsDate(s.last_used_at)} ${hhmm(s.last_used_at)}` : '—'}</td>
                   <td className="small">{s.last_reproc_at ? `${tsDate(s.last_reproc_at)} ${hhmm(s.last_reproc_at)}` : '—'}</td>
                   <td className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                    {s.is_active && <button className={`btn sm${s.state !== 'ready' ? ' primary' : ''}`} type="button" onClick={() => setReproc(s)}>დეზინფექცია</button>}
+                    {s.is_active && canReproc && <button className={`btn sm${s.state !== 'ready' ? ' primary' : ''}`} type="button" onClick={() => setReproc(s)}>დეზინფექცია</button>}
                     <button className="btn sm" type="button" onClick={() => setHist(s)}>ისტორია</button>
                     {canManage && <button className="btn sm" type="button" onClick={() => setEdit(s)}>რედაქტირება</button>}
                   </td>

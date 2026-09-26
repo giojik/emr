@@ -19,7 +19,8 @@ export interface SessionUser {
 }
 /** აქვს თუ არა მომხმარებელს ჩამოთვლილთაგან ერთი უფლება მაინც (სერვერიც იმავეს ამოწმებს) */
 export const can = (u: Pick<SessionUser, 'caps'> | null | undefined, ...caps: Role[]) => !!u && caps.some((c) => u.caps.includes(c));
-export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist' | 'radiographer' | 'radiologist' | 'endoscopist' | 'endoscopy_nurse';
+export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist' | 'radiographer' | 'radiologist' | 'endoscopist' | 'endoscopy_nurse'
+  | 'accountant' | 'manager' | 'hr' | 'med_engineer' | 'viewer';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;

@@ -22,6 +22,8 @@ const UNIQUE_MSG: Record<string, string> = {
   users_ldap_username_key: 'ეს დომენის სახელი უკვე მიბმულია სხვა მომხმარებელზე',
 };
 
+export type UserScope = { kind: 'all' } | { kind: 'department'; departmentId: string };
+
 @Injectable()
 export class UsersService {
   private readonly env = loadEnv();
@@ -39,8 +41,9 @@ export class UsersService {
         (eb) => eb.selectFrom('user_capabilities as c').select('c.capabilities').whereRef('c.user_id', '=', 'u.id').as('capabilities')]);
   }
 
-  async list(q: ListUsersQuery) {
+  async list(q: ListUsersQuery, scope: UserScope = { kind: 'all' }) {
     let query = this.base();
+    if (scope.kind === 'department') query = query.where('u.department_id', '=', scope.departmentId);
     if (q.role) query = query.where(sql<boolean>`EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id AND r.code = ${q.role})`);
     if (q.department_id) query = query.where('u.department_id', '=', q.department_id);
     if (q.active !== undefined) query = query.where('u.is_active', '=', q.active);
@@ -197,6 +200,39 @@ export class UsersService {
   private async lockUser(trx: Transaction<DB>, id: string) {
     await trx.selectFrom('users').select('id').where('id', '=', id).forUpdate().executeTakeFirst();
     return this.get(id, trx);
+  }
+
+  // ---------------------------------------------------------------- მართვის არეალი (admin / hr / manager)
+  /** admin — ყველა; hr — ყველა (admin-ის უფლების მქონეებს მხოლოდ ხედავს); manager — საკუთარი განყოფილება */
+  async scope(actor: AuthUser): Promise<UserScope> {
+    if (has(actor, 'admin', 'hr')) return { kind: 'all' };
+    const me = await this.db.selectFrom('users').select('department_id').where('id', '=', actor.id).executeTakeFirst();
+    if (!me?.department_id) throw new ForbiddenException('მენეჯერს განყოფილება არ აქვს მინიჭებული — მიმართეთ ადმინისტრატორს');
+    return { kind: 'department', departmentId: me.department_id };
+  }
+
+  async assertCanManage(actor: AuthUser, targetId: string, op: 'view' | 'edit') {
+    if (has(actor, 'admin')) return;
+    const t = await this.db.selectFrom('users as u').leftJoin('user_capabilities as c', 'c.user_id', 'u.id')
+      .select(['u.department_id', 'c.capabilities']).where('u.id', '=', targetId).executeTakeFirst();
+    if (!t) throw new NotFoundException('მომხმარებელი ვერ მოიძებნა');
+    const targetAdmin = (t.capabilities ?? []).includes('admin');
+    if (has(actor, 'hr')) {
+      if (op === 'edit' && targetAdmin) throw new ForbiddenException('ადმინისტრატორის უფლების მქონე მომხმარებელს ცვლის მხოლოდ ადმინისტრატორი');
+      return;
+    }
+    const scope = await this.scope(actor);
+    if (scope.kind !== 'department' || t.department_id !== scope.departmentId) throw new ForbiddenException('მხოლოდ საკუთარი განყოფილების თანამშრომლები');
+    if (op === 'edit' && (targetAdmin || (t.capabilities ?? []).some((c) => c === 'hr' || c === 'manager'))) {
+      throw new ForbiddenException('ადმინისტრატორს, HR-ს ან მენეჯერს მენეჯერი ვერ შეცვლის');
+    }
+  }
+
+  /** HR ვერ მიანიჭებს როლს, რომელიც ადმინისტრატორის უფლებას შეიცავს */
+  async assertCanAssign(actor: AuthUser, codes: string[]) {
+    if (has(actor, 'admin') || !codes.length) return;
+    const bad = await this.db.selectFrom('roles').select('name').where('code', 'in', codes).where(sql<boolean>`'admin' = ANY(capabilities)`).execute();
+    if (bad.length) throw new ForbiddenException(`როლს „${bad.map((b) => b.name).join(', ')}“ ანიჭებს მხოლოდ ადმინისტრატორი`);
   }
 
   /** ცვლილების შემდეგ (იმავე ტრანზაქციაში) მინიმუმ ერთი აქტიური მომხმარებელი admin უფლებით უნდა დარჩეს */

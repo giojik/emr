@@ -9,7 +9,7 @@ import { PatientsService } from './patients.service';
 export class PatientsController {
   constructor(private readonly patients: PatientsService) {}
 
-  @Get() @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic')
+  @Get() @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'manager')
   search(@Query('search') search = '') { return this.patients.search(search); }
 
   @Post() @Roles('admin', 'receptionist')
@@ -24,6 +24,6 @@ export class PatientsController {
   @Patch(':id') @Roles('admin', 'receptionist')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto, @Req() req: Request) { return this.patients.update(id, dto, auditCtx(req)); }
 
-  @Get(':id') @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
+  @Get(':id') @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'manager')
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) { return this.patients.findOne(id, auditCtx(req)); }
 }

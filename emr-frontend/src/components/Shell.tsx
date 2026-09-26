@@ -4,15 +4,17 @@ import { useAuth } from '../auth/AuthContext';
 import { initials, ROLE_KA } from '../lib/format';
 
 const NAV: { to: string; label: string; roles: Role[] }[] = [
-  { to: '/reception', label: 'რეგისტრატურა', roles: ['admin', 'receptionist'] },
-  { to: '/patients', label: 'პაციენტები', roles: ['admin', 'receptionist', 'doctor', 'nurse', 'billing'] },
+  { to: '/reception', label: 'რეგისტრატურა', roles: ['admin', 'receptionist', 'manager', 'viewer'] },
+  { to: '/patients', label: 'პაციენტები', roles: ['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'manager'] },
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
   { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },
   { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] },
-  { to: '/diagnostics/radiology', label: 'დიაგნოსტიკის განრიგი', roles: ['receptionist'] },
-  { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing'] },
+  { to: '/diagnostics/radiology?view=schedule', label: 'დიაგნოსტიკის განრიგი', roles: ['receptionist', 'manager', 'viewer'] },
+  { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
+  { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
+  { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
   { to: '/admin/catalog', label: 'ანალიზების კატალოგი', roles: ['lab_doctor', 'lab_manager'] },
   { to: '/admin/overrides', label: 'override-ები', roles: ['pharmacist'] },
@@ -22,6 +24,7 @@ const HOME: Record<Role, string> = {
   doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/admin/allergens',
   diagnostic: '/diagnostics/lab', lab_doctor: '/diagnostics/lab', lab_manager: '/admin/catalog', phlebotomist: '/collection',
   radiographer: '/diagnostics/radiology', radiologist: '/diagnostics/radiology', endoscopist: '/diagnostics/endoscopy', endoscopy_nurse: '/diagnostics/endoscopy',
+  accountant: '/reports', viewer: '/reports', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

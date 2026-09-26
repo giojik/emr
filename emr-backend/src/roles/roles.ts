@@ -26,6 +26,11 @@ export const CAPABILITY_INFO: Record<Capability, { group: string; name: string; 
   radiologist: { group: 'რადიოლოგია', name: 'რადიოლოგი', grants: 'რადიოლოგიის დასკვნა, ხელმოწერა, შაბლონები' },
   endoscopy_nurse: { group: 'ენდოსკოპია', name: 'ენდოსკოპიის ექთანი', grants: 'განრიგი, ჩეკლისტი, სედაცია, ენდოსკოპები და დეზინფექცია, ბიოფსიის გაგზავნა/პასუხი' },
   endoscopist: { group: 'ენდოსკოპია', name: 'ენდოსკოპისტი', grants: 'ენდოსკოპიის ოქმი, სურათები, მანიპულაციები, ბიოფსია, ხელმოწერა, შაბლონები' },
+  hr: { group: 'მართვა', name: 'პერსონალი (HR)', grants: 'მომხმარებლების დამატება/გათიშვა/პაროლის აღდგენა, როლების მინიჭება — ადმინისტრატორის უფლების მქონეების გარდა' },
+  manager: { group: 'მართვა', name: 'მენეჯერი', grants: 'დღის დაფა, ჩაწერა/check-in, დიაგნოსტიკის განრიგი, აქტივობის რეპორტი, საკუთარი განყოფილების თანამშრომლები (განბლოკვა, პაროლი, გათიშვა)' },
+  accountant: { group: 'მართვა', name: 'ბუღალტერი', grants: 'ფინანსური რეპორტები (შემოსავალი, გადახდები, ფასდაკლებები, დავალიანება), ხარჯების ჟურნალი, ექსპორტი' },
+  viewer: { group: 'მართვა', name: 'ხელმძღვანელობა (ნახვა)', grants: 'ყველა რეპორტი, დღის დაფა და დიაგნოსტიკის განრიგი — მხოლოდ ნახვა, ცვლილების გარეშე' },
+  med_engineer: { group: 'მართვა', name: 'სამედიცინო ინჟინერი', grants: 'აპარატები და ოთახები, ენდოსკოპების რეესტრი (დამატება, რედაქტირება, ისტორია)' },
 };
 
 const CODE = /^[a-z][a-z0-9_]{1,39}$/;
@@ -127,9 +132,9 @@ export class RolesService {
 export class RolesController {
   constructor(private readonly roles: RolesService) {}
   /** როლების სია (აქტიურები — ყველა ადმინისტრირების ეკრანისთვის; გათიშულებიც — admin) */
-  @Get() @Roles('admin')
+  @Get() @Roles('admin', 'hr')
   list(@Query('active') active?: string) { return this.roles.list(active !== 'true'); }
-  @Get('capabilities') @Roles('admin')
+  @Get('capabilities') @Roles('admin', 'hr')
   capabilities() { return this.roles.capabilities(); }
   @Post() @Roles('admin')
   create(@Body() dto: CreateRoleDto, @Req() req: Request) {

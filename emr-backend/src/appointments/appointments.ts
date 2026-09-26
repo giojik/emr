@@ -110,23 +110,23 @@ export class AppointmentsService {
 export class AppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
-  @Get() @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing')
+  @Get() @Roles('admin', 'receptionist', 'doctor', 'nurse', 'billing', 'manager', 'viewer')
   list(@Query('doctor_id') doctorId?: string, @Query('date') date?: string, @Query('patient_id') patientId?: string) {
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BadRequestException('date: YYYY-MM-DD');
     return this.appointments.list({ doctorId, date, patientId });
   }
 
-  @Post() @Roles('admin', 'receptionist')
+  @Post() @Roles('admin', 'receptionist', 'manager')
   create(@Body() dto: CreateAppointmentDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     return this.appointments.create(dto, user, auditCtx(req));
   }
 
-  @Patch(':id') @Roles('admin', 'receptionist')
+  @Patch(':id') @Roles('admin', 'receptionist', 'manager')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAppointmentDto, @Req() req: Request) {
     return this.appointments.update(id, dto, auditCtx(req));
   }
 
-  @Post(':id/check-in') @HttpCode(200) @Roles('admin', 'receptionist')
+  @Post(':id/check-in') @HttpCode(200) @Roles('admin', 'receptionist', 'manager')
   checkIn(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) { return this.appointments.checkIn(id, auditCtx(req)); }
 }
 

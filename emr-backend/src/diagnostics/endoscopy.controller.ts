@@ -95,15 +95,15 @@ export class EndoscopyController {
   constructor(private readonly endo: EndoscopyService, private readonly rad: RadiologyService, private readonly settings: ClinicSettingsService) {}
 
   // ---- ენდოსკოპები + დეზინფექცია
-  @Get('endo/scopes') @Roles(...STAFF)
+  @Get('endo/scopes') @Roles(...STAFF, 'med_engineer')
   scopes(@Query('include_inactive') inc?: string) { return this.endo.scopes(inc === 'true'); }
-  @Post('endo/scopes') @Roles('admin', 'endoscopy_nurse')
+  @Post('endo/scopes') @Roles('admin', 'endoscopy_nurse', 'med_engineer')
   createScope(@Body() dto: ScopeDto, @Req() req: Request) { return this.endo.saveScope(null, dto, auditCtx(req)); }
-  @Patch('endo/scopes/:id') @Roles('admin', 'endoscopy_nurse')
+  @Patch('endo/scopes/:id') @Roles('admin', 'endoscopy_nurse', 'med_engineer')
   updateScope(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ScopeDto, @Req() req: Request) { return this.endo.saveScope(id, dto, auditCtx(req)); }
   @Post('endo/scopes/:id/reprocess') @Roles(...STAFF)
   reprocess(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReprocessDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.endo.reprocess(id, dto, u, auditCtx(req)); }
-  @Get('endo/scopes/:id/history') @Roles(...STAFF)
+  @Get('endo/scopes/:id/history') @Roles(...STAFF, 'med_engineer')
   history(@Param('id', ParseUUIDPipe) id: string) { return this.endo.scopeHistory(id); }
 
   // ---- პროცედურა

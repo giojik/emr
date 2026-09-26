@@ -23,6 +23,7 @@ export default function PatientCard() {
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
   const front = can(user, 'admin') || can(user, 'receptionist');
   const clinical = can(user, 'doctor') || can(user, 'nurse') || can(user, 'admin');
+  const mgrOnly = can(user, 'manager') && !front && !clinical && !can(user, 'billing');   // მენეჯერი: დემოგრაფია + ვიზიტები
 
   if (p.isLoading) return <Loading />;
   if (p.error || !p.data) return <div className="content"><ErrorBox error={p.error ?? 'პაციენტი ვერ მოიძებნა'} /></div>;
@@ -56,8 +57,8 @@ export default function PatientCard() {
           <div style={{ gridColumn: '1 / -1' }}><Info k="მისამართი" v={x.address ?? '—'} /></div>
         </section>
 
-        <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />
-        <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />
+        {!mgrOnly && <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />}
+        {!mgrOnly && <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />}
 
         <section className="card">
           <div className="card-head"><h2>ვიზიტების ისტორია</h2><span className="small muted">{visits.data?.length ?? 0}</span></div>

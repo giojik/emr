@@ -8,7 +8,7 @@ import { DiagnosisDto, OverrideDto, PayInitialDto, PrescriptionDto, ReferralDto,
   VitalsDto, WalkInDto } from './dto/encounters.dto';
 import { EncountersService } from './encounters.service';
 
-const CLINICAL_READ = ['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'diagnostic'] as const;
+const CLINICAL_READ = ['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'diagnostic', 'manager', 'viewer'] as const;
 
 @Controller('encounters')
 export class EncountersController {

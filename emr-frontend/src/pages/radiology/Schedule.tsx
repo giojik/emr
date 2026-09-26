@@ -22,6 +22,7 @@ export default function Schedule({ section = 'radiology' }: { section?: 'radiolo
   const [date, setDate] = useState(todayISO());
   const [picked, setPicked] = useState<DxItem | null>(null);
   const [open, setOpen] = useState<DxItem | null>(null);
+  const write = can(user, 'admin', 'receptionist', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'manager');   // viewer — მხოლოდ ნახვა
   const q = useQuery({ queryKey: ['rad-board', section, date], queryFn: () => api<RadBoard>('/radiology/board', { query: { date, section } }), refetchInterval: 20_000 });
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['rad-board'] }); void qc.invalidateQueries({ queryKey: ['rad-queue'] }); };
 
@@ -64,7 +65,7 @@ export default function Schedule({ section = 'radiology' }: { section?: 'radiolo
         </div>
         <div style={{ overflow: 'auto', flex: 1 }}>
           {data?.unscheduled.map((i) => (
-            <button key={i.id} type="button" onClick={() => setPicked(picked?.id === i.id ? null : i)}
+            <button key={i.id} type="button" disabled={!write} onClick={() => setPicked(picked?.id === i.id ? null : i)}
               style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderBottom: '1px solid var(--line-soft)', padding: '10px 16px', cursor: 'pointer', font: 'inherit',
                 background: picked?.id === i.id ? 'var(--accent-weak)' : 'transparent', color: 'var(--ink)' }}>
               <div><strong>{i.last_name} {i.first_name}</strong> <span className="small muted">{genderShort(i.gender)} · {age(i.birth_date)} წ</span></div>
@@ -138,12 +139,12 @@ export default function Schedule({ section = 'radiology' }: { section?: 'radiolo
         )}
         {toast.node}
       </div>
-      {open && <BookingDialog it={open} canArrive={can(user, 'admin', 'receptionist', 'radiographer', 'endoscopy_nurse')} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
+      {open && <BookingDialog it={open} write={write} canArrive={can(user, 'admin', 'receptionist', 'radiographer', 'endoscopy_nurse')} onMove={() => { setPicked(open); setOpen(null); }} onClose={() => { setOpen(null); refresh(); }} />}
     </div>
   );
 }
 
-function BookingDialog({ it, canArrive, onMove, onClose }: { it: DxItem; canArrive: boolean; onMove: () => void; onClose: () => void }) {
+function BookingDialog({ it, write, canArrive, onMove, onClose }: { it: DxItem; write: boolean; canArrive: boolean; onMove: () => void; onClose: () => void }) {
   const unschedule = useMutation({ mutationFn: () => api(`/dx-orders/${it.id}/schedule`, { method: 'DELETE' }), onSuccess: onClose });
   const arrive = useMutation({
     mutationFn: async () => {
@@ -160,10 +161,10 @@ function BookingDialog({ it, canArrive, onMove, onClose }: { it: DxItem; canArri
     <Modal title={it.service_name} onClose={onClose} width={560}
       footer={<>
         {pending && <button className="btn" type="button" onClick={() => slip.mutate()}>ჩაწერის ფურცელი</button>}
-        {pending && <button className="btn" type="button" onClick={onMove}>გადაწერა</button>}
-        {pending && <button className="btn" type="button" style={{ color: 'var(--danger)' }} onClick={() => { if (confirm('მოვხსნათ ჩაწერა? კვლევა დაბრუნდება „დასაგეგმში“.')) unschedule.mutate(); }}>ჩაწერის მოხსნა</button>}
+        {pending && write && <button className="btn" type="button" onClick={onMove}>გადაწერა</button>}
+        {pending && write && <button className="btn" type="button" style={{ color: 'var(--danger)' }} onClick={() => { if (confirm('მოვხსნათ ჩაწერა? კვლევა დაბრუნდება „დასაგეგმში“.')) unschedule.mutate(); }}>ჩაწერის მოხსნა</button>}
         <span className="grow" />
-        {pending && canArrive && <button className="btn primary" type="button" disabled={arrive.isPending} onClick={() => arrive.mutate()}>პაციენტი მოვიდა</button>}
+        {pending && write && canArrive && <button className="btn primary" type="button" disabled={arrive.isPending} onClick={() => arrive.mutate()}>პაციენტი მოვიდა</button>}
       </>}>
       <div className="stack" style={{ gap: 6 }}>
         <PatientLine it={it} />

@@ -76,7 +76,7 @@ class TemplateDto {
   @IsOptional() @IsBoolean() is_active?: boolean;
 }
 
-const SCHED = ['admin', 'receptionist', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] as const;
+const SCHED = ['admin', 'receptionist', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'manager'] as const;
 const REPORTERS = ['admin', 'radiologist', 'endoscopist'] as const;
 const IMAGING_READ = ['admin', 'radiologist', 'radiographer', 'endoscopist', 'endoscopy_nurse'] as const;
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
@@ -88,15 +88,15 @@ export class RadiologyController {
   constructor(private readonly rad: RadiologyService, private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService, private readonly endo: EndoscopyService) {}
 
   // ---- აპარატები
-  @Get('dx/devices') @Roles(...SCHED, 'diagnostic', 'doctor')
+  @Get('dx/devices') @Roles(...SCHED, 'diagnostic', 'doctor', 'med_engineer', 'viewer')
   devices(@Query('section') s?: string, @Query('include_inactive') inc?: string) { return this.rad.devices({ section: s, includeInactive: inc === 'true' }); }
-  @Post('dx/devices') @Roles('admin')
+  @Post('dx/devices') @Roles('admin', 'med_engineer')
   createDevice(@Body() dto: DeviceDto, @Req() req: Request) { return this.rad.saveDevice(null, dto, auditCtx(req)); }
-  @Patch('dx/devices/:id') @Roles('admin')
+  @Patch('dx/devices/:id') @Roles('admin', 'med_engineer')
   updateDevice(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DeviceDto, @Req() req: Request) { return this.rad.saveDevice(id, dto, auditCtx(req)); }
 
   // ---- განრიგი
-  @Get('radiology/board') @Roles(...SCHED)
+  @Get('radiology/board') @Roles(...SCHED, 'viewer')
   board(@Query('date') d?: string, @Query('section') s = 'radiology') { return this.rad.board(date(d), section(s)); }
   @Put('dx-orders/:id/schedule') @Roles(...SCHED)
   schedule(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ScheduleDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.schedule(id, dto, u, auditCtx(req)); }
@@ -118,7 +118,7 @@ export class RadiologyController {
   }
 
   // ---- ტექნიკოსი
-  @Get('radiology/queue') @Roles(...SCHED)
+  @Get('radiology/queue') @Roles(...SCHED, 'viewer')
   queue(@Query('date') d?: string, @Query('device_id') dev?: string, @Query('section') s = 'radiology') { return this.rad.techQueue(date(d), dev && /^[0-9a-f-]{36}$/i.test(dev) ? dev : undefined, section(s)); }
   @Post('dx-orders/:id/arrive') @HttpCode(200) @Roles('admin', 'receptionist', 'radiographer', 'endoscopy_nurse', 'endoscopist')
   arrive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AckDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.arrive(id, dto, u, auditCtx(req)); }

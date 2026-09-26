@@ -1,7 +1,8 @@
+import { useAuth } from '../auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
+import { can, api } from '../api/client';
 import type { Appointment, Doctor, EncounterListItem } from '../api/types';
 import AppointmentDialog from '../components/AppointmentDialog';
 import PatientSearch from '../components/PatientSearch';
@@ -28,7 +29,10 @@ const pref = (k: string, d: string) => { try { return localStorage.getItem(`emr.
 const savePref = (k: string, v: string) => { try { localStorage.setItem(`emr.reception.${k}`, v); } catch { /* private mode */ } };
 
 export default function Reception() {
-  const nav = useNavigate();
+  const nav = useNavigate(); const { user } = useAuth();
+  /** ჩაწერა/check-in: რეგისტრატორი, მენეჯერი; ხელმძღვანელობა (viewer) — მხოლოდ ნახვა */
+  const write = can(user, 'admin', 'receptionist', 'manager');
+  const cashier = can(user, 'admin', 'receptionist', 'billing');
   const [date, setDate] = useState(todayISO());
   const [view, setViewState] = useState<'cols' | 'list'>(pref('view', 'cols') as 'cols' | 'list');
   const [dept, setDeptState] = useState(pref('dept', 'all'));
@@ -53,11 +57,11 @@ export default function Reception() {
     <>
       <header className="topbar">
         <div className="grow" style={{ maxWidth: 560 }}>
-          <PatientSearch onSelect={(p) => nav(`/patients/${p.id}`)} />
+          {write ? <PatientSearch onSelect={(p) => nav(`/patients/${p.id}`)} /> : <h1>დღის დაფა <span className="chip" style={{ marginLeft: 8 }}>მხოლოდ ნახვა</span></h1>}
         </div>
         <div className="row" style={{ marginLeft: 'auto' }}>
-          <Link className="btn" to="/patients/new">+ ახალი პაციენტი</Link>
-          <button className="btn primary" type="button" onClick={() => setNewAppt({})}>+ ჩაწერა</button>
+          {can(user, 'admin', 'receptionist') && <Link className="btn" to="/patients/new">+ ახალი პაციენტი</Link>}
+          {write && <button className="btn primary" type="button" onClick={() => setNewAppt({})}>+ ჩაწერა</button>}
         </div>
       </header>
 
@@ -100,8 +104,8 @@ export default function Reception() {
                     <div key={s} className="mono small muted" style={{ gridRow: r + 2, gridColumn: 1, position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', padding: 8, borderBottom: '1px solid #F0EEE8', borderRight: '1px solid var(--line-soft)' }}>{s}</div>
                   ))}
                   {SLOTS.flatMap((s, r) => shownDoctors.map((d, c) => (
-                    <button key={`${s}-${d.id}`} type="button" aria-label={`ჩაწერა: ${d.last_name}, ${s}`} onClick={() => setNewAppt({ doctorId: d.id, time: s })}
-                      style={{ gridRow: r + 2, gridColumn: c + 2, border: 0, borderLeft: '1px solid var(--line-soft)', borderBottom: '1px solid #F0EEE8', background: 'transparent', cursor: 'pointer' }} />
+                    <button key={`${s}-${d.id}`} type="button" aria-label={`ჩაწერა: ${d.last_name}, ${s}`} onClick={() => write && setNewAppt({ doctorId: d.id, time: s })} disabled={!write}
+                      style={{ gridRow: r + 2, gridColumn: c + 2, border: 0, borderLeft: '1px solid var(--line-soft)', borderBottom: '1px solid #F0EEE8', background: 'transparent', cursor: write ? 'pointer' : 'default' }} />
                   )))}
                   {dayAppts.map((a) => {
                     const col = shownDoctors.findIndex((d) => d.id === a.doctor_id);
@@ -123,7 +127,7 @@ export default function Reception() {
             </div>
           ) : (
             <div className="card" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              {dayAppts.length === 0 ? <div className="empty">ამ დღეს ჩაწერა არ არის. <button className="btn sm" type="button" onClick={() => setNewAppt({})}>+ ჩაწერა</button></div> : (
+              {dayAppts.length === 0 ? <div className="empty">ამ დღეს ჩაწერა არ არის. {write && <button className="btn sm" type="button" onClick={() => setNewAppt({})}>+ ჩაწერა</button>}</div> : (
                 <table className="table">
                   <thead><tr><th>დრო</th><th>პაციენტი</th><th>ექიმი</th><th>სტატუსი</th><th /></tr></thead>
                   <tbody>
@@ -133,7 +137,7 @@ export default function Reception() {
                         <td><strong>{a.patient_first_name} {a.patient_last_name}</strong><div className="small muted mono">{a.personal_number}</div></td>
                         <td>{a.doctor_name}</td>
                         <td><StatusChip status={a.status} /></td>
-                        <td style={{ textAlign: 'right' }}>{['scheduled', 'confirmed'].includes(a.status) && <CheckInButton a={a} />}</td>
+                        <td style={{ textAlign: 'right' }}>{write && ['scheduled', 'confirmed'].includes(a.status) && <CheckInButton a={a} cashier={cashier} />}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -159,7 +163,7 @@ export default function Reception() {
                         <td><strong>{e.patient_first_name} {e.patient_last_name}</strong><div className="small muted">{e.visit_kind === 'lab' ? 'ლაბორატორია' : e.doctor_name} · {hhmm(e.start_time)}</div></td>
                         <td className="num">{money(due)}</td>
                         <td style={{ textAlign: 'right' }}>
-                          {e.status === 'planned' || due > 0
+                          {(e.status === 'planned' || due > 0) && cashier
                             ? <Link className="btn sm primary" to={`/cashier/${e.id}`}>გადახდა</Link>
                             : <StatusChip status={e.status} />}
                         </td>
@@ -174,39 +178,39 @@ export default function Reception() {
       </div>
 
       {newAppt && <AppointmentDialog date={date} doctorId={newAppt.doctorId} time={newAppt.time} onClose={() => setNewAppt(null)} />}
-      {selected && <AppointmentActions a={selected} onClose={() => setSelected(null)} />}
+      {selected && <AppointmentActions a={selected} write={write} cashier={cashier} onClose={() => setSelected(null)} />}
     </>
   );
 }
 
 const StatusText = ({ s }: { s: string }) => <>{({ scheduled: 'დაჯავშნილი', confirmed: 'დადასტურებული', checked_in: 'მოსულია', completed: 'დასრულებული', no_show: 'არ გამოცხადდა' } as Record<string, string>)[s] ?? s}</>;
 
-function CheckInButton({ a }: { a: Appointment }) {
+function CheckInButton({ a, cashier }: { a: Appointment; cashier: boolean }) {
   const qc = useQueryClient(); const nav = useNavigate();
   const m = useMutation({
     mutationFn: () => api<{ encounter_id: string }>(`/appointments/${a.id}/check-in`, { method: 'POST' }),
-    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['appointments'] }); void qc.invalidateQueries({ queryKey: ['encounters'] }); nav(`/cashier/${r.encounter_id}`); },
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['appointments'] }); void qc.invalidateQueries({ queryKey: ['encounters'] }); if (cashier) nav(`/cashier/${r.encounter_id}`); },
   });
   return <button className="btn sm" type="button" disabled={m.isPending} title={m.error instanceof Error ? m.error.message : undefined}
     onClick={(e) => { e.stopPropagation(); m.mutate(); }}>Check-in</button>;
 }
 
-function AppointmentActions({ a, onClose }: { a: Appointment; onClose: () => void }) {
+function AppointmentActions({ a, write, cashier, onClose }: { a: Appointment; write: boolean; cashier: boolean; onClose: () => void }) {
   const qc = useQueryClient(); const nav = useNavigate();
   const done = () => { void qc.invalidateQueries({ queryKey: ['appointments'] }); void qc.invalidateQueries({ queryKey: ['encounters'] }); };
   const status = useMutation({ mutationFn: (s: string) => api(`/appointments/${a.id}`, { method: 'PATCH', body: { status: s } }), onSuccess: () => { done(); onClose(); } });
   const checkIn = useMutation({
     mutationFn: () => api<{ encounter_id: string }>(`/appointments/${a.id}/check-in`, { method: 'POST' }),
-    onSuccess: (r) => { done(); nav(`/cashier/${r.encounter_id}`); },
+    onSuccess: (r) => { done(); if (cashier) nav(`/cashier/${r.encounter_id}`); else onClose(); },
   });
-  const canEdit = ['scheduled', 'confirmed'].includes(a.status);
+  const canEdit = write && ['scheduled', 'confirmed'].includes(a.status);
   return (
     <Modal title={`${a.patient_first_name} ${a.patient_last_name}`} onClose={onClose} width={480}
       footer={canEdit ? <>
         <button className="btn" type="button" onClick={() => status.mutate('no_show')}>არ გამოცხადდა</button>
         <button className="btn" type="button" onClick={() => status.mutate('cancelled')}>გაუქმება</button>
         <button className="btn primary" type="button" disabled={checkIn.isPending} onClick={() => checkIn.mutate()}>Check-in</button>
-      </> : a.encounter_id ? <Link className="btn primary" to={`/cashier/${a.encounter_id}`}>სალარო</Link> : undefined}>
+      </> : a.encounter_id && cashier ? <Link className="btn primary" to={`/cashier/${a.encounter_id}`}>სალარო</Link> : undefined}>
       <div className="stack">
         <div className="row"><span className="muted" style={{ width: 90 }}>დრო</span><span className="mono">{hhmm(a.scheduled_start)}–{hhmm(a.scheduled_end)}</span></div>
         <div className="row"><span className="muted" style={{ width: 90 }}>ექიმი</span><span>{a.doctor_name}</span></div>
@@ -214,7 +218,7 @@ function AppointmentActions({ a, onClose }: { a: Appointment; onClose: () => voi
         {a.reason && <div className="row"><span className="muted" style={{ width: 90 }}>მიზეზი</span><span>{a.reason}</span></div>}
         <div className="row"><span className="muted" style={{ width: 90 }}>ტელეფონი</span><span className="mono">{a.phone_number}</span></div>
         <Link to={`/patients/${a.patient_id}`}>პაციენტის ბარათი</Link>
-        {a.status === 'scheduled' && <button className="btn sm" type="button" style={{ alignSelf: 'flex-start' }} onClick={() => status.mutate('confirmed')}>დადასტურება</button>}
+        {a.status === 'scheduled' && write && <button className="btn sm" type="button" style={{ alignSelf: 'flex-start' }} onClick={() => status.mutate('confirmed')}>დადასტურება</button>}
         <ErrorBox error={status.error ?? checkIn.error} />
       </div>
     </Modal>
