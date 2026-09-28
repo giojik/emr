@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { can, type Role, api, openBlob } from '../api/client';
+import { can, type Role, api, apiUpload, openBlob } from '../api/client';
 import type { Allergy, DxItem, LabAnalyteForm, LabItemDetail } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
@@ -17,12 +17,37 @@ import Pathology from './radiology/Pathology';
 import Scopes from './radiology/Scopes';
 import { PREG_KA, useLabMethods, type Pregnancy } from './admin/lab/common';
 import { InstrumentInbox, useInboxCount } from './admin/lab/Instruments';
+import { CumulativeModal } from './lab/Cumulative';
+import { ExternalLab, LabStats } from './lab/ExternalLab';
 
 /** 0018: ნორმის კრიტერიუმები შეკვეთაზე (ორსულობა, ანალიზატორი) */
 type LabItemX = Omit<LabItemDetail, 'analytes'> & {
   pregnancy_weeks: number | null; lab_method_id: string | null; default_method_id: string | null; effective_method_id: string | null; norm_recalculated_at: string | null;
-  analytes: (LabAnalyteForm & { range: (LabAnalyteForm['range'] & { pregnancy?: Pregnancy | null; method_id?: string | null }) | null })[];
+  analytes: (LabAnalyteForm & { range: (LabAnalyteForm['range'] & { pregnancy?: Pregnancy | null; method_id?: string | null }) | null;
+    history?: { value: string | null; flag: string | null; at: string }[]; delta?: { pct: number; days: number; alert: boolean } | null; delta_limit_pct?: string | null })[];
+  ext_shipment_id?: string | null; ext_due_at?: string | null; ext_result_at?: string | null; ext_result_name?: string | null;
 };
+
+/** გარე ლაბორატორიის ანალიზი: პასუხი — PDF, მიბმული ამ ანალიზზე */
+function ExternalResult({ it, canEnter }: { it: LabItemX; canEnter: boolean }) {
+  const qc = useQueryClient(); const [err, setErr] = useState<unknown>(null); const [busy, setBusy] = useState(false);
+  const up = async (f: File | undefined) => {
+    if (!f) return; setBusy(true); setErr(null);
+    try { const fd = new FormData(); fd.append('file', f); await apiUpload(`/lab/items/${it.id}/external-result`, fd); void qc.invalidateQueries({ queryKey: ['lab-item', it.id] }); void qc.invalidateQueries({ queryKey: ['lab-worklist'] }); }
+    catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  return (
+    <div className="card card-pad stack" style={{ gap: 6, margin: '8px 0' }}>
+      <strong className="small">გარე ლაბორატორია{it.external_lab ? `: ${it.external_lab}` : ''}</strong>
+      {!it.ext_shipment_id ? <span className="small muted">ჯერ არ გაგზავნილა — „გარე ლაბორატორია“ → „გასაგზავნი“.</span> : it.ext_result_at
+        ? <div className="row small"><span className="chip ok">პასუხი მიღებულია {tsDate(it.ext_result_at)}</span><button className="btn sm" type="button" onClick={() => void openBlob(`/lab/items/${it.id}/external-result`)}>{it.ext_result_name || 'PDF'}</button></div>
+        : <span className="small">გაგზავნილია · ვადა {it.ext_due_at && tsDate(it.ext_due_at)}</span>}
+      {canEnter && it.ext_shipment_id && it.status !== 'validated' && it.status !== 'cancelled' && <label className="btn sm" style={{ cursor: 'pointer', alignSelf: 'flex-start' }}>
+        {busy ? '…' : it.ext_result_at ? 'ფაილის შეცვლა' : 'პასუხის ატვირთვა (PDF)'}<input type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => { void up(e.target.files?.[0]); e.target.value = ''; }} /></label>}
+      <ErrorBox error={err} />
+    </div>
+  );
+}
 
 /** დიაგნოსტიკის ჰაბი: /diagnostics/lab | radiology | endoscopy | referrals */
 export default function DiagnosticsHub() {
@@ -60,7 +85,8 @@ function LabWorkspace() {
   const [selId, setSelId] = useState<string | null>(null);
   const [barcode, setBarcode] = useState('');
   const scan = useRef<HTMLInputElement>(null);
-  const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000 });
+  const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000,
+    enabled: status !== 'ext' && status !== 'stats' });
   const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(false);
   const receive = useMutation({
     mutationFn: (bc: string) => api<{ barcode: string; already_received: boolean }>('/lab/receive', { body: { barcode: bc } }),
@@ -84,12 +110,15 @@ function LabWorkspace() {
         </form>}
         <ErrorBox error={receive.error} />
         <div className="row" style={{ flexWrap: 'wrap' }}>
-          <div className="seg" role="group" aria-label="სტატუსი">{LAB_TABS.map(([k, l]) => <button key={k} type="button" aria-pressed={status === k} onClick={() => { setStatus(k); setSelId(null); }}>{l}</button>)}</div>
+          <div className="seg" role="group" aria-label="სტატუსი">{LAB_TABS.map(([k, l]) => <button key={k} type="button" aria-pressed={status === k} onClick={() => { setStatus(k); setSelId(null); }}>{l}</button>)}
+            <button type="button" aria-pressed={status === 'ext'} onClick={() => { setStatus('ext'); setSelId(null); }}>გარე ლაბორატორია</button>
+            {can(user, 'admin', 'lab_doctor', 'lab_manager') && <button type="button" aria-pressed={status === 'stats'} onClick={() => { setStatus('stats'); setSelId(null); }}>სტატისტიკა</button>}</div>
           <input aria-label="ძებნა" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="შტრიხკოდი, პირადი №, გვარი" value={search} onChange={(e) => setSearch(e.target.value)} />
           <button className="btn" type="button" style={{ marginLeft: 'auto' }} onClick={() => setInboxOpen(true)}>
             ანალიზატორები{inbox.data?.unmatched ? <span className="chip warn" style={{ marginLeft: 6 }}>დასამუშავებელი: {inbox.data.unmatched}</span> : null}</button>
         </div>
         {inboxOpen && <InstrumentInbox onClose={() => setInboxOpen(false)} />}
+        {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : <>
         <ErrorBox error={q.error} />
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
@@ -106,6 +135,7 @@ function LabWorkspace() {
             </table>
           </div>
         )}
+        </>}
         {toast.node}
       </div>
       {selId && <ResultEntry key={selId} id={selId} onClose={() => setSelId(null)} />}
@@ -131,7 +161,7 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth(); const toast = useToast();
   const q = useQuery({ queryKey: ['lab-item', id], queryFn: () => api<LabItemX>(`/lab/items/${id}`) });
   const [vals, setVals] = useState<Record<string, string>>({});
-  const [preg, setPreg] = useState(''); const [method, setMethod] = useState('');
+  const [preg, setPreg] = useState(''); const [method, setMethod] = useState(''); const [cum, setCum] = useState(false);
   const methods = useLabMethods();
   useEffect(() => {
     if (!q.data) return;
@@ -178,7 +208,7 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
       </div>
       <form style={{ flex: 1, overflow: 'auto', padding: '8px 20px' }} onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
         <table className="table">
-          <thead><tr><th>კომპონენტი</th><th style={{ width: 130 }}>შედეგი</th><th>ერთ.</th><th>ნორმა</th><th /></tr></thead>
+          <thead><tr><th>კომპონენტი</th><th style={{ width: 130 }}>შედეგი</th><th>ერთ.</th><th>ნორმა</th><th /><th className="small">წინა</th></tr></thead>
           <tbody>{it.analytes.map((a, idx) => {
             const v = vals[a.id] ?? ''; const f = previewFlag(a, v);
             const crit = f === 'LL' || f === 'HH';
@@ -200,12 +230,18 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
                 )}</td>
                 <td className="small muted">{unitFmt(a.unit)}</td>
                 <td className="small muted">{refRange(a.range)}{a.range?.pregnancy && <div>{PREG_KA[a.range.pregnancy]}</div>}{a.range?.method_id && <div>{methods.data?.find((m) => m.id === a.range?.method_id)?.name ?? 'ანალიზატორის ნორმა'}</div>}</td>
-                <td>{f === 'ERR' ? <span className="chip danger">რიცხვი?</span> : <FlagBadge flag={f} />}</td>
+                <td>{f === 'ERR' ? <span className="chip danger">რიცხვი?</span> : <FlagBadge flag={f} />}
+                  {a.delta?.alert && <div className="chip danger" style={{ marginTop: 2 }} title={`${a.delta.days} დღეში; დასაშვები ±${a.delta_limit_pct}%`}>Δ {a.delta.pct > 0 ? '+' : ''}{a.delta.pct}%</div>}</td>
+                <td className="small muted" style={{ whiteSpace: 'nowrap' }}>{a.history?.map((h, k) => <div key={k} title={tsDate(h.at)}>{h.value}{h.flag && h.flag !== 'N' ? ` ${h.flag}` : ''} <span style={{ fontSize: 10 }}>{tsDate(h.at).slice(0, 5)}</span></div>)}</td>
               </tr>
             );
           })}</tbody>
         </table>
-        <span className="hint">ნიშნები ავტომატურად ითვლება ნორმით (სქესი, ასაკი, ორსულობა, ანალიზატორი). ↑↑/↓↓ — კრიტიკული მნიშვნელობა: აცნობეთ მკურნალ ექიმს.</span>
+        {it.analytes.some((a) => a.delta?.alert) && <div className="alert warn small">Δ delta-check: შედეგი წინასთან შედარებით უჩვეულოდ შეიცვალა — გადაამოწმეთ სინჯარა (აღრევა, ჰემოლიზი, ინფუზიის ხაზიდან აღება) ვალიდაციამდე.</div>}
+        {it.performed_by === 'external' && <ExternalResult it={it} canEnter={canEnter} />}
+        <span className="hint">ნიშნები ავტომატურად ითვლება ნორმით (სქესი, ასაკი, ორსულობა, ანალიზატორი). ↑↑/↓↓ — კრიტიკული მნიშვნელობა: აცნობეთ მკურნალ ექიმს.
+          {' '}<button type="button" className="btn sm" onClick={() => setCum(true)}>სრული დინამიკა</button></span>
+        {cum && <CumulativeModal patientId={it.patient_id} title={`${it.first_name} ${it.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}
       </form>
       <div className="stack" style={{ padding: '12px 20px', borderTop: '1px solid var(--line)' }}>
         <ErrorBox error={save.error ?? validate.error ?? reopen.error ?? print.error} />

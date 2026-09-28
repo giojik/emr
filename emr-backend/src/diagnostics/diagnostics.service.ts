@@ -116,6 +116,7 @@ export class DiagnosticsService {
 
   async updateService(id: string, dto: { name?: string; group_name?: string; specimen_type?: string | null; container?: string | null; base_price?: number;
     duration_minutes?: number | null; prep_instructions?: string | null; report_comment?: string | null; default_method_id?: string | null;
+    external_lab_id?: string | null; purchase_price?: number | null; ext_turnaround_days?: number;
     performed_by?: 'internal' | 'external'; external_lab?: string | null; is_active?: boolean; approve?: boolean }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('dx_services').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -126,13 +127,18 @@ export class DiagnosticsService {
       if (dto.base_price !== undefined && !canPrice) throw new ForbiddenException('ფასის შეცვლა შეუძლია მხოლოდ ადმინისტრატორს ან მოლარეს');
       if (dto.approve && !canApprove) throw new ForbiddenException('დამტკიცება შეუძლია ლაბორატორიის ექიმს / ხელმძღვანელს');
       const set: Record<string, unknown> = {};
-      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions', 'report_comment', 'default_method_id'] as const) {
+      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions', 'report_comment', 'default_method_id', 'external_lab_id', 'purchase_price', 'ext_turnaround_days'] as const) {
         if (dto[k] !== undefined) {
           if (!canEdit) throw new ForbiddenException('კვლევის რედაქტირების უფლება არ გაქვთ');
           set[k] = typeof dto[k] === 'string' ? (dto[k] as string).trim() || null : dto[k];
         }
       }
-      if (set.performed_by === 'internal') set.external_lab = null;
+      if (set.performed_by === 'internal') { set.external_lab = null; set.external_lab_id = null; }
+      if (set.external_lab_id) {   // ტექსტური ველი რეესტრის სახელით (ძველი ეკრანებისთვის)
+        const l = await trx.selectFrom('lab_external_labs').select('name').where('id', '=', set.external_lab_id as string).executeTakeFirst();
+        if (!l) throw new BadRequestException('გარე ლაბორატორია ვერ მოიძებნა');
+        set.external_lab = l.name;
+      }
       const contentChanged = ['name', 'specimen_type', 'container'].some((k) => k in set && set[k] !== (old as Record<string, unknown>)[k]);
       if (dto.approve) set.needs_review = false; else if (contentChanged) set.needs_review = true;
       if (Object.keys(set).length) await trx.updateTable('dx_services').set(set).where('id', '=', id).execute();
@@ -151,13 +157,16 @@ export class DiagnosticsService {
    */
   async saveAnalyte(serviceId: string, dto: { id?: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals?: number | null;
     options?: string | null; critical_low?: number | null; critical_high?: number | null; sort_order?: number; is_active?: boolean;
+    delta_limit_pct?: number | null; delta_window_days?: number;
     ranges?: { sex: 'male' | 'female' | null; age_min_days?: number; age_max_days?: number; pregnancy?: 'P' | 'T1' | 'T2' | 'T3' | null; method_id?: string | null;
       low?: number | null; high?: number | null; normal_text?: string | null }[] }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const svc = await trx.selectFrom('dx_services').select(['section']).where('id', '=', serviceId).executeTakeFirst();
       if (!svc || svc.section !== 'lab') throw new BadRequestException('კომპონენტები მხოლოდ ლაბორატორიულ კვლევას აქვს');
       const base = { code: dto.code, name: dto.name, unit: dto.unit ?? '', result_type: dto.result_type, decimals: dto.decimals ?? null, options: dto.options ?? null,
-        sort_order: dto.sort_order ?? 0, is_active: dto.is_active ?? true };
+        sort_order: dto.sort_order ?? 0, is_active: dto.is_active ?? true,
+        ...(dto.delta_limit_pct !== undefined ? { delta_limit_pct: dto.delta_limit_pct === null ? null : String(dto.delta_limit_pct) } : {}),
+        ...(dto.delta_window_days !== undefined ? { delta_window_days: dto.delta_window_days } : {}) };
       if (dto.id) {
         const old = await trx.selectFrom('lab_analytes').selectAll().where('id', '=', dto.id).where('service_id', '=', serviceId).forUpdate().executeTakeFirst();
         if (!old) throw new NotFoundException('კომპონენტი ვერ მოიძებნა');
@@ -239,12 +248,13 @@ export class DiagnosticsService {
                             overrideReason: string | undefined, user: AuthUser, ctx: AuditContext) {
     const ids = [...new Set(items.map((i) => i.service_id))];
     const services = await trx.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
-      .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price']).where('s.id', 'in', ids).execute();
+      .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price', 's.performed_by']).where('s.id', 'in', ids).execute();
     if (services.length !== ids.length || services.some((s) => !s.is_active)) throw new BadRequestException('ზოგიერთი კვლევა ვერ მოიძებნა ან გათიშულია');
-    const labIds = services.filter((s) => s.section === 'lab').map((s) => s.id);
+    // გარე ლაბორატორიის ანალიზს კომპონენტები არ სჭირდება (პასუხი — PDF)
+    const labIds = services.filter((s) => s.section === 'lab' && s.performed_by !== 'external').map((s) => s.id);
     if (labIds.length) {
       const withAnalytes = await trx.selectFrom('lab_analytes').select('service_id').distinct().where('service_id', 'in', labIds).where('is_active', '=', true).execute();
-      const empty = services.filter((s) => s.section === 'lab' && !withAnalytes.some((w) => w.service_id === s.id));
+      const empty = services.filter((s) => labIds.includes(s.id) && !withAnalytes.some((w) => w.service_id === s.id));
       if (empty.length) throw new BadRequestException(`ანალიზს კომპონენტები ჯერ არ აქვს: ${empty.map((e) => e.name).join(', ')}`);
     }
     // იოდშემცველი კონტრასტი → ალერგიის შემოწმება (იგივე პოლიტიკა, რაც დანიშნულებაზე)
@@ -418,6 +428,17 @@ export class DiagnosticsService {
     const analytes = await this.analyteDefs(it.service_id);
     const at = it.collected_at ? new Date(it.collected_at) : new Date();
     const ctx = { sex: it.gender, ageDays: ageDays(it.birth_date, at), pregnancyWeeks: it.pregnancy_weeks, methodId: it.lab_method_id ?? it.default_method_id };
+    // წინა ვალიდირებული შედეგები (ბოლო 3) + delta-check
+    const hist = await sql<{ analyte_id: string; value_num: string | null; value_text: string | null; flag: string | null; at: Date }>`
+      SELECT * FROM (
+        SELECT r.analyte_id, r.value_num, r.value_text, r.flag, coalesce(sp.collected_at, i.validated_at) AS at,
+               row_number() OVER (PARTITION BY r.analyte_id ORDER BY coalesce(sp.collected_at, i.validated_at) DESC) AS rn
+        FROM lab_results r JOIN dx_order_items i ON i.id = r.order_item_id LEFT JOIN lab_specimens sp ON sp.id = i.specimen_id
+        WHERE i.patient_id = ${it.patient_id} AND i.status = 'validated' AND i.id <> ${itemId}
+          AND coalesce(sp.collected_at, i.validated_at) < ${at}
+          AND r.analyte_id IN (SELECT id FROM lab_analytes WHERE service_id = ${it.service_id})) x
+      WHERE rn <= 3`.execute(this.db);
+    const cur = await this.db.selectFrom('lab_results').select(['analyte_id', 'value_num']).where('order_item_id', '=', itemId).execute();
     const norm_recalculated = await this.db.selectFrom('lab_results').select(['recalculated_at']).where('order_item_id', '=', itemId)
       .where('recalculated_at', 'is not', null).orderBy('recalculated_at', 'desc').limit(1).executeTakeFirst();
     return {
@@ -428,6 +449,17 @@ export class DiagnosticsService {
         const r = pickRange(a.ranges, ctx);
         return { id: a.id, code: a.code, name: a.name, unit: a.unit, result_type: a.result_type, decimals: a.decimals, options: a.options?.split('|') ?? null,
           critical_low: a.critical_low, critical_high: a.critical_high, norm_version: a.norm_version,
+          delta_limit_pct: a.delta_limit_pct, delta_window_days: a.delta_window_days,
+          history: hist.rows.filter((h) => h.analyte_id === a.id).map((h) => ({ value: h.value_num !== null ? String(Number(h.value_num)) : h.value_text, flag: h.flag, at: h.at })),
+          delta: (() => {   // ცვლილება წინა შედეგთან (%), თუ ფანჯარაშია; alert — ზღვარს აჭარბებს
+            const prev = hist.rows.find((h) => h.analyte_id === a.id && h.value_num !== null);
+            const now = cur.find((c) => c.analyte_id === a.id)?.value_num;
+            if (!prev || now === null || now === undefined || Number(prev.value_num) === 0) return null;
+            const days = (at.getTime() - new Date(prev.at).getTime()) / 86_400_000;
+            const pct = ((Number(now) - Number(prev.value_num)) / Math.abs(Number(prev.value_num))) * 100;
+            const limit = a.delta_limit_pct === null ? null : Number(a.delta_limit_pct);
+            return { pct: Math.round(pct * 10) / 10, days: Math.round(days * 10) / 10, alert: limit !== null && days <= a.delta_window_days && Math.abs(pct) > limit };
+          })(),
           range: r ? { low: r.low, high: r.high, normal_text: r.normal_text, pregnancy: r.pregnancy ?? null, method_id: r.method_id ?? null } : null };
       }),
     };
@@ -554,6 +586,7 @@ export class DiagnosticsService {
         'rep.status as report_status', 'rep.version as report_version', 'rep.is_critical', 'rep.amend_reason', 'rep.updated_at as report_updated_at',
         'enc.visit_kind', 'enc.external_referral',
         'i.pregnancy_weeks', 'i.lab_method_id', 's.default_method_id', 's.report_comment', 'i.blank_version_id', 'i.verify_token',
+        'i.ext_shipment_id', 'i.ext_due_at', 'i.ext_result_at', 'i.ext_result_name',
         'pr.id as path_request_id', 'pr.request_no as path_request_no', 'pr.status as path_status', 'pr.result_text as path_result_text', 'pr.reviewed_at as path_reviewed_at',
         sql<boolean>`pr.result_file_path IS NOT NULL`.as('path_has_file'),
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),

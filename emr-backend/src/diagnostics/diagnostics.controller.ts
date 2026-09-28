@@ -18,6 +18,7 @@ import { LabConfigController, PublicLabVerifyController } from './lab-config.con
 import { LabConfigService } from './lab-config.service';
 import { LabIngestService } from '../lab-gateway/lab-ingest.service';
 import { LabInstrumentsController } from './lab-instruments.controller';
+import { LabExternalController, LabExternalService, LabStatsService } from './lab-external';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -84,6 +85,9 @@ class ServiceUpdateDto {
   @IsOptional() @IsString() @MaxLength(1000) prep_instructions?: string | null;
   @IsOptional() @IsString() @MaxLength(2000) report_comment?: string | null;
   @IsOptional() @IsUUID() default_method_id?: string | null;
+  @IsOptional() @IsUUID() external_lab_id?: string | null;
+  @IsOptional() @IsNumber() @Min(0) purchase_price?: number | null;
+  @IsOptional() @IsInt() @Min(1) @Max(120) ext_turnaround_days?: number;
 }
 class RangeDto {
   @IsOptional() @IsIn(['male', 'female']) sex: 'male' | 'female' | null;
@@ -100,6 +104,8 @@ class AnalyteDto {
   @IsOptional() @IsInt() decimals?: number | null; @IsOptional() @IsString() options?: string | null;
   @IsOptional() @IsNumber() critical_low?: number | null; @IsOptional() @IsNumber() critical_high?: number | null;
   @IsOptional() @IsInt() sort_order?: number; @IsOptional() @IsBoolean() is_active?: boolean;
+  @IsOptional() @IsNumber() @Min(0.1) delta_limit_pct?: number | null;
+  @IsOptional() @IsInt() @Min(1) @Max(365) delta_window_days?: number;
   /** მხოლოდ ახალ კომპონენტზე (საწყისი ნორმები); არსებულის ნორმები — PUT /lab/analytes/:id/norms */
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => RangeDto) ranges?: RangeDto[];
 }
@@ -187,7 +193,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

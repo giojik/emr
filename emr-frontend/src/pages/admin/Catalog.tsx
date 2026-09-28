@@ -137,11 +137,13 @@ function CreateServiceDialog({ section, onClose, onCreated }: { section: DxSecti
 function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth();
   const q = useQuery({ queryKey: ['dx-service', id], queryFn: () => api<ServiceDetail>(`/dx/catalog/${id}`) });
-  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string; comment: string; method: string } | null>(null);
+  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string; comment: string; method: string; ext_lab_id: string; purchase: string; days: string } | null>(null);
+  const extLabs = useQuery({ queryKey: ['ext-labs', false], queryFn: () => api<{ id: string; name: string }[]>('/lab/external-labs') });
   const methods = useLabMethods(true);
   const [analyte, setAnalyte] = useState<Analyte | 'new' | null>(null);
   const s = q.data;
-  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '', comment: s.report_comment ?? '', method: s.default_method_id ?? '' });
+  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '', comment: s.report_comment ?? '', method: s.default_method_id ?? '',
+    ext_lab_id: (s as { external_lab_id?: string | null }).external_lab_id ?? '', purchase: (s as { purchase_price?: string | null }).purchase_price ?? '', days: String((s as { ext_turnaround_days?: number }).ext_turnaround_days ?? 7) });
   const canEdit = can(user, 'admin') || (can(user, 'lab_manager', 'lab_doctor') && s?.section === 'lab');
   const canPrice = can(user, 'admin', 'billing');
   const canApprove = can(user, 'admin') || (can(user, 'lab_doctor') && s?.section === 'lab');
@@ -150,6 +152,7 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const save = useMutation({
     mutationFn: (approve: boolean) => api(`/dx/catalog/${id}`, { method: 'PATCH', body: {
       ...(canEdit ? { name: f!.name, group_name: f!.group_name, ...(s!.section === 'lab' ? { container: f!.container || null } : {}), performed_by: f!.performed_by, external_lab: f!.performed_by === 'external' ? f!.external_lab || null : null, is_active: f!.is_active,
+        ...(s!.section === 'lab' && f!.performed_by === 'external' ? { external_lab_id: f!.ext_lab_id || null, purchase_price: f!.purchase.trim() === '' ? null : Number(f!.purchase.replace(',', '.')), ext_turnaround_days: Number(f!.days) || 7 } : {}),
         ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : { report_comment: f!.comment.trim() || null, default_method_id: f!.method || null }) } : {}),
       ...(canPrice ? { base_price: Number(f!.price) } : {}), ...(approve ? { approve: true } : {}),
     } }),
@@ -181,7 +184,13 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
             <button type="button" disabled={!canEdit} aria-pressed={f.performed_by === 'internal'} onClick={() => setF({ ...f, performed_by: 'internal' })}>შიდა</button>
             <button type="button" disabled={!canEdit} aria-pressed={f.performed_by === 'external'} onClick={() => setF({ ...f, performed_by: 'external' })}>გარე ლაბორატორია</button>
           </div>
-          {f.performed_by === 'external' && <input aria-label="გარე ლაბორატორია" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="ლაბორატორიის დასახელება" value={f.external_lab} disabled={!canEdit} onChange={(e) => setF({ ...f, external_lab: e.target.value })} />}
+          {f.performed_by === 'external' && (s.section === 'lab' ? <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <select aria-label="გარე ლაბორატორია" className="select" style={{ maxWidth: 240, height: 38 }} value={f.ext_lab_id} disabled={!canEdit} onChange={(e) => setF({ ...f, ext_lab_id: e.target.value })}>
+              <option value="">— ლაბორატორია</option>{extLabs.data?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
+            <label className="row small">შესყიდვა ₾ <input className="input mono" style={{ width: 90, height: 34 }} inputMode="decimal" value={f.purchase} disabled={!canEdit} onChange={(e) => setF({ ...f, purchase: e.target.value })} /></label>
+            <label className="row small">ვადა (დღე) <input className="input mono" style={{ width: 60, height: 34 }} inputMode="numeric" value={f.days} disabled={!canEdit} onChange={(e) => setF({ ...f, days: e.target.value.replace(/\D/g, '') })} /></label>
+            <span className="hint">პასუხი — PDF, კომპონენტები არ სჭირდება. ლაბორატორიების სია — ლაბორატორია → „გარე ლაბორატორია“.</span></div>
+            : <input aria-label="გარე ლაბორატორია" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="ლაბორატორიის დასახელება" value={f.external_lab} disabled={!canEdit} onChange={(e) => setF({ ...f, external_lab: e.target.value })} />)}
           <label className="row"><input type="checkbox" checked={f.is_active} disabled={!canEdit} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>
         </div>
         <span className="small muted mono">{s.code} · {s.group_name}{s.container ? ` · ${s.container}` : ''}{s.modality ? ` · ${s.modality}` : ''}{s.contrast ? ` · კონტრასტი: ${s.contrast}` : ''}</span>
@@ -213,7 +222,8 @@ function AnalyteDialog({ serviceId, a, onClose }: { serviceId: string; a: Analyt
   const qc = useQueryClient();
   const methods = useLabMethods(true);
   const [f, setF] = useState({ code: a?.code ?? '', name: a?.name ?? '', unit: a?.unit ?? '', result_type: a?.result_type ?? 'numeric', decimals: a?.decimals?.toString() ?? '1',
-    options: a?.options ?? '', critical_low: a?.critical_low ?? '', critical_high: a?.critical_high ?? '', sort_order: String(a?.sort_order ?? 99), is_active: a?.is_active ?? true });
+    options: a?.options ?? '', critical_low: a?.critical_low ?? '', critical_high: a?.critical_high ?? '', sort_order: String(a?.sort_order ?? 99), is_active: a?.is_active ?? true,
+    delta: (a as { delta_limit_pct?: string | null } | null)?.delta_limit_pct ?? '', delta_days: String((a as { delta_window_days?: number } | null)?.delta_window_days ?? 7) });
   // ახალ კომპონენტს — საწყისი ნორმები; არსებულის ნორმები იცვლება „ნორმები“ ჩანართში (ხელმძღვანელი)
   const [rows, setRows] = useState<RangeRow[]>(() => [toRow({ sex: null, age_min_days: 0, age_max_days: 54750, pregnancy: null, method_id: null, low: null, high: null, normal_text: null })]);
   const numeric = f.result_type === 'numeric';
@@ -223,6 +233,7 @@ function AnalyteDialog({ serviceId, a, onClose }: { serviceId: string; a: Analyt
     mutationFn: () => api(`/dx/catalog/${serviceId}/analytes`, { body: {
       id: a?.id, code: f.code, name: f.name, unit: f.unit, result_type: f.result_type, decimals: numeric ? Number(f.decimals) : null,
       options: f.result_type === 'select' ? f.options : null, sort_order: Number(f.sort_order), is_active: f.is_active,
+      ...(numeric ? { delta_limit_pct: f.delta.trim() === '' ? null : Number(String(f.delta).replace(',', '.')), delta_window_days: Number(f.delta_days) || 7 } : {}),
       ...(a ? {} : { critical_low: numeric ? num(f.critical_low) : null, critical_high: numeric ? num(f.critical_high) : null, ranges: rows.map((r) => fromRow(r, numeric)) }),
     } }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-service', serviceId] }); void qc.invalidateQueries({ queryKey: ['lab-norms'] }); onClose(); },
@@ -245,6 +256,12 @@ function AnalyteDialog({ serviceId, a, onClose }: { serviceId: string; a: Analyt
         <Field label="რიგი" htmlFor="as"><input id="as" className="input mono" value={f.sort_order} onChange={(e) => setF({ ...f, sort_order: e.target.value })} /></Field>
       </div>
       <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>
+      {numeric && <div className="row small" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <strong>delta-check:</strong>
+        <label className="row">დასაშვები ცვლილება ± <input className="input mono" style={{ width: 70, height: 32 }} inputMode="decimal" placeholder="—" value={String(f.delta)} onChange={(e) => setF({ ...f, delta: e.target.value })} /> %</label>
+        <label className="row">წინა შედეგი ბოლო <input className="input mono" style={{ width: 56, height: 32 }} inputMode="numeric" value={f.delta_days} onChange={(e) => setF({ ...f, delta_days: e.target.value.replace(/\D/g, '') })} /> დღეში</label>
+        <span className="hint">ცარიელი — გამორთულია. გადაჭარბებისას ვალიდაციის ფორმაში ჩანს Δ გაფრთხილება (სინჯარის აღრევა / დაზიანება?).</span>
+      </div>}
       {a ? (
         <div className="stack" style={{ gap: 6 }}>
           <h3>ნორმები <span className="small muted">v{a.norm_version}</span></h3>

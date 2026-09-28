@@ -200,6 +200,14 @@ export interface DxOrderItems {
   device_id: string | null;
   dose_text: string | null;
   encounter_id: string;
+  ext_cost: Numeric | null;
+  ext_due_at: Timestamp | null;
+  ext_lab_id: string | null;
+  ext_result_at: Timestamp | null;
+  ext_result_by: string | null;
+  ext_result_name: string | null;
+  ext_result_path: string | null;
+  ext_shipment_id: string | null;
   id: Generated<string>;
   lab_method_id: string | null;
   ordered_at: Generated<Timestamp>;
@@ -292,7 +300,9 @@ export interface DxServices {
   contrast: string | null;
   default_method_id: string | null;
   duration_minutes: number | null;
+  ext_turnaround_days: Generated<number>;
   external_lab: string | null;
+  external_lab_id: string | null;
   group_name: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
@@ -301,6 +311,7 @@ export interface DxServices {
   needs_review: Generated<boolean>;
   performed_by: Generated<string>;
   prep_instructions: string | null;
+  purchase_price: Numeric | null;
   report_comment: string | null;
   section: string;
   sort_order: Generated<number>;
@@ -500,6 +511,8 @@ export interface LabAnalytes {
   critical_high: Numeric | null;
   critical_low: Numeric | null;
   decimals: number | null;
+  delta_limit_pct: Numeric | null;
+  delta_window_days: Generated<number>;
   id: Generated<string>;
   is_active: Generated<boolean>;
   name: string;
@@ -545,6 +558,41 @@ export interface LabBlankVersions {
   settings: Json;
   template_id: string;
   version: number;
+}
+
+export interface LabExternalLabs {
+  contact_person: string | null;
+  created_at: Generated<Timestamp>;
+  email: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  note: string | null;
+  phone: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface LabExtSettlements {
+  amount: Numeric;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  invoice_no: string | null;
+  items_count: number;
+  lab_id: string;
+  note: string | null;
+  paid_at: string | null;
+  period: string;
+}
+
+export interface LabExtShipments {
+  courier: string | null;
+  id: Generated<string>;
+  lab_id: string;
+  note: string | null;
+  sent_at: Generated<Timestamp>;
+  sent_by: string | null;
+  shipment_no: string;
 }
 
 export interface LabGatewayAlerts {
@@ -1009,6 +1057,9 @@ export interface DB {
   lab_blank_images: LabBlankImages;
   lab_blank_templates: LabBlankTemplates;
   lab_blank_versions: LabBlankVersions;
+  lab_ext_settlements: LabExtSettlements;
+  lab_ext_shipments: LabExtShipments;
+  lab_external_labs: LabExternalLabs;
   lab_gateway_alert_settings: LabGatewayAlertSettings;
   lab_gateway_alerts: LabGatewayAlerts;
   lab_gateway_commands: LabGatewayCommands;

@@ -9,6 +9,7 @@ import AllergyDialog from '../components/AllergyDialog';
 import AddressFields, { addressPayload } from '../components/AddressFields';
 import AppointmentDialog from '../components/AppointmentDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
+import { CumulativeModal } from './lab/Cumulative';
 import DocumentsPanel from '../components/DocumentsPanel';
 import { OrderDialog } from './encounter/DiagnosticsPanel';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
@@ -18,6 +19,7 @@ export default function PatientCard() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | 'lab' | null>(null);
+  const [cum, setCum] = useState(false);
   const nav = useNavigate();
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
@@ -41,6 +43,7 @@ export default function PatientCard() {
         {front && <>
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
           <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button>
+          {can(user, 'admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'lab_manager') && <button className="btn" type="button" onClick={() => setCum(true)}>ლაბ. დინამიკა</button>}
           <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
@@ -86,6 +89,7 @@ export default function PatientCard() {
       {dlg === 'walkin' && <WalkInDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={x.id} onClose={() => setDlg(null)} />}
       {dlg === 'edit' && <EditPatientDialog patient={x} onClose={() => setDlg(null)} />}
+      {cum && <CumulativeModal patientId={x.id} title={`${x.first_name} ${x.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}
       {dlg === 'lab' && <OrderDialog patientId={x.id} onClose={() => setDlg(null)} onLabVisit={(eid) => nav(`/cashier/${eid}`)} />}
     </>
   );
