@@ -6,6 +6,7 @@ import { auditCtx } from '../audit/audit-context';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { LabIngestService } from '../lab-gateway/lab-ingest.service';
+import { LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabInstrumentsService } from './lab-instruments.service';
 
 class InstrumentDto {
@@ -31,7 +32,7 @@ const LAB_ALL = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic'] as const;
 
 @Controller('lab')
 export class LabInstrumentsController {
-  constructor(private readonly svc: LabInstrumentsService, private readonly ingest: LabIngestService) {}
+  constructor(private readonly svc: LabInstrumentsService, private readonly ingest: LabIngestService, private readonly admin: LabGatewayAdminService) {}
 
   @Get('gateway') @Roles(...LAB_ALL)
   gateway() { return this.svc.gateway(); }
@@ -46,6 +47,9 @@ export class LabInstrumentsController {
   codes(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: CodesDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.svc.setCodes(id, dto.codes, u, auditCtx(req)); }
   @Get('instruments/:methodId/messages') @Roles(...LAB_ALL)
   messages(@Param('methodId', ParseUUIDPipe) id: string, @Query('limit') limit?: string) { return this.svc.messages(id, Number(limit) || 100); }
+
+  @Get('instruments/:methodId/seen-codes') @Roles(...LAB_ALL)
+  seen(@Param('methodId', ParseUUIDPipe) id: string) { return this.admin.seenCodes(id); }
 
   @Get('instrument-results') @Roles(...LAB_ALL)
   results(@Query('status') status?: string, @Query('method_id') methodId?: string) { return this.svc.results({ status, method_id: methodId }); }

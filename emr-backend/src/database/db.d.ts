@@ -547,6 +547,43 @@ export interface LabBlankVersions {
   version: number;
 }
 
+export interface LabGatewayAlerts {
+  id: Generated<Int8>;
+  instrument_id: string | null;
+  kind: string;
+  message: string;
+  notified: Json | null;
+  notified_resolved: Json | null;
+  resolved_at: Timestamp | null;
+  started_at: Generated<Timestamp>;
+}
+
+export interface LabGatewayAlertSettings {
+  disconnect_minutes: Generated<number>;
+  emails: Generated<string[]>;
+  enabled: Generated<boolean>;
+  id: Generated<number>;
+  notify_resolved: Generated<boolean>;
+  silent_minutes: Generated<number>;
+  sms_phones: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+  work_days: Generated<number[]>;
+  work_end: Generated<string>;
+  work_start: Generated<string>;
+}
+
+export interface LabGatewayCommands {
+  created_at: Generated<Timestamp>;
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  instrument_id: string | null;
+  kind: string;
+  params: Generated<Json>;
+  requested_by: string | null;
+  result: Json | null;
+  status: Generated<string>;
+}
+
 export interface LabGatewayState {
   heartbeat_at: Timestamp;
   hostname: string | null;
@@ -611,22 +648,36 @@ export interface LabInstrumentResults {
 }
 
 export interface LabInstruments {
+  alerts_enabled: Generated<boolean>;
   conn_mode: string;
   created_at: Generated<Timestamp>;
+  down_since: Timestamp | null;
   host: string | null;
   id: Generated<string>;
   is_enabled: Generated<boolean>;
   last_error: string | null;
   last_message_at: Timestamp | null;
+  listen_only: Generated<boolean>;
   method_id: string;
   order_mode: Generated<string>;
   peer: string | null;
   port: number;
   protocol: string;
   settings: Generated<Json>;
+  silent_minutes: number | null;
   status: Generated<string>;
   status_at: Timestamp | null;
   updated_at: Generated<Timestamp>;
+}
+
+export interface LabInstrumentSeenCodes {
+  code: string;
+  first_seen: Generated<Timestamp>;
+  instrument_id: string;
+  last_seen: Generated<Timestamp>;
+  last_unit: string | null;
+  last_value: string | null;
+  seen_count: Generated<number>;
 }
 
 export interface LabMethods {
@@ -958,11 +1009,15 @@ export interface DB {
   lab_blank_images: LabBlankImages;
   lab_blank_templates: LabBlankTemplates;
   lab_blank_versions: LabBlankVersions;
+  lab_gateway_alert_settings: LabGatewayAlertSettings;
+  lab_gateway_alerts: LabGatewayAlerts;
+  lab_gateway_commands: LabGatewayCommands;
   lab_gateway_state: LabGatewayState;
   lab_instrument_codes: LabInstrumentCodes;
   lab_instrument_messages: LabInstrumentMessages;
   lab_instrument_orders: LabInstrumentOrders;
   lab_instrument_results: LabInstrumentResults;
+  lab_instrument_seen_codes: LabInstrumentSeenCodes;
   lab_instruments: LabInstruments;
   lab_methods: LabMethods;
   lab_norm_versions: LabNormVersions;

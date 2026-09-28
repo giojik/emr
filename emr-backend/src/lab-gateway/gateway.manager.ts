@@ -5,17 +5,42 @@ import os from 'node:os';
 import { InjectDb, type Database } from '../database/database.module';
 import { AstmLink, buildNoOrder, buildOrder, DEFAULT_ASTM, delimsFrom, parseMessage, type AstmSettings } from './astm';
 import * as hl7 from './hl7';
+import { LabAlertsService } from './lab-alerts.service';
 import { LabIngestService, type OrderInfo } from './lab-ingest.service';
 
 interface InstrumentCfg {
   id: string; name: string; protocol: 'astm' | 'hl7'; conn_mode: 'client' | 'server'; host: string | null; port: number;
-  order_mode: 'none' | 'query' | 'push'; settings: Record<string, unknown>; updated_at: Date;
+  order_mode: 'none' | 'query' | 'push'; settings: Record<string, unknown>; updated_at: Date; listen_only: boolean;
 }
 const RECONNECT_MS = 5_000;
 const PUSH_EVERY_MS = 5_000;
 const RELOAD_EVERY_MS = 5_000;
 const HEARTBEAT_MS = 20_000;
 const RETENTION_DAYS = 30;
+const COMMANDS_EVERY_MS = 2_000;
+const ALERTS_EVERY_MS = 60_000;
+
+/** TCP-ის შემოწმება (+ ASTM: ENQ → ACK → EOT) — ახალ, დროებით კავშირზე */
+function tcpTest(host: string, port: number, astmProbe: boolean): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    const t0 = Date.now(); let done = false;
+    const s = net.createConnection({ host, port });
+    const finish = (r: Record<string, unknown>) => { if (done) return; done = true; s.destroy(); resolve({ host, port, ...r }); };
+    s.setTimeout(5000, () => finish({ ok: false, error: 'timeout (5 წმ) — მისამართი/პორტი მიუწვდომელია ან firewall ბლოკავს' }));
+    s.once('error', (e: NodeJS.ErrnoException) => finish({ ok: false, error: e.code === 'ECONNREFUSED' ? 'კავშირი უარყოფილია (პორტზე არაფერი უსმენს ან დაკავებულია)' : e.message }));
+    s.once('connect', () => {
+      const ms = Date.now() - t0;
+      if (!astmProbe) { finish({ ok: true, ms }); return; }
+      s.once('data', (d) => {
+        const b = d[0];
+        if (b === 0x06) s.write(Buffer.from([0x04]));
+        finish({ ok: true, ms, astm: b === 0x06 ? 'ACK' : b === 0x15 ? 'NAK (დაკავებულია)' : b === 0x05 ? 'ENQ (აგზავნის)' : `უცნობი პასუხი 0x${b.toString(16)}` });
+      });
+      s.write(Buffer.from([0x05]));
+      setTimeout(() => finish({ ok: true, ms, astm: null, warning: 'TCP კავშირი არის, მაგრამ ENQ-ზე პასუხი არ მოვიდა (5 წმ) — შეამოწმეთ პროტოკოლი / სერიული პარამეტრები' }), 5000);
+    });
+  });
+}
 
 /** ერთი ანალიზატორი: TCP კავშირი (კლიენტი ან სერვერი) + პროტოკოლის სესია */
 class Runner {
@@ -99,13 +124,14 @@ class Runner {
       const kind = p.queries.length ? 'query' : p.results.length ? 'results' : 'other';
       const msgId = await this.m.message(this.cfg.id, 'in', kind, recs.join('\n'),
         kind === 'results' ? `${p.results.length} შედეგი · ${[...new Set(p.results.map((r) => r.barcode))].join(', ')}` : kind === 'query' ? `ქვერი: ${p.queries.map((q) => q.barcode).join(', ')}` : null);
-      if (p.results.length) {
+      await this.m.seen(this.cfg.id, p.results);
+      if (p.results.length && !this.cfg.listen_only) {
         const r = await this.m.ingest.ingest(this.cfg.id, msgId, p.results);
         this.log.log(`შედეგები: მიბმული ${r.applied}, დასამუშავებელი ${r.unmatched}`);
       }
       const d = delimsFrom(recs.find((r) => r.startsWith('H')));
       for (const q of p.queries) {
-        const o = this.cfg.order_mode === 'none' ? null : await this.m.ingest.ordersForBarcode(this.cfg.id, q.barcode, this.sendName);
+        const o = this.cfg.order_mode === 'none' || this.cfg.listen_only ? null : await this.m.ingest.ordersForBarcode(this.cfg.id, q.barcode, this.sendName);
         const out = o?.codes.length ? buildOrder({ ...o, reportType: 'Q' }, d) : buildNoOrder(q.barcode, d);
         await this.m.message(this.cfg.id, 'out', 'orders', out.join('\n'), o?.codes.length ? `${q.barcode}: ${o.codes.join(', ')}` : `${q.barcode}: შეკვეთა არ არის`);
         await this.astm?.send(out).catch((e: Error) => this.m.message(this.cfg.id, 'out', 'orders', out.join('\n'), null, e.message));
@@ -132,8 +158,11 @@ class Runner {
       if (m.type === 'ORU' || m.type === 'OUL') {
         const res = hl7.results(m, settings);
         const id = await this.m.message(this.cfg.id, 'in', 'results', raw.replace(/\r/g, '\n'), `${res.length} შედეგი · ${[...new Set(res.map((r) => r.barcode))].join(', ')}`);
-        const r = await this.m.ingest.ingest(this.cfg.id, id, res);
-        this.log.log(`შედეგები: მიბმული ${r.applied}, დასამუშავებელი ${r.unmatched}`);
+        await this.m.seen(this.cfg.id, res);
+        if (!this.cfg.listen_only) {
+          const r = await this.m.ingest.ingest(this.cfg.id, id, res);
+          this.log.log(`შედეგები: მიბმული ${r.applied}, დასამუშავებელი ${r.unmatched}`);
+        }
         this.write(hl7.ack(m, 'AA'));
         return;
       }
@@ -141,7 +170,7 @@ class Runner {
         const b = hl7.queryBarcode(m);
         await this.m.message(this.cfg.id, 'in', 'query', raw.replace(/\r/g, '\n'), `ქვერი: ${b ?? '?'}`);
         this.write(hl7.ack(m, 'AA'));
-        const o = b && this.cfg.order_mode !== 'none' ? await this.m.ingest.ordersForBarcode(this.cfg.id, b, this.sendName) : null;
+        const o = b && this.cfg.order_mode !== 'none' && !this.cfg.listen_only ? await this.m.ingest.ordersForBarcode(this.cfg.id, b, this.sendName) : null;
         if (o?.codes.length) await this.sendOrm(o);
         else await this.m.message(this.cfg.id, 'out', 'orders', `${b ?? '?'}: შეკვეთა არ არის`, `${b ?? '?'}: შეკვეთა არ არის`);
         return;
@@ -155,6 +184,19 @@ class Runner {
     }
   }
   private write(msg: string) { this.sock?.write(hl7.mllp(msg)); }
+
+  /** მართვის პანელის „შემოწმება“: არსებული კავშირით (ASTM — ENQ/ACK), ან ახალი TCP ცდით */
+  async test(): Promise<Record<string, unknown>> {
+    if (this.sock) {
+      const peer = `${this.sock.remoteAddress?.replace('::ffff:', '')}:${this.sock.remotePort}`;
+      if (this.cfg.protocol !== 'astm') return { ok: true, via: 'existing', peer, note: 'კავშირი არის (HL7-ში ცალკე „ping“ არ არსებობს — იხ. ბოლო შეტყობინება)' };
+      if (!this.astm || this.astm.busy) return { ok: true, via: 'existing', peer, note: 'კავშირი არის, ახლა მიმდინარეობს მონაცემთა გაცვლა' };
+      const a = await this.astm.probe();
+      return a ? { ok: true, via: 'existing', peer, astm: a } : { ok: false, via: 'existing', peer, error: 'TCP კავშირი არის, მაგრამ ENQ-ზე პასუხი არ მოვიდა — შეამოწმეთ ანალიზატორი / სერიული პარამეტრები' };
+    }
+    if (this.cfg.conn_mode === 'server') return { ok: false, listening: !!this.server?.listening, error: `ანალიზატორი ჯერ არ დაკავშირებულა — gateway ელოდება :${this.cfg.port}-ზე` };
+    return tcpTest(this.cfg.host ?? '', this.cfg.port, this.cfg.protocol === 'astm');
+  }
   private sendOrm(o: OrderInfo): Promise<boolean> {
     const msg = hl7.orm(o, { app: '', fac: '' }, String(this.cfg.settings.hl7_version ?? '2.3.1'));
     return new Promise((resolve) => {
@@ -168,7 +210,7 @@ class Runner {
 
   // ---------------------------------------------------------------- push: მიღებული სინჯარების შეკვეთები
   private async pushTick() {
-    if (this.cfg.order_mode !== 'push' || !this.sock || this.pushing) return;
+    if (this.cfg.order_mode !== 'push' || this.cfg.listen_only || !this.sock || this.pushing) return;
     if (this.astm?.busy) return;
     this.pushing = true;
     try {
@@ -193,7 +235,8 @@ export class GatewayManager implements OnApplicationShutdown {
   private readonly log = new Logger('LabGateway');
   private runners = new Map<string, Runner>();
   private timers: NodeJS.Timeout[] = [];
-  constructor(@InjectDb() private readonly db: Database, readonly ingest: LabIngestService) {}
+  private cmdBusy = false;
+  constructor(@InjectDb() private readonly db: Database, readonly ingest: LabIngestService, private readonly alerts: LabAlertsService) {}
 
   async start() {
     const now = new Date();
@@ -205,6 +248,8 @@ export class GatewayManager implements OnApplicationShutdown {
     this.timers.push(setInterval(() => void this.reload().catch((e) => this.log.error(e.message)), RELOAD_EVERY_MS));
     this.timers.push(setInterval(() => void this.db.updateTable('lab_gateway_state').set({ heartbeat_at: new Date() }).where('id', '=', 1).execute().catch(() => undefined), HEARTBEAT_MS));
     this.timers.push(setInterval(() => void this.purge(), 3_600_000));
+    this.timers.push(setInterval(() => void this.commands(), COMMANDS_EVERY_MS));
+    this.timers.push(setInterval(() => void this.alerts.evaluateInstruments().catch((e) => this.log.error(`გაფრთხილებები: ${(e as Error).message}`)), ALERTS_EVERY_MS));
     void this.purge();
     this.log.log('emr-lab-gateway გაეშვა');
   }
@@ -212,7 +257,7 @@ export class GatewayManager implements OnApplicationShutdown {
   /** კონფიგურაციის სინქრონიზაცია: ახალი → ჩართვა; გათიშული/წაშლილი → გაჩერება; შეცვლილი → გადატვირთვა */
   private async reload() {
     const rows = await this.db.selectFrom('lab_instruments as i').innerJoin('lab_methods as m', 'm.id', 'i.method_id')
-      .select(['i.id', 'm.name', 'i.protocol', 'i.conn_mode', 'i.host', 'i.port', 'i.order_mode', 'i.settings', 'i.updated_at'])
+      .select(['i.id', 'm.name', 'i.protocol', 'i.conn_mode', 'i.host', 'i.port', 'i.order_mode', 'i.settings', 'i.updated_at', 'i.listen_only'])
       .where('i.is_enabled', '=', true).where('m.is_active', '=', true).execute();
     const want = new Map(rows.map((r) => [r.id, r as unknown as InstrumentCfg]));
     for (const [id, run] of this.runners) {
@@ -229,7 +274,9 @@ export class GatewayManager implements OnApplicationShutdown {
   }
 
   async status(id: string, status: 'offline' | 'connecting' | 'listening' | 'connected' | 'error', peer: string | null, error: string | null) {
-    await this.db.updateTable('lab_instruments').set({ status, peer, status_at: sql`now()`, ...(error !== null ? { last_error: error } : status === 'connected' ? { last_error: null } : {}) })
+    const up = status === 'connected' || status === 'listening';
+    await this.db.updateTable('lab_instruments').set({ status, peer, status_at: sql`now()`, down_since: up ? null : sql`coalesce(down_since, now())`,
+      ...(error !== null ? { last_error: error } : status === 'connected' ? { last_error: null } : {}) })
       .where('id', '=', id).execute().catch(() => undefined);
   }
   async message(id: string, direction: 'in' | 'out', kind: string, raw: string, summary: string | null, error?: string) {
@@ -237,8 +284,45 @@ export class GatewayManager implements OnApplicationShutdown {
     if (direction === 'in') await this.db.updateTable('lab_instruments').set({ last_message_at: sql`now()` }).where('id', '=', id).execute();
     return r ? String(r.id) : null;
   }
+  /** ანალიზატორის მიერ გამოგზავნილი კოდები (რუკის შესავსებად) */
+  async seen(id: string, results: { code: string; value: string; unit: string }[]) {
+    const last = new Map<string, { value: string; unit: string }>();
+    for (const r of results) if (r.code) last.set(r.code.slice(0, 40), { value: r.value.slice(0, 100), unit: r.unit.slice(0, 40) });
+    for (const [code, v] of last) {
+      await this.db.insertInto('lab_instrument_seen_codes').values({ instrument_id: id, code, last_value: v.value, last_unit: v.unit || null })
+        .onConflict((oc) => oc.columns(['instrument_id', 'code']).doUpdateSet({ last_value: v.value, last_unit: v.unit || null, seen_count: sql`lab_instrument_seen_codes.seen_count + 1`, last_seen: sql`now()` }))
+        .execute().catch(() => undefined);
+    }
+  }
+
+  /** მართვის პანელის ბრძანებები (ბაზის რიგით): tcp_test / link_test / reconnect */
+  private async commands() {
+    if (this.cmdBusy) return;
+    this.cmdBusy = true;
+    try {
+      for (;;) {
+        const c = await sql<{ id: string; instrument_id: string | null; kind: string; params: Record<string, unknown> }>`
+          UPDATE lab_gateway_commands SET status = 'running' WHERE id = (SELECT id FROM lab_gateway_commands WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+          RETURNING id, instrument_id, kind, params`.execute(this.db);
+        const cmd = c.rows[0]; if (!cmd) break;
+        let result: Record<string, unknown>;
+        try {
+          const run = cmd.instrument_id ? this.runners.get(cmd.instrument_id) : undefined;
+          if (cmd.kind === 'reconnect') {
+            if (run) { run.stop(); this.runners.delete(cmd.instrument_id!); }
+            await this.reload(); result = { ok: true, note: 'კავშირი თავიდან იწყება' };
+          } else if (run) result = await run.test();
+          else if (cmd.params.host && cmd.params.port) result = await tcpTest(String(cmd.params.host), Number(cmd.params.port), cmd.params.protocol === 'astm');
+          else result = { ok: false, error: cmd.instrument_id ? 'ანალიზატორი გამორთულია — ჩართეთ, ან შეამოწმეთ მისამართით' : 'მიუთითეთ მისამართი და პორტი' };
+        } catch (e) { result = { ok: false, error: (e as Error).message }; }
+        await this.db.updateTable('lab_gateway_commands').set({ status: result.ok === false ? 'failed' : 'done', result: JSON.stringify(result), finished_at: sql`now()` }).where('id', '=', cmd.id).execute();
+      }
+    } catch (e) { this.log.error(`ბრძანებები: ${(e as Error).message}`); } finally { this.cmdBusy = false; }
+  }
+
   private async purge() {
     await this.db.deleteFrom('lab_instrument_messages').where('created_at', '<', sql<Date>`now() - make_interval(days => ${RETENTION_DAYS})`).execute().catch(() => undefined);
+    await this.db.deleteFrom('lab_gateway_commands').where('created_at', '<', sql<Date>`now() - interval '7 days'`).execute().catch(() => undefined);
   }
 
   onApplicationShutdown() {

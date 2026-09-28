@@ -37,7 +37,8 @@ export type LinkEvent = 'message' | 'send' | 'log' | 'error';
  */
 export class AstmLink extends EventEmitter {
   private buf = Buffer.alloc(0);
-  private state: 'idle' | 'receiving' | 'enq_sent' | 'sending' = 'idle';
+  private state: 'idle' | 'receiving' | 'enq_sent' | 'sending' | 'probing' = 'idle';
+  private probeDone: ((answer: string | null) => void) | null = null;
   private expectedFn = 1; private text = ''; private records: string[] = [];
   private queue: { records: string[]; resolve: () => void; reject: (e: Error) => void }[] = [];
   private frames: Buffer[] = []; private frameIdx = 0; private retries = 0;
@@ -69,10 +70,25 @@ export class AstmLink extends EventEmitter {
     return new Promise((resolve, reject) => { this.queue.push({ records, resolve, reject }); this.pump(); });
   }
   get busy() { return this.state !== 'idle' || this.queue.length > 0; }
+
+  /**
+   * ბმის ტესტი: ENQ → (ACK | NAK) → EOT. მონაცემები არ იგზავნება; ანალიზატორისთვის უვნებელი „ხელის ჩამორთმევა“.
+   * აბრუნებს პასუხს ('ACK' / 'NAK' / 'ENQ') ან null (timeout / დაკავებულია).
+   */
+  probe(timeoutMs = 5000): Promise<string | null> {
+    if (this.state !== 'idle' || this.queue.length) return Promise.resolve(null);
+    this.state = 'probing';
+    return new Promise((resolve) => {
+      this.probeDone = (a) => { this.clear(); this.probeDone = null; if (a === 'ACK') this.write(Buffer.from([EOT])); if (this.state === 'probing') this.state = 'idle'; resolve(a); this.pump(); };
+      this.write(Buffer.from([ENQ]));
+      this.arm(timeoutMs, () => this.probeDone?.(null));
+    });
+  }
   close() { this.clear(); for (const q of this.queue) q.reject(new Error('კავშირი დაიხურა')); this.queue = []; this.state = 'idle'; }
 
   // ---------------------------------------------------------------- მიღება
   private onEnq() {
+    if (this.state === 'probing') { this.probeDone?.('ENQ'); }              // ანალიზატორი თავად იწყებს გადაცემას — ცოცხალია; ვუთმობთ
     if (this.state === 'enq_sent' && this.opts.instrument) return;          // ანალიზატორი არ უთმობს — ელოდება ACK-ს
     if (this.state === 'enq_sent') this.emit('log', 'ENQ შეჯახება — ვუთმობთ ანალიზატორს');
     if (this.state === 'sending') { this.write(Buffer.from([NAK])); return; }
@@ -110,6 +126,7 @@ export class AstmLink extends EventEmitter {
     this.arm(TIMEOUT_ACK_MS, () => this.fail('ENQ-ზე პასუხი არ მოვიდა'));
   }
   private onAck() {
+    if (this.state === 'probing') { this.probeDone?.('ACK'); return; }
     if (this.state === 'enq_sent') { this.state = 'sending'; this.sendFrame(); return; }
     if (this.state === 'sending') {
       this.frameIdx++; this.retries = 0;
@@ -119,6 +136,7 @@ export class AstmLink extends EventEmitter {
     }
   }
   private onNak() {
+    if (this.state === 'probing') { this.probeDone?.('NAK'); return; }
     if (this.state === 'enq_sent') { this.clear(); this.state = 'idle'; setTimeout(() => this.pump(), 10_000); this.emit('log', 'ENQ-ზე NAK — 10 წმ-ში ხელახლა'); return; }
     if (this.state === 'sending') {
       if (++this.retries > MAX_RETRY) { this.write(Buffer.from([EOT])); this.fail('ჩარჩო 6-ჯერ უარყო (NAK)'); return; }

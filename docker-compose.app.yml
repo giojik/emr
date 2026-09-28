@@ -19,6 +19,15 @@ x-backend-env: &backend-env
   AUTH_LOCAL_ENABLED: "true"
   AUTH_LDAP_ENABLED: "false"
   PUBLIC_VERIFY_BASE_URL: ${PUBLIC_VERIFY_BASE_URL:-http://localhost/api/public/verify}
+  # გაფრთხილებები (ანალიზატორები): ელ-ფოსტა და SMS — /opt/emr/.env-ში (ცარიელი = გამორთული)
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMS_API_URL: ${SMS_API_URL:-}
+  SMS_API_TOKEN: ${SMS_API_TOKEN:-}
 
 services:
   # ერთჯერადი: migration-ები backend-ის გაშვებამდე

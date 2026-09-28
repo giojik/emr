@@ -24,6 +24,16 @@ const EnvSchema = z.object({
   /** emr-lab-gateway: სერვერის რეჟიმის პორტების დიაპაზონი (docker-compose-ში გამოქვეყნებული) */
   LAB_GATEWAY_PORTS: z.string().regex(/^\d+-\d+$/).default('4100-4109'),
 
+  // --- გაფრთხილებები (ანალიზატორების gateway): ელ-ფოსტა SMTP-ით, SMS — HTTP სერვისით (POST {to, text}, Bearer) ---
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: bool(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMS_API_URL: z.string().url().optional().or(z.literal('').transform(() => undefined)),
+  SMS_API_TOKEN: z.string().optional(),
+
   // --- JWT / სესიები ---
   JWT_SECRET: z.string().min(32, 'JWT_SECRET მინიმუმ 32 სიმბოლო (openssl rand -hex 32)'),
   JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),     // 15 წთ

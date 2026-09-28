@@ -20,6 +20,7 @@ interface Msg { id: string; direction: 'in' | 'out'; kind: string; summary: stri
 interface InboxRow { id: string; barcode: string | null; code: string; value: string | null; unit: string | null; flags: string | null; status: string; reason: string | null; rerun: boolean;
   created_at: string; instrument: string; analyte_name: string | null; patient_name: string | null; order_item_id: string | null }
 interface Analyte { id: string; code: string; name: string; unit: string; is_active: boolean }
+interface SeenCode { code: string; last_value: string | null; last_unit: string | null; seen_count: number; last_seen: string; mapping_id: string | null; analyte_name: string | null }
 
 export const useGateway = () => useQuery({ queryKey: ['lab-gateway'], queryFn: () => api<GatewayState>('/lab/gateway'), refetchInterval: 30_000 });
 export const useInstruments = () => useQuery({ queryKey: ['lab-instruments'], queryFn: () => api<InstrumentRow[]>('/lab/instruments'), refetchInterval: 10_000 });
@@ -41,8 +42,8 @@ export function GatewayBanner() {
 }
 
 // ============================================================ ანალიზატორის კავშირი: პარამეტრები | კოდები | ჟურნალი
-export function InstrumentPanel({ methodId, canEdit }: { methodId: string; canEdit: boolean }) {
-  const [tab, setTab] = useState<'conn' | 'codes' | 'log'>('conn');
+export function InstrumentPanel({ methodId, canEdit, initialTab = 'conn' }: { methodId: string; canEdit: boolean; initialTab?: 'conn' | 'codes' | 'log' }) {
+  const [tab, setTab] = useState<'conn' | 'codes' | 'log'>(initialTab);
   const d = useQuery({ queryKey: ['lab-instrument', methodId], queryFn: () => api<Detail>(`/lab/instruments/${methodId}`) });
   if (d.isLoading || !d.data) return <Loading />;
   return (
@@ -121,6 +122,8 @@ function Codes({ d, canEdit }: { d: Detail; canEdit: boolean }) {
     (rows as unknown as { id: string; code: string; name: string; unit: string; service_id: string; service_name: string }[]).map((r) => ({ ...r, is_active: true }))) });
   const [rows, setRows] = useState<CodeRow[]>(d.codes.map((c) => ({ ...c, factor: String(Number(c.factor)) })));
   const [paste, setPaste] = useState(''); const [filter, setFilter] = useState('');
+  const seen = useQuery({ queryKey: ['lab-seen-codes', d.method.id], queryFn: () => api<SeenCode[]>(`/lab/instruments/${d.method.id}/seen-codes`), refetchInterval: 10_000 });
+  const unmapped = (seen.data ?? []).filter((c) => !rows.some((r) => r.code.trim().toUpperCase() === c.code.toUpperCase()));
   const aList = analytes.data ?? [];
   const save = useMutation({
     mutationFn: () => api<Detail>(`/lab/instruments/${d.method.id}/codes`, { method: 'PUT', body: { codes: rows.map((r) => ({ code: r.code.trim(), analyte_id: r.analyte_id || null, service_id: r.service_id || null,
@@ -152,6 +155,17 @@ function Codes({ d, canEdit }: { d: Detail; canEdit: boolean }) {
   return (
     <fieldset disabled={!canEdit} className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
       <span className="hint">ანალიზატორის კოდი → EMR-ის <strong>კომპონენტი</strong> (შედეგი და შეკვეთა) ან <strong>კვლევა</strong> (მხოლოდ შეკვეთა — პანელი, მაგ. სისხლის საერთო ერთი კოდით). კოეფიციენტი — ერთეულის გადაყვანა: EMR = ანალიზატორი × კოეფ. (მაგ. კრეატინინი mg/dL → µmol/L = 88.42). ერთეულის შეუსაბამობისას შედეგი „დასამუშავებელში“ ხვდება.</span>
+      {unmapped.length > 0 && <div className="alert warn stack" style={{ gap: 6 }}>
+        <span>ანალიზატორმა გამოგზავნა კოდები, რომლებიც რუკაში არ არის — დაამატეთ და აირჩიეთ EMR-ის კომპონენტი:</span>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{unmapped.map((c) => (
+          <button key={c.code} type="button" className="btn sm" disabled={!canEdit} title={`ბოლო: ${c.last_value ?? ''} ${c.last_unit ?? ''} · ${c.seen_count}-ჯერ`}
+            onClick={() => { const a = aList.find((x) => x.code.toUpperCase() === c.code.toUpperCase());
+              setRows([...rows, { code: c.code, analyte_id: a?.id ?? null, service_id: null, factor: '1', send_order: true }]); }}>
+            + <span className="mono">{c.code}</span> <span className="muted">{c.last_value}{c.last_unit ? ` ${unitFmt(c.last_unit)}` : ''}</span></button>))}</div>
+        {canEdit && <button type="button" className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setRows([...rows, ...unmapped.map((c) => {
+          const a = aList.find((x) => x.code.toUpperCase() === c.code.toUpperCase()); return { code: c.code, analyte_id: a?.id ?? null, service_id: null, factor: '1', send_order: true }; })])}>
+          ყველას დამატება (ერთნაირი კოდები — ავტომატურად)</button>}
+      </div>}
       <div className="row"><input aria-label="ფილტრი" className="input" style={{ maxWidth: 220, height: 34 }} placeholder="ფილტრი" value={filter} onChange={(e) => setFilter(e.target.value)} /><span className="grow" />
         {canEdit && <button className="btn sm" type="button" onClick={() => setRows([...rows, { code: '', analyte_id: null, service_id: null, factor: '1', send_order: true }])}>+ კოდი</button>}</div>
       <div style={{ maxHeight: 380, overflowY: 'auto' }}>
@@ -180,7 +194,7 @@ function Codes({ d, canEdit }: { d: Detail; canEdit: boolean }) {
         </div>
       </details>}
       <ErrorBox error={save.error} />
-      {canEdit && <div className="row"><span className="small muted grow">{rows.length} კოდი</span><button className="btn primary" type="button" disabled={save.isPending || rows.some((r) => !r.code.trim() || (!r.analyte_id && !r.service_id))} onClick={() => save.mutate()}>კოდების შენახვა</button></div>}
+      {canEdit && <div className="row"><span className="small muted grow">{rows.length} კოდი{rows.some((r) => !r.analyte_id && !r.service_id) ? ' — აირჩიეთ EMR-ის კომპონენტი ყველა ხაზზე' : ''}</span><button className="btn primary" type="button" disabled={save.isPending || rows.some((r) => !r.code.trim() || (!r.analyte_id && !r.service_id))} onClick={() => save.mutate()}>კოდების შენახვა</button></div>}
       {toast.node}
     </fieldset>
   );

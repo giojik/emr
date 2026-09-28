@@ -17,6 +17,7 @@ import Patients from './pages/Patients';
 import Reception from './pages/Reception';
 import AdminLayout from './pages/admin/AdminLayout';
 import Allergens from './pages/admin/Allergens';
+import Analyzers from './pages/admin/Analyzers';
 import Audit from './pages/admin/Audit';
 import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
+          <Route path="analyzers" element={<Guard roles={['admin']}><Analyzers /></Guard>} />
           <Route path="consents" element={<Guard roles={['admin']}><ConsentTypes /></Guard>} />
           <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
           <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />
