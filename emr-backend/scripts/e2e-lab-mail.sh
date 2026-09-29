@@ -29,7 +29,8 @@ eml() { # $1 file, $2 from, $3 subject, $4 msgid, $5.. attachment names
   local pdf; pdf=$(printf '%%PDF-1.4\n%% EMR e2e %s\n%%%%EOF\n' "$mid" | base64 -w0)
   { printf 'From: Partner Lab <%s>\r\nTo: lab-results@clinic.test\r\nSubject: %s\r\nMessage-ID: <%s@partner-lab.test>\r\nDate: %s\r\nMIME-Version: 1.0\r\n' "$from" "$subj" "$mid" "$(date -R)"
     printf 'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n' "${BODY:-შედეგი თან ერთვის.}"
-    for n in "$@"; do printf -- '--b1\r\nContent-Type: application/pdf; name="%s"\r\nContent-Disposition: attachment; filename="%s"\r\nContent-Transfer-Encoding: base64\r\n\r\n%s\r\n' "$n" "$n" "$pdf"; done
+    for n in "$@"; do pdf=$(printf '%%PDF-1.4\n%% EMR e2e %s %s\n%%%%EOF\n' "$S" "$n" | base64 -w0)   # თითო ფაილი — განსხვავებული შიგთავსი
+      printf -- '--b1\r\nContent-Type: application/pdf; name="%s"\r\nContent-Disposition: attachment; filename="%s"\r\nContent-Transfer-Encoding: base64\r\n\r\n%s\r\n' "$n" "$n" "$pdf"; done
     printf -- '--b1--\r\n'; } > "$f"
 }
 up() { curl -s -X POST "$B/lab/external/mail/upload" -H "authorization: Bearer $1" -F "file=@$2;type=message/rfc822"; }
@@ -126,6 +127,30 @@ OCRPNG="iVBORw0KGgoAAAANSUhEUgAAAvgAAABaAQAAAADlEh+CAAAEIklEQVR42u2YP4gdRRzHP7M3
   printf -- '--b1\r\nContent-Type: image/png; name="scan.png"\r\nContent-Disposition: attachment; filename="scan.png"\r\nContent-Transfer-Encoding: base64\r\n\r\n%s\r\n--b1--\r\n' "$OCRPNG"; } > "$DIR/ocr.eml"
 O=$(curl -s -X POST "$B/lab/external/mail/test?lab_id=$LAB" -H "authorization: Bearer $LT" -F "file=@$DIR/ocr.eml")
 chk "სურათიდან ტექსტი ამოიკითხა (OCR, პ/ნ 01001012345)" "$(echo "$O" | jq -r '"\(.files[0].ocr):\(.files[0].pdf_text|contains("01001012345"))"')" "true:true"
+
+step "8. რამდენიმე ფაილი ერთ ანალიზზე"
+read -r I8 BC8 <<< "$(newbatch)"
+eml "$DIR/10.eml" "$FROM" "EMR $BC8" "m10-$S" "$BC8.pdf" "$BC8 (2).pdf"
+chk "ერთ წერილში 2 PDF → ორივე მიება" "$(up "$LT" "$DIR/10.eml" | jq -r '[.files[].status]|join(",")')" "attached,attached"
+chk "ანალიზს 2 ფაილი აქვს (ერთმანეთს არ გადააწერა)" "$(api GET "/lab/items/$I8/external-files" "$LT" | jq -r length)" "2"
+eml "$DIR/11.eml" "$FROM" "EMR $BC8" "m11-$S" "$BC8.pdf" "$BC8 (2).pdf"
+up "$LT" "$DIR/11.eml" >/dev/null
+chk "იგივე ფაილები ხელახლა (სხვა წერილით) — დუბლიკატი არ ემატება" "$(api GET "/lab/items/$I8/external-files" "$LT" | jq -r length)" "2"
+X3=$(mktemp --suffix=.pdf); printf '%%PDF-1.4\n%% manual %s\n%%%%EOF\n' "$S" > "$X3"
+chk "ხელით მესამე ფაილი → ემატება" "$(curl -s -X POST "$B/lab/items/$I8/external-result" -H "authorization: Bearer $LT" -F "file=@$X3;filename=extra.pdf" >/dev/null; api GET "/lab/items/$I8/external-files" "$LT" | jq -r length)" "3"
+chk "იგივე ფაილი ხელით მეორედ — 409" "$(code POST "/lab/items/$I8/external-result" "$LT" -F "file=@$X3")" "409"
+XF=$(api GET "/lab/items/$I8/external-files" "$LT" | jq -r '.[]|select(.filename=="extra.pdf")|.id')
+chk "ფაილის მოხსნა მიზეზით → 2" "$(api POST "/lab/items/$I8/external-files/$XF/remove" "$LT" -d '{"reason":"შეცდომით მიბმული"}' | jq -r length)" "2"
+chk "ვალიდაციამდე რეგისტრატორი ფაილებს ვერ ხედავს (403)" "$(code GET "/lab/items/$I8/external-files" "$RC")" "403"
+LD=$(mkuser lab_doctor 45)
+chk "ლაბ. ექიმი ადასტურებს" "$(api POST "/lab/items/$I8/validate" "$LD" | jq -r .status)" "validated"
+chk "დადასტურების შემდეგ — რეგისტრატორი ხედავს 2 ფაილს" "$(api GET "/lab/items/$I8/external-files" "$RC" | jq -r length)" "2"
+F0=$(api GET "/lab/items/$I8/external-files" "$RC" | jq -r '.[0].id')
+chk "ფაილის ნახვა (PDF)" "$(curl -s "$B/lab/items/$I8/external-files/$F0" -H "authorization: Bearer $RC" | head -c 5)" "%PDF-"
+eml "$DIR/12.eml" "$FROM" "EMR $BC8" "m12-$S" "$BC8 (3).pdf"
+chk "დადასტურებულზე ახალი ფაილი → ხელით, მიზეზით" "$(up "$LT" "$DIR/12.eml" | jq -r '"\(.files[0].status):\(.files[0].reason|contains("უკვე დადასტურებულია"))"')" "unmatched:true"
+chk "დადასტურებულზე ფაილის მოხსნა — 409" "$(code POST "/lab/items/$I8/external-files/$F0/remove" "$LT" -H "$J" -d '{"reason":"ტესტი ტესტი"}')" "409"
+rm -f "$X3"
 
 step "გასუფთავება"
 for X in $(awk '/^s /{print $2}' "$TRACK"); do api PATCH "/dx/catalog/$X" "$ADM" -d '{"is_active":false}' >/dev/null; done

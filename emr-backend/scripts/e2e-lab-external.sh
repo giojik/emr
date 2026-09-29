@@ -20,7 +20,7 @@ login() { curl -s -X POST "$B/auth/login" -H "$J" -d "$(jq -nc --arg u "$1" --ar
 ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შესვლა ვერ მოხერხდა ($B)"
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" "$@"; }
-S=$(date +%s | tail -c 7); TRACK=$(mktemp); TODAY=$(date +%F); MONTH=$(date +%Y-%m)
+S=$(date +%s | tail -c 7); TRACK=$(mktemp); TODAY=$(TZ=Asia/Tbilisi date +%F); MONTH=$(TZ=Asia/Tbilisi date +%Y-%m)   # კლინიკის დღე (შუაღამის ახლოს UTC-ით სხვა თარიღია)
 PDF=$(mktemp --suffix=.pdf); printf '%%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%%%EOF\n' > "$PDF"
 TXT=$(mktemp --suffix=.pdf); echo "ეს არ არის PDF" > "$TXT"
 

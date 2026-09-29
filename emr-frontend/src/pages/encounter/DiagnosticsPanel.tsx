@@ -55,7 +55,9 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
                     {canWrite && (i.status === 'ordered' || i.status === 'scheduled') && <button className="icon-btn" type="button" aria-label={`გაუქმება: ${i.service_name}`} onClick={() => cancel.mutate(i.id)}>×</button>}
                   </div>
                   {i.performed_by === 'external' && <div className="small muted">გარე ლაბორატორია{i.external_lab ? `: ${i.external_lab}` : ''}
-                    {done && (i as { ext_result_at?: string | null }).ext_result_at && <button className="btn sm" type="button" style={{ height: 22, marginLeft: 6 }} onClick={() => void openBlob(`/lab/items/${i.id}/external-result`)}>პასუხი (PDF)</button>}</div>}
+                    {done && ((i as { ext_files?: { id: string; filename: string }[] }).ext_files ?? []).map((f, k, all) =>
+                      <button key={f.id} className="btn sm" type="button" style={{ height: 22, marginLeft: 6 }} title={f.filename}
+                        onClick={() => void openBlob(`/lab/items/${i.id}/external-files/${f.id}`)}>{all.length > 1 ? `პასუხი ${k + 1}` : 'პასუხი (PDF)'}</button>)}</div>}
                   {sec === 'lab' && done && i.results.length > 0 && <button className="btn sm" type="button" style={{ height: 22, marginTop: 4 }} onClick={() => setCum({ service_id: i.service_id, name: i.service_name })}>დინამიკა</button>}
                   {sec !== 'lab' && i.status === 'scheduled' && i.scheduled_start && <div className="small muted">ჩაწერილია: {tsDate(i.scheduled_start)} {hhmm(i.scheduled_start)} · {i.device_name}</div>}
                   {sec === 'endoscopy' && i.path_status && <div className="small" style={{ marginTop: 4 }}>

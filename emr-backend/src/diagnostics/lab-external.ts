@@ -5,7 +5,7 @@ import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsInt, IsOptio
 import type { Request, Response } from 'express';
 import { sql } from 'kysely';
 import { memoryStorage } from 'multer';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { auditCtx } from '../audit/audit-context';
 import { CurrentUser, Roles } from '../auth/decorators';
@@ -16,6 +16,7 @@ import { sniffMime } from '../patient-files/patient-files';
 import { ClinicSettingsService } from '../settings/clinic-settings';
 import { StorageService } from '../storage/storage.service';
 import { d, dt, newDoc } from './diagnostics.pdf';
+import { addItemFile } from './lab-item-files';
 
 const MAX_FILE = 15 * 1024 * 1024;
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
@@ -159,13 +160,49 @@ export class LabExternalService {
     if (!it.ext_shipment_id) throw new ConflictException('ანალიზი ჯერ არ გაგზავნილა');
     if (!['in_progress', 'resulted'].includes(it.status)) throw new ConflictException(it.status === 'validated' ? 'შედეგი დადასტურებულია — შეცვლა მხოლოდ შესწორებით' : `სტატუსზე "${it.status}" დაუშვებელია`);
     const key = `lab-external/${it.patient_id}/${itemId}/${randomUUID()}.${mime === 'application/pdf' ? 'pdf' : mime === 'image/png' ? 'png' : 'jpg'}`;
+    const sha = createHash('sha256').update(file).digest('hex');
+    const dup = await this.db.selectFrom('dx_item_files').select('id').where('order_item_id', '=', itemId).where('sha256', '=', sha).where('removed_at', 'is', null).executeTakeFirst();
+    if (dup) throw new ConflictException('ეს ფაილი ამ ანალიზს უკვე მიმაგრებული აქვს');
     await this.storage.put(key, file, mime);
     await this.db.transaction().execute(async (trx) => {
-      await trx.updateTable('dx_order_items').set({ ext_result_path: key, ext_result_name: name?.slice(0, 200) ?? null, ext_result_at: sql`now()`, ext_result_by: user.id,
-        status: 'resulted', resulted_by: user.id, resulted_at: sql`now()` }).where('id', '=', itemId).execute();
-      await this.audit.log(ctx, { action: 'EXTERNAL_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { file: name ?? null, bytes: file.length, replaced: it.status === 'resulted' } }, trx);
+      await trx.selectFrom('dx_order_items').select('id').where('id', '=', itemId).forUpdate().execute();
+      await addItemFile(trx, { itemId, key, filename: name ?? `result.${key.split('.').pop()}`, mime, size: file.length, sha256: sha, source: 'upload', userId: user.id });
+      await this.audit.log(ctx, { action: 'EXTERNAL_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { file: name ?? null, bytes: file.length, added_to_existing: it.status === 'resulted' } }, trx);
     });
     return { id: itemId, status: 'resulted' };
+  }
+
+  /** ანალიზის ფაილები (აქტიური). ლაბორატორია — ყოველთვის; ექიმი/ექთანი — მხოლოდ ვალიდაციის შემდეგ */
+  async files(itemId: string, user: AuthUser) {
+    const it = await this.db.selectFrom('dx_order_items').select('status').where('id', '=', itemId).executeTakeFirst();
+    if (!it) throw new NotFoundException('ანალიზი ვერ მოიძებნა');
+    if (!LAB_STAFF.some((r) => has(user, r)) && it.status !== 'validated') throw new ForbiddenException('პასუხი ჯერ არ არის დადასტურებული');
+    return this.db.selectFrom('dx_item_files as f').leftJoin('users as u', 'u.id', 'f.uploaded_by')
+      .select(['f.id', 'f.filename', 'f.mime', 'f.size_bytes', 'f.source', 'f.uploaded_at', sql<string | null>`u.first_name || ' ' || u.last_name`.as('uploaded_by_name')])
+      .where('f.order_item_id', '=', itemId).where('f.removed_at', 'is', null).orderBy('f.uploaded_at').execute();
+  }
+  async fileStream(itemId: string, fileId: string, user: AuthUser) {
+    await this.files(itemId, user);   // წვდომის შემოწმება
+    const f = await this.db.selectFrom('dx_item_files').select(['storage_path', 'mime']).where('id', '=', fileId).where('order_item_id', '=', itemId).where('removed_at', 'is', null).executeTakeFirst();
+    if (!f) throw new NotFoundException('ფაილი ვერ მოიძებნა');
+    return { stream: await this.storage.get(f.storage_path), mime: f.mime };
+  }
+  /** ფაილის მოხსნა ვალიდაციამდე (შეცდომით მიბმული) — მიზეზით; საცავში რჩება. ბოლო ფაილის მოხსნისას ანალიზი ისევ „პასუხს ელოდება“ */
+  async removeFile(itemId: string, fileId: string, reason: string, user: AuthUser, ctx: AuditContext) {
+    await this.db.transaction().execute(async (trx) => {
+      const it = await trx.selectFrom('dx_order_items').select('status').where('id', '=', itemId).forUpdate().executeTakeFirst();
+      if (!it) throw new NotFoundException('ანალიზი ვერ მოიძებნა');
+      if (it.status !== 'resulted') throw new ConflictException(it.status === 'validated' ? 'დადასტურებულია — ჯერ შესწორება (reopen)' : 'ფაილის მოხსნა შეუძლებელია');
+      const r = await trx.updateTable('dx_item_files').set({ removed_at: sql`now()`, removed_by: user.id, remove_reason: reason.trim() })
+        .where('id', '=', fileId).where('order_item_id', '=', itemId).where('removed_at', 'is', null).returning('filename').executeTakeFirst();
+      if (!r) throw new NotFoundException('ფაილი ვერ მოიძებნა');
+      const last = await trx.selectFrom('dx_item_files').select(['storage_path', 'filename']).where('order_item_id', '=', itemId).where('removed_at', 'is', null)
+        .orderBy('uploaded_at', 'desc').executeTakeFirst();
+      await trx.updateTable('dx_order_items').set(last ? { ext_result_path: last.storage_path, ext_result_name: last.filename }
+        : { ext_result_path: null, ext_result_name: null, ext_result_at: null, ext_result_by: null, status: 'in_progress', resulted_by: null, resulted_at: null }).where('id', '=', itemId).execute();
+      await this.audit.log(ctx, { action: 'EXTERNAL_LAB_FILE_REMOVE', entityName: 'dx_order_items', entityId: itemId, newData: { file: r.filename, reason } }, trx);
+    });
+    return this.files(itemId, user);
   }
   /** ფაილი: ლაბორატორია — ყოველთვის; ექიმი/ექთანი — მხოლოდ ვალიდაციის შემდეგ */
   async resultFile(itemId: string, user: AuthUser) {
@@ -214,7 +251,8 @@ export class LabStatsService {
   constructor(@InjectDb() private readonly db: Database) {}
 
   async stats(from: string, to: string) {
-    const range = sql<boolean>`i.ordered_at >= (${from}::date AT TIME ZONE ${this.tz}) AND i.ordered_at < ((${to}::date + 1) AT TIME ZONE ${this.tz})`;
+    // კლინიკის დღის საზღვრები: date → timestamp (ადგილობრივი შუაღამე) → timestamptz. (date AT TIME ZONE პირდაპირ — არასწორია, UTC-დან წანაცვლება)
+    const range = sql<boolean>`i.ordered_at >= (${from}::date::timestamp AT TIME ZONE ${this.tz}) AND i.ordered_at < ((${to}::date + 1)::timestamp AT TIME ZONE ${this.tz})`;
     const base = this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id').leftJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id')
       .where('i.section', '=', 'lab').where(range);
     const totals = await base.select([
@@ -277,6 +315,7 @@ class ShipDto { @IsUUID() lab_id: string; @IsArray() @ArrayMinSize(1) @ArrayMaxS
   @IsOptional() @IsString() @MaxLength(150) courier?: string; @IsOptional() @IsString() @MaxLength(500) note?: string }
 class SettleDto { @IsUUID() lab_id: string; @Matches(/^\d{4}-(0[1-9]|1[0-2])$/) month: string; @IsOptional() @IsString() @MaxLength(60) invoice_no?: string;
   @IsOptional() @IsString() @MaxLength(500) note?: string; @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) paid_at?: string | null }
+class RemoveDto { @IsString() @Length(3, 300) reason: string }
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/; const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller()
@@ -311,6 +350,19 @@ export class LabExternalController {
     res.set({ 'Content-Type': f.mime, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
     return new StreamableFile(f.stream);
   }
+  @Get('lab/items/:id/external-files') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  files(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.ext.files(id, u); }
+  @Get('lab/items/:id/external-files/:fileId') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  async fileOne(@Param('id', ParseUUIDPipe) id: string, @Param('fileId', ParseUUIDPipe) fileId: string, @CurrentUser() u: AuthUser, @Res({ passthrough: true }) res: Response) {
+    const f = await this.ext.fileStream(id, fileId, u);
+    res.set({ 'Content-Type': f.mime, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
+    return new StreamableFile(f.stream);
+  }
+  @Post('lab/items/:id/external-files/:fileId/remove') @HttpCode(200) @Roles(...LAB_STAFF)
+  removeFile(@Param('id', ParseUUIDPipe) id: string, @Param('fileId', ParseUUIDPipe) fileId: string, @Body() dto: RemoveDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
+    return this.ext.removeFile(id, fileId, dto.reason, u, auditCtx(req));
+  }
+
   @Get('lab/external/settlement') @Roles('admin', 'lab_manager', 'lab_doctor', 'accountant')
   settlement(@Query('month') month: string) { if (!MONTH.test(month ?? '')) throw new BadRequestException('month: YYYY-MM'); return this.ext.settlement(month); }
   @Get('lab/external/settlement/items') @Roles('admin', 'lab_manager', 'lab_doctor', 'accountant')

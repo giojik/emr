@@ -593,7 +593,10 @@ export class DiagnosticsService {
         sql<string | null>`vb.first_name || ' ' || vb.last_name`.as('validated_by_name'),
         (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')
           .select(['r.analyte_id', 'a.code', 'a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.ref_low', 'r.ref_high', 'r.ref_text', 'r.flag', 'r.instrument_id'])
-          .whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results')]);
+          .whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results'),
+        // გარე ლაბორატორიის ფაილები (აქტიური)
+        (eb) => jsonArrayFrom(eb.selectFrom('dx_item_files as xf').select(['xf.id', 'xf.filename', 'xf.source', 'xf.uploaded_at'])
+          .whereRef('xf.order_item_id', '=', 'i.id').where('xf.removed_at', 'is', null).orderBy('xf.uploaded_at')).as('ext_files')]);
   }
 
   private async analyteDefs(serviceId: string, executor: Database | Trx = this.db) {

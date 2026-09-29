@@ -26,6 +26,7 @@ type LabItemX = Omit<LabItemDetail, 'analytes'> & {
   analytes: (LabAnalyteForm & { range: (LabAnalyteForm['range'] & { pregnancy?: Pregnancy | null; method_id?: string | null }) | null;
     history?: { value: string | null; flag: string | null; at: string }[]; delta?: { pct: number; days: number; alert: boolean } | null; delta_limit_pct?: string | null })[];
   ext_shipment_id?: string | null; ext_due_at?: string | null; ext_result_at?: string | null; ext_result_name?: string | null;
+  ext_files?: { id: string; filename: string; source: string; uploaded_at: string }[];
 };
 
 /** გარე ლაბორატორიის ანალიზი: პასუხი — PDF, მიბმული ამ ანალიზზე */
@@ -36,14 +37,27 @@ function ExternalResult({ it, canEnter }: { it: LabItemX; canEnter: boolean }) {
     try { const fd = new FormData(); fd.append('file', f); await apiUpload(`/lab/items/${it.id}/external-result`, fd); void qc.invalidateQueries({ queryKey: ['lab-item', it.id] }); void qc.invalidateQueries({ queryKey: ['lab-worklist'] }); }
     catch (e) { setErr(e); } finally { setBusy(false); }
   };
+  const remove = async (fileId: string, reason: string) => {
+    setErr(null);
+    try { await api(`/lab/items/${it.id}/external-files/${fileId}/remove`, { body: { reason } }); void qc.invalidateQueries({ queryKey: ['lab-item', it.id] }); void qc.invalidateQueries({ queryKey: ['lab-worklist'] }); }
+    catch (e) { setErr(e); }
+  };
   return (
     <div className="card card-pad stack" style={{ gap: 6, margin: '8px 0' }}>
       <strong className="small">გარე ლაბორატორია{it.external_lab ? `: ${it.external_lab}` : ''}</strong>
-      {!it.ext_shipment_id ? <span className="small muted">ჯერ არ გაგზავნილა — „გარე ლაბორატორია“ → „გასაგზავნი“.</span> : it.ext_result_at
-        ? <div className="row small"><span className="chip ok">პასუხი მიღებულია {tsDate(it.ext_result_at)}</span><button className="btn sm" type="button" onClick={() => void openBlob(`/lab/items/${it.id}/external-result`)}>{it.ext_result_name || 'PDF'}</button></div>
+      {!it.ext_shipment_id ? <span className="small muted">ჯერ არ გაგზავნილა — „გარე ლაბორატორია“ → „გასაგზავნი“.</span> : it.ext_files?.length
+        ? <div className="stack" style={{ gap: 4 }}>
+            <span className="small"><span className="chip ok">პასუხი მიღებულია {it.ext_result_at && tsDate(it.ext_result_at)}</span> {it.ext_files.length > 1 && <span className="muted">· {it.ext_files.length} ფაილი</span>}</span>
+            {it.ext_files.map((f) => <div key={f.id} className="row small" style={{ gap: 6 }}>
+              <button className="btn sm" type="button" onClick={() => void openBlob(`/lab/items/${it.id}/external-files/${f.id}`)}>{f.filename}</button>
+              <span className="muted">{f.source === 'mail' ? 'ელ-ფოსტა' : 'ატვირთული'} · {tsDate(f.uploaded_at)}</span>
+              {canEnter && it.status === 'resulted' && <button className="icon-btn" type="button" aria-label="ფაილის მოხსნა" title="მოხსნა (შეცდომით მიბმული)"
+                onClick={() => { const r = prompt('მოხსნის მიზეზი (მაგ. „სხვა პაციენტის ფაილი“)'); if (r && r.trim().length >= 3) void remove(f.id, r.trim()); }}>×</button>}
+            </div>)}
+          </div>
         : <span className="small">გაგზავნილია · ვადა {it.ext_due_at && tsDate(it.ext_due_at)}</span>}
       {canEnter && it.ext_shipment_id && it.status !== 'validated' && it.status !== 'cancelled' && <label className="btn sm" style={{ cursor: 'pointer', alignSelf: 'flex-start' }}>
-        {busy ? '…' : it.ext_result_at ? 'ფაილის შეცვლა' : 'პასუხის ატვირთვა (PDF)'}<input type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => { void up(e.target.files?.[0]); e.target.value = ''; }} /></label>}
+        {busy ? '…' : it.ext_files?.length ? '+ ფაილის დამატება' : 'პასუხის ატვირთვა (PDF)'}<input type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => { void up(e.target.files?.[0]); e.target.value = ''; }} /></label>}
       <ErrorBox error={err} />
     </div>
   );

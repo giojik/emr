@@ -185,6 +185,23 @@ export interface DxImages {
   source: string;
 }
 
+export interface DxItemFiles {
+  filename: string;
+  id: Generated<string>;
+  mail_file_id: string | null;
+  mime: string;
+  order_item_id: string;
+  remove_reason: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  sha256: string | null;
+  size_bytes: number | null;
+  source: string;
+  storage_path: string;
+  uploaded_at: Generated<Timestamp>;
+  uploaded_by: string | null;
+}
+
 export interface DxOrderItems {
   accession_number: string | null;
   allergy_override_reason: string | null;
@@ -603,6 +620,7 @@ export interface LabExtMailFiles {
   resolved_at: Timestamp | null;
   resolved_by: string | null;
   service_code: string | null;
+  sha256: string | null;
   size_bytes: number;
   status: string;
   storage_path: string | null;
@@ -1078,6 +1096,7 @@ export interface DB {
   document_counters: DocumentCounters;
   dx_devices: DxDevices;
   dx_images: DxImages;
+  dx_item_files: DxItemFiles;
   dx_order_items: DxOrderItems;
   dx_report_templates: DxReportTemplates;
   dx_report_versions: DxReportVersions;

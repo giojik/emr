@@ -20,6 +20,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
+import { addItemFile } from './lab-item-files';
 
 const MAX_FILE = 15 * 1024 * 1024;
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
@@ -74,7 +75,7 @@ export class LabMailService {
   /** ამ ლაბორატორიაში გაგზავნილი, ჯერ პასუხის გარეშე ანალიზები შტრიხკოდით (და კოდით) */
   private waiting(labId: string | null, barcode: string, code: string | null) {
     let q = this.db.selectFrom('dx_order_items as i').innerJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id').innerJoin('dx_services as s', 's.id', 'i.service_id')
-      .select(['i.id', 's.code']).where('i.ext_shipment_id', 'is not', null).where('i.ext_result_at', 'is', null).where('i.status', 'in', ['in_progress', 'resulted'])
+      .select(['i.id', 's.code']).where('i.ext_shipment_id', 'is not', null).where('i.status', 'in', ['in_progress', 'resulted'])   // resulted — დამატებითი ფაილი
       .where((eb) => eb.or([eb('sp.barcode', '=', barcode), eb(sql`ltrim(sp.barcode, '0')`, '=', barcode.replace(/^0+/, ''))]));
     if (labId) q = q.where('i.ext_lab_id', '=', labId);
     if (code) q = q.where(sql`upper(s.code)`, '=', code.toUpperCase());
@@ -82,13 +83,13 @@ export class LabMailService {
   }
 
   /** ერთი ანალიზის პასუხად მიბმა (ფაილი უკვე საცავშია) */
-  private async link(itemId: string, key: string, name: string, userId: string | null, ctx: AuditContext, via: string) {
-    await this.db.transaction().execute(async (trx) => {
+  private async link(itemId: string, file: { key: string; name: string; mime: string; size: number; sha256: string | null; mailFileId?: string | null }, userId: string | null, ctx: AuditContext, via: string) {
+    return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').select(['status', 'ext_shipment_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it?.ext_shipment_id || !['in_progress', 'resulted'].includes(it.status)) throw new ConflictException('ანალიზი არ ელოდება პასუხს (გაუგზავნელი ან დადასტურებული)');
-      await trx.updateTable('dx_order_items').set({ ext_result_path: key, ext_result_name: name.slice(0, 200), ext_result_at: sql`now()`, ext_result_by: userId,
-        status: 'resulted', resulted_by: userId, resulted_at: sql`now()` }).where('id', '=', itemId).execute();
-      await this.audit.log(ctx, { action: 'EXTERNAL_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { file: name, via } }, trx);
+      const added = await addItemFile(trx, { itemId, key: file.key, filename: file.name, mime: file.mime, size: file.size, sha256: file.sha256, source: 'mail', mailFileId: file.mailFileId, userId });
+      if (added) await this.audit.log(ctx, { action: 'EXTERNAL_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { file: file.name, via } }, trx);
+      return added;
     });
   }
 
@@ -157,7 +158,7 @@ export class LabMailService {
       const rows = await this.db.selectFrom('dx_order_items as i').innerJoin('patients as p', 'p.id', 'i.patient_id').innerJoin('lab_ext_shipments as sh', 'sh.id', 'i.ext_shipment_id')
         .leftJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id')
         .select(['i.id', 'p.id as patient_id', 'p.personal_number', 'p.first_name', 'p.last_name', 'p.birth_date', 'sp.barcode'])
-        .where('i.ext_lab_id', '=', lab.id).where('i.ext_result_at', 'is', null).where('i.status', 'in', ['in_progress', 'resulted'])
+        .where('i.ext_lab_id', '=', lab.id).where('i.status', 'in', ['in_progress', 'resulted'])
         .where('sh.sent_at', '>', sql<Date>`now() - make_interval(days => ${lab.mail_match_window_days})`).execute();
       const low = text.toLowerCase();
       const digits = ` ${text.replace(/[^\d]+/g, ' ')} `;
@@ -179,7 +180,10 @@ export class LabMailService {
       const weak = [...byPatient.values()].filter((e) => e.weak);
       if (weak.length) return R('none', [], `შესაძლოა: ${weak.map((e) => e.name).join(', ')} (მხოლოდ სახელით — დაბადების თარიღი / პ/ნ ვერ ვიპოვე). მიაბით ხელით`, weak.map((e) => ({ name: e.name, how: 'name_only' })));
     }
-    const why = barcode ? `${barcode}${code ? ` / ${code}` : ''}: ამ ლაბორატორიაში გაგზავნილი, პასუხის მომლოდინე ანალიზი არ არის`
+    const validated = barcode ? await this.db.selectFrom('dx_order_items as i').innerJoin('lab_specimens as sp', 'sp.id', 'i.specimen_id').select('i.id')
+      .where('i.ext_lab_id', '=', lab.id).where('i.status', '=', 'validated').where('sp.barcode', '=', barcode).executeTakeFirst() : undefined;
+    const why = validated ? `${barcode}: პასუხი უკვე დადასტურებულია — დამატებითი ფაილისთვის ლაბ. ექიმმა ჯერ გახსნას (შესწორება), შემდეგ მიაბით ხელით`
+      : barcode ? `${barcode}${code ? ` / ${code}` : ''}: ამ ლაბორატორიაში გაგზავნილი, პასუხის მომლოდინე ანალიზი არ არის`
       : pdf ? 'შტრიხკოდი / პაციენტი ვერ ამოვიცანი (ფაილის სახელი, თემა, ფაილის ტექსტი)' : 'შტრიხკოდი ვერ ამოვიცანი; ფაილის ტექსტი ვერ წავიკითხე — მიაბით ხელით';
     return R('none', [], why);
   }
@@ -232,9 +236,20 @@ export class LabMailService {
         continue;
       }
       const r = await this.matchFile(lab, f, p.mailText);
+      const sha = createHash('sha256').update(f.content).digest('hex');
+      const fid = randomUUID();
+      out.push(await this.file(mail.id, f.filename, f.mime, f.content.length, key, r, 'unmatched', [], fid, sha));   // ჯერ ჩანაწერი — ანალიზის ფაილი მას მიუთითებს
       const linked: string[] = [];
-      for (const id of r.item_ids) { try { await this.link(id, key, f.filename, user?.id ?? null, ctx, `${source}:${r.method}`); linked.push(id); } catch { /* სხვამ უკვე მიაბა */ } }
-      out.push(await this.file(mail.id, f.filename, f.mime, f.content.length, key, { ...r, reason: linked.length ? null : r.reason ?? 'მიბმა ვერ მოხერხდა' }, linked.length ? 'attached' : 'unmatched', linked));
+      for (const id of r.item_ids) {
+        try { await this.link(id, { key, name: f.filename, mime: f.mime, size: f.content.length, sha256: sha, mailFileId: fid }, user?.id ?? null, ctx, `${source}:${r.method}`); linked.push(id); }
+        catch { /* სხვამ უკვე დაადასტურა */ }
+      }
+      if (linked.length) {
+        await this.db.updateTable('lab_ext_mail_files').set({ status: 'attached', item_ids: linked, reason: null, match_method: r.method }).where('id', '=', fid).execute();
+        out[out.length - 1] = { ...out[out.length - 1], status: 'attached', items: linked.length, reason: null, method: r.method };
+      } else if (!r.reason) {
+        await this.db.updateTable('lab_ext_mail_files').set({ reason: 'მიბმა ვერ მოხერხდა' }).where('id', '=', fid).execute();
+      }
     }
     const att = out.filter((f) => f.status === 'attached').length; const open = out.filter((f) => f.status === 'unmatched').length;
     const status = !lab ? 'rejected' : att && !open ? 'matched' : att ? 'partial' : 'unmatched';
@@ -243,8 +258,8 @@ export class LabMailService {
     return { mail_id: mail.id, status, duplicate: false, files: out };
   }
   private async file(mailId: string, filename: string, mime: string, size: number, key: string | null,
-    r: { barcode: string | null; code: string | null; method: string; reason: string | null; candidates?: unknown }, status: string, items: string[] = []) {
-    await this.db.insertInto('lab_ext_mail_files').values({ mail_id: mailId, filename, mime, size_bytes: size, storage_path: key, barcode: r.barcode, service_code: r.code, status,
+    r: { barcode: string | null; code: string | null; method: string; reason: string | null; candidates?: unknown }, status: string, items: string[] = [], id?: string, sha?: string) {
+    await this.db.insertInto('lab_ext_mail_files').values({ ...(id ? { id } : {}), sha256: sha ?? null, mail_id: mailId, filename, mime, size_bytes: size, storage_path: key, barcode: r.barcode, service_code: r.code, status,
       reason: r.reason, item_ids: items, match_method: status === 'attached' ? r.method : null, candidates: r.candidates ? JSON.stringify(r.candidates) : null }).execute();
     return { filename, status, barcode: r.barcode, service_code: r.code, items: items.length, reason: r.reason, method: status === 'attached' ? r.method : null };
   }
@@ -274,11 +289,13 @@ export class LabMailService {
   }
   /** ხელით მიბმა: მისაბმელი ფაილი → არჩეული ანალიზ(ებ)ი (გაგზავნილი, პასუხის მომლოდინე) */
   async assign(id: string, itemIds: string[], user: AuthUser, ctx: AuditContext) {
-    const f = await this.db.selectFrom('lab_ext_mail_files').select(['id', 'status', 'storage_path', 'filename', 'item_ids']).where('id', '=', id).executeTakeFirst();
+    const f = await this.db.selectFrom('lab_ext_mail_files').select(['id', 'status', 'storage_path', 'filename', 'item_ids', 'mime', 'size_bytes', 'sha256']).where('id', '=', id).executeTakeFirst();
     if (!f?.storage_path) throw new NotFoundException('ფაილი ვერ მოიძებნა');
     if (f.status !== 'unmatched') throw new ConflictException('ფაილი უკვე დამუშავებულია');
     const done: string[] = [];
-    for (const itemId of itemIds) { await this.link(itemId, f.storage_path, f.filename, user.id, ctx, 'mail-manual'); done.push(itemId); }
+    for (const itemId of itemIds) {
+      await this.link(itemId, { key: f.storage_path, name: f.filename, mime: f.mime, size: f.size_bytes, sha256: f.sha256, mailFileId: f.id }, user.id, ctx, 'mail-manual'); done.push(itemId);
+    }
     await this.db.updateTable('lab_ext_mail_files').set({ status: 'attached', item_ids: done, reason: null, resolved_by: user.id, resolved_at: sql`now()` }).where('id', '=', id).execute();
     await this.refreshMail(id);
     return { id, status: 'attached', items: done.length };
