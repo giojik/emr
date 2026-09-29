@@ -10,6 +10,10 @@ RUN npm run build && npm prune --omit=dev
 # ---- runtime ----
 FROM node:24-alpine
 ENV NODE_ENV=production
+# OCR: გარე ლაბორატორიის სკანირებული პასუხები (ქართული + ლათინური); ქართული ენის პაკეტის გარეშეც აეწყობა (მხოლოდ ლათინური)
+RUN apk add --no-cache poppler-utils tesseract-ocr \
+ && (apk add --no-cache tesseract-ocr-data-kat || echo "tesseract: ქართული ენის პაკეტი ვერ დაყენდა") \
+ && (apk add --no-cache tesseract-ocr-data-eng 2>/dev/null || true)
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist

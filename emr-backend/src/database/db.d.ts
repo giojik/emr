@@ -564,12 +564,56 @@ export interface LabExternalLabs {
   contact_person: string | null;
   created_at: Generated<Timestamp>;
   email: string | null;
+  emails: Generated<string[]>;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  mail_id_regex: string | null;
+  mail_match_patient: Generated<boolean>;
+  mail_match_window_days: Generated<number>;
   name: string;
   note: string | null;
   phone: string | null;
   updated_at: Generated<Timestamp>;
+}
+
+export interface LabExtMail {
+  from_addr: string | null;
+  id: Generated<string>;
+  lab_id: string | null;
+  message_id: string;
+  note: string | null;
+  received_at: Generated<Timestamp>;
+  sent_at: Timestamp | null;
+  source: Generated<string>;
+  status: string;
+  subject: string | null;
+  uploaded_by: string | null;
+}
+
+export interface LabExtMailFiles {
+  barcode: string | null;
+  candidates: Json | null;
+  filename: string;
+  id: Generated<string>;
+  item_ids: Generated<string[]>;
+  mail_id: string;
+  match_method: string | null;
+  mime: string;
+  reason: string | null;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  service_code: string | null;
+  size_bytes: number;
+  status: string;
+  storage_path: string | null;
+}
+
+export interface LabExtMailState {
+  checked_at: Timestamp | null;
+  error: string | null;
+  id: Generated<number>;
+  ok: boolean | null;
+  processed_total: Generated<number>;
 }
 
 export interface LabExtSettlements {
@@ -1057,6 +1101,9 @@ export interface DB {
   lab_blank_images: LabBlankImages;
   lab_blank_templates: LabBlankTemplates;
   lab_blank_versions: LabBlankVersions;
+  lab_ext_mail: LabExtMail;
+  lab_ext_mail_files: LabExtMailFiles;
+  lab_ext_mail_state: LabExtMailState;
   lab_ext_settlements: LabExtSettlements;
   lab_ext_shipments: LabExtShipments;
   lab_external_labs: LabExternalLabs;

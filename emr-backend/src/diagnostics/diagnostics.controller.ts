@@ -19,6 +19,7 @@ import { LabConfigService } from './lab-config.service';
 import { LabIngestService } from '../lab-gateway/lab-ingest.service';
 import { LabInstrumentsController } from './lab-instruments.controller';
 import { LabExternalController, LabExternalService, LabStatsService } from './lab-external';
+import { LabMailController, LabMailService } from './lab-mail';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -193,7 +194,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

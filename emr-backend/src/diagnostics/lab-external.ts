@@ -1,7 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res,
   StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsOptional, IsString, IsUUID, Length, Matches, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 import type { Request, Response } from 'express';
 import { sql } from 'kysely';
 import { memoryStorage } from 'multer';
@@ -34,8 +34,10 @@ export class LabExternalService {
     if (!all) q = q.where('l.is_active', '=', true);
     return q.execute();
   }
-  async saveLab(id: string | null, dto: { name?: string; contact_person?: string | null; phone?: string | null; email?: string | null; note?: string | null; is_active?: boolean }, ctx: AuditContext) {
-    const vals = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null : v]));
+  async saveLab(id: string | null, dto: { name?: string; contact_person?: string | null; phone?: string | null; email?: string | null; note?: string | null; is_active?: boolean; emails?: string[]; mail_id_regex?: string | null; mail_match_patient?: boolean; mail_match_window_days?: number }, ctx: AuditContext) {
+    if (dto.mail_id_regex) { try { new RegExp(dto.mail_id_regex, 'u'); } catch { throw new BadRequestException('შაბლონი (regex) არასწორია'); } }
+    const vals = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null
+      : k === 'emails' ? [...new Set((v as string[]).map((e) => e.trim().toLowerCase()).filter(Boolean))] : v]));
     try {
       if (id) {
         const r = await this.db.updateTable('lab_external_labs').set(vals).where('id', '=', id).returningAll().executeTakeFirst();
@@ -134,10 +136,14 @@ export class LabExternalService {
     };
     row(heads, true);
     items.forEach((it, n) => row([String(n + 1), it.barcode ?? '', `${it.last_name} ${it.first_name}${it.personal_number ? `\n${it.personal_number}` : ''}`, d(it.birth_date),
-      it.gender === 'male' ? 'მ' : it.gender === 'female' ? 'მდ' : '', it.service_name, [it.specimen_type, it.container].filter(Boolean).join(', ')]));
+      it.gender === 'male' ? 'მ' : it.gender === 'female' ? 'მდ' : '', `${it.service_name}\n${it.service_code}`, [it.specimen_type, it.container].filter(Boolean).join(', ')]));
     y += 14; doc.font('R').fontSize(10).text(`სულ: ${items.length} სინჯი${sh.note ? ` · ${sh.note}` : ''}`, L, y); y = doc.y + 40;
     doc.text(`გადასცა: ${sh.sent_by_name ?? ''}  ____________________`, L, y); doc.text('ჩაიბარა: ____________________  ____________________', L + 280, y);
     doc.fontSize(8).fillColor('#777').text('(სახელი, გვარი, ხელმოწერა, დრო)', L + 280, doc.y + 2);
+    const mailbox = loadEnv().IMAP_USER;
+    if (mailbox?.includes('@')) {
+      doc.fontSize(8.5).fillColor('#333').text(`პასუხი ელ-ფოსტით: ${mailbox} · თემა „EMR <შტრიხკოდი>“ · ფაილი <შტრიხკოდი>.pdf (ყველა ანალიზი) ან <შტრიხკოდი>_<ანალიზის კოდი>.pdf (კოდი — ცხრილში, ანალიზის ქვეშ)`, L, 800, { width: 515 });
+    }
     doc.end();
     return done;
   }
@@ -262,7 +268,11 @@ export class LabStatsService {
 // ======================================================================= კონტროლერი
 class LabDto { @IsOptional() @IsString() @Length(2, 150) name?: string; @IsOptional() @IsString() @MaxLength(150) contact_person?: string | null;
   @IsOptional() @IsString() @MaxLength(50) phone?: string | null; @IsOptional() @IsEmail() email?: string | null; @IsOptional() @IsString() @MaxLength(500) note?: string | null;
-  @IsOptional() @IsBoolean() is_active?: boolean }
+  @IsOptional() @IsBoolean() is_active?: boolean;
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsEmail({}, { each: true }) emails?: string[];
+  @IsOptional() @IsString() @MaxLength(200) mail_id_regex?: string | null;
+  @IsOptional() @IsBoolean() mail_match_patient?: boolean;
+  @IsOptional() @IsInt() @Min(1) @Max(365) mail_match_window_days?: number }
 class ShipDto { @IsUUID() lab_id: string; @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @IsUUID('4', { each: true }) item_ids: string[];
   @IsOptional() @IsString() @MaxLength(150) courier?: string; @IsOptional() @IsString() @MaxLength(500) note?: string }
 class SettleDto { @IsUUID() lab_id: string; @Matches(/^\d{4}-(0[1-9]|1[0-2])$/) month: string; @IsOptional() @IsString() @MaxLength(60) invoice_no?: string;

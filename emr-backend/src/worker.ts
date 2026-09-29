@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { sql } from 'kysely';
 import { loadEnv } from './config/env';
 import { KYSELY, type Database } from './database/database.module';
+import { LabMailPoller } from './diagnostics/lab-mail';
 import { LabAlertsService } from './lab-gateway/lab-alerts.service';
 import { WorkerModule } from './worker.module';
 
@@ -23,6 +24,8 @@ async function bootstrap() {
   }, HEARTBEAT_MS);
   // emr-lab-gateway-ის პულსი: გაჩერდა → გაფრთხილება (SMS + ელ-ფოსტა); აღდგა → შეტყობინება
   const alerts = app.get(LabAlertsService);
+  // გარე ლაბორატორიის პასუხები ელ-ფოსტით (IMAP) — თუ კონფიგურირებულია
+  app.get(LabMailPoller).start();
   const gwTimer = setInterval(() => void alerts.evaluateGateway().catch((e) => log.error(`gateway-ის შემოწმება: ${(e as Error).message}`)), 60_000);
   process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); });
   process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); });

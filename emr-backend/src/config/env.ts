@@ -34,6 +34,18 @@ const EnvSchema = z.object({
   SMS_API_URL: z.string().url().optional().or(z.literal('').transform(() => undefined)),
   SMS_API_TOKEN: z.string().optional(),
 
+  // --- გარე ლაბორატორიის პასუხები ელ-ფოსტით (IMAP, emr-worker; ცარიელი IMAP_HOST = გამორთული) ---
+  IMAP_HOST: z.string().optional().transform((v) => v || undefined),
+  IMAP_PORT: z.coerce.number().int().positive().default(993),
+  IMAP_SECURE: bool(true),
+  IMAP_TLS_VERIFY: bool(true),
+  IMAP_USER: z.string().optional().transform((v) => v || undefined),
+  IMAP_PASS: z.string().optional(),
+  IMAP_MAILBOX: z.string().default('INBOX'),
+  IMAP_DONE_MAILBOX: z.string().default('EMR-Processed'),
+  LAB_MAIL_POLL_SECONDS: z.coerce.number().int().min(30).max(3600).default(120),
+  LAB_MAIL_OCR: bool(true),   // სკანირებული PDF / სურათი → ტექსტი (Tesseract)
+
   // --- JWT / სესიები ---
   JWT_SECRET: z.string().min(32, 'JWT_SECRET მინიმუმ 32 სიმბოლო (openssl rand -hex 32)'),
   JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),     // 15 წთ

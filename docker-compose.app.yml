@@ -28,6 +28,17 @@ x-backend-env: &backend-env
   SMTP_FROM: ${SMTP_FROM:-}
   SMS_API_URL: ${SMS_API_URL:-}
   SMS_API_TOKEN: ${SMS_API_TOKEN:-}
+  # გარე ლაბორატორიის პასუხები ელ-ფოსტით (IMAP) — ცარიელი IMAP_HOST = გამორთული
+  IMAP_HOST: ${IMAP_HOST:-}
+  IMAP_PORT: ${IMAP_PORT:-993}
+  IMAP_SECURE: ${IMAP_SECURE:-true}
+  IMAP_TLS_VERIFY: ${IMAP_TLS_VERIFY:-true}
+  IMAP_USER: ${IMAP_USER:-}
+  IMAP_PASS: ${IMAP_PASS:-}
+  IMAP_MAILBOX: ${IMAP_MAILBOX:-INBOX}
+  IMAP_DONE_MAILBOX: ${IMAP_DONE_MAILBOX:-EMR-Processed}
+  LAB_MAIL_POLL_SECONDS: ${LAB_MAIL_POLL_SECONDS:-120}
+  LAB_MAIL_OCR: ${LAB_MAIL_OCR:-true}
 
 services:
   # ერთჯერადი: migration-ები backend-ის გაშვებამდე
