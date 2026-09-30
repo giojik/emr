@@ -578,6 +578,19 @@ export interface LabBlankVersions {
   version: number;
 }
 
+export interface LabDeliverySettings {
+  auto_send: Generated<boolean>;
+  email_body: Generated<string>;
+  email_subject: Generated<string>;
+  enabled: Generated<boolean>;
+  encrypt_pdf: Generated<boolean>;
+  id: Generated<number>;
+  sms_email_sent: Generated<string>;
+  sms_ready: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface LabExternalLabs {
   contact_person: string | null;
   created_at: Generated<Timestamp>;
@@ -892,6 +905,21 @@ export interface LabReferenceRanges {
   sex: string | null;
 }
 
+export interface LabResultDeliveries {
+  attachments: Generated<number>;
+  channel: string;
+  created_at: Generated<Timestamp>;
+  encounter_id: string;
+  error: string | null;
+  id: Generated<Int8>;
+  item_ids: Generated<string[]>;
+  patient_id: string;
+  recipient: string;
+  sent_by: string | null;
+  status: string;
+  trigger: string;
+}
+
 export interface LabResultImages {
   code: string;
   created_at: Generated<Timestamp>;
@@ -1113,6 +1141,7 @@ export interface Patients {
   citizenship: Generated<string>;
   created_at: Generated<Timestamp>;
   death_datetime: Timestamp | null;
+  email: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   first_name: string;
@@ -1123,6 +1152,8 @@ export interface Patients {
   passport_number: string | null;
   personal_number: string | null;
   phone_number: string;
+  result_email: Generated<boolean>;
+  result_sms: Generated<boolean>;
   updated_at: Generated<Timestamp>;
 }
 
@@ -1269,6 +1300,7 @@ export interface DB {
   lab_blank_images: LabBlankImages;
   lab_blank_templates: LabBlankTemplates;
   lab_blank_versions: LabBlankVersions;
+  lab_delivery_settings: LabDeliverySettings;
   lab_ext_mail: LabExtMail;
   lab_ext_mail_files: LabExtMailFiles;
   lab_ext_mail_state: LabExtMailState;
@@ -1293,6 +1325,7 @@ export interface DB {
   lab_qc_targets: LabQcTargets;
   lab_qc_violations: LabQcViolations;
   lab_reference_ranges: LabReferenceRanges;
+  lab_result_deliveries: LabResultDeliveries;
   lab_result_images: LabResultImages;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;

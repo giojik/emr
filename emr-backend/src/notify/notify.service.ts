@@ -21,12 +21,12 @@ export class NotifyService {
 
   configured() { return { email: !!this.transport, sms: !!this.env.SMS_API_URL }; }
 
-  async email(to: string[], subject: string, text: string): Promise<NotifyResult> {
+  async email(to: string[], subject: string, text: string, attachments: { filename: string; content: Buffer; contentType?: string }[] = []): Promise<NotifyResult> {
     const r: NotifyResult = { sent: [], errors: [] };
     if (!to.length) return r;
     if (!this.transport) { r.errors.push('ელ-ფოსტა არ არის კონფიგურირებული (SMTP_HOST)'); return r; }
     try {
-      await this.transport.sendMail({ from: this.env.SMTP_FROM || this.env.SMTP_USER, to: to.join(', '), subject, text });
+      await this.transport.sendMail({ from: this.env.SMTP_FROM || this.env.SMTP_USER, to: to.join(', '), subject, text, attachments });
       r.sent.push(...to);
     } catch (e) { r.errors.push(`ელ-ფოსტა: ${(e as Error).message}`); this.log.warn((e as Error).message); }
     return r;

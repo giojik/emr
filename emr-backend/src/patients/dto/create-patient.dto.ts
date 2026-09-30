@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsIn, IsISO8601, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsISO8601, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import type { GenderType } from '../../database/db';
 
 export class CreatePatientDto {
@@ -25,6 +25,10 @@ export class CreatePatientDto {
   @IsOptional() @IsString() @MaxLength(5) blood_group?: string;
   @IsOptional() @IsString() @MaxLength(150) emergency_contact_name?: string;
   @IsOptional() @IsString() @MaxLength(50) emergency_contact_phone?: string;
+  // ლაბ. პასუხის მიწოდება (თანხმობა): ელ-ფოსტა — დაშიფრული PDF; SMS — შეტყობინება
+  @IsOptional() @IsEmail() @MaxLength(150) email?: string | null;
+  @IsOptional() @IsBoolean() result_email?: boolean;
+  @IsOptional() @IsBoolean() result_sms?: boolean;
   @IsOptional() @IsString() @MaxLength(500) address?: string;          // აეწყობა ავტომატურად, თუ სტრუქტურირებულია
 
   // სტრუქტურირებული მისამართი

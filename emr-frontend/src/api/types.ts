@@ -16,6 +16,7 @@ export interface Allergy {
   is_active?: boolean; created_at?: string;
 }
 export interface Patient extends PatientListItem {
+  email?: string | null; result_email?: boolean; result_sms?: boolean;
   citizenship: string; blood_group: string | null; address: string | null;
   address_unit_code: string | null; address_district_code: string | null; address_village: string | null; address_line: string | null; address_country: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; is_deceased: boolean;

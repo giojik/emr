@@ -22,6 +22,7 @@ import { LabExternalController, LabExternalService, LabStatsService } from './la
 import { LabMailController, LabMailService } from './lab-mail';
 import { LabQcController, LabQcService } from './lab-qc';
 import { LabMicroController, LabMicroService } from './lab-micro';
+import { LabDeliveryController, LabDeliveryService } from './lab-delivery';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -124,7 +125,7 @@ const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'applica
 export class DiagnosticsController {
   private readonly tz = loadEnv().CLINIC_TZ;
   constructor(private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService, @InjectDb() private readonly db: Database,
-              private readonly lab: LabConfigService) {}
+              private readonly lab: LabConfigService, private readonly delivery: LabDeliveryService) {}
 
   // ---- კატალოგი
   @Get('dx/catalog') catalog(@Query('section') section?: string, @Query('search') search?: string, @Query('include_inactive') inc?: string) {
@@ -185,7 +186,11 @@ export class DiagnosticsController {
     return this.dx.saveResults(id, dto.values, u, auditCtx(req), { pregnancy_weeks: dto.pregnancy_weeks, lab_method_id: dto.lab_method_id });
   }
   @Post('lab/items/:id/validate') @HttpCode(200) @Roles('admin', 'lab_doctor')
-  validate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValidateDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.validate(id, u, auditCtx(req), dto?.qc_reason); }
+  async validate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValidateDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
+    const r = await this.dx.validate(id, u, auditCtx(req), dto?.qc_reason);
+    void this.delivery.afterValidate(id, auditCtx(req));   // პასუხის მიწოდება პაციენტს (თუ ჩართულია) — ფონურად
+    return r;
+  }
   @Post('lab/items/:id/reopen') @HttpCode(200) @Roles('admin', 'lab_doctor')
   reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.reopen(id, dto.reason, auditCtx(req)); }
 
@@ -198,7 +203,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController, LabDeliveryController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService, LabDeliveryService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

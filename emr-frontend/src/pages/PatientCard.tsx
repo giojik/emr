@@ -98,11 +98,12 @@ export default function PatientCard() {
 function EditPatientDialog({ patient: p, onClose }: { patient: Patient; onClose: () => void }) {
   const qc = useQueryClient();
   const foreign = !p.personal_number;
-  const [f, setF] = useState({ first_name: p.first_name, last_name: p.last_name, birth_date: p.birth_date, phone_number: p.phone_number, blood_group: p.blood_group ?? '', emergency_contact_name: p.emergency_contact_name ?? '', emergency_contact_phone: p.emergency_contact_phone ?? '' });
+  const [f, setF] = useState({ first_name: p.first_name, last_name: p.last_name, birth_date: p.birth_date, phone_number: p.phone_number, blood_group: p.blood_group ?? '', emergency_contact_name: p.emergency_contact_name ?? '', emergency_contact_phone: p.emergency_contact_phone ?? '',
+    email: p.email ?? '', result_email: !!p.result_email, result_sms: !!p.result_sms });
   const [addr, setAddr] = useState({ address_unit_code: p.address_unit_code ?? '', address_district_code: p.address_district_code ?? '', address_village: p.address_village ?? '', address_line: p.address_line ?? (p.address_unit_code ? '' : p.address ?? ''), address_country: p.address_country ?? '' });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const m = useMutation({
-    mutationFn: () => api(`/patients/${p.id}`, { method: 'PATCH', body: { ...f, blood_group: f.blood_group || null, emergency_contact_name: f.emergency_contact_name || null, emergency_contact_phone: f.emergency_contact_phone || null, ...addressPayload(addr, foreign) } }),
+    mutationFn: () => api(`/patients/${p.id}`, { method: 'PATCH', body: { ...f, blood_group: f.blood_group || null, emergency_contact_name: f.emergency_contact_name || null, emergency_contact_phone: f.emergency_contact_phone || null, email: f.email.trim() || null, ...addressPayload(addr, foreign) } }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['patient', p.id] }); onClose(); },
   });
   return (
@@ -115,6 +116,12 @@ function EditPatientDialog({ patient: p, onClose }: { patient: Patient; onClose:
         <Field label="ტელეფონი" htmlFor="eph"><input id="eph" className="input mono" value={f.phone_number} onChange={set('phone_number')} required /></Field>
         <Field label="საგანგებო კონტაქტი" htmlFor="eec"><input id="eec" className="input" value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></Field>
         <Field label="მისი ტელეფონი" htmlFor="eecp"><input id="eecp" className="input mono" value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></Field>
+        <div style={{ gridColumn: '1 / -1' }} className="stack">
+          <Field label="ელ-ფოსტა" htmlFor="eem" hint="ლაბ. პასუხის მიწოდებისთვის (დაშიფრული PDF)"><input id="eem" className="input" type="email" value={f.email} onChange={set('email')} placeholder="name@example.com" /></Field>
+          <div className="row small" style={{ gap: 14 }}><span className="muted">პასუხის მიწოდება (თანხმობა):</span>
+            <label className="row"><input type="checkbox" checked={f.result_email} onChange={(e) => setF({ ...f, result_email: e.target.checked })} /> ელ-ფოსტით (PDF)</label>
+            <label className="row"><input type="checkbox" checked={f.result_sms} onChange={(e) => setF({ ...f, result_sms: e.target.checked })} /> SMS შეტყობინება</label></div>
+        </div>
         <div style={{ gridColumn: '1 / -1' }}><h3>მისამართი</h3></div>
         <AddressFields value={addr} onChange={setAddr} foreign={foreign} />
         <div style={{ gridColumn: '1 / -1' }}><span className="hint">ცვლილება აუდიტში იწერება ძველი და ახალი მნიშვნელობით.</span><ErrorBox error={m.error} /></div>

@@ -10,7 +10,7 @@ import { dateGe } from '../lib/format';
 export default function PatientNew() {
   const nav = useNavigate();
   const [foreign, setForeign] = useState(false);
-  const [f, setF] = useState({ personal_number: '', passport_number: '', citizenship: 'GEO', first_name: '', last_name: '', birth_date: '', gender: '', phone_number: '', blood_group: '', emergency_contact_name: '', emergency_contact_phone: '' });
+  const [f, setF] = useState({ personal_number: '', passport_number: '', citizenship: 'GEO', first_name: '', last_name: '', birth_date: '', gender: '', phone_number: '', blood_group: '', emergency_contact_name: '', emergency_contact_phone: '', email: '', result_email: false, result_sms: false });
   const [addr, setAddr] = useState(emptyAddress());
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
@@ -21,8 +21,8 @@ export default function PatientNew() {
 
   const m = useMutation({
     mutationFn: () => {
-      const body: Record<string, string> = {};
-      for (const [k, v] of Object.entries(f)) if (v.trim()) body[k] = v.trim();
+      const body: Record<string, string | boolean> = {};
+      for (const [k, v] of Object.entries(f)) { if (typeof v === 'boolean') body[k] = v; else if (v.trim()) body[k] = v.trim(); }
       if (foreign) delete body.personal_number; else delete body.passport_number;
       const a = Object.fromEntries(Object.entries(addressPayload(addr, foreign)).filter(([, v]) => v));
       return api<Patient>('/patients', { body: { ...body, ...a } });
@@ -73,6 +73,12 @@ export default function PatientNew() {
           <AddressFields value={addr} onChange={setAddr} foreign={foreign} />
           <Field label="საგანგებო კონტაქტი" htmlFor="ec" hint="სახელი, კავშირი"><input id="ec" className="input" value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></Field>
           <Field label="მისი ტელეფონი" htmlFor="ecp"><input id="ecp" className="input mono" type="tel" value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></Field>
+        <div style={{ gridColumn: '1 / -1' }} className="stack">
+          <Field label="ელ-ფოსტა" htmlFor="nem" hint="ლაბ. პასუხის მიწოდებისთვის (დაშიფრული PDF)"><input id="nem" className="input" type="email" value={f.email} onChange={set('email')} placeholder="name@example.com" /></Field>
+          <div className="row small" style={{ gap: 14 }}><span className="muted">პასუხის მიწოდება (თანხმობა):</span>
+            <label className="row"><input type="checkbox" checked={f.result_email} onChange={(e) => setF({ ...f, result_email: e.target.checked })} /> ელ-ფოსტით (PDF)</label>
+            <label className="row"><input type="checkbox" checked={f.result_sms} onChange={(e) => setF({ ...f, result_sms: e.target.checked })} /> SMS შეტყობინება</label></div>
+        </div>
 
           {dup.data && dup.data.length > 0 && (
             <div className="alert warn" style={{ gridColumn: '1 / -1' }}>

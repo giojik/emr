@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CumulativeModal } from '../lab/Cumulative';
 import { MicroView } from '../lab/Micro';
+import { DeliveryDialog } from '../lab/Delivery';
 import { api, ApiError, openBlob } from '../../api/client';
 import type { AllergyCheck, DxItem, DxSection, DxService } from '../../api/types';
 import { DxStatusChip, FlagBadge } from '../../components/DxStatusChip';
@@ -15,6 +16,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
   const [expanded, setExpanded] = useState<string | null>(null);
   const [cum, setCum] = useState<{ service_id?: string; name: string } | null>(null);
   const [micro, setMicro] = useState<{ id: string; name: string } | null>(null);
+  const [dlv, setDlv] = useState(false);
   const q = useQuery({ queryKey: ['dx-items', encounterId], queryFn: () => api<DxItem[]>(`/encounters/${encounterId}/dx-orders`), refetchInterval: 30_000 });
   const cancel = useMutation({
     mutationFn: (id: string) => api(`/dx-orders/${id}/cancel`, { body: { reason: 'ექიმის გადაწყვეტილებით' } }),
@@ -30,6 +32,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
         <h2 className="grow">დიაგნოსტიკა</h2>
         {hasValidatedLab && <button className="btn sm" type="button" onClick={() => report.mutate()}>ლაბ. ბლანკი</button>}
         {items[0]?.patient_id && <button className="btn sm" type="button" onClick={() => setCum({ name: 'ყველა ანალიზი' })}>ლაბ. დინამიკა</button>}
+        {hasValidatedLab && <button className="btn sm" type="button" onClick={() => setDlv(true)}>პასუხი პაციენტს</button>}
         {canWrite && <button className="btn sm primary" type="button" onClick={() => setOpen(true)}>+ კვლევა</button>}
       </div>
       {!items.length && <span className="muted small">კვლევა არ არის შეკვეთილი.</span>}
@@ -96,6 +99,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
       })}
       <ErrorBox error={q.error ?? cancel.error ?? report.error} />
       {open && <OrderDialog encounterId={encounterId} onClose={() => setOpen(false)} />}
+      {dlv && <DeliveryDialog encounterId={encounterId} onClose={() => setDlv(false)} />}
       {micro && <MicroView id={micro.id} title={micro.name} onClose={() => setMicro(null)} />}
       {cum && items[0] && <CumulativeModal patientId={items[0].patient_id} serviceId={cum.service_id} title={`ლაბორატორიული დინამიკა — ${cum.name}`} onClose={() => setCum(null)} />}
     </section>
