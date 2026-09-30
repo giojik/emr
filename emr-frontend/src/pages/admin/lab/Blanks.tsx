@@ -13,7 +13,7 @@ interface BlankSettings {
   paper: 'A4' | 'A5'; margin_mm: number; font_size: number; accent_color: string;
   header: { logo_image_id: string | null; logo_position: 'left' | 'center' | 'right'; logo_height_mm: number; show_clinic: boolean; extra_lines: string[]; title: string; subtitle: string };
   patient_fields: PatientField[]; layout: 'table' | 'two_column' | 'text'; group_headers: boolean; columns: Column[];
-  flag_style: 'words' | 'arrows' | 'letters'; highlight_abnormal: boolean; show_sample_info: boolean; show_service_comment: boolean;
+  flag_style: 'words' | 'arrows' | 'letters'; highlight_abnormal: boolean; show_sample_info: boolean; show_service_comment: boolean; show_graphics: boolean;
   footer: { note: string; show_validator: boolean; signer_title: string; signature_image_id: string | null; stamp_image_id: string | null; show_qr: boolean; show_page_numbers: boolean; legend: boolean };
 }
 interface BlankRow { id: string; name: string; is_default: boolean; is_active: boolean; current_version: number; version_at: string; version_by: string | null; groups: string[]; services: number }
@@ -159,6 +159,7 @@ function Editor({ id, canEdit, onDefault }: { id: string; canEdit: boolean; onDe
               <Check label="ჯგუფების სათაურები (ჰემატოლოგია, ბიოქიმია…)" v={s.group_headers} on={(v) => up({ group_headers: v })} />
               <Check label="ნიმუშის ინფორმაცია (შტრიხკოდი, აღება, მიღება)" v={s.show_sample_info} on={(v) => up({ show_sample_info: v })} />
               <Check label="ანალიზის კომენტარი (კატალოგიდან)" v={s.show_service_comment} on={(v) => up({ show_service_comment: v })} />
+              <Check label="ანალიზატორის გრაფიკა (ჰისტოგრამები, სურათები)" v={s.show_graphics} on={(v) => up({ show_graphics: v })} />
             </Section>
             <Section title="ძირი">
               <Field label="შენიშვნა" htmlFor="bfn" hint="მაგ. „შედეგი ინტერპრეტაციას საჭიროებს მკურნალი ექიმის მიერ“"><textarea id="bfn" className="textarea" rows={2} value={s.footer.note} onChange={(e) => upF({ note: e.target.value })} /></Field>

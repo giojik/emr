@@ -4,6 +4,10 @@ import { AuditService, type AuditContext } from '../audit/audit.service';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
+import { StorageService } from '../storage/storage.service';
+import { detectGraphic, type Graphic } from './text';
+import { LabQcService } from '../diagnostics/lab-qc';
+import { randomUUID } from 'node:crypto';
 
 export interface IncomingResult { barcode: string; code: string; value: string; unit: string; flags: string; status: string; measured_at: Date | null; qc: boolean }
 export interface OrderInfo { barcode: string; specimen_id: string; patient_id: string; name: string | null; birth: string | null; sex: string | null; priority: 'R' | 'S'; specimen: string; codes: string[] }
@@ -20,7 +24,8 @@ const OPEN = ['collected', 'in_progress', 'resulted'] as const;
  */
 @Injectable()
 export class LabIngestService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly dx: DiagnosticsService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly dx: DiagnosticsService, private readonly storage: StorageService,
+              private readonly qc: LabQcService) {}
 
   // =============================================================== სინჯარა შტრიხკოდით (ანალიზატორი ხშირად ნულებს უმატებს წინ)
   private specimen(barcode: string) {
@@ -32,19 +37,82 @@ export class LabIngestService {
 
   // =============================================================== შედეგები
   /** ახალი შედეგები ანალიზატორიდან: ინახება და მაშინვე მუშავდება. QC — ცალკე (არ ებმება პაციენტს). */
-  async ingest(instrumentId: string, messageId: bigint | number | string | null, results: IncomingResult[]) {
-    if (!results.length) return { applied: 0, unmatched: 0 };
+  async ingest(instrumentId: string, messageId: bigint | number | string | null, all: IncomingResult[]) {
+    // ჰისტოგრამები / სურათები — ცალკე (lab_result_images), რიცხვითი შედეგების შემდეგ
+    const graphics: Graphic[] = []; const results: IncomingResult[] = [];
+    for (const r of all) { const g = r.qc ? null : detectGraphic(r.value); if (g) graphics.push({ ...g, barcode: r.barcode, code: r.code }); else results.push(r); }
+    const res = results.length ? await this.ingestResults(instrumentId, messageId, results) : { applied: 0, unmatched: 0, items: [] as { barcode: string; item_id: string }[] };
+    const g = graphics.length ? await this.attachGraphics(instrumentId, graphics, res.items) : 0;
+    return { ...res, graphics: g };
+  }
+  private async ingestResults(instrumentId: string, messageId: bigint | number | string | null, all: IncomingResult[]) {
+    // QC: ანალიზატორის QC ნიშანი ან QC მასალის შტრიხკოდი → ხარისხის კონტროლი (პაციენტს არ ებმება)
+    const qcRows: IncomingResult[] = []; const results: IncomingResult[] = [];
+    for (const r of all) (r.qc || (r.barcode && await this.qc.isQcBarcode(r.barcode)) ? qcRows : results).push(r);
+    if (qcRows.length) await this.ingestQc(instrumentId, messageId, qcRows);
+    if (!results.length) return { applied: 0, unmatched: 0, items: [] as { barcode: string; item_id: string }[] };
     const rows = await this.db.insertInto('lab_instrument_results').values(results.map((r) => ({
       instrument_id: instrumentId, message_id: messageId === null ? null : String(messageId), barcode: r.barcode || null, code: r.code || '?', value: r.value, unit: r.unit || null,
       flags: r.flags || null, result_status: r.status || null, measured_at: r.measured_at,
-      status: r.qc ? 'dismissed' : 'pending', reason: r.qc ? 'QC (ხარისხის კონტროლი)' : null, processed_at: r.qc ? sql<Date>`now()` : null,
+      status: 'pending', reason: null, processed_at: null,
     }))).returning('id').execute();
     return this.process(rows.map((r) => String(r.id)));
   }
 
+  /** QC შედეგები: ჩანაწერი (status = qc) → სამიზნე (მასალის შტრიხკოდი × კომპონენტი × ეს ანალიზატორი) → Westgard */
+  private async ingestQc(instrumentId: string, messageId: bigint | number | string | null, rows: IncomingResult[]) {
+    const ins = await this.db.selectFrom('lab_instruments as i').innerJoin('lab_methods as m', 'm.id', 'i.method_id').select(['i.method_id', 'm.name']).where('i.id', '=', instrumentId).executeTakeFirstOrThrow();
+    const ctx: AuditContext = { userId: null, userAgent: `emr-lab-gateway: ${ins.name}` };
+    for (const r of rows) {
+      const map = await this.db.selectFrom('lab_instrument_codes').select('analyte_id').where('instrument_id', '=', instrumentId).where(sql`upper(code)`, '=', r.code.toUpperCase()).executeTakeFirst();
+      const n = Number((r.value ?? '').replace(',', '.'));
+      let reason: string;
+      const row = await this.db.insertInto('lab_instrument_results').values({ instrument_id: instrumentId, message_id: messageId === null ? null : String(messageId), barcode: r.barcode || null,
+        code: r.code || '?', value: r.value, unit: r.unit || null, flags: r.flags || null, result_status: r.status || null, measured_at: r.measured_at, status: 'qc', processed_at: sql<Date>`now()` })
+        .returning('id').executeTakeFirstOrThrow();
+      if (!map?.analyte_id) reason = `QC: კოდი „${r.code}“ რუკაში არ არის`;
+      else if (!Number.isFinite(n)) reason = `QC: არარიცხვითი მნიშვნელობა „${r.value}“`;
+      else {
+        const q = await this.qc.fromInstrument(ins.method_id, r.barcode, map.analyte_id, n, r.measured_at, String(row.id), ctx);
+        reason = q ? `QC ${q.status === 'accept' ? 'მიღებულია' : q.status === 'warn' ? 'გაფრთხილება' : 'უარყოფილია'} (z = ${q.z})${q.violations.length ? ` · ${q.violations.join(', ')}` : ''}`
+          : `QC: სამიზნე არ არის განსაზღვრული (მასალა ${r.barcode || '?'} × ${r.code} × ${ins.name})`;
+      }
+      await this.db.updateTable('lab_instrument_results').set({ reason, analyte_id: map?.analyte_id ?? null }).where('id', '=', row.id).execute();
+    }
+  }
+
+  /** გრაფიკა → შეკვეთა: იმავე შეტყობინების შედეგების შეკვეთა; თორემ — სინჯარის ღია შეკვეთა, რომლის კვლევაც ამ ანალიზატორის რუკაშია */
+  private async attachGraphics(instrumentId: string, graphics: Graphic[], touched: { barcode: string; item_id: string }[]) {
+    let n = 0;
+    for (const g of graphics) {
+      let itemId = touched.find((t) => t.barcode === g.barcode)?.item_id;
+      if (!itemId && g.barcode) {
+        const sp = await this.specimen(g.barcode);
+        if (sp) {
+          const it = await this.db.selectFrom('dx_order_items as i').select('i.id').where('i.specimen_id', '=', sp.id).where('i.section', '=', 'lab').where('i.status', 'in', [...OPEN])
+            .orderBy(sql`EXISTS (SELECT 1 FROM lab_instrument_codes c LEFT JOIN lab_analytes a ON a.id = c.analyte_id WHERE c.instrument_id = ${instrumentId} AND (c.service_id = i.service_id OR a.service_id = i.service_id))`, 'desc')
+            .orderBy('i.ordered_at').executeTakeFirst();
+          itemId = it?.id;
+        }
+      }
+      if (!itemId) continue;
+      let key: string | null = null;
+      if (g.kind === 'image' && g.data) {
+        key = `lab-images/${itemId}/${randomUUID()}.${g.mime === 'image/png' ? 'png' : g.mime === 'image/jpeg' ? 'jpg' : 'bmp'}`;
+        await this.storage.put(key, g.data, g.mime ?? 'application/octet-stream');
+      }
+      const vals = { instrument_id: instrumentId, title: g.code, kind: g.kind, mime: g.mime ?? null, storage_path: key, points: g.points ? JSON.stringify(g.points) : null, created_at: sql<Date>`now()` };
+      await this.db.insertInto('lab_result_images').values({ order_item_id: itemId, code: g.code, ...vals })
+        .onConflict((oc) => oc.expression(sql`order_item_id, upper(code)`).doUpdateSet(vals)).execute();
+      n++;
+    }
+    return n;
+  }
+
   /** მიბმა: შტრიხკოდი → სინჯარა → კოდი → კომპონენტი → შეკვეთა; შემდეგ saveResults თითო შეკვეთაზე */
   async process(ids: string[], ctxUser: AuthUser | null = null) {
-    if (!ids.length) return { applied: 0, unmatched: 0 };
+    const touched: { barcode: string; item_id: string }[] = [];
+    if (!ids.length) return { applied: 0, unmatched: 0, items: touched };
     const rows = await this.db.selectFrom('lab_instrument_results as r').innerJoin('lab_instruments as ins', 'ins.id', 'r.instrument_id')
       .innerJoin('lab_methods as m', 'm.id', 'ins.method_id')
       .select(['r.id', 'r.instrument_id', 'r.barcode', 'r.code', 'r.value', 'r.unit', 'r.result_status', 'ins.method_id', 'm.name as instrument_name', 'm.is_active as method_active'])
@@ -83,6 +151,7 @@ export class LabIngestService {
       }
       const prev = await this.db.selectFrom('lab_results').select('id').where('order_item_id', '=', it.id).where('analyte_id', '=', map.analyte_id).executeTakeFirst();
       const b = batches.get(it.id) ?? { instrument_id: r.instrument_id, method_id: r.method_id, name: r.instrument_name, values: [], rows: [] };
+      if (!touched.some((x) => x.item_id === it.id)) touched.push({ barcode: r.barcode, item_id: it.id });
       b.values = [...b.values.filter((v) => v.analyte_id !== map.analyte_id), { analyte_id: map.analyte_id, value }];
       b.rows.push({ id: String(r.id), analyte_id: map.analyte_id, rerun: !!prev });
       batches.set(it.id, b);
@@ -100,7 +169,7 @@ export class LabIngestService {
         for (const x of b.rows) await fail(x.id, (e as Error).message);
       }
     }
-    return { applied, unmatched };
+    return { applied, unmatched, items: touched };
   }
 
   /** დასამუშავებელი → ხელახლა (მაგ. რუკის შესწორების ან სინჯარის მიღების შემდეგ) */

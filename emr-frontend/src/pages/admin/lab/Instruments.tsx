@@ -12,7 +12,7 @@ export interface InstrumentRow {
   is_enabled: boolean | null; order_mode: string | null; status: string | null; status_at: string | null; peer: string | null; last_message_at: string | null; last_error: string | null;
   codes: number | string | null; unmatched: number | string | null;
 }
-interface Instrument { id: string; protocol: 'astm' | 'hl7'; conn_mode: 'client' | 'server'; host: string | null; port: number; is_enabled: boolean; order_mode: 'none' | 'query' | 'push';
+interface Instrument { id: string; protocol: 'astm' | 'hl7' | 'text'; conn_mode: 'client' | 'server'; host: string | null; port: number; is_enabled: boolean; order_mode: 'none' | 'query' | 'push';
   settings: Record<string, unknown>; status: string; peer: string | null; last_error: string | null; last_message_at: string | null }
 interface CodeRow { code: string; analyte_id: string | null; service_id: string | null; factor: string | number; send_order: boolean; analyte_name?: string | null; unit?: string | null; service_name?: string | null }
 interface Detail { method: { id: string; name: string; is_active: boolean }; instrument: Instrument | null; codes: CodeRow[] }
@@ -63,11 +63,11 @@ export function InstrumentPanel({ methodId, canEdit, initialTab = 'conn' }: { me
 function Conn({ d, canEdit }: { d: Detail; canEdit: boolean }) {
   const qc = useQueryClient(); const toast = useToast(); const g = useGateway();
   const i = d.instrument;
-  const [f, setF] = useState({ protocol: i?.protocol ?? 'astm', conn_mode: i?.conn_mode ?? 'client', host: i?.host ?? '', port: String(i?.port ?? 4001), is_enabled: i?.is_enabled ?? false,
+  const [f, setF] = useState({ protocol: (i?.protocol ?? 'astm') as 'astm' | 'hl7' | 'text', conn_mode: i?.conn_mode ?? 'client', host: i?.host ?? '', port: String(i?.port ?? 4001), is_enabled: i?.is_enabled ?? false,
     order_mode: i?.order_mode ?? 'query', settings: (i?.settings ?? {}) as Record<string, unknown> });
   const set = (k: string, v: unknown) => setF({ ...f, settings: { ...f.settings, [k]: v } });
   const save = useMutation({
-    mutationFn: () => api<Detail>(`/lab/instruments/${d.method.id}`, { method: 'PUT', body: { ...f, port: Number(f.port), host: f.conn_mode === 'client' ? f.host.trim() : null } }),
+    mutationFn: () => api<Detail>(`/lab/instruments/${d.method.id}`, { method: 'PUT', body: { ...f, order_mode: f.protocol === 'text' ? 'none' : f.order_mode, port: Number(f.port), host: f.conn_mode === 'client' ? f.host.trim() : null } }),
     onSuccess: (r) => { qc.setQueryData(['lab-instrument', d.method.id], r); void qc.invalidateQueries({ queryKey: ['lab-instruments'] }); toast.show('შენახულია — gateway 5 წამში გამოიყენებს'); },
   });
   const [p0, p1] = g.data?.listen_ports ?? [4100, 4109];
@@ -80,30 +80,33 @@ function Conn({ d, canEdit }: { d: Detail; canEdit: boolean }) {
         {i.last_error && i.status === 'error' && <span style={{ color: 'var(--danger-ink)' }}>{i.last_error}</span>}
       </div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="პროტოკოლი" htmlFor="ip"><select id="ip" className="select" value={f.protocol} onChange={(e) => setF({ ...f, protocol: e.target.value as 'astm' | 'hl7' })}>
-          <option value="astm">ASTM E1381/E1394</option><option value="hl7">HL7 v2 (MLLP)</option></select></Field>
+        <Field label="პროტოკოლი" htmlFor="ip"><select id="ip" className="select" value={f.protocol} onChange={(e) => setF({ ...f, protocol: e.target.value as 'astm' | 'hl7' | 'text', settings: {} })}>
+          <option value="astm">ASTM E1381/E1394</option><option value="hl7">HL7 v2 (MLLP)</option><option value="text">ტექსტი, ცალმხრივი (Urisys, Roller…)</option></select></Field>
         <Field label="ვინ უკავშირდება" htmlFor="im" hint={f.conn_mode === 'client' ? 'EMR უკავშირდება ანალიზატორს / Moxa-ს (TCP Server რეჟიმი)' : 'ანალიზატორი უკავშირდება EMR-ს (სერვერის IP-ზე)'}>
           <select id="im" className="select" value={f.conn_mode} onChange={(e) => setF({ ...f, conn_mode: e.target.value as 'client' | 'server', port: e.target.value === 'server' ? String(p0) : f.port })}>
             <option value="client">EMR → ანალიზატორი (კლიენტი)</option><option value="server">ანალიზატორი → EMR (სერვერი)</option></select></Field>
         {f.conn_mode === 'client' && <Field label="IP / მისამართი" htmlFor="ih" hint="მაგ. Moxa 10.10.5.220"><input id="ih" className="input mono" value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} /></Field>}
         <Field label="პორტი" htmlFor="ipt" hint={f.conn_mode === 'server' ? `${p0}–${p1} (სერვერზე გახსნილი დიაპაზონი)` : 'Moxa: 4001–4004 (პორტი 1–4)'}>
           <input id="ipt" className="input mono" inputMode="numeric" value={f.port} onChange={(e) => setF({ ...f, port: e.target.value.replace(/\D/g, '') })} /></Field>
-        <Field label="შეკვეთები ანალიზატორზე" htmlFor="io"><select id="io" className="select" value={f.order_mode} onChange={(e) => setF({ ...f, order_mode: e.target.value as 'none' | 'query' | 'push' })}>
+        <Field label="შეკვეთები ანალიზატორზე" htmlFor="io" hint={f.protocol === 'text' ? 'ტექსტური — ცალმხრივია, შეკვეთა არ იგზავნება' : undefined}><select id="io" className="select" disabled={f.protocol === 'text'} value={f.protocol === 'text' ? 'none' : f.order_mode} onChange={(e) => setF({ ...f, order_mode: e.target.value as 'none' | 'query' | 'push' })}>
           <option value="query">ანალიზატორი კითხულობს შტრიხკოდით (host query)</option><option value="push">EMR აგზავნის სინჯარის მიღებისას (worklist)</option><option value="none">არა — მხოლოდ შედეგები</option></select></Field>
       </div>
       <details>
         <summary className="small" style={{ cursor: 'pointer' }}>დამატებითი (ანალიზატორის დოკუმენტაციის მიხედვით)</summary>
         <div className="row" style={{ flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
-          {f.protocol === 'astm' ? <>
+          {f.protocol === 'text' ? <TextSettingsEditor methodId={d.method.id} settings={f.settings} set={set} setAll={(v) => setF({ ...f, settings: v })} />
+          : f.protocol === 'astm' ? <>
             <label className="row small">შტრიხკოდი O-ს ველში <input className="input mono" style={{ width: 56, height: 32 }} value={String(f.settings.specimen_field ?? 3)} onChange={(e) => set('specimen_field', Number(e.target.value) || 3)} /></label>
             <label className="row small">ტესტის კოდი კომპონენტში <input className="input mono" style={{ width: 56, height: 32 }} value={String(f.settings.code_component ?? 4)} onChange={(e) => set('code_component', Number(e.target.value) || 4)} /></label>
             <label className="row small">ქვერის შტრიხკოდი კომპონენტში <input className="input mono" style={{ width: 56, height: 32 }} placeholder="ავტო" value={String(f.settings.query_component ?? '')} onChange={(e) => set('query_component', Number(e.target.value) || undefined)} /></label>
           </> : <>
             <label className="row small">შტრიხკოდი <select className="select" style={{ height: 32 }} value={String(f.settings.barcode_field ?? 'OBR-3')} onChange={(e) => set('barcode_field', e.target.value)}>{['OBR-3', 'OBR-2', 'SPM-2', 'ORC-3'].map((x) => <option key={x}>{x}</option>)}</select></label>
             <label className="row small">OBX-3 კომპონენტი <input className="input mono" style={{ width: 56, height: 32 }} value={String(f.settings.code_component ?? 1)} onChange={(e) => set('code_component', Number(e.target.value) || 1)} /></label>
+            <label className="row small">ქვერის პასუხი <select className="select" style={{ height: 32 }} value={String(f.settings.hl7_query_reply ?? 'orm')} onChange={(e) => set('hl7_query_reply', e.target.value)}>
+              <option value="orm">ACK + ORM^O01</option><option value="dsr">QCK^Q02 + DSR^Q03 (Mindray-ის ტიპი)</option></select></label>
             <label className="row small">HL7 ვერსია <select className="select" style={{ height: 32 }} value={String(f.settings.hl7_version ?? '2.3.1')} onChange={(e) => set('hl7_version', e.target.value)}>{['2.3.1', '2.4', '2.5', '2.5.1'].map((x) => <option key={x}>{x}</option>)}</select></label>
           </>}
-          <label className="row small"><input type="checkbox" checked={f.settings.send_patient_name === true} onChange={(e) => set('send_patient_name', e.target.checked)} /> პაციენტის სახელის გაგზავნა (ნაგულისხმევად — მხოლოდ ID)</label>
+          {f.protocol !== 'text' && <label className="row small"><input type="checkbox" checked={f.settings.send_patient_name === true} onChange={(e) => set('send_patient_name', e.target.checked)} /> პაციენტის სახელის გაგზავნა (ნაგულისხმევად — მხოლოდ ID)</label>}
         </div>
       </details>
       <label className="row"><input type="checkbox" checked={f.is_enabled} onChange={(e) => setF({ ...f, is_enabled: e.target.checked })} /> <strong>ჩართული</strong> <span className="small muted">— gateway დაუკავშირდება / დაელოდება ანალიზატორს</span></label>
@@ -263,5 +266,42 @@ export function InstrumentInbox({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+
+// ---------------------------------------------------------------- ტექსტური პროტოკოლის პარამეტრები + შემოწმება
+interface TextTest { barcode: string; error: string | null; results: { code: string; value: string; unit: string; mapped: string | null }[] }
+function TextSettingsEditor({ methodId, settings, set, setAll }: { methodId: string; settings: Record<string, unknown>; set: (k: string, v: unknown) => void; setAll: (v: Record<string, unknown>) => void }) {
+  const pr = useQuery({ queryKey: ['text-presets'], queryFn: () => api<{ defaults: Record<string, unknown>; presets: Record<string, { label: string; settings: Record<string, unknown> }> }>('/lab/instruments-text-presets') });
+  const def = pr.data?.defaults ?? {};
+  const v = (k: string) => String(settings[k] ?? def[k] ?? '');
+  const [sample, setSample] = useState(''); const [res, setRes] = useState<TextTest | null>(null); const [err, setErr] = useState<unknown>(null);
+  const test = async () => { setErr(null); try { setRes(await api<TextTest>(`/lab/instruments/${methodId}/text-test`, { body: { text: sample, settings: { ...def, ...settings } } })); } catch (e) { setErr(e); } };
+  return (
+    <div className="stack" style={{ gap: 8, width: '100%' }}>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <label className="row small">შაბლონი <select className="select" style={{ height: 32 }} value="" onChange={(e) => { const p = pr.data?.presets[e.target.value]; if (p) setAll({ ...def, ...settings, ...p.settings }); }}>
+          <option value="">— აირჩიეთ</option>{Object.entries(pr.data?.presets ?? {}).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}</select></label>
+        <label className="row small">შეტყობინების დასასრული <select className="select" style={{ height: 32 }} value={v('end')} onChange={(e) => set('end', e.target.value)}>
+          <option value="idle">სიჩუმე (პაუზა)</option><option value="etx">ETX (0x03)</option><option value="ff">Form feed (0x0C)</option><option value="eot">EOT (0x04)</option></select></label>
+        <label className="row small">პაუზა (მწმ) <input className="input mono" style={{ width: 80, height: 32 }} value={v('idle_ms')} onChange={(e) => set('idle_ms', Number(e.target.value.replace(/\D/g, '')) || 1500)} /></label>
+        <label className="row small">კოდირება <select className="select" style={{ height: 32 }} value={v('encoding')} onChange={(e) => set('encoding', e.target.value)}><option value="latin1">Latin-1 / ASCII</option><option value="utf8">UTF-8</option></select></label>
+        <label className="row small"><input type="checkbox" checked={settings.ack === true} onChange={(e) => set('ack', e.target.checked)} /> ACK (0x06) თითო შეტყობინებაზე</label>
+      </div>
+      <Field label="შტრიხკოდი (regex; ფრჩხილებში — ნომერი)" htmlFor="tbr"><input id="tbr" className="input mono" value={v('barcode_regex')} onChange={(e) => set('barcode_regex', e.target.value)} /></Field>
+      <Field label="შედეგი (regex; ჯგუფები code, value, unit)" htmlFor="trr"><input id="trr" className="input mono" value={v('result_regex')} onChange={(e) => set('result_regex', e.target.value)} /></Field>
+      <div className="card card-pad stack" style={{ gap: 6 }}>
+        <strong className="small">შემოწმება — ჩასვით ანალიზატორის ნამდვილი გამოტანა (ჟურნალიდან, მოსმენის რეჟიმში მიღებული)</strong>
+        <textarea className="textarea mono" rows={6} value={sample} onChange={(e) => setSample(e.target.value)} placeholder={'ID: 1000123\nGLU   norm\nPRO   +  30 mg/dL\nESR   12 mm/h'} />
+        <div className="row"><button className="btn sm" type="button" disabled={!sample.trim()} onClick={() => void test()}>შემოწმება</button><span className="hint">არაფერი ინახება — ნახავთ, რას ამოიცნობს. პარამეტრები შეინახეთ ცალკე.</span></div>
+        <ErrorBox error={err} />
+        {res && <div className="small stack" style={{ gap: 4 }}>
+          <span>შტრიხკოდი: {res.barcode ? <strong className="mono">{res.barcode}</strong> : <span style={{ color: 'var(--danger-ink)' }}>{res.error}</span>}</span>
+          {res.results.length ? <table className="table"><tbody>{res.results.map((r, i) => <tr key={i}><td className="mono">{r.code}</td><td className="mono">{r.value}</td><td className="mono">{r.unit}</td>
+            <td>{r.mapped ? <span className="chip ok">→ {r.mapped}</span> : <span className="chip warn">რუკაში არ არის</span>}</td></tr>)}</tbody></table> : <span className="muted">შედეგები ვერ ამოვიცანი</span>}
+        </div>}
+      </div>
+    </div>
   );
 }

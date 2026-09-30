@@ -25,6 +25,7 @@ export interface BlankSettings {
   highlight_abnormal: boolean;
   show_sample_info: boolean;
   show_service_comment: boolean;
+  show_graphics: boolean;
   footer: {
     note: string; show_validator: boolean; signer_title: string;
     signature_image_id: string | null; stamp_image_id: string | null;
@@ -37,7 +38,7 @@ export const DEFAULT_BLANK: BlankSettings = {
   header: { logo_image_id: null, logo_position: 'left', logo_height_mm: 16, show_clinic: true, extra_lines: [], title: 'ლაბორატორიული კვლევის პასუხი', subtitle: '' },
   patient_fields: ['personal_number', 'birth_date', 'age', 'gender', 'ordered_by', 'referral'],
   layout: 'table', group_headers: false, columns: ['unit', 'reference', 'flag'],
-  flag_style: 'words', highlight_abnormal: true, show_sample_info: true, show_service_comment: true,
+  flag_style: 'words', highlight_abnormal: true, show_sample_info: true, show_service_comment: true, show_graphics: false,
   footer: { note: '', show_validator: true, signer_title: 'ლაბორატორიის ექიმი', signature_image_id: null, stamp_image_id: null, show_qr: false, show_page_numbers: true, legend: true },
 };
 
@@ -76,6 +77,7 @@ export function sanitizeBlank(input: unknown): BlankSettings {
     highlight_abnormal: bool(s.highlight_abnormal, D.highlight_abnormal),
     show_sample_info: bool(s.show_sample_info, D.show_sample_info),
     show_service_comment: bool(s.show_service_comment, D.show_service_comment),
+    show_graphics: bool(s.show_graphics, D.show_graphics),
     footer: {
       note: str(f.note, D.footer.note, 1000),
       show_validator: bool(f.show_validator, D.footer.show_validator),

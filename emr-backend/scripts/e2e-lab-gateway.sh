@@ -7,7 +7,8 @@
 # ქმნის ცალკე სატესტო კვლევას და ანალიზატორებს (ტესტ-E2E) — რეალურ კონფიგურაციას არ ეხება.
 # გამოყენება:  bash scripts/e2e-lab-gateway.sh [API_URL]      (ნაგულისხმევი: http://localhost/api)
 # სიმულატორი ეშვება emr-lab-gateway კონტეინერში; სხვა გარემოში: SIM="node dist/lab-gateway/simulator.js"
-# საჭიროა: curl, jq; თავისუფალი პორტები 4108, 4109 (სერვერი) და 4150 (კლიენტის ტესტი)
+# საჭიროა: curl, jq; თავისუფალი პორტები 4106, 4108, 4109 (სერვერი) და 4150 (კლიენტის ტესტი)
+# 0025: ჰისტოგრამები/სურათები (ASTM, HL7 ED), HL7 DSR^Q03, ცალმხრივი ტექსტური პროტოკოლი
 # =====================================================================
 set -uo pipefail
 B="${1:-http://localhost/api}"
@@ -156,6 +157,39 @@ for i in $(seq 1 20); do grep -q "\"$BC3\"" "$TMP" && break; sleep 1; done
 chk "gateway დაუკავშირდა ანალიზატორს" "$(api GET /lab/instruments "$LT" | jq -r ".[]|select(.method_id==\"$M3\")|.status")" "connected"
 chk "შეკვეთა გაიგზავნა პანელის კოდით (BIO)" "$(jq -rs "[.[]|select(.type==\"orders\" and .barcode==\"$BC3\")][0].codes|join(\",\")" "$TMP" 2>/dev/null)" "BIO"
 kill $SIMPID 2>/dev/null; wait $SIMPID 2>/dev/null; rm -f "$TMP"
+
+step "9. გრაფიკა, DSR^Q03, ტექსტური პროტოკოლი (0025)"
+BC4=$(visit); api POST /lab/receive "$LT" -d "{\"barcode\":\"$BC4\"}" >/dev/null
+IT4=$(api GET "/lab/worklist?search=$BC4" "$LT" | jq -r '.[0].id // empty')
+sim --proto astm --connect 127.0.0.1:4108 --result "$BC4" GLUC3=5.5/mmol/L >/dev/null
+sim --proto astm --connect 127.0.0.1:4108 --histogram "$BC4" WBC_HIST >/dev/null
+sim --proto astm --connect 127.0.0.1:4108 --image "$BC4" SCATTER >/dev/null
+sim --proto hl7 --connect 127.0.0.1:4109 --image "$BC4" IMG_HL7 >/dev/null
+sleep 1
+G=$(api GET "/lab/items/$IT4/graphics" "$LT")
+chk "გრაფიკა: ჰისტოგრამა (ASTM) + სურათი (ASTM) + სურათი (HL7 ED)" "$(echo "$G" | jq -r '[.[]|"\(.code):\(.kind)"]|sort|join(",")')" "IMG_HL7:image,SCATTER:image,WBC_HIST:histogram"
+chk "ჰისტოგრამა — 64 წერტილი" "$(echo "$G" | jq -r '.[]|select(.code=="WBC_HIST")|.points|length')" "64"
+GID=$(echo "$G" | jq -r '.[]|select(.code=="SCATTER")|.id')
+chk "სურათი იხსნება (PNG)" "$(curl -s "$B/lab/items/$IT4/graphics/$GID" -H "authorization: Bearer $LT" | head -c 4 | tail -c 3)" "PNG"
+chk "გრაფიკა რიცხვით შედეგად არ ჩაწერილა" "$(api GET "/lab/items/$IT4" "$LT" | jq -r '[.results[].code]|join(",")')" "GLU"
+chk "ბლანკის ნიმუში გრაფიკით (PDF)" "$(curl -s -X POST "$B/lab/blanks/preview" -H "authorization: Bearer $LM" -H "$J" -d '{"settings":{"show_graphics":true}}' | head -c 5)" "%PDF-"
+CFG2=$(api GET "/lab/instruments/$M2" "$LM" | jq -c '.instrument|{protocol,conn_mode,host,port,order_mode,is_enabled,settings:(.settings+{hl7_query_reply:"dsr"})}')
+api PUT "/lab/instruments/$M2" "$LM" -d "$CFG2" >/dev/null; sleep 7
+O=$(sim --proto hl7 --dsr --connect 127.0.0.1:4109 --query "$BC4")
+chk "HL7 QRY → QCK^Q02 + DSR^Q03: GLU, CREA" "$(echo "$O" | jq -rs '[.[]|select(.type=="orders")][-1]|"\(.dsr):\(.codes|join(","))"')" "true:GLU,CREA"
+O=$(sim --proto hl7 --dsr --connect 127.0.0.1:4109 --query "888$S")
+chk "DSR: უცნობი სინჯარა → QAK NF" "$(echo "$O" | jq -rs '[.[]|select(.type=="orders")][-1].none')" "true"
+M4=$(newmethod TEXT)
+api PUT "/lab/instruments/$M4" "$LM" -d '{"protocol":"text","conn_mode":"server","port":4106,"is_enabled":true,"order_mode":"none","settings":{"end":"idle","idle_ms":800}}' >/dev/null
+chk "ტექსტური: კოდები (GLUC → გლუკოზა)" "$(api PUT "/lab/instruments/$M4/codes" "$LM" -d "{\"codes\":[{\"code\":\"GLUC\",\"analyte_id\":\"$GLU\"}]}" | jq -r '.codes|length')" "1"
+BC5=$(visit); api POST /lab/receive "$LT" -d "{\"barcode\":\"$BC5\"}" >/dev/null
+IT5=$(api GET "/lab/worklist?search=$BC5" "$LT" | jq -r '.[0].id // empty')
+T=$(api POST "/lab/instruments/$M4/text-test" "$LM" -d "{\"text\":\"ID: $BC5\\nGLUC   6.2 mmol/L\\nXYZ  12\\n\"}")
+chk "ტექსტის შემოწმება: შტრიხკოდი + 2 შედეგი, GLUC რუკაშია" "$(echo "$T" | jq -r '"\(.barcode):\(.results|length):\([.results[]|select(.code=="GLUC")][0].mapped)"')" "$BC5:2:გლუკოზა"
+chk "არასწორი regex — 400" "$(code PUT "/lab/instruments/$M4" "$LM" -d '{"protocol":"text","conn_mode":"server","port":4106,"is_enabled":true,"order_mode":"none","settings":{"result_regex":"("}}')" "400"
+sleep 7
+sim --proto text --connect 127.0.0.1:4106 --text "ID: $BC5\nGLUC   6.2 mmol/L\n" >/dev/null; sleep 2
+chk "ტექსტური ანალიზატორი → EMR: GLU 6.2" "$(api GET "/lab/items/$IT5" "$LT" | jq -r '.results[]|select(.code=="GLU")|.value_num|tonumber')" "6.2"
 
 step "გასუფთავება"
 for M in $(awk '{print $2}' "$TRACK.m" 2>/dev/null); do

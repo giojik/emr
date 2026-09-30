@@ -20,6 +20,7 @@ import { LabIngestService } from '../lab-gateway/lab-ingest.service';
 import { LabInstrumentsController } from './lab-instruments.controller';
 import { LabExternalController, LabExternalService, LabStatsService } from './lab-external';
 import { LabMailController, LabMailService } from './lab-mail';
+import { LabQcController, LabQcService } from './lab-qc';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -52,6 +53,7 @@ class LabVisitDto {
 }
 class ReceiveDto { @IsString() @Length(3, 30) barcode: string }
 class ResultValueDto { @IsUUID() analyte_id: string; @IsOptional() value: string | number | null }
+class ValidateDto { @IsOptional() @IsString() @MaxLength(500) qc_reason?: string }
 class ResultsDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => ResultValueDto) values: ResultValueDto[];
   /** ნორმის შესარჩევად: ორსულობის კვირა და ანალიზატორი (null — გასუფთავება, გამოტოვება — უცვლელი) */
@@ -181,7 +183,7 @@ export class DiagnosticsController {
     return this.dx.saveResults(id, dto.values, u, auditCtx(req), { pregnancy_weeks: dto.pregnancy_weeks, lab_method_id: dto.lab_method_id });
   }
   @Post('lab/items/:id/validate') @HttpCode(200) @Roles('admin', 'lab_doctor')
-  validate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.validate(id, u, auditCtx(req)); }
+  validate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValidateDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.validate(id, u, auditCtx(req), dto?.qc_reason); }
   @Post('lab/items/:id/reopen') @HttpCode(200) @Roles('admin', 'lab_doctor')
   reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.reopen(id, dto.reason, auditCtx(req)); }
 
@@ -194,7 +196,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

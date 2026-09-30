@@ -19,13 +19,22 @@ import net from 'node:net';
 import { AstmLink, astmNow, comps, delimsFrom, field, testCode } from './astm';
 import * as hl7 from './hl7';
 
-type Cmd = { k: 'query'; barcode: string } | { k: 'result'; barcode: string; items: { code: string; value: string; unit?: string; flag?: string }[]; qc: boolean } | { k: 'wait'; sec: number };
+type Cmd = { k: 'query'; barcode: string } | { k: 'result'; barcode: string; items: { code: string; value: string; unit?: string; flag?: string }[]; qc: boolean } | { k: 'wait'; sec: number }
+  | { k: 'text'; text: string };
+/** სატესტო გრაფიკა: პატარა PNG და ჰისტოგრამა (გაუსი, 64 წერტილი) */
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAzUlEQVR42u2XwQ6AIAxDt8X//+V5IEFEgY6awMFdjIctj7YgqrvLTmWyWR3poboeJVl1VO+rKiuygWV3d2wLmoLJmGYWJY8q4mIzNDxTiXIPr4X7+W35JsyUZamf2Y0Nm4JATzHSrKhIbZsiQP0F4UwjYTCgzhQ8TNmmrjARy1pTECZYGAAoLwthfTIB+Y0A4eHoZwuzaQQUXVm16aaEqa8fjOvvus4eVxYLMmJc3KY2EPNB4M/xGojz/qs73pUhFXdRFZel11n9/zoGdQIkDls2N+vzsAAAAABJRU5ErkJggg==';
+const histogram = () => Array.from({ length: 64 }, (_, i) => Math.round(1000 * Math.exp(-((i - 24) ** 2) / 90))).join(',');
 const args = process.argv.slice(2);
-let proto: 'astm' | 'hl7' = 'astm'; let connect: string | null = null; let listen: number | null = null; let json = false; let name = 'EMR-SIM';
+let proto: 'astm' | 'hl7' | 'text' = 'astm'; let dsrMode = false; let wrap = false; let connect: string | null = null; let listen: number | null = null; let json = false; let name = 'EMR-SIM';
 const cmds: Cmd[] = []; let qc = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--proto') proto = args[++i] as 'astm' | 'hl7';
+  if (a === '--proto') proto = args[++i] as 'astm' | 'hl7' | 'text';
+  else if (a === '--dsr') dsrMode = true;
+  else if (a === '--wrap') wrap = true;
+  else if (a === '--text') cmds.push({ k: 'text', text: args[++i].replace(/\\n/g, '\n') });
+  else if (a === '--histogram') { const b = args[++i]; const code = args[++i]; cmds.push({ k: 'result', barcode: b, items: [{ code, value: histogram() }], qc: false }); }
+  else if (a === '--image') { const b = args[++i]; const code = args[++i]; cmds.push({ k: 'result', barcode: b, items: [{ code, value: proto === 'hl7' ? `^Image^PNG^Base64^${PNG_B64}` : PNG_B64 }], qc: false }); }
   else if (a === '--connect') connect = args[++i];
   else if (a === '--listen') listen = Number(args[++i]);
   else if (a === '--json') json = true;
@@ -95,7 +104,7 @@ async function runAstm(s: net.Socket) {
       const t0 = Date.now();
       while (orders.length === before && Date.now() - t0 < 20_000) await new Promise<void>((r) => { waiter = r; setTimeout(r, 500); });
       if (orders.length === before) { out('error', { text: `ქვერის პასუხი არ მოვიდა (${c.barcode})` }); process.exitCode = 1; }
-    } else await sleep(c.sec * 1000);
+    } else if (c.k === 'wait') await sleep(c.sec * 1000);
   }
   await sleep(300); s.end();
 }
@@ -128,14 +137,29 @@ async function runHl7(s: net.Socket) {
       if (!(await waitFor((m) => m.type === 'ACK', 10_000))) { out('error', { text: 'ACK არ მოვიდა' }); process.exitCode = 1; }
     } else if (c.k === 'query') {
       s.write(hl7.mllp(hl7.qry(c.barcode))); out('sent', { query: c.barcode });
+      if (dsrMode) {   // QCK^Q02 → DSR^Q03 (DSP სეგმენტები: 21 — შტრიხკოდი, 29+ — ტესტები „კოდი^^^“)
+        const q = await waitFor((m) => m.type === 'QCK', 10_000);
+        const d = q && hl7.f(q.segs.find((x) => x[0] === 'QAK'), 2) === 'OK' ? await waitFor((m) => m.type === 'DSR', 10_000) : null;
+        const dsp = (d?.segs ?? []).filter((x) => x[0] === 'DSP');
+        out('orders', { barcode: dsp.find((x) => x[1] === '21')?.[3] ?? c.barcode, codes: dsp.filter((x) => Number(x[1]) >= 29 && x[3]?.endsWith('^^^')).map((x) => x[3].replace(/\^+$/, '')), none: !d, dsr: true });
+        continue;
+      }
       await waitFor((m) => m.type === 'ACK', 10_000);
       if (!(await waitFor((m) => m.type === 'ORM' || m.type === 'OML', 8_000))) out('orders', { barcode: c.barcode, codes: [], none: true });
-    } else await sleep(c.sec * 1000);
+    } else if (c.k === 'wait') await sleep(c.sec * 1000);
   }
   await sleep(300); s.end();
 }
 
-socket().then((s) => (proto === 'astm' ? runAstm(s) : runHl7(s)))
+async function runText(s: net.Socket) {
+  s.on('data', (d) => out('received', { bytes: d.length, ack: d[0] === 0x06 }));
+  for (const c of cmds) {
+    if (c.k === 'text') { s.write(wrap ? Buffer.concat([Buffer.from([0x02]), Buffer.from(c.text, 'latin1'), Buffer.from([0x03])]) : Buffer.from(c.text, 'latin1')); out('sent', { text: c.text.length }); await sleep(2500); }
+    else if (c.k === 'wait') await sleep(c.sec * 1000);
+  }
+  await sleep(300); s.end();
+}
+socket().then((s) => (proto === 'astm' ? runAstm(s) : proto === 'text' ? runText(s) : runHl7(s)))
   .then(() => setTimeout(() => process.exit(process.exitCode ?? 0), 200))
   .catch((e: Error) => { out('error', { text: e.message }); process.exit(1); });
 

@@ -13,6 +13,8 @@ export interface BlankItem {
   service_name: string; group_name: string; comment: string | null; barcode: string | null;
   collected_at: string | null; received_at: string | null; validated_at: string | null; validated_by_name: string | null;
   method_name: string | null; results: BlankResult[];
+  /** ანალიზატორის გრაფიკა (ჰისტოგრამა — რიცხვები, სურათი — PNG/JPEG) */
+  graphics?: { title: string; kind: 'image' | 'histogram'; points?: number[] | null; image?: Buffer | null }[];
 }
 export interface BlankSection { settings: BlankSettings; images: Map<string, Buffer>; items: BlankItem[]; verify_url?: string | null }
 export interface BlankInput {
@@ -95,6 +97,28 @@ export async function renderLabBlank(p: BlankInput): Promise<Buffer> {
       if (S.layout === 'text') drawText(doc, S, it, L, W, cur);
       else if (S.layout === 'two_column') drawTwoCol(doc, S, it, L, W, cur);
       else drawTable(doc, S, it, L, W, cur);
+      if (S.show_graphics && it.graphics?.length) {
+        const gs = it.graphics.filter((g) => (g.kind === 'histogram' && g.points?.length) || g.image).slice(0, 6);
+        const per = 3; const gap = 10; const gw = (W - gap * (per - 1)) / per; const gh = fs * 7;
+        for (let i = 0; i < gs.length; i += per) {
+          cur.ensure(gh + fs * 2);
+          gs.slice(i, i + per).forEach((g, j) => {
+            const x = L + j * (gw + gap); const y = cur.y;
+            doc.font('R').fontSize(fs - 1.5).fillColor(GRAY).text(g.title, x, y, { width: gw, lineBreak: false, ellipsis: true });
+            const top = y + fs; doc.rect(x, top, gw, gh).lineWidth(0.4).strokeColor(LINE).stroke();
+            if (g.kind === 'histogram' && g.points?.length) {
+              const max = Math.max(...g.points, 1); const n = g.points.length;
+              g.points.forEach((v, k) => { const px = x + 2 + (k / Math.max(n - 1, 1)) * (gw - 4); const py = top + gh - 2 - (v / max) * (gh - 6);
+                if (k === 0) doc.moveTo(px, py); else doc.lineTo(px, py); });
+              doc.lineWidth(0.9).strokeColor(S.accent_color).stroke();
+            } else if (g.image) {
+              try { doc.image(g.image, x + 2, top + 2, { fit: [gw - 4, gh - 4], align: 'center', valign: 'center' }); } catch { /* BMP და სხვა — PDF-ში არ ჩაიდება */ }
+            }
+          });
+          cur.y += gh + fs * 1.6;
+        }
+        doc.fillColor('black');
+      }
       if (S.show_service_comment && it.comment?.trim()) {
         doc.font('R').fontSize(fs - 1);
         const h = doc.heightOfString(it.comment, { width: W - 12 }) + 8;

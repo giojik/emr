@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { auditCtx } from '../audit/audit-context';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
@@ -10,7 +10,7 @@ import { LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabInstrumentsService } from './lab-instruments.service';
 
 class InstrumentDto {
-  @IsIn(['astm', 'hl7']) protocol: 'astm' | 'hl7';
+  @IsIn(['astm', 'hl7', 'text']) protocol: 'astm' | 'hl7' | 'text';
   @IsIn(['client', 'server']) conn_mode: 'client' | 'server';
   @IsOptional() @IsString() @MaxLength(255) host?: string | null;
   @IsInt() @Min(1) @Max(65535) port: number;
@@ -27,6 +27,7 @@ class CodeDto {
 }
 class CodesDto { @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => CodeDto) codes: CodeDto[] }
 class DismissDto { @IsString() @Length(3, 500) reason: string }
+class TextTestDto { @IsString() @Length(1, 100_000) text: string; @IsOptional() @IsObject() settings?: Record<string, unknown> }
 
 const LAB_ALL = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic'] as const;
 
@@ -45,6 +46,18 @@ export class LabInstrumentsController {
   save(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: InstrumentDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.svc.save(id, dto, u, auditCtx(req)); }
   @Put('instruments/:methodId/codes') @Roles('admin', 'lab_doctor', 'lab_manager')
   codes(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: CodesDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.svc.setCodes(id, dto.codes, u, auditCtx(req)); }
+  @Get('instruments-text-presets') @Roles(...LAB_ALL)
+  presets() { return this.svc.presets(); }
+  @Post('instruments/:methodId/text-test') @HttpCode(200) @Roles('admin', 'lab_doctor', 'lab_manager')
+  textTest(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: TextTestDto) { return this.svc.textTest(id, dto.text, dto.settings); }
+  @Get('items/:id/graphics') @Roles(...LAB_ALL, 'doctor', 'nurse')
+  graphics(@Param('id', ParseUUIDPipe) id: string) { return this.svc.graphics(id); }
+  @Get('items/:id/graphics/:gid') @Roles(...LAB_ALL, 'doctor', 'nurse')
+  async graphic(@Param('id', ParseUUIDPipe) id: string, @Param('gid', ParseUUIDPipe) gid: string, @Res({ passthrough: true }) res: Response) {
+    const g = await this.svc.graphicStream(id, gid);
+    res.set({ 'Content-Type': g.mime, 'Cache-Control': 'private, max-age=3600' });
+    return new StreamableFile(g.stream);
+  }
   @Get('instruments/:methodId/messages') @Roles(...LAB_ALL)
   messages(@Param('methodId', ParseUUIDPipe) id: string, @Query('limit') limit?: string) { return this.svc.messages(id, Number(limit) || 100); }
 

@@ -7,9 +7,10 @@ import { AstmLink, buildNoOrder, buildOrder, DEFAULT_ASTM, delimsFrom, parseMess
 import * as hl7 from './hl7';
 import { LabAlertsService } from './lab-alerts.service';
 import { LabIngestService, type OrderInfo } from './lab-ingest.service';
+import { DEFAULT_TEXT, parseText, TextFramer, type TextSettings } from './text';
 
 interface InstrumentCfg {
-  id: string; name: string; protocol: 'astm' | 'hl7'; conn_mode: 'client' | 'server'; host: string | null; port: number;
+  id: string; name: string; protocol: 'astm' | 'hl7' | 'text'; conn_mode: 'client' | 'server'; host: string | null; port: number;
   order_mode: 'none' | 'query' | 'push'; settings: Record<string, unknown>; updated_at: Date; listen_only: boolean;
 }
 const RECONNECT_MS = 5_000;
@@ -95,7 +96,11 @@ class Runner {
     const peer = `${s.remoteAddress?.replace('::ffff:', '')}:${s.remotePort}`;
     void this.m.status(this.cfg.id, 'connected', peer, null);
     this.log.log(`დაკავშირდა ${peer}`);
-    if (this.cfg.protocol === 'astm') {
+    if (this.cfg.protocol === 'text') {
+      const framer = new TextFramer(this.textSettings, (t) => void this.onText(t));
+      s.on('data', (d) => framer.feed(d));
+      s.once('close', () => framer.close());
+    } else if (this.cfg.protocol === 'astm') {
       const link = new AstmLink((b) => s.write(b));
       this.astm = link;
       link.on('message', (recs: string[]) => void this.onAstm(recs));
@@ -142,6 +147,21 @@ class Runner {
     }
   }
 
+  // ---------------------------------------------------------------- ცალმხრივი ტექსტი
+  get textSettings(): TextSettings { return { ...DEFAULT_TEXT, ...(this.cfg.settings as Partial<TextSettings>) }; }
+  private async onText(text: string) {
+    try {
+      const p = parseText(text, this.textSettings);
+      const id = await this.m.message(this.cfg.id, 'in', 'results', text, p.error ? null : `${p.results.length} შედეგი · ${p.barcode}`, p.error ?? undefined);
+      if (this.textSettings.ack) this.sock?.write(Buffer.from([0x06]));
+      await this.m.seen(this.cfg.id, p.results);
+      if (!p.error && p.results.length && !this.cfg.listen_only) {
+        const r = await this.m.ingest.ingest(this.cfg.id, id, p.results);
+        this.log.log(`შედეგები: მიბმული ${r.applied}, დასამუშავებელი ${r.unmatched}`);
+      }
+    } catch (e) { this.log.error((e as Error).message); }
+  }
+
   // ---------------------------------------------------------------- HL7
   private async onHl7(raw: string) {
     let m: hl7.Hl7;
@@ -169,8 +189,15 @@ class Runner {
       if (m.type === 'QRY' || m.type === 'QBP') {
         const b = hl7.queryBarcode(m);
         await this.m.message(this.cfg.id, 'in', 'query', raw.replace(/\r/g, '\n'), `ქვერი: ${b ?? '?'}`);
-        this.write(hl7.ack(m, 'AA'));
+        if (this.cfg.settings.hl7_query_reply !== 'dsr') this.write(hl7.ack(m, 'AA'));
         const o = b && this.cfg.order_mode !== 'none' && !this.cfg.listen_only ? await this.m.ingest.ordersForBarcode(this.cfg.id, b, this.sendName) : null;
+        if (this.cfg.settings.hl7_query_reply === 'dsr') {   // Mindray-ის ტიპი: QCK^Q02 + DSR^Q03 (ACK-ის ნაცვლად)
+          const found = !!o?.codes.length;
+          this.write(hl7.qck(m, found));
+          if (found) { const d = hl7.dsr(m, o!); await this.m.message(this.cfg.id, 'out', 'orders', d.replace(/\r/g, '\n'), `${b}: ${o!.codes.join(', ')} (DSR)`); this.write(d); }
+          else await this.m.message(this.cfg.id, 'out', 'orders', `${b ?? '?'}: შეკვეთა არ არის (QAK NF)`, `${b ?? '?'}: შეკვეთა არ არის`);
+          return;
+        }
         if (o?.codes.length) await this.sendOrm(o);
         else await this.m.message(this.cfg.id, 'out', 'orders', `${b ?? '?'}: შეკვეთა არ არის`, `${b ?? '?'}: შეკვეთა არ არის`);
         return;

@@ -71,9 +71,12 @@ export function results(m: Hl7, s: Hl7Settings = DEFAULT_HL7): Hl7Result[] {
       if (seg[0] === 'OBR' && !barcode) barcode = (comp(f(seg, 3), m.cs) || comp(f(seg, 2), m.cs)).trim();
     }
     if (seg[0] === 'OBX') {
-      if (f(seg, 2) && !['NM', 'ST', 'SN', 'TX', 'CE', 'CWE', 'FT'].includes(f(seg, 2))) continue;   // სურათები (ED) და სხვა — გამოტოვება
+      if (f(seg, 2) && !['NM', 'ST', 'SN', 'TX', 'CE', 'CWE', 'FT', 'ED', 'NA'].includes(f(seg, 2))) continue;
+      const raw = f(seg, 5).split(m.rs)[0];
+      // ED (სურათი) და რიცხვების სია (ჰისტოგრამა) — კომპონენტებით, რომ detectGraphic-მა ამოიცნოს
+      const keepRaw = f(seg, 2) === 'ED' || f(seg, 2) === 'NA' || raw.split(m.cs).length >= 16 || /\^(Image|Application)\^/i.test(raw);
       out.push({ barcode, code: comp(f(seg, 3), m.cs, s.code_component).trim() || comp(f(seg, 3), m.cs, 1).trim(),
-        value: f(seg, 5).split(m.rs)[0].split(m.cs).filter(Boolean).join('').trim(), unit: comp(f(seg, 6), m.cs).trim(), flags: f(seg, 8).trim(),
+        value: keepRaw ? raw.trim() : raw.split(m.cs).filter(Boolean).join('').trim(), unit: comp(f(seg, 6), m.cs).trim(), flags: f(seg, 8).trim(),
         status: f(seg, 11).trim(), measured_at: hl7Date(f(seg, 14)), qc: false });
     }
   }
@@ -104,9 +107,28 @@ export function orm(o: { barcode: string; patient_id: string; codes: string[]; p
 export const oru = (barcode: string, items: { code: string; value: string; unit?: string; flag?: string }[], version = '2.3.1') => {
   const now = ts();
   return [`MSH|^~\\&|SIM|LAB|EMR|LIS|${now}||ORU^R01|${control()}|P|${version}`, 'PID|1', `OBR|1|${barcode}|${barcode}|PANEL`,
-    ...items.map((x, i) => `OBX|${i + 1}|NM|${x.code}||${x.value}|${x.unit ?? ''}||${x.flag ?? ''}|||F|||${now}`)].join('\r') + '\r';
+    ...items.map((x, i) => `OBX|${i + 1}|${x.value.startsWith('^Image^') ? 'ED' : 'NM'}|${x.code}||${x.value}|${x.unit ?? ''}||${x.flag ?? ''}|||F|||${now}`)].join('\r') + '\r';
 };
 export const qry = (barcode: string) => {
   const now = ts();
   return [`MSH|^~\\&|SIM|LAB|EMR|LIS|${now}||QRY^Q02|${control()}|P|2.3.1`, `QRD|${now}|R|D|1|||RD|${barcode}|OTH|||T`, `QRF|SIM|${now}|${now}|||RCT|COR|ALL||`].join('\r') + '\r';
 };
+
+/**
+ * ქვერის პასუხი DSR^Q03 (Mindray-ის ტიპის ანალიზატორები): ჯერ QCK^Q02 (QAK OK / NF), შემდეგ DSR^Q03 DSP სეგმენტებით.
+ * DSP-ების რიგი: 1 პაციენტის ID … 21 შტრიხკოდი, 22 თარიღი, 23 სასწრაფო, 26 მასალა, 29+ ტესტები (კოდი^^^). ⚠️ ანალიზატორის დოკუმენტაციით გადასამოწმებელი.
+ */
+export function qck(q: Hl7, found: boolean) {
+  return [`MSH|^~\\&|EMR|LIS|${q.sendingApp}|${q.sendingFac}|${ts()}||QCK^Q02|${control()}|P|${q.version}`,
+    `MSA|AA|${q.control}`, 'ERR|0', `QAK|SR|${found ? 'OK' : 'NF'}`].join('\r') + '\r';
+}
+export function dsr(q: Hl7, o: { barcode: string; patient_id: string; codes: string[]; priority: 'R' | 'S'; name?: string | null; birth?: string | null; sex?: string | null; specimen?: string }) {
+  const qrd = q.segs.find((x) => x[0] === 'QRD')?.join(q.fs) ?? `QRD|${ts()}|R|D|1|||RD|${o.barcode}|OTH|||T`;
+  const qrf = q.segs.find((x) => x[0] === 'QRF')?.join(q.fs) ?? `QRF||${ts()}|${ts()}|||RCT|COR|ALL||`;
+  const sex = o.sex === 'male' ? 'M' : o.sex === 'female' ? 'F' : 'O';
+  const dsp: string[] = [o.patient_id, '', (o.name ?? '').replace(/[|^~\\&]/g, ' '), o.birth?.replace(/-/g, '') ?? '', sex, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+    o.barcode, ts(), o.priority === 'S' ? 'Y' : 'N', '', '', o.specimen ?? '', '', ''];
+  const lines = [`MSH|^~\\&|EMR|LIS|${q.sendingApp}|${q.sendingFac}|${ts()}||DSR^Q03|${control()}|P|${q.version}`, `MSA|AA|${q.control}`, 'ERR|0', 'QAK|SR|OK', qrd, qrf,
+    ...dsp.map((v, i) => `DSP|${i + 1}||${v}|||`), ...o.codes.map((c, i) => `DSP|${dsp.length + 1 + i}||${c}^^^|||`), 'DSC||'];
+  return lines.join('\r') + '\r';
+}

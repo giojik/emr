@@ -8,6 +8,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { ClinicSettingsService } from '../settings/clinic-settings';
+import { StorageService } from '../storage/storage.service';
 import { ageDays, computeFlag, DiagnosticsService } from './diagnostics.service';
 import { renderLabBlank, type BlankInput, type BlankItem, type BlankSection } from './lab-blank.pdf';
 import { blankImageIds, DEFAULT_BLANK, sanitizeBlank, type BlankSettings } from './lab-blank.settings';
@@ -24,7 +25,22 @@ const MAX_IMAGE = 700 * 1024;   // JSON-ის ლიმიტი 1 MB — base6
 export class LabConfigService {
   private readonly env = loadEnv();
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService,
-              private readonly settings: ClinicSettingsService, private readonly dx: DiagnosticsService) {}
+              private readonly settings: ClinicSettingsService, private readonly dx: DiagnosticsService, private readonly storage: StorageService) {}
+
+  /** ანალიზატორის გრაფიკა ბლანკისთვის (სურათები — ბაიტებად) */
+  private async graphicsFor(itemIds: string[]) {
+    const rows = itemIds.length ? await this.db.selectFrom('lab_result_images').select(['order_item_id', 'code', 'title', 'kind', 'mime', 'points', 'storage_path'])
+      .where('order_item_id', 'in', itemIds).orderBy('kind').orderBy('code').execute() : [];
+    const out = new Map<string, { title: string; kind: 'image' | 'histogram'; points?: number[] | null; image?: Buffer | null }[]>();
+    for (const r of rows) {
+      let image: Buffer | null = null;
+      if (r.kind === 'image' && r.storage_path && (r.mime === 'image/png' || r.mime === 'image/jpeg')) {
+        try { const chunks: Buffer[] = []; for await (const c of await this.storage.get(r.storage_path)) chunks.push(c as Buffer); image = Buffer.concat(chunks); } catch { image = null; }
+      }
+      out.set(r.order_item_id, [...(out.get(r.order_item_id) ?? []), { title: r.title ?? r.code, kind: r.kind as 'image' | 'histogram', points: r.points as number[] | null, image }]);
+    }
+    return out;
+  }
 
   // =============================================================== უფლებები
   /** ლაბორატორიის ხელმძღვანელი = ლაბ. ექიმი + „ხელმძღვანელი“ (users.is_section_head), ან ადმინისტრატორი */
@@ -338,7 +354,9 @@ export class LabConfigService {
         validated_at: now.toISOString(), validated_by_name: 'ნინო ლაბაძე', method_name: 'Mindray BC-6200', results: [
           R('ლეიკოციტები', '11.8', '10^9/L', '4', '10', 'H', '7.2'), R('ერითროციტები', '4.62', '10^12/L', '4.5', '5.9', 'N', '4.70'),
           R('ჰემოგლობინი', '138', 'g/L', '135', '175', 'N', '141'), R('ჰემატოკრიტი', '41.2', '%', '40', '52', 'N'),
-          R('თრომბოციტები', '18', '10^9/L', '150', '400', 'LL', '212'), R('ნეიტროფილები', '78.5', '%', '40', '75', 'H'), R('ლიმფოციტები', '15.1', '%', '20', '45', 'L') ] },
+          R('თრომბოციტები', '18', '10^9/L', '150', '400', 'LL', '212'), R('ნეიტროფილები', '78.5', '%', '40', '75', 'H'), R('ლიმფოციტები', '15.1', '%', '20', '45', 'L') ],
+        graphics: [['WBC', 24, 90], ['RBC', 30, 60], ['PLT', 12, 40]].map(([t, c, w]) => ({ title: String(t), kind: 'histogram' as const,
+          points: Array.from({ length: 64 }, (_, i) => Math.round(1000 * Math.exp(-((i - Number(c)) ** 2) / Number(w)))) })) },
       { service_name: 'გლუკოზა', group_name: 'ბიოქიმია', comment: 'უზმოზე. დიაბეტის დიაგნოსტიკური ზღვარი: 7.0 mmol/L და მეტი (ორჯერადი გაზომვით).', barcode: '1000124',
         collected_at: now.toISOString(), received_at: now.toISOString(), validated_at: now.toISOString(), validated_by_name: 'ნინო ლაბაძე', method_name: 'Cobas c311',
         results: [R('გლუკოზა', '5.4', 'mmol/L', '3.9', '6.1', 'N', '5.9')] },
@@ -374,6 +392,7 @@ export class LabConfigService {
     const images = await this.imagesFor([...settingsOf.values()]);
     const methods = new Map((await this.db.selectFrom('lab_methods').select(['id', 'name']).execute()).map((m) => [m.id, m.name]));
     const needPrev = [...settingsOf.values()].some((s) => s.columns.includes('previous'));
+    const graphics = [...settingsOf.values()].some((s) => s.show_graphics) ? await this.graphicsFor(items.map((i) => i.id)) : new Map();
     const patient = await this.db.selectFrom('patients').select(['phone_number']).where('id', '=', p0.patient_id).executeTakeFirst();
 
     const toItem = async (it: (typeof items)[number]): Promise<BlankItem> => {
@@ -393,6 +412,7 @@ export class LabConfigService {
         collected_at: it.collected_at ? String(it.collected_at) : null, received_at: it.received_at ? String(it.received_at) : null,
         validated_at: it.validated_at ? String(it.validated_at) : null, validated_by_name: it.validated_by_name, method_name: mid ? methods.get(mid) ?? null : null,
         results: it.results.map((r) => ({ ...r, previous: prev.get(r.analyte_id) ?? null })),
+        graphics: graphics.get(it.id) ?? [],
       };
     };
     // სექციები: ერთნაირი ვერსიის შედეგები ერთად, პირველი გამოჩენის რიგით; ჯგუფების სათაურებისთვის — ჯგუფით დალაგებული

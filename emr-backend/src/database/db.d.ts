@@ -816,6 +816,68 @@ export interface LabNormVersions {
   version: number;
 }
 
+export interface LabQcMaterials {
+  barcode: string | null;
+  created_at: Generated<Timestamp>;
+  expires_on: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  level: string;
+  lot: string;
+  manufacturer: string | null;
+  name: string;
+}
+
+export interface LabQcResults {
+  created_at: Generated<Timestamp>;
+  entered_by: string | null;
+  exclude_reason: string | null;
+  excluded_at: Timestamp | null;
+  excluded_by: string | null;
+  id: Generated<Int8>;
+  instrument_result_id: Int8 | null;
+  measured_at: Generated<Timestamp>;
+  source: string;
+  status: string;
+  target_id: string;
+  value: Numeric;
+  violations: Generated<string[]>;
+  z: Numeric;
+}
+
+export interface LabQcRules {
+  action: string;
+  analyte_id: string;
+  rules: string[];
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
+export interface LabQcTargets {
+  analyte_id: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  material_id: string;
+  mean: Numeric;
+  method_id: string;
+  sd: Numeric;
+}
+
+export interface LabQcViolations {
+  action: string;
+  analyte_id: string;
+  cause: string | null;
+  corrective_action: string | null;
+  id: Generated<Int8>;
+  method_id: string;
+  opened_at: Generated<Timestamp>;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  result_id: Int8;
+  rules: string[];
+  status: Generated<string>;
+}
+
 export interface LabReferenceRanges {
   age_max_days: Generated<number>;
   age_min_days: Generated<number>;
@@ -827,6 +889,19 @@ export interface LabReferenceRanges {
   normal_text: string | null;
   pregnancy: string | null;
   sex: string | null;
+}
+
+export interface LabResultImages {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  instrument_id: string | null;
+  kind: string;
+  mime: string | null;
+  order_item_id: string;
+  points: Json | null;
+  storage_path: string | null;
+  title: string | null;
 }
 
 export interface LabResults {
@@ -1138,7 +1213,13 @@ export interface DB {
   lab_instruments: LabInstruments;
   lab_methods: LabMethods;
   lab_norm_versions: LabNormVersions;
+  lab_qc_materials: LabQcMaterials;
+  lab_qc_results: LabQcResults;
+  lab_qc_rules: LabQcRules;
+  lab_qc_targets: LabQcTargets;
+  lab_qc_violations: LabQcViolations;
   lab_reference_ranges: LabReferenceRanges;
+  lab_result_images: LabResultImages;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
   path_requests: PathRequests;

@@ -19,6 +19,7 @@ import { PREG_KA, useLabMethods, type Pregnancy } from './admin/lab/common';
 import { InstrumentInbox, useInboxCount } from './admin/lab/Instruments';
 import { CumulativeModal } from './lab/Cumulative';
 import { ExternalLab, LabStats } from './lab/ExternalLab';
+import { Qc } from './lab/Qc';
 
 /** 0018: ნორმის კრიტერიუმები შეკვეთაზე (ორსულობა, ანალიზატორი) */
 type LabItemX = Omit<LabItemDetail, 'analytes'> & {
@@ -100,7 +101,7 @@ function LabWorkspace() {
   const [barcode, setBarcode] = useState('');
   const scan = useRef<HTMLInputElement>(null);
   const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000,
-    enabled: status !== 'ext' && status !== 'stats' });
+    enabled: status !== 'ext' && status !== 'stats' && status !== 'qc' });
   const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(false);
   const receive = useMutation({
     mutationFn: (bc: string) => api<{ barcode: string; already_received: boolean }>('/lab/receive', { body: { barcode: bc } }),
@@ -126,13 +127,14 @@ function LabWorkspace() {
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="სტატუსი">{LAB_TABS.map(([k, l]) => <button key={k} type="button" aria-pressed={status === k} onClick={() => { setStatus(k); setSelId(null); }}>{l}</button>)}
             <button type="button" aria-pressed={status === 'ext'} onClick={() => { setStatus('ext'); setSelId(null); }}>გარე ლაბორატორია</button>
+            <button type="button" aria-pressed={status === 'qc'} onClick={() => { setStatus('qc'); setSelId(null); }}>ხარისხის კონტროლი</button>
             {can(user, 'admin', 'lab_doctor', 'lab_manager') && <button type="button" aria-pressed={status === 'stats'} onClick={() => { setStatus('stats'); setSelId(null); }}>სტატისტიკა</button>}</div>
           <input aria-label="ძებნა" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="შტრიხკოდი, პირადი №, გვარი" value={search} onChange={(e) => setSearch(e.target.value)} />
           <button className="btn" type="button" style={{ marginLeft: 'auto' }} onClick={() => setInboxOpen(true)}>
             ანალიზატორები{inbox.data?.unmatched ? <span className="chip warn" style={{ marginLeft: 6 }}>დასამუშავებელი: {inbox.data.unmatched}</span> : null}</button>
         </div>
         {inboxOpen && <InstrumentInbox onClose={() => setInboxOpen(false)} />}
-        {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : <>
+        {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : status === 'qc' ? <Qc /> : <>
         <ErrorBox error={q.error} />
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
@@ -190,7 +192,18 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
       pregnancy_weeks: preg ? Number(preg) : null, lab_method_id: method || null } }),
     onSuccess: (r) => { toast.show(r.status === 'resulted' ? 'შენახულია — ვალიდაციას ელოდება' : 'შენახულია (შეუვსებელი კომპონენტებით)'); refresh(); },
   });
-  const validate = useMutation({ mutationFn: () => api(`/lab/items/${id}/validate`, { method: 'POST' }), onSuccess: () => { toast.show('დადასტურებულია — შედეგი ექიმს გაეგზავნა'); refresh(); } });
+  const validate = useMutation({ mutationFn: (qcReason?: string) => api(`/lab/items/${id}/validate`, { method: 'POST', body: qcReason ? { qc_reason: qcReason } : {} }),
+    onSuccess: () => { toast.show('დადასტურებულია — შედეგი ექიმს გაეგზავნა'); refresh(); } });
+  /** QC: დაბლოკვისას — ღილაკი დაბლოკილია; გაფრთხილებისას — მიზეზი (აუდიტში) */
+  const doValidate = () => {
+    const qcOpen = (q.data as { qc_open?: { action: string }[] } | undefined)?.qc_open ?? [];
+    if (qcOpen.some((v) => v.action === 'warn')) {
+      const r = prompt('QC გაფრთხილება ამ კომპონენტზე. დადასტურების მიზეზი (მაგ. „გადამოწმებულია სხვა ანალიზატორზე“):');
+      if (!r || r.trim().length < 3) return;
+      validate.mutate(r.trim()); return;
+    }
+    validate.mutate(undefined);
+  };
   const reopen = useMutation({ mutationFn: (reason: string) => api(`/lab/items/${id}/reopen`, { body: { reason } }), onSuccess: refresh });
   const print = useMutation({ mutationFn: () => openBlob(`/encounters/${q.data!.encounter_id}/lab-report?item=${id}`) });
   if (q.isLoading || !q.data) return <aside style={{ width: 560, borderLeft: '1px solid var(--line)', background: 'var(--surface)' }}><Loading /></aside>;
@@ -253,6 +266,10 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
         </table>
         {it.analytes.some((a) => a.delta?.alert) && <div className="alert warn small">Δ delta-check: შედეგი წინასთან შედარებით უჩვეულოდ შეიცვალა — გადაამოწმეთ სინჯარა (აღრევა, ჰემოლიზი, ინფუზიის ხაზიდან აღება) ვალიდაციამდე.</div>}
         {it.performed_by === 'external' && <ExternalResult it={it} canEnter={canEnter} />}
+        <Graphics itemId={it.id} />
+        {((it as { qc_open?: { method: string; analyte: string; action: string; rules?: string[] }[] }).qc_open ?? []).map((v, k) =>
+          <div key={k} className={`alert ${v.action === 'block' ? 'danger' : 'warn'} small`}>QC დარღვეულია: <strong>{v.method} / {v.analyte}</strong> —
+            {v.action === 'block' ? ' დადასტურება დაბლოკილია, სანამ დარღვევა არ განიხილება („ხარისხის კონტროლი“).' : ' დადასტურება შესაძლებელია მიზეზით.'}</div>)}
         <span className="hint">ნიშნები ავტომატურად ითვლება ნორმით (სქესი, ასაკი, ორსულობა, ანალიზატორი). ↑↑/↓↓ — კრიტიკული მნიშვნელობა: აცნობეთ მკურნალ ექიმს.
           {' '}<button type="button" className="btn sm" onClick={() => setCum(true)}>სრული დინამიკა</button></span>
         {cum && <CumulativeModal patientId={it.patient_id} title={`${it.first_name} ${it.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}
@@ -261,7 +278,8 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
         <ErrorBox error={save.error ?? validate.error ?? reopen.error ?? print.error} />
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {!locked && <button className="btn" type="button" disabled={save.isPending || !dirty} onClick={() => save.mutate()}>შენახვა</button>}
-          {isLabDoctor && it.status === 'resulted' && !dirty && <button className="btn primary" type="button" disabled={validate.isPending} onClick={() => validate.mutate()}>დადასტურება (ვალიდაცია)</button>}
+          {isLabDoctor && it.status === 'resulted' && !dirty && <button className="btn primary" type="button"
+            disabled={validate.isPending || ((it as { qc_open?: { action: string }[] }).qc_open ?? []).some((v) => v.action === 'block')} onClick={doValidate}>დადასტურება (ვალიდაცია)</button>}
           {!isLabDoctor && canEnter && it.status === 'resulted' && <span className="small muted">ელოდება ლაბორატორიის ექიმის დადასტურებას</span>}
           {it.status === 'validated' && <>
             <button className="btn" type="button" onClick={() => print.mutate()}>ბლანკი</button>
@@ -318,4 +336,28 @@ function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
       </div>
     </div>
   );
+}
+
+
+/** ანალიზატორის გრაფიკა: ჰისტოგრამები (SVG) და სურათები */
+function Graphics({ itemId }: { itemId: string }) {
+  const q = useQuery({ queryKey: ['lab-graphics', itemId], queryFn: () => api<{ id: string; code: string; title: string | null; kind: 'image' | 'histogram'; points: number[] | null; instrument: string | null }[]>(`/lab/items/${itemId}/graphics`) });
+  if (!q.data?.length) return null;
+  return (
+    <div className="row" style={{ flexWrap: 'wrap', gap: 10, margin: '8px 0' }}>
+      {q.data.map((g) => (
+        <figure key={g.id} className="card" style={{ margin: 0, padding: 6, width: 220 }}>
+          <figcaption className="small muted">{g.title ?? g.code}{g.instrument ? ` · ${g.instrument}` : ''}</figcaption>
+          {g.kind === 'histogram' && g.points?.length ? (() => {
+            const max = Math.max(...g.points, 1); const n = g.points.length;
+            return <svg viewBox="0 0 200 80" width="100%" role="img" aria-label={`ჰისტოგრამა ${g.code}`}>
+              <polyline fill="none" stroke="var(--accent)" strokeWidth="1.5" points={g.points.map((v, i) => `${(i / Math.max(n - 1, 1)) * 200},${78 - (v / max) * 74}`).join(' ')} /></svg>;
+          })() : <GraphicImage itemId={itemId} id={g.id} alt={g.code} />}
+        </figure>))}
+    </div>
+  );
+}
+function GraphicImage({ itemId, id, alt }: { itemId: string; id: string; alt: string }) {
+  const q = useQuery({ queryKey: ['lab-graphic-img', id], queryFn: async () => URL.createObjectURL(await api<Blob>(`/lab/items/${itemId}/graphics/${id}`, { raw: true })), staleTime: Infinity });
+  return q.data ? <img src={q.data} alt={alt} style={{ width: '100%', imageRendering: 'pixelated' }} /> : <Loading />;
 }

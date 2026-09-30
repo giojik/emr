@@ -5,23 +5,34 @@ import type { AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { LabConfigService } from './lab-config.service';
+import { StorageService } from '../storage/storage.service';
+import { DEFAULT_TEXT, parseText, TEXT_PRESETS, type TextSettings } from '../lab-gateway/text';
 
 export interface InstrumentDto {
-  protocol: 'astm' | 'hl7'; conn_mode: 'client' | 'server'; host?: string | null; port: number; is_enabled: boolean; order_mode: 'none' | 'query' | 'push';
+  protocol: 'astm' | 'hl7' | 'text'; conn_mode: 'client' | 'server'; host?: string | null; port: number; is_enabled: boolean; order_mode: 'none' | 'query' | 'push';
   settings?: Record<string, unknown>;
 }
 export interface CodeDto { code: string; analyte_id?: string | null; service_id?: string | null; factor?: number; send_order?: boolean }
 
 const HL7_BARCODE = ['OBR-3', 'OBR-2', 'SPM-2', 'ORC-3'];
 /** პროტოკოლის პარამეტრები — მხოლოდ ცნობილი ველები, საზღვრებით */
-function sanitizeSettings(protocol: 'astm' | 'hl7', s: Record<string, unknown> = {}) {
+function sanitizeSettings(protocol: 'astm' | 'hl7' | 'text', s: Record<string, unknown> = {}) {
   const int = (v: unknown, min: number, max: number) => (Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max ? Number(v) : undefined);
   const out: Record<string, unknown> = { send_patient_name: s.send_patient_name === true };
   if (protocol === 'astm') {
     out.specimen_field = int(s.specimen_field, 1, 40) ?? 3;
     out.code_component = int(s.code_component, 1, 10) ?? 4;
     const q = int(s.query_component, 1, 10); if (q) out.query_component = q;
+  } else if (protocol === 'text') {
+    const rx = (v: unknown, d: string) => { const x = typeof v === 'string' && v.trim() ? v.trim().slice(0, 400) : d; try { new RegExp(x, 'u'); return x; } catch { throw new BadRequestException(`რეგულარული გამოსახულება არასწორია: ${x.slice(0, 60)}`); } };
+    out.end = ['idle', 'etx', 'ff', 'eot'].includes(String(s.end)) ? s.end : DEFAULT_TEXT.end;
+    out.idle_ms = int(s.idle_ms, 200, 30_000) ?? DEFAULT_TEXT.idle_ms;
+    out.encoding = s.encoding === 'utf8' ? 'utf8' : 'latin1';
+    out.barcode_regex = rx(s.barcode_regex, DEFAULT_TEXT.barcode_regex);
+    out.result_regex = rx(s.result_regex, DEFAULT_TEXT.result_regex);
+    out.ack = s.ack === true;
   } else {
+    out.hl7_query_reply = s.hl7_query_reply === 'dsr' ? 'dsr' : 'orm';
     out.barcode_field = HL7_BARCODE.includes(String(s.barcode_field)) ? s.barcode_field : 'OBR-3';
     out.code_component = int(s.code_component, 1, 10) ?? 1;
     out.hl7_version = ['2.3.1', '2.4', '2.5', '2.5.1'].includes(String(s.hl7_version)) ? s.hl7_version : '2.3.1';
@@ -33,7 +44,19 @@ function sanitizeSettings(protocol: 'astm' | 'hl7', s: Record<string, unknown> =
 @Injectable()
 export class LabInstrumentsService {
   private readonly ports = loadEnv().LAB_GATEWAY_PORTS.split('-').map(Number) as [number, number];
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly cfg: LabConfigService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly cfg: LabConfigService, private readonly storage: StorageService) {}
+
+  /** ანალიზატორის გრაფიკა შეკვეთაზე (ჰისტოგრამები — რიცხვებით, სურათები — ბმულით) */
+  graphics(itemId: string) {
+    return this.db.selectFrom('lab_result_images as g').leftJoin('lab_instruments as i', 'i.id', 'g.instrument_id').leftJoin('lab_methods as m', 'm.id', 'i.method_id')
+      .select(['g.id', 'g.code', 'g.title', 'g.kind', 'g.mime', 'g.points', 'g.created_at', 'm.name as instrument'])
+      .where('g.order_item_id', '=', itemId).orderBy('g.kind').orderBy('g.code').execute();
+  }
+  async graphicStream(itemId: string, id: string) {
+    const g = await this.db.selectFrom('lab_result_images').select(['storage_path', 'mime']).where('id', '=', id).where('order_item_id', '=', itemId).executeTakeFirst();
+    if (!g?.storage_path) throw new NotFoundException('სურათი ვერ მოიძებნა');
+    return { stream: await this.storage.get(g.storage_path), mime: g.mime ?? 'application/octet-stream' };
+  }
 
   private async requireManage(user: AuthUser) {
     if (!(await this.cfg.permissions(user)).methods) throw new ForbiddenException('ანალიზატორების კავშირს მართავს ლაბორატორიის ხელმძღვანელი ან მენეჯერი');
@@ -123,6 +146,18 @@ export class LabInstrumentsService {
     });
     return this.detail(methodId);
   }
+
+  /** ტექსტური პროტოკოლის შემოწმება (ცვლილების გარეშე): ნიმუშის ტექსტი + პარამეტრები → შტრიხკოდი, შედეგები, რუკაში არის თუ არა */
+  async textTest(methodId: string, text: string, settings?: Record<string, unknown>) {
+    const i = await this.db.selectFrom('lab_instruments').select(['id', 'settings']).where('method_id', '=', methodId).executeTakeFirst();
+    const s = { ...DEFAULT_TEXT, ...(settings ? sanitizeSettings('text', settings) : (i?.settings as Partial<TextSettings> ?? {})) } as TextSettings;
+    const p = parseText(text, s);
+    const codes = i ? await this.db.selectFrom('lab_instrument_codes as c').leftJoin('lab_analytes as a', 'a.id', 'c.analyte_id').select(['c.code', 'a.name'])
+      .where('c.instrument_id', '=', i.id).execute() : [];
+    return { barcode: p.barcode, error: p.error, results: p.results.map((r) => ({ code: r.code, value: r.value, unit: r.unit,
+      mapped: codes.find((c) => c.code.toUpperCase() === r.code.toUpperCase())?.name ?? null })), settings: s };
+  }
+  presets() { return { defaults: DEFAULT_TEXT, presets: TEXT_PRESETS }; }
 
   async messages(methodId: string, limit = 100) {
     const i = await this.db.selectFrom('lab_instruments').select('id').where('method_id', '=', methodId).executeTakeFirst();

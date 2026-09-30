@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { sql, type Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AllergyCheckService } from '../allergies/allergy-check.service';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -444,6 +444,7 @@ export class DiagnosticsService {
     return {
       ...it,
       effective_method_id: ctx.methodId,
+      qc_open: await this.qcOpenFor(itemId),
       norm_recalculated_at: norm_recalculated?.recalculated_at ?? null,
       analytes: analytes.map((a) => {
         const r = pickRange(a.ranges, ctx);
@@ -537,16 +538,35 @@ export class DiagnosticsService {
   }
 
   /** ვალიდაცია — ლაბორატორიის ექიმი / უფროსი. შედეგს მხოლოდ ამის შემდეგ ხედავს მკურნალი ექიმი */
-  async validate(itemId: string, user: AuthUser, ctx: AuditContext) {
+  /** QC: შეკვეთის ანალიზატორზე (ან ანალიზის ნაგულისხმევზე) ღია დარღვევები იმ კომპონენტებზე, რომლებსაც შედეგი აქვს */
+  async qcOpenFor(itemId: string, executor: Kysely<DB> | Transaction<DB> = this.db) {
+    const r = await sql<{ id: string; action: string; rules: string[]; analyte: string; method: string; opened_at: Date }>`
+      SELECT v.id::text, v.action, v.rules, a.name AS analyte, m.name AS method, v.opened_at
+      FROM dx_order_items i JOIN dx_services s ON s.id = i.service_id
+      JOIN lab_results lr ON lr.order_item_id = i.id
+      JOIN lab_qc_violations v ON v.status = 'open' AND v.analyte_id = lr.analyte_id AND v.method_id = coalesce(i.lab_method_id, s.default_method_id)
+      JOIN lab_analytes a ON a.id = v.analyte_id JOIN lab_methods m ON m.id = v.method_id
+      WHERE i.id = ${itemId}`.execute(executor);
+    return r.rows;
+  }
+
+  async validate(itemId: string, user: AuthUser, ctx: AuditContext, qcReason?: string) {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
       if (it.status !== 'resulted') throw new ConflictException('ვალიდაციისთვის ყველა კომპონენტი უნდა იყოს შევსებული');
+      // QC: დაბლოკვა — ვალიდაცია აკრძალულია განხილვამდე; გაფრთხილება — მხოლოდ მიზეზით (აუდიტში)
+      const qc = await this.qcOpenFor(itemId, trx);
+      const block = qc.filter((v) => v.action === 'block');
+      if (block.length) throw new ConflictException(`QC დარღვეულია: ${block.map((v) => `${v.method} / ${v.analyte}`).join(', ')} — ვალიდაცია დაბლოკილია, სანამ დარღვევა არ განიხილება (ლაბორატორია → ხარისხის კონტროლი)`);
+      if (qc.length && !(qcReason && qcReason.trim().length >= 3)) {
+        throw new ConflictException({ message: `QC გაფრთხილება: ${qc.map((v) => `${v.method} / ${v.analyte}`).join(', ')} — ვალიდაციისთვის მიუთითეთ მიზეზი`, code: 'QC_WARN' });
+      }
       // ბლანკის ვერსია ფიქსირდება ვალიდაციის მომენტში — ხელახალი ბეჭდვა იმავე სახით; QR-ის ტოკენი — ახალი ყოველ ვალიდაციაზე
       const blank = await sql<{ id: string | null }>`SELECT lab_blank_version_for(${itemId}::uuid) AS id`.execute(trx);
       await trx.updateTable('dx_order_items').set({ status: 'validated', validated_by: user.id, validated_at: sql`now()`,
         blank_version_id: blank.rows[0]?.id ?? null, verify_token: sql`uuid_generate_v4()` }).where('id', '=', itemId).execute();
-      await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId }, trx);
+      await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId, ...(qc.length ? { newData: { qc_override: qcReason, qc: qc.map((v) => `${v.method}/${v.analyte}`) } } : {}) }, trx);
       await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'validated' };
     });
