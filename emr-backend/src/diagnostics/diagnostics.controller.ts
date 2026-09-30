@@ -21,6 +21,7 @@ import { LabInstrumentsController } from './lab-instruments.controller';
 import { LabExternalController, LabExternalService, LabStatsService } from './lab-external';
 import { LabMailController, LabMailService } from './lab-mail';
 import { LabQcController, LabQcService } from './lab-qc';
+import { LabMicroController, LabMicroService } from './lab-micro';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -91,6 +92,7 @@ class ServiceUpdateDto {
   @IsOptional() @IsUUID() external_lab_id?: string | null;
   @IsOptional() @IsNumber() @Min(0) purchase_price?: number | null;
   @IsOptional() @IsInt() @Min(1) @Max(120) ext_turnaround_days?: number;
+  @IsOptional() @IsBoolean() is_micro?: boolean;
 }
 class RangeDto {
   @IsOptional() @IsIn(['male', 'female']) sex: 'male' | 'female' | null;
@@ -196,7 +198,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

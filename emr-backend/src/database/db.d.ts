@@ -323,6 +323,7 @@ export interface DxServices {
   group_name: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  is_micro: Generated<boolean>;
   modality: string | null;
   name: string;
   needs_review: Generated<boolean>;
@@ -937,6 +938,79 @@ export interface LabSpecimens {
   status: Generated<string>;
 }
 
+export interface MicroAntibiotics {
+  class: string | null;
+  code: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+}
+
+export interface MicroAst {
+  antibiotic_id: string;
+  interp: string | null;
+  isolate_id: string;
+  mic: string | null;
+  reported: Generated<boolean>;
+  reserve: Generated<boolean>;
+  sort_order: Generated<number>;
+  zone_mm: Numeric | null;
+}
+
+export interface MicroCultures {
+  comment: string | null;
+  gram_stain: string | null;
+  growth_summary: string | null;
+  id: Generated<string>;
+  order_item_id: string;
+  stage: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
+export interface MicroIsolates {
+  comment: string | null;
+  culture_id: string;
+  id: Generated<string>;
+  organism_id: string | null;
+  panel_id: string | null;
+  quantity: string | null;
+  seq: number;
+}
+
+export interface MicroOrganisms {
+  code: string;
+  gram: string;
+  group_code: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+}
+
+export interface MicroPanelItems {
+  antibiotic_id: string;
+  panel_id: string;
+  reserve: Generated<boolean>;
+  sort_order: Generated<number>;
+}
+
+export interface MicroPanels {
+  code: string;
+  group_code: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+}
+
+export interface MicroReports {
+  id: Generated<string>;
+  issued_at: Generated<Timestamp>;
+  issued_by: string | null;
+  kind: string;
+  order_item_id: string;
+  snapshot: Json;
+}
+
 export interface PathRequests {
   clinical_info: string | null;
   created_at: Generated<Timestamp>;
@@ -1222,6 +1296,14 @@ export interface DB {
   lab_result_images: LabResultImages;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
+  micro_antibiotics: MicroAntibiotics;
+  micro_ast: MicroAst;
+  micro_cultures: MicroCultures;
+  micro_isolates: MicroIsolates;
+  micro_organisms: MicroOrganisms;
+  micro_panel_items: MicroPanelItems;
+  micro_panels: MicroPanels;
+  micro_reports: MicroReports;
   path_requests: PathRequests;
   path_specimens: PathSpecimens;
   patient_allergies: PatientAllergies;

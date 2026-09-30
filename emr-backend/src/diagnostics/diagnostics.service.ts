@@ -116,7 +116,7 @@ export class DiagnosticsService {
 
   async updateService(id: string, dto: { name?: string; group_name?: string; specimen_type?: string | null; container?: string | null; base_price?: number;
     duration_minutes?: number | null; prep_instructions?: string | null; report_comment?: string | null; default_method_id?: string | null;
-    external_lab_id?: string | null; purchase_price?: number | null; ext_turnaround_days?: number;
+    external_lab_id?: string | null; purchase_price?: number | null; ext_turnaround_days?: number; is_micro?: boolean;
     performed_by?: 'internal' | 'external'; external_lab?: string | null; is_active?: boolean; approve?: boolean }, user: AuthUser, ctx: AuditContext) {
     await this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('dx_services').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -127,7 +127,7 @@ export class DiagnosticsService {
       if (dto.base_price !== undefined && !canPrice) throw new ForbiddenException('ფასის შეცვლა შეუძლია მხოლოდ ადმინისტრატორს ან მოლარეს');
       if (dto.approve && !canApprove) throw new ForbiddenException('დამტკიცება შეუძლია ლაბორატორიის ექიმს / ხელმძღვანელს');
       const set: Record<string, unknown> = {};
-      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions', 'report_comment', 'default_method_id', 'external_lab_id', 'purchase_price', 'ext_turnaround_days'] as const) {
+      for (const k of ['name', 'group_name', 'specimen_type', 'container', 'performed_by', 'external_lab', 'is_active', 'duration_minutes', 'prep_instructions', 'report_comment', 'default_method_id', 'external_lab_id', 'purchase_price', 'ext_turnaround_days', 'is_micro'] as const) {
         if (dto[k] !== undefined) {
           if (!canEdit) throw new ForbiddenException('კვლევის რედაქტირების უფლება არ გაქვთ');
           set[k] = typeof dto[k] === 'string' ? (dto[k] as string).trim() || null : dto[k];
@@ -248,10 +248,10 @@ export class DiagnosticsService {
                             overrideReason: string | undefined, user: AuthUser, ctx: AuditContext) {
     const ids = [...new Set(items.map((i) => i.service_id))];
     const services = await trx.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
-      .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price', 's.performed_by']).where('s.id', 'in', ids).execute();
+      .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price', 's.performed_by', 's.is_micro']).where('s.id', 'in', ids).execute();
     if (services.length !== ids.length || services.some((s) => !s.is_active)) throw new BadRequestException('ზოგიერთი კვლევა ვერ მოიძებნა ან გათიშულია');
     // გარე ლაბორატორიის ანალიზს კომპონენტები არ სჭირდება (პასუხი — PDF)
-    const labIds = services.filter((s) => s.section === 'lab' && s.performed_by !== 'external').map((s) => s.id);
+    const labIds = services.filter((s) => s.section === 'lab' && s.performed_by !== 'external' && !s.is_micro).map((s) => s.id);   // მიკრობიოლოგია — კულტურა, კომპონენტების გარეშე
     if (labIds.length) {
       const withAnalytes = await trx.selectFrom('lab_analytes').select('service_id').distinct().where('service_id', 'in', labIds).where('is_active', '=', true).execute();
       const empty = services.filter((s) => labIds.includes(s.id) && !withAnalytes.some((w) => w.service_id === s.id));
@@ -606,7 +606,7 @@ export class DiagnosticsService {
         'rep.status as report_status', 'rep.version as report_version', 'rep.is_critical', 'rep.amend_reason', 'rep.updated_at as report_updated_at',
         'enc.visit_kind', 'enc.external_referral',
         'i.pregnancy_weeks', 'i.lab_method_id', 's.default_method_id', 's.report_comment', 'i.blank_version_id', 'i.verify_token',
-        'i.ext_shipment_id', 'i.ext_due_at', 'i.ext_result_at', 'i.ext_result_name',
+        'i.ext_shipment_id', 'i.ext_due_at', 'i.ext_result_at', 'i.ext_result_name', 's.is_micro',
         'pr.id as path_request_id', 'pr.request_no as path_request_no', 'pr.status as path_status', 'pr.result_text as path_result_text', 'pr.reviewed_at as path_reviewed_at',
         sql<boolean>`pr.result_file_path IS NOT NULL`.as('path_has_file'),
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),

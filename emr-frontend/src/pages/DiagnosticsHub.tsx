@@ -20,6 +20,7 @@ import { InstrumentInbox, useInboxCount } from './admin/lab/Instruments';
 import { CumulativeModal } from './lab/Cumulative';
 import { ExternalLab, LabStats } from './lab/ExternalLab';
 import { Qc } from './lab/Qc';
+import { MicroModal, MicroRefs } from './lab/Micro';
 
 /** 0018: ნორმის კრიტერიუმები შეკვეთაზე (ორსულობა, ანალიზატორი) */
 type LabItemX = Omit<LabItemDetail, 'analytes'> & {
@@ -101,7 +102,7 @@ function LabWorkspace() {
   const [barcode, setBarcode] = useState('');
   const scan = useRef<HTMLInputElement>(null);
   const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000,
-    enabled: status !== 'ext' && status !== 'stats' && status !== 'qc' });
+    enabled: !['ext', 'stats', 'qc', 'micro'].includes(status) });
   const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(false);
   const receive = useMutation({
     mutationFn: (bc: string) => api<{ barcode: string; already_received: boolean }>('/lab/receive', { body: { barcode: bc } }),
@@ -128,13 +129,14 @@ function LabWorkspace() {
           <div className="seg" role="group" aria-label="სტატუსი">{LAB_TABS.map(([k, l]) => <button key={k} type="button" aria-pressed={status === k} onClick={() => { setStatus(k); setSelId(null); }}>{l}</button>)}
             <button type="button" aria-pressed={status === 'ext'} onClick={() => { setStatus('ext'); setSelId(null); }}>გარე ლაბორატორია</button>
             <button type="button" aria-pressed={status === 'qc'} onClick={() => { setStatus('qc'); setSelId(null); }}>ხარისხის კონტროლი</button>
+            <button type="button" aria-pressed={status === 'micro'} onClick={() => { setStatus('micro'); setSelId(null); }}>მიკრობ. ცნობარი</button>
             {can(user, 'admin', 'lab_doctor', 'lab_manager') && <button type="button" aria-pressed={status === 'stats'} onClick={() => { setStatus('stats'); setSelId(null); }}>სტატისტიკა</button>}</div>
           <input aria-label="ძებნა" className="input" style={{ maxWidth: 280, height: 38 }} placeholder="შტრიხკოდი, პირადი №, გვარი" value={search} onChange={(e) => setSearch(e.target.value)} />
           <button className="btn" type="button" style={{ marginLeft: 'auto' }} onClick={() => setInboxOpen(true)}>
             ანალიზატორები{inbox.data?.unmatched ? <span className="chip warn" style={{ marginLeft: 6 }}>დასამუშავებელი: {inbox.data.unmatched}</span> : null}</button>
         </div>
         {inboxOpen && <InstrumentInbox onClose={() => setInboxOpen(false)} />}
-        {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : status === 'qc' ? <Qc /> : <>
+        {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : status === 'qc' ? <Qc /> : status === 'micro' ? <MicroRefs /> : <>
         <ErrorBox error={q.error} />
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
@@ -154,7 +156,9 @@ function LabWorkspace() {
         </>}
         {toast.node}
       </div>
-      {selId && <ResultEntry key={selId} id={selId} onClose={() => setSelId(null)} />}
+      {selId && ((items.find((x) => x.id === selId) as { is_micro?: boolean } | undefined)?.is_micro
+        ? <MicroModal key={selId} id={selId} onClose={() => setSelId(null)} />
+        : <ResultEntry key={selId} id={selId} onClose={() => setSelId(null)} />)}
     </div>
   );
 }

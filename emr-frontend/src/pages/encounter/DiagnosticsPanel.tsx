@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CumulativeModal } from '../lab/Cumulative';
+import { MicroView } from '../lab/Micro';
 import { api, ApiError, openBlob } from '../../api/client';
 import type { AllergyCheck, DxItem, DxSection, DxService } from '../../api/types';
 import { DxStatusChip, FlagBadge } from '../../components/DxStatusChip';
@@ -13,6 +14,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [cum, setCum] = useState<{ service_id?: string; name: string } | null>(null);
+  const [micro, setMicro] = useState<{ id: string; name: string } | null>(null);
   const q = useQuery({ queryKey: ['dx-items', encounterId], queryFn: () => api<DxItem[]>(`/encounters/${encounterId}/dx-orders`), refetchInterval: 30_000 });
   const cancel = useMutation({
     mutationFn: (id: string) => api(`/dx-orders/${id}/cancel`, { body: { reason: 'ექიმის გადაწყვეტილებით' } }),
@@ -58,6 +60,8 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
                     {done && ((i as { ext_files?: { id: string; filename: string }[] }).ext_files ?? []).map((f, k, all) =>
                       <button key={f.id} className="btn sm" type="button" style={{ height: 22, marginLeft: 6 }} title={f.filename}
                         onClick={() => void openBlob(`/lab/items/${i.id}/external-files/${f.id}`)}>{all.length > 1 ? `პასუხი ${k + 1}` : 'პასუხი (PDF)'}</button>)}</div>}
+                  {sec === 'lab' && (i as { is_micro?: boolean }).is_micro && i.status !== 'cancelled' && <button className="btn sm" type="button" style={{ height: 22, marginTop: 4 }}
+                    onClick={() => setMicro({ id: i.id, name: i.service_name })}>{done ? 'კულტურის პასუხი' : 'კულტურა (წინასწარი)'}</button>}
                   {sec === 'lab' && done && i.results.length > 0 && <button className="btn sm" type="button" style={{ height: 22, marginTop: 4 }} onClick={() => setCum({ service_id: i.service_id, name: i.service_name })}>დინამიკა</button>}
                   {sec !== 'lab' && i.status === 'scheduled' && i.scheduled_start && <div className="small muted">ჩაწერილია: {tsDate(i.scheduled_start)} {hhmm(i.scheduled_start)} · {i.device_name}</div>}
                   {sec === 'endoscopy' && i.path_status && <div className="small" style={{ marginTop: 4 }}>
@@ -92,6 +96,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
       })}
       <ErrorBox error={q.error ?? cancel.error ?? report.error} />
       {open && <OrderDialog encounterId={encounterId} onClose={() => setOpen(false)} />}
+      {micro && <MicroView id={micro.id} title={micro.name} onClose={() => setMicro(null)} />}
       {cum && items[0] && <CumulativeModal patientId={items[0].patient_id} serviceId={cum.service_id} title={`ლაბორატორიული დინამიკა — ${cum.name}`} onClose={() => setCum(null)} />}
     </section>
   );

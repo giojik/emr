@@ -377,7 +377,7 @@ export class LabConfigService {
   async encounterReport(encounterId: string, itemId?: string) {
     const all = await this.dx.encounterItems(encounterId);
     // გარე ლაბორატორიის PDF-პასუხი ბლანკზე არ იბეჭდება (ცალკე ფაილია)
-    const items = all.filter((r) => r.section === 'lab' && r.status === 'validated' && (!itemId || r.id === itemId) && !(r.ext_result_at && !r.results.length));
+    const items = all.filter((r) => r.section === 'lab' && r.status === 'validated' && (!itemId || r.id === itemId) && !(r.ext_result_at && !r.results.length) && !r.is_micro);   // მიკრობიოლოგია — ცალკე PDF
     if (!items.length) throw new BadRequestException(all.some((r) => r.ext_result_at && r.status === 'validated') ? 'გარე ლაბორატორიის პასუხი — PDF ფაილად (ანალიზის გასწვრივ)' : 'ვალიდირებული ლაბორატორიული შედეგი არ არის');
     const p0 = items[0];
     // ბლანკის ვერსიები (ძველ ჩანაწერებს, თუ აკლია — მიმდინარე შაბლონი)

@@ -12,7 +12,7 @@ import Methods from './lab/Methods';
 import Norms from './lab/Norms';
 
 interface Analyte { id: string; code: string; name: string; unit: string; result_type: 'numeric' | 'text' | 'select'; decimals: number | null; options: string | null; critical_low: string | null; critical_high: string | null; sort_order: number; is_active: boolean; norm_version: number; ranges: NormRange[] }
-type ServiceDetail = DxService & { analytes: Analyte[]; report_comment: string | null; default_method_id: string | null };
+type ServiceDetail = DxService & { analytes: Analyte[]; report_comment: string | null; default_method_id: string | null; is_micro?: boolean };
 
 const LAB_TABS = [['catalog', 'კვლევები'], ['norms', 'ნორმები'], ['blanks', 'ბლანკები'], ['methods', 'ანალიზატორები']] as const;
 
@@ -137,12 +137,12 @@ function CreateServiceDialog({ section, onClose, onCreated }: { section: DxSecti
 function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient(); const { user } = useAuth();
   const q = useQuery({ queryKey: ['dx-service', id], queryFn: () => api<ServiceDetail>(`/dx/catalog/${id}`) });
-  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string; comment: string; method: string; ext_lab_id: string; purchase: string; days: string } | null>(null);
+  const [f, setF] = useState<{ name: string; group_name: string; container: string; price: string; performed_by: 'internal' | 'external'; external_lab: string; is_active: boolean; duration: string; prep: string; comment: string; method: string; ext_lab_id: string; purchase: string; days: string; micro: boolean } | null>(null);
   const extLabs = useQuery({ queryKey: ['ext-labs', false], queryFn: () => api<{ id: string; name: string }[]>('/lab/external-labs') });
   const methods = useLabMethods(true);
   const [analyte, setAnalyte] = useState<Analyte | 'new' | null>(null);
   const s = q.data;
-  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '', comment: s.report_comment ?? '', method: s.default_method_id ?? '',
+  if (s && !f) setF({ name: s.name, group_name: s.group_name, container: s.container ?? '', price: Number(s.base_price).toFixed(2), performed_by: s.performed_by, external_lab: s.external_lab ?? '', is_active: s.is_active, duration: s.duration_minutes ? String(s.duration_minutes) : '', prep: s.prep_instructions ?? '', comment: s.report_comment ?? '', method: s.default_method_id ?? '', micro: !!s.is_micro,
     ext_lab_id: (s as { external_lab_id?: string | null }).external_lab_id ?? '', purchase: (s as { purchase_price?: string | null }).purchase_price ?? '', days: String((s as { ext_turnaround_days?: number }).ext_turnaround_days ?? 7) });
   const canEdit = can(user, 'admin') || (can(user, 'lab_manager', 'lab_doctor') && s?.section === 'lab');
   const canPrice = can(user, 'admin', 'billing');
@@ -153,7 +153,7 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
     mutationFn: (approve: boolean) => api(`/dx/catalog/${id}`, { method: 'PATCH', body: {
       ...(canEdit ? { name: f!.name, group_name: f!.group_name, ...(s!.section === 'lab' ? { container: f!.container || null } : {}), performed_by: f!.performed_by, external_lab: f!.performed_by === 'external' ? f!.external_lab || null : null, is_active: f!.is_active,
         ...(s!.section === 'lab' && f!.performed_by === 'external' ? { external_lab_id: f!.ext_lab_id || null, purchase_price: f!.purchase.trim() === '' ? null : Number(f!.purchase.replace(',', '.')), ext_turnaround_days: Number(f!.days) || 7 } : {}),
-        ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : { report_comment: f!.comment.trim() || null, default_method_id: f!.method || null }) } : {}),
+        ...(s!.section !== 'lab' ? { duration_minutes: f!.duration ? Number(f!.duration) : null, prep_instructions: f!.prep || null } : { report_comment: f!.comment.trim() || null, default_method_id: f!.method || null, is_micro: f!.micro }) } : {}),
       ...(canPrice ? { base_price: Number(f!.price) } : {}), ...(approve ? { approve: true } : {}),
     } }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['dx-catalog-admin'] }); void qc.invalidateQueries({ queryKey: ['dx-catalog'] }); onClose(); },
@@ -178,6 +178,8 @@ function ServiceDialog({ id, onClose }: { id: string; onClose: () => void }) {
               <option value="">— არ არის მითითებული</option>{methods.data?.filter((m) => m.is_active || m.id === f.method).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>}
           {s.section === 'lab' && <div style={{ gridColumn: '1 / -1' }}><Field label="კომენტარი ბლანკზე" htmlFor="scm" hint="იბეჭდება ანალიზის შედეგების ქვეშ (მაგ. ინტერპრეტაცია, მომზადების პირობა)">
             <textarea id="scm" className="textarea" rows={2} value={f.comment} disabled={!canEdit} onChange={(e) => setF({ ...f, comment: e.target.value })} /></Field></div>}
+        {s.section === 'lab' && <label className="row small"><input type="checkbox" checked={f.micro} disabled={!canEdit} onChange={(e) => setF({ ...f, micro: e.target.checked })} />
+          <strong>მიკრობიოლოგიური კვლევა</strong> <span className="muted">— კულტურა, მიკროორგანიზმები, ანტიბიოგრამა (კომპონენტები არ სჭირდება)</span></label>}
         </div>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="შესრულება">
