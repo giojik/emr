@@ -966,6 +966,68 @@ export interface LabSpecimens {
   status: Generated<string>;
 }
 
+export interface MedDosageForms {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface MedGenericAllergens {
+  generic_id: string;
+  group_code: string;
+}
+
+export interface MedGenerics {
+  atc_code: string | null;
+  controlled_class: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  dose_per_unit: Numeric | null;
+  dose_unit: string | null;
+  form_code: string;
+  high_alert: Generated<boolean>;
+  id: Generated<string>;
+  inn: string;
+  inn_latin: string | null;
+  is_active: Generated<boolean>;
+  max_daily_dose: Numeric | null;
+  max_single_dose: Numeric | null;
+  min_age_days: number | null;
+  notes: string | null;
+  patient_only: Generated<boolean>;
+  ped_max_daily_per_kg: Numeric | null;
+  ped_max_single_per_kg: Numeric | null;
+  reserve_antibiotic: Generated<boolean>;
+  routes: Generated<string[]>;
+  strength: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MedInteractions {
+  a_atc: string | null;
+  a_generic_id: string | null;
+  b_atc: string | null;
+  b_generic_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  effect: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  recommendation: string | null;
+  severity: string;
+  source: Generated<string>;
+  source_ref: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MedRoutes {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
 export interface MicroAntibiotics {
   class: string | null;
   code: string;
@@ -1223,6 +1285,109 @@ export interface ServiceTariffs {
   title: string;
 }
 
+export interface StockCategories {
+  billing_mode: Generated<string>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  expiry_warn_days: number | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  markup_pct: Numeric | null;
+  name: string;
+  parent_id: string | null;
+  requires_expiry: Generated<boolean>;
+  requires_lot: Generated<boolean>;
+  serial_tracked: Generated<boolean>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StockItemBarcodes {
+  barcode: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  item_id: string;
+  kind: Generated<string>;
+  pack_id: string | null;
+}
+
+export interface StockItemPacks {
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_receipt_default: Generated<boolean>;
+  item_id: string;
+  name: string;
+  qty_base: Numeric;
+}
+
+export interface StockItems {
+  base_unit: string;
+  billing_mode: string | null;
+  category_id: string;
+  code: Generated<string>;
+  country: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  expiry_warn_days: number | null;
+  generic_id: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  manufacturer: string | null;
+  name: string;
+  notes: string | null;
+  requires_expiry: Generated<boolean>;
+  requires_lot: Generated<boolean>;
+  sale_price: Numeric | null;
+  serial_tracked: Generated<boolean>;
+  storage: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StockLocations {
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  requires_approval: Generated<boolean>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StockSettings {
+  costing_method: Generated<string>;
+  id: Generated<number>;
+  short_expiry_months: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
+export interface StockSuppliers {
+  address: string | null;
+  contact_person: string | null;
+  created_at: Generated<Timestamp>;
+  email: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  phone: string | null;
+  tax_id: string | null;
+  updated_at: Generated<Timestamp>;
+  vat_payer: Generated<boolean>;
+}
+
+export interface StockUnits {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
 export interface UserCapabilities {
   capabilities: string[] | null;
   user_id: string | null;
@@ -1344,6 +1509,11 @@ export interface DB {
   lab_result_images: LabResultImages;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
+  med_dosage_forms: MedDosageForms;
+  med_generic_allergens: MedGenericAllergens;
+  med_generics: MedGenerics;
+  med_interactions: MedInteractions;
+  med_routes: MedRoutes;
   micro_antibiotics: MicroAntibiotics;
   micro_ast: MicroAst;
   micro_cultures: MicroCultures;
@@ -1365,6 +1535,14 @@ export interface DB {
   referrals: Referrals;
   roles: Roles;
   service_tariffs: ServiceTariffs;
+  stock_categories: StockCategories;
+  stock_item_barcodes: StockItemBarcodes;
+  stock_item_packs: StockItemPacks;
+  stock_items: StockItems;
+  stock_locations: StockLocations;
+  stock_settings: StockSettings;
+  stock_suppliers: StockSuppliers;
+  stock_units: StockUnits;
   user_capabilities: UserCapabilities;
   user_notifications: UserNotifications;
   user_roles: UserRoles;

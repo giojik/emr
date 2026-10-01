@@ -15,6 +15,7 @@ import PatientCard from './pages/PatientCard';
 import PatientNew from './pages/PatientNew';
 import Patients from './pages/Patients';
 import Reception from './pages/Reception';
+import Stock, { STOCK_READ } from './pages/stock/Stock';
 import AdminLayout from './pages/admin/AdminLayout';
 import Allergens from './pages/admin/Allergens';
 import Analyzers from './pages/admin/Analyzers';
@@ -76,6 +77,8 @@ export default function App() {
         <Route path="/diagnostics" element={<Navigate to={can(user, 'admin', 'diagnostic', 'lab_doctor', 'lab_manager') ? '/diagnostics/lab' : can(user, 'radiographer', 'radiologist', 'receptionist', 'manager', 'viewer') ? '/diagnostics/radiology' : '/diagnostics/endoscopy'} replace />} />
         <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'receptionist', 'manager', 'viewer', 'med_engineer']}><DiagnosticsHub /></Guard>} />
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
+        <Route path="/stock" element={<Navigate to="/stock/items" replace />} />
+        <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

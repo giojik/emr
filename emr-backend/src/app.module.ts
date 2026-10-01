@@ -22,11 +22,12 @@ import { TariffsModule } from './tariffs/tariffs';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles';
 import { ManagementReportsModule } from './reports/management';
+import { StockModule } from './stock/stock.module';
 
 @Module({
   imports: [DatabaseModule, AuditModule, NotificationsModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule],
   controllers: [HealthController],
 })
 export class AppModule {}
