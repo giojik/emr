@@ -1285,6 +1285,14 @@ export interface ServiceTariffs {
   title: string;
 }
 
+export interface StockBalances {
+  item_id: string;
+  location_id: string;
+  lot_id: string;
+  qty: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface StockCategories {
   billing_mode: Generated<string>;
   code: string;
@@ -1303,6 +1311,56 @@ export interface StockCategories {
   updated_at: Generated<Timestamp>;
 }
 
+export interface StockDocLines {
+  doc_id: string;
+  expires_on: string | null;
+  id: Generated<string>;
+  item_id: string;
+  line_net: Numeric | null;
+  line_no: number;
+  line_vat: Numeric | null;
+  lot_id: string | null;
+  lot_no: string | null;
+  notes: string | null;
+  pack_id: string | null;
+  pack_qty_base: Generated<Numeric>;
+  price: Numeric | null;
+  produced_on: string | null;
+  qty: Numeric;
+  qty_base: Numeric;
+  serial_no: string | null;
+  short_expiry_reason: string | null;
+  unit_cost: Numeric | null;
+  vat_rate: Generated<Numeric>;
+}
+
+export interface StockDocs {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  doc_date: string;
+  doc_no: string | null;
+  doc_type: string;
+  from_location_id: string | null;
+  id: Generated<string>;
+  invoice_date: string | null;
+  invoice_no: string | null;
+  location_id: string | null;
+  notes: string | null;
+  posted_at: Timestamp | null;
+  posted_by: string | null;
+  prices_include_vat: Generated<boolean>;
+  reason: string | null;
+  reversal_of: string | null;
+  reversed_by: string | null;
+  status: Generated<string>;
+  supplier_id: string | null;
+  to_location_id: string | null;
+  total_net: Generated<Numeric>;
+  total_vat: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+  waybill_no: string | null;
+}
+
 export interface StockItemBarcodes {
   barcode: string;
   created_at: Generated<Timestamp>;
@@ -1311,6 +1369,14 @@ export interface StockItemBarcodes {
   item_id: string;
   kind: Generated<string>;
   pack_id: string | null;
+}
+
+export interface StockItemCosts {
+  avg_cost: Generated<Numeric>;
+  item_id: string;
+  qty_on_hand: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+  value_on_hand: Generated<Numeric>;
 }
 
 export interface StockItemPacks {
@@ -1356,6 +1422,40 @@ export interface StockLocations {
   requires_approval: Generated<boolean>;
   sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface StockLots {
+  created_at: Generated<Timestamp>;
+  expires_on: string | null;
+  first_supplier_id: string | null;
+  id: Generated<string>;
+  item_id: string;
+  lot_no: string | null;
+  produced_on: string | null;
+  received_qty: Generated<Numeric>;
+  received_value: Generated<Numeric>;
+  serial_no: string | null;
+  status: Generated<string>;
+  status_reason: string | null;
+  unit_cost: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StockMoves {
+  cost_avg: Numeric | null;
+  cost_lot: Numeric;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  doc_id: string;
+  encounter_id: string | null;
+  id: Generated<Int8>;
+  item_id: string;
+  line_id: string | null;
+  location_id: string;
+  lot_id: string;
+  move_type: string;
+  patient_id: string | null;
+  qty: Numeric;
 }
 
 export interface StockSettings {
@@ -1535,11 +1635,17 @@ export interface DB {
   referrals: Referrals;
   roles: Roles;
   service_tariffs: ServiceTariffs;
+  stock_balances: StockBalances;
   stock_categories: StockCategories;
+  stock_doc_lines: StockDocLines;
+  stock_docs: StockDocs;
   stock_item_barcodes: StockItemBarcodes;
+  stock_item_costs: StockItemCosts;
   stock_item_packs: StockItemPacks;
   stock_items: StockItems;
   stock_locations: StockLocations;
+  stock_lots: StockLots;
+  stock_moves: StockMoves;
   stock_settings: StockSettings;
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;

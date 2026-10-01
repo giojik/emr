@@ -2,11 +2,13 @@ import type { ComponentType } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { can, type Role } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import Balances from './Balances';
 import Generics from './Generics';
 import ImportPage from './Import';
 import Interactions from './Interactions';
 import Items from './Items';
 import Locations from './Locations';
+import Receipts from './Receipts';
 import Setup from './Setup';
 import Suppliers from './Suppliers';
 
@@ -17,16 +19,18 @@ export const STOCK_ADMIN: Role[] = ['admin', 'stock_manager'];
 export const CLINICAL_EDIT: Role[] = ['admin', 'pharmacist'];
 
 const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] = [
+  { key: 'balances', label: 'ნაშთები', roles: STOCK_READ, el: Balances },
+  { key: 'receipts', label: 'მიღება', roles: STOCK_READ, el: Receipts },
   { key: 'items', label: 'საქონელი', roles: STOCK_READ, el: Items },
-  { key: 'generics', label: 'ჯენერიკები (INN)', roles: STOCK_READ, el: Generics },
+  { key: 'generics', label: 'ჯენერიკები', roles: STOCK_READ, el: Generics },
   { key: 'interactions', label: 'ურთიერთქმედებები', roles: STOCK_READ, el: Interactions },
   { key: 'suppliers', label: 'მომწოდებლები', roles: STOCK_READ, el: Suppliers },
   { key: 'locations', label: 'ლოკაციები', roles: STOCK_READ, el: Locations },
-  { key: 'import', label: 'იმპორტი (Excel)', roles: CATALOG_EDIT, el: ImportPage },
-  { key: 'setup', label: 'კატეგორიები და პარამეტრები', roles: STOCK_ADMIN, el: Setup },
+  { key: 'import', label: 'იმპორტი', roles: CATALOG_EDIT, el: ImportPage },
+  { key: 'setup', label: 'პარამეტრები', roles: STOCK_ADMIN, el: Setup },
 ];
 
-/** საწყობი + შიდა აფთიაქი — ნომენკლატურა (0030); ნაშთები და მოძრაობები — 0031-დან */
+/** საწყობი + შიდა აფთიაქი: ნაშთები და მიღება (0031), ნომენკლატურა (0030) */
 export default function Stock() {
   const { user } = useAuth();
   const { view } = useParams();

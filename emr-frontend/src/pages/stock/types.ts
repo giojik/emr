@@ -70,3 +70,46 @@ export const genericLabel = (g: Pick<MedGeneric, 'inn' | 'strength' | 'form_name
 export const qtyFmt = (v: number | string) => { const n = Number(v); return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))); };
 /** ცარიელი სტრიქონი → null (PATCH-ისთვის) */
 export const nul = (s: string) => (s.trim() ? s.trim() : null);
+
+// ---------------------------------------------------------------- 0031: დოკუმენტები, ნაშთები
+export type DocStatus = 'draft' | 'posted' | 'cancelled';
+export interface StockDocRow {
+  id: string; doc_type: string; doc_no: string | null; status: DocStatus; doc_date: string; invoice_no: string | null; waybill_no: string | null;
+  total_net: string; total_vat: string; posted_at: string | null; reversal_of: string | null; reversed_by: string | null; reversed_by_no: string | null; created_at: string;
+  location_name: string | null; supplier_name: string | null; created_by_name: string; lines: number;
+}
+export interface StockDocLine {
+  id: string; line_no: number; item_id: string; pack_id: string | null; pack_qty_base: string; qty: string; qty_base: string; lot_no: string | null; serial_no: string | null;
+  expires_on: string | null; produced_on: string | null; price: string | null; vat_rate: string; unit_cost: string | null; line_net: string | null; line_vat: string | null;
+  lot_id: string | null; short_expiry_reason: string | null; notes: string | null;
+  item_name: string; item_code: string; requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; base_unit_name: string; pack_name: string | null; controlled_class: Controlled | null;
+}
+export interface DocIssue { line_no: number; level: 'error' | 'warn'; code: string; message: string }
+export interface StockDoc extends Omit<StockDocRow, 'lines' | 'reversed_by_no'> {
+  location_id: string | null; supplier_id: string | null; invoice_date: string | null; prices_include_vat: boolean; notes: string | null; reason: string | null;
+  location_kind: LocationKind | null; supplier_tax_id: string | null; supplier_vat_payer: boolean | null; posted_by_name: string | null;
+  reversal_of_no: string | null; reversed_by_no: string | null; lines: StockDocLine[]; issues: DocIssue[];
+}
+export interface BalanceRow {
+  location_id: string; lot_id: string; item_id: string; qty: string; location_name: string; item_name: string; item_code: string; base_unit_name: string; category_name: string;
+  lot_no: string | null; serial_no: string | null; expires_on: string | null; lot_status: 'active' | 'quarantine' | 'recalled'; cost_lot: string; cost_avg: string | null;
+  inn: string | null; strength: string | null; controlled_class: Controlled | null; days_left: number | null; warn_days: number | null;
+  packs: { name: string; qty_base: string }[]; unit_cost: number; value: number;
+}
+export interface Balances { costing_method: 'fifo' | 'average'; today: string; total_value: number; rows: BalanceRow[] }
+export interface MoveRow {
+  id: string; created_at: string; move_type: string; qty: string; cost_lot: string; cost_avg: string | null; doc_id: string; doc_no: string | null; doc_type: string; doc_date: string;
+  location_name: string; lot_no: string | null; serial_no: string | null; expires_on: string | null; user_name: string;
+}
+export const DOC_STATUS: Record<DocStatus, [string, string]> = { draft: ['warn', 'მონახაზი'], posted: ['ok', 'გატარებული'], cancelled: ['', 'გაუქმებული'] };
+export const DOC_TYPE_KA: Record<string, string> = { receipt: 'მიღება', reversal: 'შემობრუნება', transfer: 'გადაცემა', issue: 'გაცემა', return: 'დაბრუნება', writeoff: 'ჩამოწერა', adjustment: 'კორექტირება', consumption: 'ხარჯი' };
+export const RECEIPT_EDIT_ROLES = ['admin', 'storekeeper', 'stock_manager', 'pharmacist'] as const;
+export const REVERSE_ROLES = ['admin', 'stock_manager'] as const;
+/** რაოდენობა შეფუთვებით: 50 → „5 კოლოფი“ (ნაშთით) */
+export const packBreakdown = (qty: number, packs: { name: string; qty_base: string | number }[]) => {
+  const big = packs.map((p) => ({ ...p, q: Number(p.qty_base) })).filter((p) => p.q > 1 && qty >= p.q).sort((a, b) => b.q - a.q)[0];
+  if (!big) return '';
+  const n = Math.floor(qty / big.q); const rest = Math.round((qty - n * big.q) * 1000) / 1000;
+  return `${n} ${big.name}${rest ? ` + ${rest}` : ''}`;
+};
+export const money2 = (v: number | string | null | undefined) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(2)} ₾`);
