@@ -1,3 +1,4 @@
+import Form100History from '../components/Form100History';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -17,7 +18,7 @@ export default function Encounter() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const q = useQuery({ queryKey: ['encounter', id], queryFn: () => api<EncounterDetail>(`/encounters/${id}`) });
-  const [dlg, setDlg] = useState<'discharge' | 'form100' | 'history' | 'allergy' | 'consent' | null>(null);
+  const [dlg, setDlg] = useState<'discharge' | 'form100' | 'history' | 'allergy' | 'consent' | 'f100hist' | null>(null);
 
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <div className="content"><ErrorBox error={q.error ?? 'ვიზიტი ვერ მოიძებნა'} /></div>;
@@ -42,6 +43,7 @@ export default function Encounter() {
             <button className="btn" type="button" onClick={() => setDlg('history')}>წინა ვიზიტები</button>
             <button className="btn" type="button" onClick={() => setDlg('consent')}>ინფორმირებული თანხმობა</button>
             {(isAttending && (active || e.status === 'discharged')) && <button className="btn" type="button" onClick={() => setDlg('form100')}>ფორმა №100/ა</button>}
+            {can(user, 'admin', 'doctor', 'receptionist') && <button className="btn" type="button" onClick={() => setDlg('f100hist')}>ფ.№100 — ისტორია</button>}
             {canWrite && <button className="btn primary" type="button" onClick={() => setDlg('discharge')}>ვიზიტის დასრულება</button>}
           </div>
         </div>
@@ -73,6 +75,7 @@ export default function Encounter() {
 
       {dlg === 'discharge' && <DischargeDialog e={e} onClose={() => setDlg(null)} />}
       {dlg === 'form100' && <Form100Dialog e={e} onClose={() => setDlg(null)} />}
+      {dlg === 'f100hist' && <Form100History patientId={e.patient.id} currentEncounterId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'history' && <HistoryDrawer patientId={e.patient.id} currentId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={e.patient.id} onClose={() => setDlg(null)} />}
       {dlg === 'consent' && (

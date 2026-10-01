@@ -82,6 +82,17 @@ export async function api<T = unknown>(path: string, opts: RequestOpts = {}, ret
 }
 
 /** PDF/ფაილის გახსნა ახალ ჩანართში (ავტორიზაციით) */
+/** PDF-ის ბეჭდვა (ფარული iframe, ბრაუზერის ბეჭდვის ფანჯარა); ვერ დაბეჭდა — ახალ ჩანართში იხსნება */
+export async function printBlob(path: string) {
+  const blob = await api<Blob>(path, { raw: true });
+  const url = URL.createObjectURL(blob);
+  const f = document.createElement('iframe');
+  Object.assign(f.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
+  f.src = url; document.body.appendChild(f);
+  f.onload = () => setTimeout(() => { try { f.contentWindow?.focus(); f.contentWindow?.print(); } catch { window.open(url, '_blank'); } }, 300);
+  setTimeout(() => { URL.revokeObjectURL(url); f.remove(); }, 120_000);
+}
+
 export async function openBlob(path: string) {
   const win = window.open('', '_blank');
   try {

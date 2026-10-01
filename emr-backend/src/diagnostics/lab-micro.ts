@@ -13,6 +13,7 @@ import { ClinicSettingsService } from '../settings/clinic-settings';
 import { d, dt, newDoc } from './diagnostics.pdf';
 import { DiagnosticsService } from './diagnostics.service';
 import { LabDeliveryService } from './lab-delivery';
+import { LabNotifyService } from './lab-notify';
 
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
 const EDITABLE = ['collected', 'in_progress', 'resulted'];
@@ -275,7 +276,8 @@ void IsInt;
 
 @Controller('lab/micro')
 export class LabMicroController {
-  constructor(private readonly m: LabMicroService, @Inject(forwardRef(() => LabDeliveryService)) private readonly delivery: LabDeliveryService) {}
+  constructor(private readonly m: LabMicroService, @Inject(forwardRef(() => LabDeliveryService)) private readonly delivery: LabDeliveryService,
+    private readonly labNotify: LabNotifyService) {}
   @Get('refs') @Roles(...LAB_STAFF, 'doctor') refs() { return this.m.refs(); }
   @Post('organisms') @Roles('admin', 'lab_doctor', 'lab_manager') addOrg(@Body() d: OrganismDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.saveOrganism(null, d, u, auditCtx(r)); }
   @Patch('organisms/:id') @Roles('admin', 'lab_doctor', 'lab_manager') updOrg(@Param('id', ParseUUIDPipe) id: string, @Body() d: OrganismDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.saveOrganism(id, d, u, auditCtx(r)); }
@@ -292,10 +294,10 @@ export class LabMicroController {
   @Patch('isolates/:id') @Roles(...LAB_STAFF) updIso(@Param('id', ParseUUIDPipe) id: string, @Body() d: IsolateDto, @Req() r: Request) { return this.m.updateIsolate(id, d, auditCtx(r)); }
   @Delete('isolates/:id') @Roles(...LAB_STAFF) delIso(@Param('id', ParseUUIDPipe) id: string, @Req() r: Request) { return this.m.deleteIsolate(id, auditCtx(r)); }
   @Put('isolates/:id/ast') @Roles(...LAB_STAFF) ast(@Param('id', ParseUUIDPipe) id: string, @Body() d: AstDto, @Req() r: Request) { return this.m.saveAst(id, d.rows, auditCtx(r)); }
-  @Post('items/:id/prelim') @HttpCode(200) @Roles('admin', 'lab_doctor') prelim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.prelim(id, u, auditCtx(r)); }
+  @Post('items/:id/prelim') @HttpCode(200) @Roles('admin', 'lab_doctor') prelim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.prelim(id, u, auditCtx(r)).then((x) => { void this.labNotify.ready(id, u.id, 'lab_prelim').catch(() => undefined); return x; }); }
   @Post('items/:id/complete') @HttpCode(200) @Roles(...LAB_STAFF) complete(@Param('id', ParseUUIDPipe) id: string, @Req() r: Request) { return this.m.complete(id, auditCtx(r)); }
   @Post('items/:id/final') @HttpCode(200) @Roles('admin', 'lab_doctor') final(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) {
-    return this.m.final(id, u, auditCtx(r)).then((x) => { void this.delivery.afterValidate(id, auditCtx(r)); return x; });
+    return this.m.final(id, u, auditCtx(r)).then((x) => { void this.delivery.afterValidate(id, auditCtx(r)); void this.labNotify.ready(id, u.id).catch(() => undefined); return x; });
   }
   @Get('items/:id/view') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist') view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.m.view(id, u); }
   @Get('items/:id/report.pdf') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')

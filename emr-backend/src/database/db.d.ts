@@ -1228,6 +1228,21 @@ export interface UserCapabilities {
   user_id: string | null;
 }
 
+export interface UserNotifications {
+  body: string | null;
+  created_at: Generated<Timestamp>;
+  entity_id: string | null;
+  id: Generated<Int8>;
+  items: Generated<string[]>;
+  kind: string;
+  link: string | null;
+  read_at: Timestamp | null;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
+  user_id: string;
+}
+
 export interface UserRoles {
   created_at: Generated<Timestamp>;
   role_id: string;
@@ -1351,6 +1366,7 @@ export interface DB {
   roles: Roles;
   service_tariffs: ServiceTariffs;
   user_capabilities: UserCapabilities;
+  user_notifications: UserNotifications;
   user_roles: UserRoles;
   users: Users;
 }

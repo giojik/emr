@@ -1,3 +1,4 @@
+import Form100History from '../components/Form100History';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -19,7 +20,7 @@ export default function PatientCard() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | 'lab' | null>(null);
-  const [cum, setCum] = useState(false);
+  const [cum, setCum] = useState(false); const [f100, setF100] = useState(false);
   const nav = useNavigate();
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
   const visits = useQuery({ queryKey: ['encounters', 'patient', id], queryFn: () => api<EncounterListItem[]>('/encounters', { query: { patient_id: id } }) });
@@ -44,6 +45,7 @@ export default function PatientCard() {
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
           <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button>
           {can(user, 'admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'lab_manager') && <button className="btn" type="button" onClick={() => setCum(true)}>ლაბ. დინამიკა</button>}
+          {can(user, 'admin', 'doctor', 'receptionist') && <button className="btn" type="button" onClick={() => setF100(true)}>ფ.№100 — ისტორია</button>}
           <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
@@ -89,6 +91,7 @@ export default function PatientCard() {
       {dlg === 'walkin' && <WalkInDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={x.id} onClose={() => setDlg(null)} />}
       {dlg === 'edit' && <EditPatientDialog patient={x} onClose={() => setDlg(null)} />}
+      {f100 && <Form100History patientId={x.id} onClose={() => setF100(false)} />}
       {cum && <CumulativeModal patientId={x.id} title={`${x.first_name} ${x.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}
       {dlg === 'lab' && <OrderDialog patientId={x.id} onClose={() => setDlg(null)} onLabVisit={(eid) => nav(`/cashier/${eid}`)} />}
     </>

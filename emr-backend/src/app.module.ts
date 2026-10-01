@@ -1,3 +1,4 @@
+import { NotificationsModule } from './notifications/notifications';
 import { Module } from '@nestjs/common';
 import { AuditModule } from './audit/audit.service';
 import { AuthModule } from './auth/auth.module';
@@ -23,7 +24,7 @@ import { RolesModule } from './roles/roles';
 import { ManagementReportsModule } from './reports/management';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
+  imports: [DatabaseModule, AuditModule, NotificationsModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
     StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule],
   controllers: [HealthController],

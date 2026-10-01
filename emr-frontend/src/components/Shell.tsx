@@ -1,3 +1,4 @@
+import NotificationBell from './NotificationBell';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -53,6 +54,7 @@ export default function Shell() {
             <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
             <span className="small muted" title={user.roles.map((r) => r.name).join(', ')}>{user.roles[0]?.name ?? ROLE_KA[user.role] ?? user.role}{user.roles.length > 1 ? ` +${user.roles.length - 1}` : ''}</span>
           </div>
+          <NotificationBell />
           <button type="button" className="icon-btn" aria-label="გასვლა" title="გასვლა" onClick={async () => { await logout(); nav('/login'); }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 4h4v16h-4" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></svg>
           </button>
