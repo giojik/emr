@@ -9,23 +9,31 @@ import Interactions from './Interactions';
 import Items from './Items';
 import Locations from './Locations';
 import Receipts from './Receipts';
+import Requests from './Requests';
+import Transfer from './Transfer';
+import Transit from './Transit';
 import Setup from './Setup';
 import Suppliers from './Suppliers';
 
 /** კატალოგის ნახვა (სერვერის STOCK_READ-ის შესაბამისი) */
 export const STOCK_READ: Role[] = ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'nurse', 'doctor', 'lab_doctor', 'lab_manager', 'diagnostic', 'manager', 'viewer', 'accountant'];
+/** ნომენკლატურის ჩანართები — საწყობის / აფთიაქის / მართვის როლებს (განყოფილებას — მხოლოდ ნაშთი, მოთხოვნა, მიღება, დაბრუნება) */
+export const CATALOG_VIEW: Role[] = ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'manager', 'viewer', 'accountant'];
 export const CATALOG_EDIT: Role[] = ['admin', 'stock_manager', 'pharmacist'];
 export const STOCK_ADMIN: Role[] = ['admin', 'stock_manager'];
 export const CLINICAL_EDIT: Role[] = ['admin', 'pharmacist'];
 
 const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] = [
   { key: 'balances', label: 'ნაშთები', roles: STOCK_READ, el: Balances },
-  { key: 'receipts', label: 'მიღება', roles: STOCK_READ, el: Receipts },
-  { key: 'items', label: 'საქონელი', roles: STOCK_READ, el: Items },
-  { key: 'generics', label: 'ჯენერიკები', roles: STOCK_READ, el: Generics },
-  { key: 'interactions', label: 'ურთიერთქმედებები', roles: STOCK_READ, el: Interactions },
-  { key: 'suppliers', label: 'მომწოდებლები', roles: STOCK_READ, el: Suppliers },
-  { key: 'locations', label: 'ლოკაციები', roles: STOCK_READ, el: Locations },
+  { key: 'requests', label: 'მოთხოვნები', roles: STOCK_READ, el: Requests },
+  { key: 'transit', label: 'მისაღები', roles: STOCK_READ, el: Transit },
+  { key: 'transfer', label: 'გადაცემა / დაბრუნება', roles: STOCK_READ, el: Transfer },
+  { key: 'receipts', label: 'მიღება (მომწოდებელი)', roles: CATALOG_VIEW, el: Receipts },
+  { key: 'items', label: 'საქონელი', roles: CATALOG_VIEW, el: Items },
+  { key: 'generics', label: 'ჯენერიკები', roles: CATALOG_VIEW, el: Generics },
+  { key: 'interactions', label: 'ურთიერთქმედებები', roles: CATALOG_VIEW, el: Interactions },
+  { key: 'suppliers', label: 'მომწოდებლები', roles: CATALOG_VIEW, el: Suppliers },
+  { key: 'locations', label: 'ლოკაციები', roles: CATALOG_VIEW, el: Locations },
   { key: 'import', label: 'იმპორტი', roles: CATALOG_EDIT, el: ImportPage },
   { key: 'setup', label: 'პარამეტრები', roles: STOCK_ADMIN, el: Setup },
 ];

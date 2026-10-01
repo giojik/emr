@@ -1322,12 +1322,15 @@ export interface StockDocLines {
   lot_id: string | null;
   lot_no: string | null;
   notes: string | null;
+  override_reason: string | null;
   pack_id: string | null;
   pack_qty_base: Generated<Numeric>;
+  patient_id: string | null;
   price: Numeric | null;
   produced_on: string | null;
   qty: Numeric;
   qty_base: Numeric;
+  request_line_id: string | null;
   serial_no: string | null;
   short_expiry_reason: string | null;
   unit_cost: Numeric | null;
@@ -1350,6 +1353,11 @@ export interface StockDocs {
   posted_by: string | null;
   prices_include_vat: Generated<boolean>;
   reason: string | null;
+  receive_note: string | null;
+  receive_status: string | null;
+  received_at: Timestamp | null;
+  received_by: string | null;
+  request_id: string | null;
   reversal_of: string | null;
   reversed_by: string | null;
   status: Generated<string>;
@@ -1456,6 +1464,41 @@ export interface StockMoves {
   move_type: string;
   patient_id: string | null;
   qty: Numeric;
+}
+
+export interface StockRequestLines {
+  id: Generated<string>;
+  item_id: string;
+  line_no: number;
+  notes: string | null;
+  pack_id: string | null;
+  patient_id: string | null;
+  qty: Numeric;
+  qty_approved: Numeric | null;
+  qty_base: Numeric;
+  qty_issued: Generated<Numeric>;
+  request_id: string;
+}
+
+export interface StockRequests {
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  closed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  from_location_id: string;
+  id: Generated<string>;
+  notes: string | null;
+  reason: string | null;
+  rejected_at: Timestamp | null;
+  rejected_by: string | null;
+  req_no: string | null;
+  requires_approval: Generated<boolean>;
+  status: Generated<string>;
+  submitted_at: Timestamp | null;
+  to_location_id: string;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
 }
 
 export interface StockSettings {
@@ -1646,6 +1689,8 @@ export interface DB {
   stock_locations: StockLocations;
   stock_lots: StockLots;
   stock_moves: StockMoves;
+  stock_request_lines: StockRequestLines;
+  stock_requests: StockRequests;
   stock_settings: StockSettings;
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;

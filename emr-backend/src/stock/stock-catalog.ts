@@ -322,6 +322,7 @@ export class StockCatalogService {
       const r = await this.db.transaction().execute(async (trx) => {
         const old = id ? await trx.selectFrom('stock_locations').selectAll().where('id', '=', id).forUpdate().executeTakeFirst() : undefined;
         if (id && !old) throw new NotFoundException('ლოკაცია ვერ მოიძებნა');
+        if (old?.kind === 'transit') throw new BadRequestException('„გზაში“ სისტემური ლოკაციაა — არ იცვლება');
         const kind = (vals.kind as string | undefined) ?? old?.kind; const dep = 'department_id' in vals ? vals.department_id : old?.department_id;
         if (kind === 'department' && !dep) throw new BadRequestException('განყოფილების ქვესაწყობს განყოფილება სჭირდება');
         const row = id ? await trx.updateTable('stock_locations').set(vals).where('id', '=', id).returningAll().executeTakeFirstOrThrow()

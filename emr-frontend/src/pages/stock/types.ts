@@ -43,7 +43,7 @@ export interface Supplier {
   id: string; name: string; tax_id: string | null; vat_payer: boolean; address: string | null; phone: string | null; email: string | null;
   contact_person: string | null; notes: string | null; is_active: boolean;
 }
-export type LocationKind = 'central' | 'pharmacy' | 'household' | 'department' | 'operating' | 'cssd' | 'lab' | 'icu' | 'other';
+export type LocationKind = 'central' | 'pharmacy' | 'household' | 'department' | 'operating' | 'cssd' | 'lab' | 'icu' | 'other' | 'transit';
 export interface StockLocation {
   id: string; code: string; name: string; kind: LocationKind; department_id: string | null; department_name: string | null;
   requires_approval: boolean; is_active: boolean; sort_order: number;
@@ -60,7 +60,7 @@ export const SEVERITY_KA: Record<Severity | 'duplicate', [string, string]> = {
 };
 export const LOCATION_KA: Record<LocationKind, string> = {
   central: 'ცენტრალური საწყობი', pharmacy: 'აფთიაქი', household: 'სამეურნეო', department: 'განყოფილება', operating: 'საოპერაციო',
-  cssd: 'სტერილიზაცია (CSSD)', lab: 'ლაბორატორია', icu: 'რეანიმაცია / ინტენსიური', other: 'სხვა',
+  cssd: 'სტერილიზაცია (CSSD)', lab: 'ლაბორატორია', icu: 'რეანიმაცია / ინტენსიური', other: 'სხვა', transit: 'გზაში (სისტემური)',
 };
 export const DOSE_UNITS = ['mg', 'mcg', 'g', 'IU', 'ml', 'mmol', 'mEq'] as const;
 export const COSTING_KA: Record<StockSettings['costing_method'], string> = { fifo: 'ლოტის ფასი (FIFO)', average: 'საშუალო შეწონილი' };
@@ -81,7 +81,7 @@ export interface StockDocRow {
 export interface StockDocLine {
   id: string; line_no: number; item_id: string; pack_id: string | null; pack_qty_base: string; qty: string; qty_base: string; lot_no: string | null; serial_no: string | null;
   expires_on: string | null; produced_on: string | null; price: string | null; vat_rate: string; unit_cost: string | null; line_net: string | null; line_vat: string | null;
-  lot_id: string | null; short_expiry_reason: string | null; notes: string | null;
+  lot_id: string | null; short_expiry_reason: string | null; notes: string | null; override_reason?: string | null; patient_name?: string | null;
   item_name: string; item_code: string; requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; base_unit_name: string; pack_name: string | null; controlled_class: Controlled | null;
 }
 export interface DocIssue { line_no: number; level: 'error' | 'warn'; code: string; message: string }
@@ -113,3 +113,31 @@ export const packBreakdown = (qty: number, packs: { name: string; qty_base: stri
   return `${n} ${big.name}${rest ? ` + ${rest}` : ''}`;
 };
 export const money2 = (v: number | string | null | undefined) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(2)} ₾`);
+
+// ---------------------------------------------------------------- 0032: მოთხოვნები, გაცემა, გადაცემა
+export type ReqStatus = 'draft' | 'submitted' | 'approved' | 'partial' | 'issued' | 'closed' | 'rejected' | 'cancelled';
+export const REQ_STATUS: Record<ReqStatus, [string, string]> = {
+  draft: ['', 'მონახაზი'], submitted: ['warn', 'დასამტკიცებელი'], approved: ['info', 'დამტკიცებული — გასაცემი'], partial: ['info', 'ნაწილობრივ გაცემული'],
+  issued: ['ok', 'გაცემული'], closed: ['', 'დახურული'], rejected: ['danger', 'უარყოფილი'], cancelled: ['', 'გაუქმებული'],
+};
+export interface ReqRow {
+  id: string; req_no: string | null; status: ReqStatus; urgent: boolean; requires_approval: boolean; created_at: string; submitted_at: string | null; approved_at: string | null;
+  notes: string | null; from_location_id: string; to_location_id: string; from_name: string; to_name: string; created_by_name: string; lines: number; in_transit: number;
+}
+export interface ReqLine {
+  id: string; line_no: number; item_id: string; pack_id: string | null; qty: string; qty_base: string; qty_approved: string | null; qty_issued: string; patient_id: string | null; notes: string | null;
+  item_name: string; item_code: string; base_unit_name: string; pack_name: string | null; pack_qty_base: string | null; controlled_class: Controlled | null; patient_only: boolean | null;
+  patient_name: string | null; patient_pn: string | null; available: string; on_hand_to: string;
+}
+export interface ReqDoc { id: string; doc_no: string; doc_type: string; posted_at: string; receive_status: 'received' | 'returned' | null; received_at: string | null; receive_note: string | null; received_by_name: string | null }
+export interface StockRequest extends Omit<ReqRow, 'lines' | 'in_transit'> {
+  from_kind: LocationKind; to_department_id: string | null; approved_by_name: string | null; rejected_by_name: string | null; reason: string | null; created_by: string;
+  lines: ReqLine[]; docs: ReqDoc[];
+}
+export interface LotAvail { lot_id: string; lot_no: string | null; serial_no: string | null; expires_on: string | null; available?: string; qty?: string }
+export interface PickLine { request_line_id: string; item_id: string; item_name: string; base_unit_name: string; remaining: number; shortage: number; lots: LotAvail[]; alloc: (LotAvail & { qty: number })[] }
+export interface TransitRow {
+  id: string; doc_no: string; doc_type: 'transfer' | 'return'; posted_at: string; notes: string | null; from_name: string; to_name: string; req_no: string | null; sent_by_name: string; lines: number; can_receive: boolean;
+}
+export const STOCK_ROLES = ['admin', 'storekeeper', 'stock_manager'] as const;
+export const ISSUER_ROLES = ['admin', 'storekeeper', 'stock_manager', 'pharmacist'] as const;

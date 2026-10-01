@@ -174,7 +174,7 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
     const net = h.prices_include_vat ? gross / (1 + l.vat_rate / 100) : n(l.price) * n(l.qty);
     return { net: a.net + net, vat: a.vat + (gross - net) };
   }, { net: 0, vat: 0 });
-  const locOptions = (locs.data ?? []).filter((l) => !pharmOnly || l.kind === 'pharmacy');
+  const locOptions = (locs.data ?? []).filter((l) => l.kind !== 'transit' && (!pharmOnly || l.kind === 'pharmacy'));
   const lineIssues = (no: number) => issues.filter((i) => i.line_no === no);
   const valid = h.location_id && lines.every((l) => n(l.qty) > 0);
 

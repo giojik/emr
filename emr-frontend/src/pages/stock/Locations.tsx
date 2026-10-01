@@ -35,7 +35,7 @@ export default function Locations() {
           <table className="table">
             <thead><tr><th>კოდი</th><th>დასახელება</th><th>ტიპი</th><th>განყოფილება</th><th>მოთხოვნის დამტკიცება</th><th>სტატუსი</th></tr></thead>
             <tbody>{q.data?.map((l) => (
-              <tr key={l.id} className={editable ? 'clickable' : undefined} onClick={() => editable && setEdit(l)}>
+              <tr key={l.id} className={editable && l.kind !== 'transit' ? 'clickable' : undefined} onClick={() => editable && l.kind !== 'transit' && setEdit(l)}>
                 <td className="mono">{l.code}</td><td><strong>{l.name}</strong></td><td>{LOCATION_KA[l.kind]}</td><td>{l.department_name ?? '—'}</td>
                 <td>{l.requires_approval ? 'საჭიროა' : 'არა'}</td>
                 <td>{l.is_active ? <span className="chip ok">აქტიური</span> : <span className="chip">გათიშული</span>}</td>
@@ -69,7 +69,7 @@ function LocationDialog({ l, deps, onClose }: { l: Partial<StockLocation>; deps:
         <Field label="დასახელება" htmlFor="ln" required><input id="ln" className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
         <Field label="ტიპი" htmlFor="lk" required>
           <select id="lk" className="select" value={f.kind} onChange={(e) => set('kind', e.target.value as LocationKind)}>
-            {(Object.keys(LOCATION_KA) as LocationKind[]).map((k) => <option key={k} value={k}>{LOCATION_KA[k]}</option>)}
+            {(Object.keys(LOCATION_KA) as LocationKind[]).filter((k) => k !== 'transit').map((k) => <option key={k} value={k}>{LOCATION_KA[k]}</option>)}
           </select></Field>
         <Field label="განყოფილება" htmlFor="ld" required={f.kind === 'department'} hint="ხელმძღვანელი ამტკიცებს მოთხოვნას">
           <select id="ld" className="select" value={f.department_id} onChange={(e) => set('department_id', e.target.value)}>

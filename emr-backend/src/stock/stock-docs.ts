@@ -54,6 +54,7 @@ export class StockDocsService {
   private async checkLocation(u: AuthUser, locationId: string, ex: Database | Trx = this.db) {
     const l = await ex.selectFrom('stock_locations').select(['id', 'kind', 'is_active', 'name']).where('id', '=', locationId).executeTakeFirst();
     if (!l) throw new BadRequestException('ლოკაცია ვერ მოიძებნა');
+    if (l.kind === 'transit') throw new BadRequestException('„გზაში“ სისტემური ლოკაციაა');
     if (!l.is_active) throw new BadRequestException(`ლოკაცია „${l.name}“ გათიშულია`);
     if (!has(u, 'admin', 'storekeeper', 'stock_manager') && l.kind !== 'pharmacy') throw new ForbiddenException('ფარმაცევტი მიღებას აფორმებს მხოლოდ აფთიაქში');
     return l;
@@ -63,13 +64,15 @@ export class StockDocsService {
   async list(q: { type?: string; status?: string; location_id?: string; supplier_id?: string; from?: string; to?: string; search?: string }) {
     let x = this.db.selectFrom('stock_docs as d').leftJoin('stock_locations as l', 'l.id', 'd.location_id').leftJoin('stock_suppliers as s', 's.id', 'd.supplier_id')
       .innerJoin('users as u', 'u.id', 'd.created_by').leftJoin('stock_docs as rv', 'rv.id', 'd.reversed_by')
+      .leftJoin('stock_locations as fl', 'fl.id', 'd.from_location_id').leftJoin('stock_locations as tl', 'tl.id', 'd.to_location_id').leftJoin('stock_requests as rq', 'rq.id', 'd.request_id')
       .select(['d.id', 'd.doc_type', 'd.doc_no', 'd.status', 'd.doc_date', 'd.invoice_no', 'd.waybill_no', 'd.total_net', 'd.total_vat', 'd.posted_at', 'd.reversal_of', 'd.reversed_by', 'd.created_at',
+        'd.receive_status', 'd.received_at', 'fl.name as from_name', 'tl.name as to_name', 'rq.req_no', 'd.request_id',
         'l.name as location_name', 's.name as supplier_name', 'rv.doc_no as reversed_by_no', sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'),
         sql<number>`(SELECT count(*)::int FROM stock_doc_lines x WHERE x.doc_id = d.id)`.as('lines')])
       .orderBy('d.doc_date', 'desc').orderBy('d.created_at', 'desc').limit(500);
-    x = q.type ? x.where('d.doc_type', '=', q.type) : x.where('d.doc_type', 'in', ['receipt', 'reversal']);
+    x = q.type ? x.where('d.doc_type', 'in', q.type.split(',')) : x.where('d.doc_type', 'in', ['receipt', 'reversal']);
     if (q.status) x = x.where('d.status', '=', q.status);
-    if (q.location_id) x = x.where('d.location_id', '=', q.location_id);
+    if (q.location_id) x = x.where((eb) => eb.or([eb('d.location_id', '=', q.location_id!), eb('d.from_location_id', '=', q.location_id!), eb('d.to_location_id', '=', q.location_id!)]));
     if (q.supplier_id) x = x.where('d.supplier_id', '=', q.supplier_id);
     if (q.from) x = x.where('d.doc_date', '>=', q.from);
     if (q.to) x = x.where('d.doc_date', '<=', q.to);
@@ -83,14 +86,17 @@ export class StockDocsService {
     const d = await ex.selectFrom('stock_docs as d').leftJoin('stock_locations as l', 'l.id', 'd.location_id').leftJoin('stock_suppliers as s', 's.id', 'd.supplier_id')
       .innerJoin('users as u', 'u.id', 'd.created_by').leftJoin('users as pu', 'pu.id', 'd.posted_by')
       .leftJoin('stock_docs as ro', 'ro.id', 'd.reversal_of').leftJoin('stock_docs as rb', 'rb.id', 'd.reversed_by')
-      .selectAll('d').select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
+      .leftJoin('stock_locations as fl', 'fl.id', 'd.from_location_id').leftJoin('stock_locations as tl', 'tl.id', 'd.to_location_id')
+      .leftJoin('stock_requests as rq', 'rq.id', 'd.request_id').leftJoin('users as rcu', 'rcu.id', 'd.received_by')
+      .selectAll('d').select(['fl.name as from_name', 'tl.name as to_name', 'rq.req_no', sql<string | null>`rcu.first_name || ' ' || rcu.last_name`.as('received_by_name')]).select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
         sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), sql<string | null>`pu.first_name || ' ' || pu.last_name`.as('posted_by_name'),
         'ro.doc_no as reversal_of_no', 'rb.doc_no as reversed_by_no'])
       .where('d.id', '=', id).executeTakeFirst();
     if (!d) throw new NotFoundException('დოკუმენტი ვერ მოიძებნა');
     const lines = await ex.selectFrom('stock_doc_lines as x').innerJoin('stock_items as i', 'i.id', 'x.item_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .leftJoin('stock_item_packs as p', 'p.id', 'x.pack_id').leftJoin('med_generics as g', 'g.id', 'i.generic_id')
-      .selectAll('x').select(['i.name as item_name', 'i.code as item_code', 'i.requires_lot', 'i.requires_expiry', 'i.serial_tracked', 'un.name as base_unit_name', 'p.name as pack_name', 'g.controlled_class'])
+      .leftJoin('patients as pt', 'pt.id', 'x.patient_id')
+      .selectAll('x').select([sql<string | null>`pt.first_name || ' ' || pt.last_name`.as('patient_name'), 'i.name as item_name', 'i.code as item_code', 'i.requires_lot', 'i.requires_expiry', 'i.serial_tracked', 'un.name as base_unit_name', 'p.name as pack_name', 'g.controlled_class'])
       .where('x.doc_id', '=', id).orderBy('x.line_no').execute();
     return { ...d, lines };
   }
@@ -378,7 +384,7 @@ export class StockDocsController {
   constructor(private readonly s: StockDocsService) {}
   @Get('docs') @Roles(...STOCK_READ) list(@Query() q: { type?: string; status?: string; location_id?: string; supplier_id?: string; from?: string; to?: string; search?: string }) {
     if (!uuidOk(q.location_id) || !uuidOk(q.supplier_id) || !dateOk(q.from) || !dateOk(q.to)) throw new BadRequestException('არასწორი ფილტრი');
-    if (q.type && !Object.keys(PREFIX).includes(q.type)) throw new BadRequestException('უცნობი ტიპი');
+    if (q.type && q.type.split(',').some((t) => !Object.keys(PREFIX).includes(t))) throw new BadRequestException('უცნობი ტიპი');
     if (q.status && !['draft', 'posted', 'cancelled'].includes(q.status)) throw new BadRequestException('უცნობი სტატუსი');
     return this.s.list(q);
   }
