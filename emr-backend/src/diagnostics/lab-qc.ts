@@ -31,8 +31,16 @@ export class LabQcService {
     if (!all) q = q.where('m.is_active', '=', true);
     return q.execute();
   }
-  async saveMaterial(id: string | null, dto: { name?: string; manufacturer?: string | null; level?: string; lot?: string; expires_on?: string | null; barcode?: string | null; is_active?: boolean }, u: AuthUser, ctx: AuditContext) {
+  async saveMaterial(id: string | null, dto: { name?: string; manufacturer?: string | null; level?: string; lot?: string; expires_on?: string | null; barcode?: string | null; is_active?: boolean; stock_lot_id?: string | null }, u: AuthUser, ctx: AuditContext) {
     this.requireManage(u);
+    // QC მასალა საწყობის ლოტიდან (0036): ლოტი და ვადა — ლოტიდან; დასახელება / მწარმოებელი — თუ არ არის მითითებული
+    if (dto.stock_lot_id) {
+      const lt = await this.db.selectFrom('stock_lots as lt').innerJoin('stock_items as i', 'i.id', 'lt.item_id')
+        .select(['lt.lot_no', 'lt.expires_on', 'i.name', 'i.manufacturer']).where('lt.id', '=', dto.stock_lot_id).executeTakeFirst();
+      if (!lt) throw new BadRequestException('საწყობის ლოტი ვერ მოიძებნა');
+      if (!lt.lot_no) throw new BadRequestException('საწყობის საქონელს ლოტი არ აქვს');
+      dto = { ...dto, lot: lt.lot_no, expires_on: lt.expires_on, name: dto.name ?? (id ? undefined : lt.name), manufacturer: dto.manufacturer ?? (id ? undefined : lt.manufacturer) };
+    }
     const vals = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null : v]));
     try {
       const r = id ? await this.db.updateTable('lab_qc_materials').set(vals).where('id', '=', id).returningAll().executeTakeFirst()
@@ -189,7 +197,7 @@ export class LabQcService {
 // ======================================================================= კონტროლერი
 class MaterialDto { @IsOptional() @IsString() @Length(2, 150) name?: string; @IsOptional() @IsString() @MaxLength(150) manufacturer?: string | null;
   @IsOptional() @IsString() @Length(1, 40) level?: string; @IsOptional() @IsString() @Length(1, 60) lot?: string; @IsOptional() @IsISO8601() expires_on?: string | null;
-  @IsOptional() @IsString() @MaxLength(60) barcode?: string | null; @IsOptional() @IsBoolean() is_active?: boolean }
+  @IsOptional() @IsString() @MaxLength(60) barcode?: string | null; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsUUID() stock_lot_id?: string | null }
 class TargetDto { @IsUUID() analyte_id: string; @IsUUID() method_id: string; @IsNumber() mean: number; @IsNumber() @Min(0.000001) sd: number }
 class TargetsDto { @IsArray() @ArrayMaxSize(300) @ValidateNested({ each: true }) @Type(() => TargetDto) targets: TargetDto[] }
 class RulesDto { @IsArray() @IsIn([...ALL_RULES], { each: true }) rules: string[]; @IsIn(['block', 'warn']) action: 'block' | 'warn' }

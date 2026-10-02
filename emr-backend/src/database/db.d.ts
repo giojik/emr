@@ -841,6 +841,7 @@ export interface LabQcMaterials {
   lot: string;
   manufacturer: string | null;
   name: string;
+  stock_lot_id: string | null;
 }
 
 export interface LabQcResults {
@@ -1465,6 +1466,10 @@ export interface StockItems {
   generic_id: string | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  lab_analyte_id: string | null;
+  lab_method_id: string | null;
+  lab_onboard_days: number | null;
+  lab_tests_per_unit: number | null;
   manufacturer: string | null;
   name: string;
   notes: string | null;
@@ -1474,6 +1479,26 @@ export interface StockItems {
   serial_tracked: Generated<boolean>;
   storage: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface StockLabKits {
+  analyte_id: string | null;
+  close_reason: string | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  doc_id: string;
+  id: Generated<string>;
+  item_id: string;
+  location_id: string;
+  lot_id: string;
+  method_id: string | null;
+  notes: string | null;
+  onboard_expires_on: string | null;
+  opened_at: Generated<Timestamp>;
+  opened_by: string;
+  qty_base: Numeric;
+  status: Generated<string>;
+  tests_planned: number | null;
 }
 
 export interface StockLocations {
@@ -1789,6 +1814,7 @@ export interface DB {
   stock_item_costs: StockItemCosts;
   stock_item_packs: StockItemPacks;
   stock_items: StockItems;
+  stock_lab_kits: StockLabKits;
   stock_locations: StockLocations;
   stock_lot_events: StockLotEvents;
   stock_lots: StockLots;

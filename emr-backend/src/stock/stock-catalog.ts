@@ -447,6 +447,9 @@ class ItemDto {
   @IsOptional() @IsIn(['none', 'invoice']) billing_mode?: 'none' | 'invoice' | null;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
   @IsOptional() @IsBoolean() is_active?: boolean;
+  // ლაბორატორია (0036): ნომინალური ტესტები ერთეულზე, გახსნის შემდეგი სტაბილურობა, ნაგულისხმევი ანალიზატორი / ანალიტი
+  @IsOptional() @IsInt() @Min(1) @Max(1_000_000) lab_tests_per_unit?: number | null; @IsOptional() @IsInt() @Min(1) @Max(730) lab_onboard_days?: number | null;
+  @IsOptional() @IsUUID() lab_method_id?: string | null; @IsOptional() @IsUUID() lab_analyte_id?: string | null;
   @IsOptional() @IsArray() @ArrayMaxSize(5) @ValidateNested({ each: true }) @Type(() => PackDto) packs?: PackDto[];
   @IsOptional() @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => BarcodeNewDto) barcodes?: BarcodeNewDto[];
 }

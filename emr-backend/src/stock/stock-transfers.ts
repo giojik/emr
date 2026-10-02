@@ -57,10 +57,11 @@ export class StockTransfersService {
   async me(u: AuthUser, ex: Ex = this.db) {
     return ex.selectFrom('users').select(['department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow();
   }
-  /** ლოკაციით მუშაობა: საწყობი — ნებისმიერი; ფარმაცევტი — აფთიაქი; სხვა — მხოლოდ საკუთარი განყოფილების ქვესაწყობი */
+  /** ლოკაციით მუშაობა: საწყობი — ნებისმიერი; ფარმაცევტი — აფთიაქი; ლაბორატორია — ლაბორატორიის ქვესაწყობი; სხვა — მხოლოდ საკუთარი განყოფილების ქვესაწყობი */
   async canOperate(u: AuthUser, l: Loc, ex: Ex = this.db) {
     if (has(u, 'admin', 'stock_manager', 'storekeeper')) return true;
     if (has(u, 'pharmacist') && l.kind === 'pharmacy') return true;
+    if (has(u, 'lab_doctor', 'lab_manager', 'diagnostic') && l.kind === 'lab') return true;   // ლაბორატორიის ქვესაწყობი (0036)
     if (!l.department_id) return false;
     return (await this.me(u, ex)).department_id === l.department_id;
   }
@@ -71,6 +72,7 @@ export class StockTransfersService {
   /** დამტკიცება: ადმინისტრატორი; განყოფილების ხელმძღვანელი ან მენეჯერი (საკუთარი განყოფილება); განყოფილების გარეშე ლოკაცია — საწყობის მენეჯერი */
   private async canApprove(u: AuthUser, to: Loc, ex: Ex = this.db) {
     if (has(u, 'admin')) return true;
+    if (to.kind === 'lab' && has(u, 'lab_manager')) return true;                               // ლაბორატორიის მოთხოვნა — ლაბ. ხელმძღვანელი
     if (!to.department_id) return has(u, 'stock_manager');
     const m = await this.me(u, ex);
     return m.department_id === to.department_id && (m.is_section_head || has(u, 'manager'));
@@ -207,7 +209,7 @@ export class StockTransfersService {
     });
     const link = `/stock/requests?req=${id}`;
     if (res.needs) {
-      const heads = res.to.department_id ? await this.usersWith(['manager', ...STOCK_READ], this.db, res.to.department_id, true) : await this.usersWith(['stock_manager']);
+      const heads = res.to.kind === 'lab' ? await this.usersWith(['lab_manager']) : res.to.department_id ? await this.usersWith(['manager', ...STOCK_READ], this.db, res.to.department_id, true) : await this.usersWith(['stock_manager']);
       await this.notifyMany(heads, { kind: 'stock_approve', title: `მოთხოვნა ${res.no} — დასამტკიცებელი`, body: `${res.r.to_name} ← ${res.r.from_name}`, link, entityId: id, urgent: res.r.urgent }, u.id);
     } else await this.notifyIssuers(id, res.no, res.r.from_kind, res.r.to_name, res.r.urgent, u.id);
     return this.request(id);

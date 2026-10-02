@@ -7,7 +7,8 @@ import { useLabMethods, useLabPermissions } from '../admin/lab/common';
 
 // ============================================================ ტიპები
 interface Target { id: string; analyte_id: string; analyte_name: string; analyte_code: string; unit: string; method_id: string; method_name: string; mean: string; sd: string; is_active: boolean }
-interface Material { id: string; name: string; manufacturer: string | null; level: string; lot: string; expires_on: string | null; barcode: string | null; is_active: boolean; targets: number | string }
+interface Material { id: string; name: string; manufacturer: string | null; level: string; lot: string; expires_on: string | null; barcode: string | null; is_active: boolean; targets: number | string; stock_lot_id?: string | null }
+interface QcLot { id: string; lot_no: string; expires_on: string | null; status: string; item_name: string; manufacturer: string | null; qty: string; materials: number }
 interface Summary { id: string; material: string; level: string; lot: string; analyte: string; unit: string; method: string; mean: string; sd: string; n: string; mean_obs: string | null; sd_obs: string | null; rejects: string; warns: string; cv: number | null; bias: number | null }
 interface Violation { id: string; analyte: string; analyte_id: string; method: string; method_id: string; level: string; lot: string; value: string; z: string; rules: string[]; action: 'block' | 'warn'; status: string; opened_at: string; resolved_at: string | null; resolved_by_name: string | null; cause: string | null; corrective_action: string | null }
 interface Point { id: string; value: string; z: string; measured_at: string; status: 'accept' | 'warn' | 'reject'; violations: string[]; source: string; excluded_at: string | null; exclude_reason: string | null; entered_by_name: string | null }
@@ -177,8 +178,10 @@ function Materials() {
   const canEdit = !!perm.data?.methods;   // ხელმძღვანელი / მენეჯერი
   const q = useQuery({ queryKey: ['qc-materials'], queryFn: () => api<Material[]>('/lab/qc/materials', { query: { all: true } }) });
   const [edit, setEdit] = useState<Partial<Material> | null>(null); const [targets, setTargets] = useState<Material | null>(null);
+  // საწყობის ლოტი (0036): ლოტი და ვადა — საწყობიდან, ხელახლა აღარ იწერება
+  const lots = useQuery({ queryKey: ['qc-stock-lots'], queryFn: () => api<QcLot[]>('/stock/lab/qc-lots'), enabled: !!edit });
   const save = useMutation({ mutationFn: () => api(edit!.id ? `/lab/qc/materials/${edit!.id}` : '/lab/qc/materials', { method: edit!.id ? 'PATCH' : 'POST',
-    body: { name: edit!.name, manufacturer: edit!.manufacturer || null, level: edit!.level, lot: edit!.lot, expires_on: edit!.expires_on || null, barcode: edit!.barcode?.trim() || null, ...(edit!.id ? { is_active: edit!.is_active } : {}) } }),
+    body: { name: edit!.name, manufacturer: edit!.manufacturer || null, level: edit!.level, lot: edit!.lot, expires_on: edit!.expires_on || null, barcode: edit!.barcode?.trim() || null, stock_lot_id: edit!.stock_lot_id || undefined, ...(edit!.id ? { is_active: edit!.is_active } : {}) } }),
     onSuccess: () => { setEdit(null); void qc.invalidateQueries({ queryKey: ['qc-materials'] }); } });
   const set = (k: keyof Material) => (e: React.ChangeEvent<HTMLInputElement>) => setEdit({ ...edit, [k]: e.target.value });
   return (
@@ -199,12 +202,17 @@ function Materials() {
           })}</tbody></table></div>)}
       {edit && <Modal title={edit.id ? `${edit.name} ${edit.level}` : 'ახალი საკონტროლო მასალა'} onClose={() => setEdit(null)} width={600}
         footer={<><button className="btn" type="button" onClick={() => setEdit(null)}>გაუქმება</button><button className="btn primary" type="button" disabled={!edit.name?.trim() || !edit.level?.trim() || !edit.lot?.trim() || save.isPending} onClick={() => save.mutate()}>შენახვა</button></>}>
+        {(lots.data?.length ?? 0) > 0 && <Field label="საწყობის ლოტიდან" htmlFor="msl" hint="ლოტი, ვადა, დასახელება — საწყობიდან">
+          <select id="msl" className="select" value={edit.stock_lot_id ?? ''} onChange={(e) => { const l = lots.data?.find((x) => x.id === e.target.value);
+            setEdit(l ? { ...edit, stock_lot_id: l.id, lot: l.lot_no, expires_on: l.expires_on, name: edit.name || l.item_name, manufacturer: edit.manufacturer || l.manufacturer } : { ...edit, stock_lot_id: null }); }}>
+            <option value="">— ხელით —</option>{lots.data!.map((l) => <option key={l.id} value={l.id}>{l.item_name} · {l.lot_no}{l.expires_on ? ` · ${tsDate(l.expires_on)}` : ''} (ნაშთი {Number(l.qty)}){l.materials ? ' · უკვე მიბმულია' : ''}</option>)}
+          </select></Field>}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <Field label="დასახელება" htmlFor="mn" required><input id="mn" className="input" value={edit.name ?? ''} onChange={set('name')} placeholder="Liquichek Unassayed Chemistry" /></Field>
           <Field label="მწარმოებელი" htmlFor="mm"><input id="mm" className="input" value={edit.manufacturer ?? ''} onChange={set('manufacturer')} /></Field>
           <Field label="დონე" htmlFor="ml" required><input id="ml" className="input" value={edit.level ?? ''} onChange={set('level')} placeholder="L1 / L2 / ნორმა / პათოლოგია" /></Field>
-          <Field label="ლოტი" htmlFor="mlot" required><input id="mlot" className="input mono" value={edit.lot ?? ''} onChange={set('lot')} /></Field>
-          <Field label="ვადა" htmlFor="me"><input id="me" type="date" className="input" value={edit.expires_on?.slice(0, 10) ?? ''} onChange={set('expires_on')} /></Field>
+          <Field label="ლოტი" htmlFor="mlot" required><input id="mlot" className="input mono" value={edit.lot ?? ''} disabled={!!edit.stock_lot_id} onChange={set('lot')} /></Field>
+          <Field label="ვადა" htmlFor="me"><input id="me" type="date" className="input" value={edit.expires_on?.slice(0, 10) ?? ''} disabled={!!edit.stock_lot_id} onChange={set('expires_on')} /></Field>
           <Field label="შტრიხკოდი (ანალიზატორზე)" htmlFor="mb"><input id="mb" className="input mono" value={edit.barcode ?? ''} onChange={set('barcode')} placeholder="QC-L1-2604" /></Field>
         </div>
         {edit.id && <label className="row"><input type="checkbox" checked={!!edit.is_active} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} /> აქტიური (ახალ ლოტზე გადასვლისას ძველი გათიშეთ)</label>}

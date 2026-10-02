@@ -22,6 +22,7 @@ export interface StockItem {
   expiry_warn_days: number | null; sale_price: string | null; billing_mode: 'none' | 'invoice' | null; notes: string | null; is_active: boolean;
   category_name: string; category_kind: CategoryKind; base_unit_name: string; inn: string | null; strength: string | null; atc_code: string | null;
   controlled_class: Controlled | null; high_alert: boolean | null; patient_only: boolean | null; form_name: string | null; dose_unit?: string | null; dose_per_unit?: string | null;
+  lab_tests_per_unit?: number | null; lab_onboard_days?: number | null; lab_method_id?: string | null; lab_analyte_id?: string | null;
   effective_warn_days: number | null; effective_billing_mode: 'none' | 'invoice'; packs: StockPack[]; barcodes: StockBarcode[];
 }
 export type StorageKind = 'room' | 'cool' | 'fridge' | 'frozen';
@@ -143,7 +144,7 @@ export const STOCK_ROLES = ['admin', 'storekeeper', 'stock_manager'] as const;
 export const ISSUER_ROLES = ['admin', 'storekeeper', 'stock_manager', 'pharmacist'] as const;
 
 // ---------------------------------------------------------------- 0033: ჩამოწერა, ხარჯი, ინვენტარიზაცია
-export const WO_REASON_KA: Record<string, string> = { expired: 'ვადაგასული', damaged: 'დაზიანებული', lost: 'დაკარგული', department_use: 'განყოფილების ხარჯი', recall: 'გაწვევა (recall)', other: 'სხვა' };
+export const WO_REASON_KA: Record<string, string> = { expired: 'ვადაგასული', damaged: 'დაზიანებული', lost: 'დაკარგული', department_use: 'განყოფილების ხარჯი', recall: 'გაწვევა (recall)', other: 'სხვა', lab_use: 'ლაბორატორიული ხარჯი (გახსნა)' };
 export interface OpsRow {
   id: string; doc_no: string | null; status: DocStatus; doc_date: string; writeoff_reason: string | null; approval_status: 'pending' | 'approved' | 'rejected' | null; total_net: string;
   notes: string | null; created_at: string; reversed_by: string | null; reversed_by_no: string | null; location_name: string; created_by_name: string; patient_name: string | null; lines: number;
@@ -198,3 +199,16 @@ export const downloadCsv = (name: string, head: string[], rows: (string | number
 export const WITNESS_CLASSES: Controlled[] = ['narcotic', 'psychotropic'];
 export const needsWitness = (c: Controlled | null | undefined) => !!c && WITNESS_CLASSES.includes(c);
 export interface Witness { username: string; password: string }
+
+// ---------------------------------------------------------------- 0036: ლაბორატორია
+export interface LabMethod { id: string; name: string; kind: string; is_active: boolean }
+export interface LabStockRow { lot_id: string; item_id: string; qty: string; lot_no: string | null; expires_on: string | null; status: string; item_name: string; item_code: string; base_unit_name: string;
+  category_kind: CategoryKind; lab_tests_per_unit: number | null; lab_onboard_days: number | null; lab_method_id: string | null; lab_analyte_id: string | null; method_name: string | null; analyte_name: string | null; usable: boolean }
+export interface LabKit {
+  id: string; location_id: string; item_id: string; lot_id: string; qty_base: string; method_id: string | null; analyte_id: string | null; tests_planned: number | null; opened_at: string;
+  onboard_expires_on: string | null; status: 'in_use' | 'finished' | 'discarded'; closed_at: string | null; close_reason: string | null; notes: string | null;
+  item_name: string; item_code: string; lot_no: string | null; expires_on: string | null; location_name: string; doc_no: string; cost: string; method_name: string | null; analyte_name: string | null;
+  opened_by_name: string; closed_by_name: string | null; days_left: number | null; tests_done: number | null;
+}
+export interface LabCostRow { method_id: string | null; analyte_id: string | null; method_name: string | null; analyte_name: string | null; kits: number; cost: number; planned: number | null;
+  patient_tests: number; qc_tests: number; cost_per_test: number | null; cost_per_patient_test: number | null; efficiency: number | null }

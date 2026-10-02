@@ -6,7 +6,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced } from '../../components/
 import { dateGe } from '../../lib/format';
 import { GenericPicker } from './Generics';
 import { CATALOG_EDIT } from './Stock';
-import { CONTROLLED_KA, nul, qtyFmt, STORAGE_KA, useStockRefs, type CategoryKind, type StockItem, type StorageKind } from './types';
+import { CONTROLLED_KA, type LabMethod, nul, qtyFmt, STORAGE_KA, useStockRefs, type CategoryKind, type StockItem, type StorageKind } from './types';
 
 const PHARM_KINDS: CategoryKind[] = ['medication', 'medical_supply', 'implant'];
 
@@ -102,6 +102,7 @@ function ItemDialog({ it, onClose }: { it: StockItem | null; onClose: () => void
     base_unit: it?.base_unit ?? '', storage: (it?.storage ?? 'room') as StorageKind, requires_lot: it?.requires_lot ?? true, requires_expiry: it?.requires_expiry ?? true,
     serial_tracked: it?.serial_tracked ?? false, expiry_warn_days: it?.expiry_warn_days?.toString() ?? '', billing_mode: (it?.billing_mode ?? '') as '' | 'none' | 'invoice',
     sale_price: it?.sale_price ? String(Number(it.sale_price)) : '', notes: it?.notes ?? '', is_active: it?.is_active ?? true,
+    lab_tests_per_unit: it?.lab_tests_per_unit?.toString() ?? '', lab_onboard_days: it?.lab_onboard_days?.toString() ?? '', lab_method_id: it?.lab_method_id ?? '',
   });
   const [gen, setGen] = useState<{ id: string; label: string } | null>(it?.generic_id ? { id: it.generic_id, label: `${it.inn}${it.strength ? ` ${it.strength}` : ''} — ${it.form_name}` } : null);
   const [packs, setPacks] = useState<PackRow[]>(it?.packs.map((p) => ({ id: p.id, name: p.name, qty_base: qtyFmt(p.qty_base), is_receipt_default: p.is_receipt_default })) ?? []);
@@ -125,6 +126,7 @@ function ItemDialog({ it, onClose }: { it: StockItem | null; onClose: () => void
         storage: f.storage, requires_lot: f.requires_lot, requires_expiry: f.requires_lot && f.requires_expiry, serial_tracked: f.requires_lot && f.serial_tracked,
         expiry_warn_days: f.expiry_warn_days.trim() ? Number(f.expiry_warn_days) : null, billing_mode: f.billing_mode || null,
         sale_price: f.sale_price.trim() ? Number(f.sale_price.replace(',', '.')) : null, notes: nul(f.notes),
+        ...(isLab && { lab_tests_per_unit: f.lab_tests_per_unit.trim() ? Number(f.lab_tests_per_unit) : null, lab_onboard_days: f.lab_onboard_days.trim() ? Number(f.lab_onboard_days) : null, lab_method_id: f.lab_method_id || null }),
       };
       if (f.code.trim()) body.code = f.code.trim();
       if (it) {
@@ -145,6 +147,8 @@ function ItemDialog({ it, onClose }: { it: StockItem | null; onClose: () => void
   const delCode = useMutation({ mutationFn: (id: string) => api<StockItem>(`/stock/items/${it!.id}/barcodes/${id}`, { method: 'DELETE' }), onSuccess: (r) => { setCur(r); done(); } });
   const r = refs.data;
   const needGen = category?.kind === 'medication';
+  const isLab = category?.kind === 'reagent' || category?.kind === 'qc_material';
+  const methods = useQuery({ queryKey: ['lab-methods-stock'], queryFn: () => api<LabMethod[]>('/lab/methods').catch(() => [] as LabMethod[]), enabled: isLab });
   const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 } as const;
   const valid = f.name.trim().length >= 2 && f.category_id && f.base_unit && (!needGen || gen) && packs.every((p) => !p.name.trim() || Number(p.qty_base.replace(',', '.')) > 1);
   return (
@@ -194,6 +198,15 @@ function ItemDialog({ it, onClose }: { it: StockItem | null; onClose: () => void
               {it && <label className="row" style={{ alignSelf: 'end' }}><input type="checkbox" checked={f.is_active} onChange={(e) => set('is_active', e.target.checked)} /> აქტიური</label>}
             </div>
 
+            {isLab && (
+              <div style={grid}>
+                <Field label="ტესტები ერთეულზე (ნომინალი)" htmlFor="ilt" hint="ეფექტიანობის რეპორტისთვის"><input id="ilt" className="input mono" inputMode="numeric" value={f.lab_tests_per_unit} onChange={(e) => set('lab_tests_per_unit', e.target.value)} /></Field>
+                <Field label="გახსნის შემდეგ სტაბილურობა (დღე)" htmlFor="ilo" hint="on-board ვადა"><input id="ilo" className="input mono" inputMode="numeric" value={f.lab_onboard_days} onChange={(e) => set('lab_onboard_days', e.target.value)} /></Field>
+                <Field label="ნაგულისხმევი ანალიზატორი" htmlFor="ilm">
+                  <select id="ilm" className="select" value={f.lab_method_id} onChange={(e) => set('lab_method_id', e.target.value)}>
+                    <option value="">—</option>{methods.data?.filter((m) => m.is_active || m.id === f.lab_method_id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select></Field>
+              </div>)}
             <div className="stack" style={{ gap: 6 }}>
               <div className="row"><span className="label grow">შეფუთვები <span className="small muted" style={{ fontWeight: 400 }}>— რაოდენობა საბაზო ერთეულებში (კოლოფი = 100 ტაბლეტი)</span></span>
                 {packs.length < 5 && <button className="btn sm" type="button" onClick={() => setPacks([...packs, { name: '', qty_base: '', is_receipt_default: !packs.length }])}>+ შეფუთვა</button>}</div>

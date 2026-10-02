@@ -30,6 +30,7 @@ export class StockAlertsService {
       if (heads) x = x.where((eb) => eb.or([eb('u.is_section_head', '=', true), eb(sql<boolean>`'manager' = ANY(c.capabilities)`, '=', true)]));
       return (await x.execute()).map((r) => r.id);
     };
+    if (l.kind === 'lab') return withCaps(['lab_manager', 'lab_doctor']);
     if (l.kind === 'department' && l.department_id) {
       const heads = await withCaps(['nurse', 'doctor', 'manager', 'admin', 'lab_manager', 'diagnostic'], l.department_id, true);
       return heads.length ? heads : withCaps(['stock_manager']);
@@ -101,18 +102,41 @@ export class StockAlertsService {
     return all ? rows : rows.filter((r) => r.below);
   }
 
+  /** ლაბორატორია: გახსნილი რეაგენტის on-board ვადა იწურება (≤ 1 დღე) ან გასულია (0036) */
+  async labOnboard() {
+    const rows = await this.db.selectFrom('stock_lab_kits as k').innerJoin('stock_items as i', 'i.id', 'k.item_id').innerJoin('stock_locations as l', 'l.id', 'k.location_id')
+      .leftJoin('lab_methods as m', 'm.id', 'k.method_id')
+      .select(['k.location_id', 'l.name as location_name', 'i.name as item_name', 'm.name as method_name',
+        sql<number>`k.onboard_expires_on - (now() AT TIME ZONE ${TZ})::date`.as('days_left')])
+      .where('k.status', '=', 'in_use').where('k.onboard_expires_on', '<=', sql<string>`(now() AT TIME ZONE ${TZ})::date + 1`).execute();
+    if (!rows.length) return { kits: 0, sent: 0 };
+    const ids = await this.recipients({ kind: 'lab', department_id: null });
+    const byLoc = new Map<string, typeof rows>();
+    for (const r of rows) byLoc.set(r.location_id, [...(byLoc.get(r.location_id) ?? []), r]);
+    let sent = 0;
+    for (const [loc, ks] of byLoc) {
+      for (const id of new Set(ids)) {
+        await this.notifications.notify(id, { kind: 'lab_onboard', title: `გახსნილი რეაგენტი — on-board ვადა (${ks[0].location_name})`,
+          body: ks.slice(0, 5).map((k) => `${k.item_name}${k.method_name ? ` · ${k.method_name}` : ''}${k.days_left < 0 ? ' (გასულია)' : ''}`).join(', '),
+          urgent: ks.some((k) => k.days_left < 0), entityId: loc, link: '/stock/lab' });
+        sent++;
+      }
+    }
+    return { kits: rows.length, sent };
+  }
+
   /** worker: ყოველ 5 წუთში; `alert_hour`-ის შემდეგ — დღეში ერთხელ */
   async tick(force = false) {
     const { d, h } = await this.now();
     const st = await this.db.selectFrom('stock_settings').select('alert_hour').where('id', '=', 1).executeTakeFirstOrThrow();
     if (!force && h < st.alert_hour) return null;
     const out: Record<string, unknown> = {};
-    for (const kind of ['expiry', 'minmax'] as const) {
+    for (const kind of ['expiry', 'minmax', 'lab'] as const) {
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა
       }
-      const stats = kind === 'expiry' ? await this.expiry(d) : await this.minmax();
+      const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : await this.labOnboard();
       out[kind] = stats;
       await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d, stats: JSON.stringify(stats) })
         .onConflict((oc) => oc.columns(['kind', 'run_date']).doUpdateSet({ stats: JSON.stringify(stats), created_at: sql`now()` })).execute();

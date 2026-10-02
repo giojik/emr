@@ -10,6 +10,7 @@ import Generics from './Generics';
 import ImportPage from './Import';
 import Interactions from './Interactions';
 import Items from './Items';
+import Lab from './Lab';
 import Locations from './Locations';
 import Lots from './Lots';
 import Minmax from './Minmax';
@@ -41,6 +42,7 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] =
   { key: 'minmax', label: 'მინ/მაქს', roles: STOCK_READ, el: Minmax },
   { key: 'lots', label: 'ლოტები / გაწვევა', roles: STOCK_READ, el: Lots },
   { key: 'controlled', label: 'ნარკოტიკული', roles: STOCK_READ, el: ControlledPage },
+  { key: 'lab', label: 'ლაბორატორია', roles: ['admin', 'lab_doctor', 'lab_manager', 'diagnostic', 'stock_manager', 'storekeeper', 'manager', 'viewer', 'accountant'], el: Lab },
   { key: 'reports', label: 'რეპორტები', roles: CATALOG_VIEW, el: Reports },
   { key: 'receipts', label: 'მიღება (მომწოდებელი)', roles: CATALOG_VIEW, el: Receipts },
   { key: 'items', label: 'საქონელი', roles: CATALOG_VIEW, el: Items },
