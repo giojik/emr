@@ -10,7 +10,10 @@ import ImportPage from './Import';
 import Interactions from './Interactions';
 import Items from './Items';
 import Locations from './Locations';
+import Lots from './Lots';
+import Minmax from './Minmax';
 import Receipts from './Receipts';
+import Reports from './Reports';
 import Requests from './Requests';
 import Transfer from './Transfer';
 import Transit from './Transit';
@@ -34,6 +37,9 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] =
   { key: 'consumption', label: 'ხარჯი პაციენტზე', roles: STOCK_READ, el: Consumption },
   { key: 'writeoffs', label: 'ჩამოწერა', roles: STOCK_READ, el: Writeoffs },
   { key: 'counts', label: 'ინვენტარიზაცია', roles: STOCK_READ, el: Counts },
+  { key: 'minmax', label: 'მინ/მაქს', roles: STOCK_READ, el: Minmax },
+  { key: 'lots', label: 'ლოტები / გაწვევა', roles: STOCK_READ, el: Lots },
+  { key: 'reports', label: 'რეპორტები', roles: CATALOG_VIEW, el: Reports },
   { key: 'receipts', label: 'მიღება (მომწოდებელი)', roles: CATALOG_VIEW, el: Receipts },
   { key: 'items', label: 'საქონელი', roles: CATALOG_VIEW, el: Items },
   { key: 'generics', label: 'ჯენერიკები', roles: CATALOG_VIEW, el: Generics },

@@ -1,16 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Loading, Modal, useDebounced } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
+import { LotDialog } from './Lots';
 import { COSTING_KA, CONTROLLED_KA, DOC_TYPE_KA, money2, packBreakdown, qtyFmt, useStockRefs, type Balances as B, type BalanceRow, type MoveRow, type StockLocation } from './types';
 
-const EXP: [string, string][] = [['', 'ყველა ვადა'], ['-1', 'ვადაგასული'], ['30', '≤ 30 დღე'], ['90', '≤ 90 დღე'], ['180', '≤ 180 დღე']];
+const EXP: [string, string][] = [['', 'ყველა ვადა'], ['-1', 'ვადაგასული'], ['30', '≤ 30 დღე'], ['45', '≤ 45 დღე'], ['60', '≤ 60 დღე'], ['90', '≤ 90 დღე'], ['180', '≤ 180 დღე']];
 
 /** ნაშთები ლოკაციებზე, ლოტებით; ღირებულება — კლინიკის მეთოდით (ლოტის ფასი / საშუალო) */
 export default function Balances() {
-  const refs = useStockRefs();
-  const [f, setF] = useState({ location_id: '', category_id: '', expiring_days: '', search: '' });
+  const refs = useStockRefs(); const [sp] = useSearchParams();
+  // შეტყობინებიდან: ?location_id=…&expiring_days=…
+  const [f, setF] = useState({ location_id: sp.get('location_id') ?? '', category_id: '', expiring_days: sp.get('expiring_days') ?? '', search: '' });
   const ds = useDebounced(f.search.trim(), 300);
   const locs = useQuery({ queryKey: ['stock-locations', false], queryFn: () => api<StockLocation[]>('/stock/locations') });
   const q = useQuery({ queryKey: ['stock-balances', f.location_id, f.category_id, f.expiring_days, ds], queryFn: () => api<B>('/stock/balances', { query: { ...f, search: ds } }) });
@@ -65,7 +68,7 @@ interface Moves { item: { id: string; name: string; code: string; base_unit_name
 
 /** საქონლის ბარათი: მოძრაობების ისტორია (ლოკაციით / ლოტით) */
 function History({ row, onClose }: { row: BalanceRow; onClose: () => void }) {
-  const [scope, setScope] = useState<'lot' | 'location' | 'all'>('lot');
+  const [scope, setScope] = useState<'lot' | 'location' | 'all'>('lot'); const [trace, setTrace] = useState(false);
   const q = useQuery({ queryKey: ['stock-moves', row.item_id, scope, row.lot_id, row.location_id],
     queryFn: () => api<Moves>(`/stock/items/${row.item_id}/moves`, { query: { ...(scope === 'lot' && { lot_id: row.lot_id, location_id: row.location_id }), ...(scope === 'location' && { location_id: row.location_id }) } }) });
   return (
@@ -77,10 +80,12 @@ function History({ row, onClose }: { row: BalanceRow; onClose: () => void }) {
             <button type="button" aria-pressed={scope === 'location'} onClick={() => setScope('location')}>{row.location_name}</button>
             <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>ყველა ლოკაცია</button>
           </div>
+          <button className="btn sm" type="button" onClick={() => setTrace(true)}>ლოტი: მიკვლევა / ქარანტინი</button>
           <span className="grow" />
           {q.data && <span className="small">სულ მარაგში: <strong>{qtyFmt(q.data.qty_on_hand)} {q.data.item.base_unit_name}</strong> · საშუალო ფასი <span className="mono">{Number(q.data.avg_cost).toFixed(4)} ₾</span></span>}
         </div>
         <ErrorBox error={q.error} />
+        {trace && <LotDialog id={row.lot_id} onClose={() => setTrace(false)} />}
         {q.isLoading ? <Loading /> : (
           <table className="table">
             <thead><tr><th>დრო</th><th>დოკუმენტი</th><th>ლოკაცია</th><th>ლოტი</th><th className="num">რაოდენობა</th><th className="num">ლოტის ფასი</th><th className="num">საშუალო</th><th>მომხმარებელი</th></tr></thead>

@@ -1286,6 +1286,13 @@ export interface ServiceTariffs {
   title: string;
 }
 
+export interface StockAlertRuns {
+  created_at: Generated<Timestamp>;
+  kind: string;
+  run_date: string;
+  stats: Generated<Json>;
+}
+
 export interface StockBalances {
   item_id: string;
   location_id: string;
@@ -1466,6 +1473,7 @@ export interface StockItems {
 export interface StockLocations {
   code: string;
   created_at: Generated<Timestamp>;
+  default_source_id: string | null;
   department_id: string | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
@@ -1474,6 +1482,17 @@ export interface StockLocations {
   requires_approval: Generated<boolean>;
   sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface StockLotEvents {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  from_status: string;
+  id: Generated<Int8>;
+  lot_id: string;
+  reason: string;
+  reference: string | null;
+  to_status: string;
 }
 
 export interface StockLots {
@@ -1491,6 +1510,15 @@ export interface StockLots {
   status_reason: string | null;
   unit_cost: Generated<Numeric>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface StockMinmax {
+  item_id: string;
+  location_id: string;
+  max_qty: Numeric;
+  min_qty: Numeric;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
 }
 
 export interface StockMoves {
@@ -1546,6 +1574,7 @@ export interface StockRequests {
 }
 
 export interface StockSettings {
+  alert_hour: Generated<number>;
   costing_method: Generated<string>;
   id: Generated<number>;
   short_expiry_months: Generated<number>;
@@ -1723,6 +1752,7 @@ export interface DB {
   referrals: Referrals;
   roles: Roles;
   service_tariffs: ServiceTariffs;
+  stock_alert_runs: StockAlertRuns;
   stock_balances: StockBalances;
   stock_categories: StockCategories;
   stock_count_lines: StockCountLines;
@@ -1734,7 +1764,9 @@ export interface DB {
   stock_item_packs: StockItemPacks;
   stock_items: StockItems;
   stock_locations: StockLocations;
+  stock_lot_events: StockLotEvents;
   stock_lots: StockLots;
+  stock_minmax: StockMinmax;
   stock_moves: StockMoves;
   stock_request_lines: StockRequestLines;
   stock_requests: StockRequests;

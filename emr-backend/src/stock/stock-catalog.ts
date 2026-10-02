@@ -85,11 +85,12 @@ export class StockCatalogService {
     return { units, forms, routes, categories, settings, allergen_groups };
   }
   settings() { return this.db.selectFrom('stock_settings').selectAll().where('id', '=', 1).executeTakeFirstOrThrow(); }
-  async putSettings(dto: { costing_method?: 'fifo' | 'average'; short_expiry_months?: number; writeoff_approval_threshold?: number; reason: string }, u: AuthUser, ctx: AuditContext) {
+  async putSettings(dto: { costing_method?: 'fifo' | 'average'; short_expiry_months?: number; writeoff_approval_threshold?: number; alert_hour?: number; reason: string }, u: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('stock_settings').selectAll().where('id', '=', 1).forUpdate().executeTakeFirstOrThrow();
       const set = { ...(dto.costing_method && { costing_method: dto.costing_method }), ...(dto.short_expiry_months !== undefined && { short_expiry_months: dto.short_expiry_months }),
-        ...(dto.writeoff_approval_threshold !== undefined && { writeoff_approval_threshold: String(dto.writeoff_approval_threshold) }) };
+        ...(dto.writeoff_approval_threshold !== undefined && { writeoff_approval_threshold: String(dto.writeoff_approval_threshold) }),
+        ...(dto.alert_hour !== undefined && { alert_hour: dto.alert_hour }) };
       const r = await trx.updateTable('stock_settings').set({ ...set, updated_by: u.id, updated_at: sql`now()` }).where('id', '=', 1).returningAll().executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'UPDATE_STOCK_SETTINGS', entityName: 'stock_settings', entityId: '1', oldData: old, newData: { ...set, reason: dto.reason.trim() } }, trx);
       return r;
@@ -326,6 +327,11 @@ export class StockCatalogService {
         if (old?.kind === 'transit') throw new BadRequestException('„გზაში“ სისტემური ლოკაციაა — არ იცვლება');
         const kind = (vals.kind as string | undefined) ?? old?.kind; const dep = 'department_id' in vals ? vals.department_id : old?.department_id;
         if (kind === 'department' && !dep) throw new BadRequestException('განყოფილების ქვესაწყობს განყოფილება სჭირდება');
+        if (vals.default_source_id) {
+          const src = await trx.selectFrom('stock_locations').select(['kind', 'is_active']).where('id', '=', vals.default_source_id as string).executeTakeFirst();
+          if (!src || !src.is_active || !['pharmacy', 'central', 'household'].includes(src.kind)) throw new BadRequestException('მომწოდებელი ლოკაცია — აქტიური აფთიაქი / ცენტრალური / სამეურნეო');
+          if (vals.default_source_id === id) throw new BadRequestException('ლოკაცია თავის თავს ვერ მოამარაგებს');
+        }
         const row = id ? await trx.updateTable('stock_locations').set(vals).where('id', '=', id).returningAll().executeTakeFirstOrThrow()
           : await trx.insertInto('stock_locations').values(vals as { code: string; name: string; kind: string }).returningAll().executeTakeFirstOrThrow();
         await this.audit.log(ctx, { action: id ? 'UPDATE_STOCK_LOCATION' : 'CREATE_STOCK_LOCATION', entityName: 'stock_locations', entityId: row.id, oldData: old, newData: vals }, trx);
@@ -457,6 +463,7 @@ class LocationDto {
   @IsOptional() @Matches(/^[A-Z][A-Z0-9_]{1,29}$/, { message: 'კოდი: დიდი ლათინური ასოები, ციფრები, _ (მაგ. D_SURG)' }) code?: string;
   @IsOptional() @IsString() @Length(2, 200) name?: string; @IsOptional() @IsIn(LOCATION_KINDS) kind?: string; @IsOptional() @IsUUID() department_id?: string | null;
   @IsOptional() @IsBoolean() requires_approval?: boolean; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsInt() sort_order?: number;
+  @IsOptional() @IsUUID() default_source_id?: string | null;
 }
 export class CategoryDto {
   @IsOptional() @Matches(/^[A-Z][A-Z0-9_]{1,29}$/, { message: 'კოდი: დიდი ლათინური ასოები, ციფრები, _' }) code?: string;
@@ -467,7 +474,8 @@ export class CategoryDto {
 }
 class UnitDto { @IsOptional() @Matches(/^[a-z][a-z0-9_]{0,19}$/, { message: 'კოდი: პატარა ლათინური ასოები' }) code?: string; @IsOptional() @IsString() @Length(1, 60) name?: string; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsInt() sort_order?: number }
 class SettingsDto { @IsOptional() @IsIn(['fifo', 'average']) costing_method?: 'fifo' | 'average'; @IsOptional() @IsInt() @Min(0) @Max(60) short_expiry_months?: number;
-  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000) writeoff_approval_threshold?: number; @IsString() @Length(3, 500) reason: string }
+  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000) writeoff_approval_threshold?: number; @IsOptional() @IsInt() @Min(0) @Max(23) alert_hour?: number;
+  @IsString() @Length(3, 500) reason: string }
 const bool = (v?: string) => v === 'true' || v === '1';
 
 @Controller('stock')
@@ -475,7 +483,7 @@ export class StockCatalogController {
   constructor(private readonly s: StockCatalogService) {}
   @Get('refs') @Roles(...STOCK_READ) refs() { return this.s.refs(); }
   @Put('settings') @Roles(...STOCK_ADMIN) settings(@Body() d: SettingsDto, @CurrentUser() u: AuthUser, @Req() r: Request) {
-    if (d.costing_method === undefined && d.short_expiry_months === undefined && d.writeoff_approval_threshold === undefined) throw new BadRequestException('შესაცვლელი პარამეტრი არ არის');
+    if (d.costing_method === undefined && d.short_expiry_months === undefined && d.writeoff_approval_threshold === undefined && d.alert_hour === undefined) throw new BadRequestException('შესაცვლელი პარამეტრი არ არის');
     return this.s.putSettings(d, u, auditCtx(r));
   }
   @Post('units') @Roles(...STOCK_ADMIN) createUnit(@Body() d: UnitDto, @Req() r: Request) { if (!d.code || !d.name) throw new BadRequestException('კოდი და დასახელება სავალდებულოა'); return this.s.saveUnit(null, d, auditCtx(r)); }

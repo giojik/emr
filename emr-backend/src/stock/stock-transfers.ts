@@ -282,6 +282,13 @@ export class StockTransfersService {
       .orderBy(sql`lt.expires_on NULLS LAST`).orderBy('lt.created_at').orderBy('lt.id').execute();
   }
 
+  allLots(itemId: string, locationId: string) {
+    return this.db.selectFrom('stock_balances as b').innerJoin('stock_lots as lt', 'lt.id', 'b.lot_id')
+      .select(['lt.id as lot_id', 'lt.lot_no', 'lt.serial_no', 'lt.expires_on', 'lt.status', 'lt.unit_cost', 'b.qty'])
+      .where('b.item_id', '=', itemId).where('b.location_id', '=', locationId).where('b.qty', '>', '0')
+      .orderBy(sql`lt.expires_on NULLS LAST`).orderBy('lt.created_at').execute();
+  }
+
   async pick(id: string) {
     const r = await this.request(id);
     if (!OPEN.includes(r.status)) throw new ConflictException('გასაცემი მხოლოდ დამტკიცებული მოთხოვნაა');
@@ -315,8 +322,9 @@ export class StockTransfersService {
         .select(['lt.id', 'lt.item_id', 'lt.lot_no', 'lt.serial_no', 'lt.expires_on', 'lt.produced_on', 'lt.status', 'lt.unit_cost', 'i.name']).where('lt.id', '=', p.lot_id).executeTakeFirst();
       if (!lot) throw new BadRequestException('ლოტი ვერ მოიძებნა');
       const tag = `„${lot.name}“${lot.lot_no ? ` (ლოტი ${lot.lot_no})` : ''}`;
-      if (lot.status !== 'active') throw new BadRequestException(`${tag} დაბლოკილია (${lot.status === 'recalled' ? 'გაწვეული' : 'ქარანტინი'})`);
-      if (lot.expires_on && lot.expires_on < today) throw new BadRequestException(`${tag} ვადაგასულია (${dge(lot.expires_on)}) — გაცემა აკრძალულია`);
+      // დაბრუნება საწყობში: დაბლოკილი / ვადაგასული ლოტიც შეიძლება (გაწვეულის შეგროვება, ჩამოსაწერად); გაცემა / გადაცემა — არა
+      if (h.doc_type !== 'return' && lot.status !== 'active') throw new BadRequestException(`${tag} დაბლოკილია (${lot.status === 'recalled' ? 'გაწვეული' : 'ქარანტინი'})`);
+      if (h.doc_type !== 'return' && lot.expires_on && lot.expires_on < today) throw new BadRequestException(`${tag} ვადაგასულია (${dge(lot.expires_on)}) — გაცემა აკრძალულია`);
       if (fefo) {
         const first = (await this.availableLots(lot.item_id, h.from.id, trx))[0];
         if (first && first.lot_id !== lot.id && (first.expires_on ?? '9999') < (lot.expires_on ?? '9999') && !p.override_reason?.trim())
@@ -507,8 +515,9 @@ export class StockTransfersController {
   @Post('transfers') @Roles(...STOCK_READ) transfer(@Body() d: TransferDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.transfer(d, u, auditCtx(r)); }
   @Get('transit') @Roles(...STOCK_READ) transit(@CurrentUser() u: AuthUser, @Query('scope') scope?: string) { return this.s.transitList(u, scope === 'outgoing' ? 'outgoing' : scope === 'all' ? 'all' : 'incoming'); }
   @Post('docs/:id/receive') @HttpCode(200) @Roles(...STOCK_READ) receive(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReceiveDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.receive(id, d.action, d.note, u, auditCtx(r)); }
-  @Get('locations/:id/lots') @Roles(...STOCK_READ) lots(@Param('id', ParseUUIDPipe) id: string, @Query('item_id') item: string) {
+  /** ლოკაციის ლოტები: FEFO (გასაცემი); all=true — დაბლოკილი / ვადაგასულიც (დაბრუნებისთვის) */
+  @Get('locations/:id/lots') @Roles(...STOCK_READ) lots(@Param('id', ParseUUIDPipe) id: string, @Query('item_id') item: string, @Query('all') all?: string) {
     if (!item || !/^[0-9a-f-]{36}$/i.test(item)) throw new BadRequestException('item_id სავალდებულოა');
-    return this.s.availableLots(item, id);
+    return all === 'true' ? this.s.allLots(item, id) : this.s.availableLots(item, id);
   }
 }

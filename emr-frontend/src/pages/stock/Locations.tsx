@@ -50,12 +50,14 @@ export default function Locations() {
 
 function LocationDialog({ l, deps, onClose }: { l: Partial<StockLocation>; deps: Department[]; onClose: () => void }) {
   const qc = useQueryClient(); const isNew = !l.id;
+  const all = useQuery({ queryKey: ['stock-locations', false], queryFn: () => api<StockLocation[]>('/stock/locations') });
+  const srcs = (all.data ?? []).filter((x) => ['pharmacy', 'central', 'household'].includes(x.kind));
   const [f, setF] = useState({ code: l.code ?? '', name: l.name ?? '', kind: (l.kind ?? 'department') as LocationKind, department_id: l.department_id ?? '',
-    requires_approval: l.requires_approval ?? true, is_active: l.is_active ?? true, sort_order: l.sort_order ?? 100 });
+    requires_approval: l.requires_approval ?? true, is_active: l.is_active ?? true, sort_order: l.sort_order ?? 100, default_source_id: l.default_source_id ?? '' });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   const m = useMutation({
     mutationFn: () => {
-      const body = { name: f.name.trim(), kind: f.kind, department_id: f.department_id || null, requires_approval: f.requires_approval, sort_order: f.sort_order, ...(isNew ? { code: f.code.trim() } : { is_active: f.is_active }) };
+      const body = { name: f.name.trim(), kind: f.kind, department_id: f.department_id || null, requires_approval: f.requires_approval, sort_order: f.sort_order, default_source_id: f.default_source_id || null, ...(isNew ? { code: f.code.trim() } : { is_active: f.is_active }) };
       return isNew ? api('/stock/locations', { body }) : api(`/stock/locations/${l.id}`, { method: 'PATCH', body });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['stock-locations'] }); onClose(); },
@@ -77,6 +79,10 @@ function LocationDialog({ l, deps, onClose }: { l: Partial<StockLocation>; deps:
           </select></Field>
         <label className="row"><input type="checkbox" checked={f.requires_approval} onChange={(e) => set('requires_approval', e.target.checked)} /> მოთხოვნას სჭირდება დამტკიცება</label>
         {!isNew && <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => set('is_active', e.target.checked)} /> აქტიური</label>}
+        <Field label="ნაგულისხმევი მომწოდებელი ლოკაცია" htmlFor="ls" hint="მინ/მაქს-ის მოთხოვნისთვის">
+          <select id="ls" className="select" value={f.default_source_id} onChange={(e) => set('default_source_id', e.target.value)}>
+            <option value="">—</option>{srcs.filter((x) => x.id !== l.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select></Field>
         <Field label="რიგი" htmlFor="lo"><input id="lo" className="input mono" type="number" value={f.sort_order} onChange={(e) => set('sort_order', Number(e.target.value))} /></Field>
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={m.error} /></div>
       </form>

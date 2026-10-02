@@ -11,7 +11,7 @@ export interface StockCategory {
   requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; expiry_warn_days: number | null;
   billing_mode: 'none' | 'invoice'; markup_pct: string | null; is_active: boolean; sort_order: number;
 }
-export interface StockSettings { costing_method: 'fifo' | 'average'; short_expiry_months: number; writeoff_approval_threshold: string; updated_at: string }
+export interface StockSettings { costing_method: 'fifo' | 'average'; short_expiry_months: number; writeoff_approval_threshold: string; alert_hour: number; updated_at: string }
 export interface StockRefs { units: StockUnit[]; forms: DosageForm[]; routes: MedRoute[]; categories: StockCategory[]; settings: StockSettings; allergen_groups: { code: string; name: string }[] }
 
 export interface StockPack { id: string; name: string; qty_base: number | string; is_receipt_default: boolean }
@@ -46,7 +46,7 @@ export interface Supplier {
 export type LocationKind = 'central' | 'pharmacy' | 'household' | 'department' | 'operating' | 'cssd' | 'lab' | 'icu' | 'other' | 'transit';
 export interface StockLocation {
   id: string; code: string; name: string; kind: LocationKind; department_id: string | null; department_name: string | null;
-  requires_approval: boolean; is_active: boolean; sort_order: number;
+  requires_approval: boolean; is_active: boolean; sort_order: number; default_source_id?: string | null;
 }
 
 export const KIND_KA: Record<CategoryKind, string> = {
@@ -169,3 +169,27 @@ export interface StockCount extends Omit<CountRow, 'lines' | 'counted'> {
   location_id: string; category_id: string | null; notes: string | null; reason: string | null; approved_by_name: string | null; can_approve: boolean;
   lines: CountLine[]; totals: { shortage: number; surplus: number; lines_diff: number } | null;
 }
+
+// ---------------------------------------------------------------- 0034: ლოტები / გაწვევა, მინ/მაქს, რეპორტები
+export type LotStatus = 'active' | 'quarantine' | 'recalled';
+export const LOT_STATUS_KA: Record<LotStatus, [string, string]> = { active: ['ok', 'აქტიური'], quarantine: ['warn', 'ქარანტინი'], recalled: ['danger', 'გაწვეული'] };
+export interface LotRow { id: string; lot_no: string | null; serial_no: string | null; expires_on: string | null; status: LotStatus; status_reason: string | null; item_id: string; item_name: string; item_code: string; inn: string | null; qty: string; patients: number }
+export interface LotTrace {
+  lot: { id: string; lot_no: string | null; serial_no: string | null; expires_on: string | null; status: LotStatus; status_reason: string | null; unit_cost: string; received_qty: string; created_at: string;
+    item_name: string; item_code: string; base_unit_name: string; supplier_name: string | null; inn: string | null; controlled_class: Controlled | null };
+  locations: { id: string; name: string; kind: LocationKind; qty: string }[];
+  patients: { patient_id: string; patient_name: string; personal_number: string | null; phone_number: string | null; qty: string; last_at: string; locations: string }[];
+  events: { id: string; from_status: LotStatus; to_status: LotStatus; reason: string; reference: string | null; created_at: string; user_name: string }[];
+  moves: { id: string; created_at: string; move_type: string; qty: string; doc_no: string | null; doc_type: string; location_name: string }[];
+}
+export interface MinmaxRow {
+  location_id: string; item_id: string; min_qty: string; max_qty: string; item_name: string; item_code: string; item_active: boolean; base_unit_name: string; location_name: string;
+  default_source_id: string | null; on_hand: string; in_transit: string; requested: string; below: boolean; suggested: number;
+}
+/** CSV ჩამოტვირთვა (Excel-ისთვის — UTF-8 BOM, „;“) */
+export const downloadCsv = (name: string, head: string[], rows: (string | number | null | undefined)[][]) => {
+  const esc = (v: string | number | null | undefined) => { const s = v === null || v === undefined ? '' : String(v); return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const blob = new Blob(['\ufeff' + [head, ...rows].map((r) => r.map(esc).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+};
