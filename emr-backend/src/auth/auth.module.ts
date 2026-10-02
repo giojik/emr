@@ -15,6 +15,6 @@ import { PasswordService } from './password.service';
     AuthService, PasswordService, LdapService,
     { provide: APP_GUARD, useClass: AuthGuard },   // ყველა endpoint დახურულია ნაგულისხმევად
   ],
-  exports: [PasswordService],
+  exports: [PasswordService, AuthService],
 })
 export class AuthModule {}

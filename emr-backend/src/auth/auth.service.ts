@@ -42,6 +42,31 @@ export class AuthService {
 
   // ------------------------------------------------------------------ login
   async login(usernameRaw: string, password: string, ctx: AuditContext): Promise<SessionTokens> {
+    const { user, rehash } = await this.authenticate(usernameRaw, password, ctx);
+    return this.db.transaction().execute(async (trx) => {
+      await trx.updateTable('users')
+        .set({ failed_login_count: 0, locked_until: null, last_login_at: sql`now()`, ...(rehash ? { password_hash: rehash } : {}) })
+        .where('id', '=', user.id).execute();
+      const tokens = await this.issueSession(trx, user, randomUUID(), ctx);
+      await this.audit.log({ ...ctx, userId: user.id }, {
+        action: 'LOGIN_SUCCESS', entityName: 'users', entityId: user.id, newData: { provider: user.auth_provider },
+      }, trx);
+      return tokens;
+    });
+  }
+
+  /**
+   * მეორე პირის დადასტურება (მოწმე — მაგ. ნარკოტიკულის ნარჩენის განადგურება): იგივე შემოწმება, რაც შესვლისას
+   * (დაბლოკვა, LDAP, წარუმატებელი მცდელობების მთვლელი), სესიის გარეშე. აბრუნებს მოწმის id-ს.
+   */
+  async verifyWitness(usernameRaw: string, password: string, ctx: AuditContext, purpose: string): Promise<{ id: string; name: string }> {
+    const { user } = await this.authenticate(usernameRaw, password, ctx);
+    await this.db.updateTable('users').set({ failed_login_count: 0, locked_until: null }).where('id', '=', user.id).execute();
+    await this.audit.log({ ...ctx, userId: ctx.userId ?? null }, { action: 'WITNESS_CONFIRMED', entityName: 'users', entityId: user.id, newData: { purpose } });
+    return { id: user.id, name: `${user.first_name} ${user.last_name}` };
+  }
+
+  private async authenticate(usernameRaw: string, password: string, ctx: AuditContext): Promise<{ user: UserRow; rehash?: string }> {
     const username = usernameRaw.trim().toLowerCase();
     const user = await this.db.selectFrom('users')
       .select(['id', 'first_name', 'last_name', 'role', 'is_active', 'auth_provider', 'password_hash',
@@ -99,17 +124,7 @@ export class AuthService {
     // წარმატება
     const rehash = user.auth_provider === 'local' && this.passwords.needsRehash(user.password_hash!)
       ? await this.passwords.hash(password) : undefined;
-
-    return this.db.transaction().execute(async (trx) => {
-      await trx.updateTable('users')
-        .set({ failed_login_count: 0, locked_until: null, last_login_at: sql`now()`, ...(rehash ? { password_hash: rehash } : {}) })
-        .where('id', '=', user.id).execute();
-      const tokens = await this.issueSession(trx, user, randomUUID(), ctx);
-      await this.audit.log({ ...ctx, userId: user.id }, {
-        action: 'LOGIN_SUCCESS', entityName: 'users', entityId: user.id, newData: { provider: user.auth_provider },
-      }, trx);
-      return tokens;
-    });
+    return { user, rehash };
   }
 
   // ---------------------------------------------------------------- refresh

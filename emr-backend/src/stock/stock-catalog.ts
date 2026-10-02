@@ -124,7 +124,7 @@ export class StockCatalogService {
     return db.selectFrom('stock_items as i').innerJoin('stock_categories as c', 'c.id', 'i.category_id')
       .leftJoin('med_generics as g', 'g.id', 'i.generic_id').leftJoin('med_dosage_forms as f', 'f.code', 'g.form_code').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .selectAll('i')
-      .select(['c.name as category_name', 'c.kind as category_kind', 'un.name as base_unit_name', 'g.inn', 'g.strength', 'g.atc_code', 'g.controlled_class', 'g.high_alert', 'g.patient_only', 'f.name as form_name',
+      .select(['c.name as category_name', 'c.kind as category_kind', 'un.name as base_unit_name', 'g.inn', 'g.strength', 'g.atc_code', 'g.controlled_class', 'g.high_alert', 'g.patient_only', 'g.dose_unit', 'g.dose_per_unit', 'f.name as form_name',
         sql<number | null>`coalesce(i.expiry_warn_days, c.expiry_warn_days)`.as('effective_warn_days'),
         sql<string>`coalesce(i.billing_mode, c.billing_mode)`.as('effective_billing_mode'),
         sql<{ id: string; name: string; qty_base: string; is_receipt_default: boolean }[]>`coalesce((SELECT json_agg(json_build_object('id', p.id, 'name', p.name, 'qty_base', p.qty_base, 'is_receipt_default', p.is_receipt_default) ORDER BY p.qty_base) FROM stock_item_packs p WHERE p.item_id = i.id AND p.is_active), '[]')`.as('packs'),

@@ -21,7 +21,7 @@ export interface StockItem {
   base_unit: string; requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; storage: StorageKind;
   expiry_warn_days: number | null; sale_price: string | null; billing_mode: 'none' | 'invoice' | null; notes: string | null; is_active: boolean;
   category_name: string; category_kind: CategoryKind; base_unit_name: string; inn: string | null; strength: string | null; atc_code: string | null;
-  controlled_class: Controlled | null; high_alert: boolean | null; patient_only: boolean | null; form_name: string | null;
+  controlled_class: Controlled | null; high_alert: boolean | null; patient_only: boolean | null; form_name: string | null; dose_unit?: string | null; dose_per_unit?: string | null;
   effective_warn_days: number | null; effective_billing_mode: 'none' | 'invoice'; packs: StockPack[]; barcodes: StockBarcode[];
 }
 export type StorageKind = 'room' | 'cool' | 'fridge' | 'frozen';
@@ -193,3 +193,8 @@ export const downloadCsv = (name: string, head: string[], rows: (string | number
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 };
+
+// ---------------------------------------------------------------- 0035: ნარკოტიკული / ფსიქოტროპული
+export const WITNESS_CLASSES: Controlled[] = ['narcotic', 'psychotropic'];
+export const needsWitness = (c: Controlled | null | undefined) => !!c && WITNESS_CLASSES.includes(c);
+export interface Witness { username: string; password: string }

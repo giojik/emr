@@ -4,6 +4,7 @@ import { can, type Role } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import Balances from './Balances';
 import Consumption from './Consumption';
+import ControlledPage from './Controlled';
 import Counts from './Counts';
 import Generics from './Generics';
 import ImportPage from './Import';
@@ -39,6 +40,7 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] =
   { key: 'counts', label: 'ინვენტარიზაცია', roles: STOCK_READ, el: Counts },
   { key: 'minmax', label: 'მინ/მაქს', roles: STOCK_READ, el: Minmax },
   { key: 'lots', label: 'ლოტები / გაწვევა', roles: STOCK_READ, el: Lots },
+  { key: 'controlled', label: 'ნარკოტიკული', roles: STOCK_READ, el: ControlledPage },
   { key: 'reports', label: 'რეპორტები', roles: CATALOG_VIEW, el: Reports },
   { key: 'receipts', label: 'მიღება (მომწოდებელი)', roles: CATALOG_VIEW, el: Receipts },
   { key: 'items', label: 'საქონელი', roles: CATALOG_VIEW, el: Items },

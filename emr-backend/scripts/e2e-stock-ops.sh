@@ -41,10 +41,11 @@ mkuser() {   # <roles-json> <n> [department_id]
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.ops.$2.$S@test.local" "$tmp")
-  api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"E2e-$S-pass$RANDOM\"}" | jq -r '.accessToken // empty'
+  api POST /auth/change-password "$t" -d "{\"currentPassword\":\"$tmp\",\"newPassword\":\"E2e-$S-pass-$2\"}" | jq -r '.accessToken // empty'
 }
 R_SK=$(mkrole osk "მესაწყობე" '["storekeeper"]'); R_SM=$(mkrole osm "საწყობის მენეჯერი" '["stock_manager"]')
 SK=$(mkuser "[\"$R_SK\"]" 91); SM=$(mkuser "[\"$R_SM\"]" 92); PH=$(mkuser '["pharmacist"]' 93); NR=$(mkuser '["nurse"]' 94 "$DEP"); NO=$(mkuser '["nurse"]' 95 "$DEP2")
+WIT_NR="{\"username\":\"e2e.ops.94.$S@test.local\",\"password\":\"E2e-$S-pass-94\"}"; WIT_SM="{\"username\":\"e2e.ops.92.$S@test.local\",\"password\":\"E2e-$S-pass-92\"}"   # მოწმე (0035)
 [ -n "$SK" ] && [ -n "$SM" ] && [ -n "$PH" ] && [ -n "$NR" ] && [ -n "$NO" ] && ok "5 მომხმარებელი (მესაწყობე, მენეჯერი, ფარმაცევტი, ექთანი, სხვა განყოფილების ექთანი)" || die "მომხმარებლები ვერ შეიქმნა"
 REFS=$(api GET /stock/refs "$SM"); cat_id() { echo "$REFS" | jq -r ".categories[]|select(.code==\"$1\").id"; }
 ORIG=$(echo "$REFS" | jq -c '.settings|{costing_method,short_expiry_months,writeoff_approval_threshold:(.writeoff_approval_threshold|tonumber)}')
@@ -93,7 +94,7 @@ chk "უარი მიზეზის გარეშე — 400; მიზე
 W3ID=$(api POST /stock/writeoffs "$NR" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"lost\",\"notes\":\"ტესტ-E2E: ვერ მოიძებნა\",\"lines\":[{\"lot_id\":\"$LK2\",\"qty_base\":1}]}" | jq -r .id)
 chk "დაკარგული — ყოველთვის დამტკიცებით; მენეჯერი ამტკიცებს → WO" "$(api GET "/stock/writeoffs?pending=true" "$SM" | jq -r "[.[]|select(.id==\"$W3ID\")]|length"):$(api POST "/stock/writeoffs/$W3ID/decide" "$SM" -d '{"approve":true}' | jq -r '"\(.status):\(.approval_status)"')" "1:posted:approved"
 chk "ნარკოტიკული „განყოფილების ხარჯით“ — 400" "$(code POST /stock/writeoffs "$NR" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"department_use\",\"notes\":\"x x x\",\"lines\":[{\"lot_id\":\"$LM\",\"qty_base\":1}]}")" "400"
-W4=$(api POST /stock/writeoffs "$SM" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"damaged\",\"notes\":\"ტესტ-E2E: ამპულა გატყდა\",\"lines\":[{\"lot_id\":\"$LM\",\"qty_base\":1}]}")
+W4=$(api POST /stock/writeoffs "$SM" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"damaged\",\"notes\":\"ტესტ-E2E: ამპულა გატყდა\",\"witness\":$WIT_NR,\"lines\":[{\"lot_id\":\"$LM\",\"qty_base\":1}]}")
 chk "ნარკოტიკული (4 ₾) — დამტკიცებით; საკუთარს ვერ ამტკიცებს — 403" "$(echo "$W4" | jq -r .approval_status):$(code POST "/stock/writeoffs/$(echo "$W4" | jq -r .id)/decide" "$SM" -d '{"approve":true}')" "pending:403"
 api POST "/stock/writeoffs/$(echo "$W4" | jq -r .id)/decide" "$ADM" -d '{"approve":true}' >/dev/null
 chk "ნაშთზე მეტი — 400" "$(code POST /stock/writeoffs "$NR" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"damaged\",\"notes\":\"x x x\",\"lines\":[{\"lot_id\":\"$LK1\",\"qty_base\":99}]}")" "400"
@@ -109,8 +110,8 @@ chk "ინვოისი: + 2×12.00 + 3×7.50 = +46.50" "$(api GET "/invoices
 chk "ნაშთი: K1 — 0, K2 7; კათეტერი 18" "$(bal "$SUB" "$MED")|$(bal "$SUB" "$SUP")" "K2$S:7|C$S:18"
 chk "სხვა განყოფილების ექთანი — 403; ნაშთზე მეტი — 409" "$(code POST /stock/consumptions "$NO" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[{\"item_id\":\"$MED\",\"qty_base\":1}]}"):$(code POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[{\"item_id\":\"$MED\",\"qty_base\":50}]}")" "403:409"
 chk "იმპლანტი სერიულის გარეშე — 400" "$(code POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"encounter_id\":\"$ENC\",\"lines\":[{\"item_id\":\"$IMP\",\"qty_base\":1}]}")" "400"
-C2=$(api POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"encounter_id\":\"$ENC\",\"lines\":[{\"item_id\":\"$IMP\",\"qty_base\":1,\"lot_id\":\"$LS2\"},{\"item_id\":\"$CTL\",\"qty_base\":1}]}")
-chk "იმპლანტი (სკანირებული სერიული S2) + ნარკოტიკული → პაციენტზე" "$(echo "$C2" | jq -r '[.lines[]|.serial_no//.lot_no]|join(",")')" "S2-$S,M$S"
+C2=$(api POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"encounter_id\":\"$ENC\",\"lines\":[{\"item_id\":\"$IMP\",\"qty_base\":1,\"lot_id\":\"$LS2\"},{\"item_id\":\"$CTL\",\"qty_base\":1,\"dose_given\":10}],\"witness\":$WIT_SM}")
+chk "იმპლანტი (სკანირებული სერიული S2) + ნარკოტიკული (დოზა + მოწმე) → პაციენტზე" "$(echo "$C2" | jq -r '[.lines[]|.serial_no//.lot_no]|join(",")')" "S2-$S,M$S"
 chk "ვიზიტის გარეშე, ინვოისის საქონელი → გაფრთხილება, ინვოისში არა" "$(api POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[{\"item_id\":\"$SUP\",\"qty_base\":1}]}" | jq -r '"\(.warnings|length):\(.lines[0].invoiced)"')" "1:false"
 chk "პაციენტის ხარჯები (სია): 3" "$(api GET "/stock/consumptions?patient_id=$PAT" "$NR" | jq length)" "3"
 chk "ნაშთის ისტორიაში — პაციენტზე მიბმული მოძრაობა" "$(api GET "/stock/items/$IMP/moves" "$SK" | jq -r '[.moves[]|select(.qty|tonumber<0)]|length')" "1"
@@ -149,9 +150,10 @@ chk "კატეგორიით, არა-ბრმა: მხოლოდ 
   "$(echo "$CT2" | jq -r '"\(.lines|length):\(.lines[0].expected_qty!=null)"'):$(api POST "/stock/counts/$CT2ID/cancel" "$SM" -d '{"reason":"ტესტ-E2E"}' | jq -r .status)" "2:true:cancelled"
 
 step "გასუფთავება"
+EL=$(api GET "/stock/controlled/empties?location_id=$SUB" "$PH" | jq -c '[.[].id]'); [ "$EL" != "[]" ] && api POST /stock/controlled/empties/confirm "$PH" -d "{\"line_ids\":$EL}" >/dev/null   # ნარკოტიკულის ცარიელი ამპულა (0035)
 api GET "/stock/balances?location_id=$SUB" "$SM" | jq -r '.rows[]|"\(.lot_id) \(.qty|tonumber)"' > "$TMP/left"
 LINES=$(awk '{printf "%s{\"lot_id\":\"%s\",\"qty_base\":%s}", (NR>1?",":""), $1, $2}' "$TMP/left")
-WC=$(api POST /stock/writeoffs "$SM" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"other\",\"notes\":\"ტესტ-E2E: გასუფთავება\",\"lines\":[$LINES]}" | jq -r '.id // empty')
+WC=$(api POST /stock/writeoffs "$SM" -d "{\"location_id\":\"$SUB\",\"writeoff_reason\":\"other\",\"notes\":\"ტესტ-E2E: გასუფთავება\",\"witness\":$WIT_NR,\"lines\":[$LINES]}" | jq -r '.id // empty')
 [ -n "$WC" ] && api POST "/stock/writeoffs/$WC/decide" "$ADM" -d '{"approve":true}' >/dev/null
 chk "სატესტო ქვესაწყობის ნაშთი — 0" "$(api GET "/stock/balances?location_id=$SUB" "$SM" | jq -r '.rows|length')" "0"
 api PUT /stock/settings "$SM" -d "$(echo "$ORIG" | jq -c '. + {reason:"ტესტ-E2E: დაბრუნება"}')" >/dev/null

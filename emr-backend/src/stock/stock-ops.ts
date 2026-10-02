@@ -10,6 +10,7 @@ import { has, type AuthUser, type Role } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { STOCK_READ } from './stock-catalog';
+import { StockWitnessService, WITNESS_CLASSES, WitnessDto, type WitnessIn } from './stock-controlled';
 import { StockTransfersService } from './stock-transfers';
 
 type Trx = Transaction<DB>;
@@ -22,12 +23,12 @@ export const STOCK_APPROVE: Role[] = ['admin', 'stock_manager'];
 export const WRITEOFF_REASONS = ['expired', 'damaged', 'lost', 'department_use', 'recall', 'other'] as const;
 const REASON_KA: Record<string, string> = { expired: 'ვადაგასული', damaged: 'დაზიანებული', lost: 'დაკარგული', department_use: 'განყოფილების ხარჯი', recall: 'გაწვევა', other: 'სხვა' };
 export interface WoLineIn { lot_id: string; qty_base: number; notes?: string | null }
-export interface CnLineIn { item_id: string; qty_base: number; lot_id?: string | null }
+export interface CnLineIn { item_id: string; qty_base: number; lot_id?: string | null; dose_given?: number | null; dose_wasted?: number | null }
 
 /** ჩამოწერა, ხარჯი პაციენტზე (+ ინვოისი კონფიგურაციით), ინვენტარიზაცია (4A — ლოკაციის ბლოკით) */
 @Injectable()
 export class StockOpsService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly t: StockTransfersService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly t: StockTransfersService, private readonly w: StockWitnessService) {}
 
   private mapErr(e: unknown): never {
     const err = e as { constraint?: string; message?: string };
@@ -54,9 +55,13 @@ export class StockOpsService {
   }
 
   // ================================================================= ჩამოწერა
-  async createWriteoff(dto: { location_id: string; writeoff_reason: string; notes?: string | null; lines: WoLineIn[] }, u: AuthUser, ctx: AuditContext) {
+  async createWriteoff(dto: { location_id: string; writeoff_reason: string; notes?: string | null; witness?: WitnessIn | null; lines: WoLineIn[] }, u: AuthUser, ctx: AuditContext) {
     const loc = await this.t.loc(dto.location_id);
     await this.t.requireOperate(u, loc, 'ჩამოწერა');
+    // ნარკოტიკული / ფსიქოტროპული — მოწმე სავალდებულოა
+    const ctl = dto.lines.length ? await this.db.selectFrom('stock_lots as lt').innerJoin('stock_items as i', 'i.id', 'lt.item_id').innerJoin('med_generics as g', 'g.id', 'i.generic_id')
+      .select('lt.id').where('lt.id', 'in', dto.lines.map((l) => l.lot_id)).where('g.controlled_class', 'in', WITNESS_CLASSES).execute() : [];
+    const wit = ctl.length ? await this.w.verify(dto.witness, u, ctx, 'writeoff') : null;
     if (dto.writeoff_reason !== 'expired' && (!dto.notes || dto.notes.trim().length < 3)) throw new BadRequestException('ჩამოწერის აღწერა სავალდებულოა (ვადაგასულის გარდა)');
     await this.counting(loc.id);
     let id = ''; let pending = false;
@@ -64,7 +69,7 @@ export class StockOpsService {
       await this.db.transaction().execute(async (trx) => {
         const st = await this.settings(trx);
         const today = await this.t.today(trx);
-        const d = await trx.insertInto('stock_docs').values({ doc_type: 'writeoff', doc_date: today, location_id: loc.id, writeoff_reason: dto.writeoff_reason, notes: dto.notes?.trim() || null, created_by: u.id })
+        const d = await trx.insertInto('stock_docs').values({ doc_type: 'writeoff', doc_date: today, location_id: loc.id, writeoff_reason: dto.writeoff_reason, notes: dto.notes?.trim() || null, witness_id: wit?.id ?? null, created_by: u.id })
           .returning('id').executeTakeFirstOrThrow();
         id = d.id;
         let value = 0; let controlled = false; let n = 0;
@@ -130,10 +135,24 @@ export class StockOpsService {
   }
 
   // ================================================================= ხარჯი პაციენტზე
-  async createConsumption(dto: { location_id: string; patient_id: string; encounter_id?: string | null; notes?: string | null; lines: CnLineIn[] }, u: AuthUser, ctx: AuditContext) {
+  async createConsumption(dto: { location_id: string; patient_id: string; encounter_id?: string | null; notes?: string | null; witness?: WitnessIn | null; lines: CnLineIn[] }, u: AuthUser, ctx: AuditContext) {
     const loc = await this.t.loc(dto.location_id);
     await this.t.requireOperate(u, loc, 'ხარჯი');
     await this.counting(loc.id);
+    // ნარკოტიკული / ფსიქოტროპული: მიღებული დოზა სავალდებულო, ნარჩენი — სურვილით; ჯამი = რაოდენობა × აქტ. ნივთიერება ერთეულში; მოწმე სავალდებულო
+    const gens = await this.db.selectFrom('stock_items as i').innerJoin('med_generics as g', 'g.id', 'i.generic_id')
+      .select(['i.id', 'i.name', 'g.controlled_class', 'g.dose_unit', 'g.dose_per_unit']).where('i.id', 'in', [...new Set(dto.lines.map((l) => l.item_id))]).execute();
+    const ctl = new Map(gens.filter((g) => WITNESS_CLASSES.includes(g.controlled_class ?? '')).map((g) => [g.id, g]));
+    for (const l of dto.lines) {
+      const g = ctl.get(l.item_id);
+      if (!g) continue;
+      if (l.dose_given === undefined || l.dose_given === null) throw new BadRequestException(`„${g.name}“: მიუთითეთ პაციენტის მიღებული დოზა${g.dose_unit ? ` (${g.dose_unit})` : ''}`);
+      if (g.dose_per_unit) {
+        const total = q3(Number(g.dose_per_unit) * l.qty_base); const sum = q3(l.dose_given + (l.dose_wasted ?? 0));
+        if (Math.abs(total - sum) > 0.001) throw new BadRequestException(`„${g.name}“: მიღებული + ნარჩენი (${sum}) ≠ ${l.qty_base} × ${Number(g.dose_per_unit)} = ${total} ${g.dose_unit ?? ''}`);
+      }
+    }
+    const wit = ctl.size ? await this.w.verify(dto.witness, u, ctx, 'consumption') : null;
     const pat = await this.db.selectFrom('patients').select(['id']).where('id', '=', dto.patient_id).executeTakeFirst();
     if (!pat) throw new BadRequestException('პაციენტი ვერ მოიძებნა');
     let enc: { id: string; status: string } | undefined;
@@ -149,7 +168,7 @@ export class StockOpsService {
         const today = await this.t.today(trx);
         const inv = enc ? await trx.selectFrom('invoices').select('id').where('encounter_id', '=', enc.id).forUpdate().executeTakeFirst() : undefined;
         const d = await trx.insertInto('stock_docs').values({ doc_type: 'consumption', doc_date: today, location_id: loc.id, patient_id: dto.patient_id, encounter_id: enc?.id ?? null,
-          notes: dto.notes?.trim() || null, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
+          notes: dto.notes?.trim() || null, witness_id: wit?.id ?? null, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
         id = d.id;
         let n = 0; let cost = 0; let billed = 0;
         for (const p of dto.lines) {
@@ -183,7 +202,8 @@ export class StockOpsService {
             n++;
             const line = await trx.insertInto('stock_doc_lines').values({ doc_id: id, line_no: n, item_id: it.id, qty: String(a.qty), qty_base: String(a.qty), lot_no: l.lot_no, serial_no: l.serial_no,
               expires_on: l.expires_on, produced_on: l.produced_on, unit_cost: l.unit_cost, lot_id: l.id, patient_id: dto.patient_id, line_net: String(r2(a.qty * unit)),
-              sale_price: price === null ? null : String(price) }).returning('id').executeTakeFirstOrThrow();
+              sale_price: price === null ? null : String(price),
+              ...(ctl.has(it.id) && { dose_given: String(q3((p.dose_given ?? 0) * a.qty / p.qty_base)), dose_wasted: String(q3((p.dose_wasted ?? 0) * a.qty / p.qty_base)), dose_unit: ctl.get(it.id)!.dose_unit ?? null }) }).returning('id').executeTakeFirstOrThrow();
             await trx.insertInto('stock_moves').values({ doc_id: id, line_id: line.id, move_type: 'consumption', location_id: loc.id, lot_id: l.id, item_id: it.id, qty: String(-a.qty),
               cost_lot: l.unit_cost, patient_id: dto.patient_id, encounter_id: enc?.id ?? null, created_by: u.id }).execute();
             cost += a.qty * unit;
@@ -211,13 +231,13 @@ export class StockOpsService {
       .leftJoin('users as au', 'au.id', 'd.approved_by').leftJoin('patients as p', 'p.id', 'd.patient_id').leftJoin('stock_docs as rb', 'rb.id', 'd.reversed_by')
       .select(['d.id', 'd.doc_type', 'd.doc_no', 'd.status', 'd.doc_date', 'd.location_id', 'd.writeoff_reason', 'd.approval_status', 'd.approved_at', 'd.notes', 'd.reason', 'd.total_net',
         'd.patient_id', 'd.encounter_id', 'd.posted_at', 'd.created_at', 'd.created_by', 'd.reversed_by', 'rb.doc_no as reversed_by_no', 'l.name as location_name',
-        sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), sql<string | null>`au.first_name || ' ' || au.last_name`.as('approved_by_name'),
+        sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), sql<string | null>`au.first_name || ' ' || au.last_name`.as('approved_by_name'), sql<string | null>`(SELECT wu.first_name || ' ' || wu.last_name FROM users wu WHERE wu.id = d.witness_id)`.as('witness_name'),
         sql<string | null>`p.first_name || ' ' || p.last_name`.as('patient_name'), 'p.personal_number as patient_pn'])
       .where('d.id', '=', id).executeTakeFirst();
     if (!d) throw new NotFoundException('დოკუმენტი ვერ მოიძებნა');
     const lines = await this.db.selectFrom('stock_doc_lines as x').innerJoin('stock_items as i', 'i.id', 'x.item_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .leftJoin('invoice_line_items as il', 'il.stock_doc_line_id', 'x.id')
-      .select(['x.id', 'x.line_no', 'x.item_id', 'x.qty_base', 'x.lot_no', 'x.serial_no', 'x.expires_on', 'x.unit_cost', 'x.line_net', 'x.sale_price', 'x.notes', 'i.name as item_name', 'i.code as item_code',
+      .select(['x.id', 'x.line_no', 'x.item_id', 'x.qty_base', 'x.lot_no', 'x.serial_no', 'x.expires_on', 'x.unit_cost', 'x.line_net', 'x.sale_price', 'x.notes', 'x.dose_given', 'x.dose_wasted', 'x.dose_unit', 'x.empty_returned_at', 'i.name as item_name', 'i.code as item_code',
         'un.name as base_unit_name', sql<boolean>`il.id IS NOT NULL`.as('invoiced')])
       .where('x.doc_id', '=', id).orderBy('x.line_no').execute();
     return { ...d, lines };
@@ -440,11 +460,14 @@ export class StockOpsService {
 class WoLineDto { @IsUUID() lot_id: string; @IsNumber() @Min(0.001) @Max(1_000_000) qty_base: number; @IsOptional() @IsString() @MaxLength(500) notes?: string | null }
 class WriteoffDto {
   @IsUUID() location_id: string; @IsIn(WRITEOFF_REASONS as unknown as string[]) writeoff_reason: string; @IsOptional() @IsString() @MaxLength(1000) notes?: string | null;
+  @IsOptional() @ValidateNested() @Type(() => WitnessDto) witness?: WitnessDto | null;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(300) @ValidateNested({ each: true }) @Type(() => WoLineDto) lines: WoLineDto[];
 }
-class CnLineDto { @IsUUID() item_id: string; @IsNumber() @Min(0.001) @Max(100_000) qty_base: number; @IsOptional() @IsUUID() lot_id?: string | null }
+class CnLineDto { @IsUUID() item_id: string; @IsNumber() @Min(0.001) @Max(100_000) qty_base: number; @IsOptional() @IsUUID() lot_id?: string | null;
+  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000) dose_given?: number | null; @IsOptional() @IsNumber() @Min(0) @Max(1_000_000) dose_wasted?: number | null }
 class ConsumptionDto {
   @IsUUID() location_id: string; @IsUUID() patient_id: string; @IsOptional() @IsUUID() encounter_id?: string | null; @IsOptional() @IsString() @MaxLength(1000) notes?: string | null;
+  @IsOptional() @ValidateNested() @Type(() => WitnessDto) witness?: WitnessDto | null;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => CnLineDto) lines: CnLineDto[];
 }
 class DecideDto { @IsBoolean() approve: boolean; @IsOptional() @IsString() @MaxLength(500) reason?: string }

@@ -5,9 +5,10 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
 import ItemSearch from './ItemSearch';
-import { money2, qtyFmt, REVERSE_ROLES, useStockRefs, WO_REASON_KA, type LotAvail, type OpsDoc, type OpsRow, type StockItem, type StockLocation } from './types';
+import WitnessFields from './Witness';
+import { money2, needsWitness, qtyFmt, REVERSE_ROLES, useStockRefs, WO_REASON_KA, type Witness, type LotAvail, type OpsDoc, type OpsRow, type StockItem, type StockLocation } from './types';
 
-interface Line { key: string; item: Pick<StockItem, 'id' | 'name' | 'code' | 'base_unit_name'>; lots: (LotAvail & { qty?: string })[]; lot_id: string; qty: string }
+interface Line { key: string; item: Pick<StockItem, 'id' | 'name' | 'code' | 'base_unit_name' | 'controlled_class'>; lots: (LotAvail & { qty?: string })[]; lot_id: string; qty: string }
 let seq = 0;
 
 /** ჩამოწერა: მიზეზით; ზღვარზე მეტი / დაკარგული / კონტროლირებადი — საწყობის მენეჯერის დამტკიცებით */
@@ -55,6 +56,8 @@ function WriteoffForm({ onClose }: { onClose: () => void }) {
   const mine = useQuery({ queryKey: ['stock-my-locations'], queryFn: () => api<StockLocation[]>('/stock/my-locations') });
   const [h, setH] = useState({ loc: '', reason: 'damaged', notes: '' });
   const [lines, setLines] = useState<Line[]>([]);
+  const [wit, setWit] = useState<Witness>({ username: '', password: '' });
+  const controlled = lines.some((l) => needsWitness(l.item.controlled_class));
   const add = async (i: StockItem, lotNo?: string | null, serial?: string | null) => {
     const lots = await api<(LotAvail & { qty: string })[]>(`/stock/locations/${h.loc}/lots`, { query: { item_id: i.id } });
     // ვადაგასულიც ჩანს: ვადაგასული ლოტები ცალკე — ნაშთებიდან
@@ -64,10 +67,10 @@ function WriteoffForm({ onClose }: { onClose: () => void }) {
     setLines((ls) => [...ls, { key: `w${++seq}`, item: i, lots: all, lot_id: pick?.lot_id ?? '', qty: '1' }]);
   };
   const save = useMutation({
-    mutationFn: () => api<OpsDoc>('/stock/writeoffs', { body: { location_id: h.loc, writeoff_reason: h.reason, notes: h.notes || null, lines: lines.map((l) => ({ lot_id: l.lot_id, qty_base: Number(l.qty.replace(',', '.')) })) } }),
+    mutationFn: () => api<OpsDoc>('/stock/writeoffs', { body: { location_id: h.loc, writeoff_reason: h.reason, notes: h.notes || null, witness: controlled ? wit : undefined, lines: lines.map((l) => ({ lot_id: l.lot_id, qty_base: Number(l.qty.replace(',', '.')) })) } }),
     onSuccess: (r) => { toast.show(r.status === 'posted' ? `ჩამოიწერა: ${r.doc_no}` : 'გაიგზავნა დასამტკიცებლად'); for (const k of ['stock-writeoffs', 'stock-balances']) void qc.invalidateQueries({ queryKey: [k] }); onClose(); },
   });
-  const valid = h.loc && lines.length && lines.every((l) => l.lot_id && Number(l.qty.replace(',', '.')) > 0) && (h.reason === 'expired' || h.notes.trim().length >= 3);
+  const valid = h.loc && lines.length && lines.every((l) => l.lot_id && Number(l.qty.replace(',', '.')) > 0) && (h.reason === 'expired' || h.notes.trim().length >= 3) && (!controlled || (wit.username.trim() && wit.password));
   return (
     <Modal title="ჩამოწერა" onClose={onClose} width={900}
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={!valid || save.isPending} onClick={() => save.mutate()}>ჩამოწერა</button></>}>
@@ -96,6 +99,7 @@ function WriteoffForm({ onClose }: { onClose: () => void }) {
               <td><button className="icon-btn" type="button" aria-label="წაშლა" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>×</button></td>
             </tr>))}</tbody>
         </table>
+        {controlled && <WitnessFields value={wit} onChange={setWit} note="ჩამოწერა / განადგურება" />}
         <ErrorBox error={save.error} />
       </div>
     </Modal>

@@ -1356,6 +1356,11 @@ export interface StockCounts {
 
 export interface StockDocLines {
   doc_id: string;
+  dose_given: Numeric | null;
+  dose_unit: string | null;
+  dose_wasted: Numeric | null;
+  empty_returned_at: Timestamp | null;
+  empty_returned_by: string | null;
   expires_on: string | null;
   id: Generated<string>;
   item_id: string;
@@ -1417,6 +1422,7 @@ export interface StockDocs {
   total_vat: Generated<Numeric>;
   updated_at: Generated<Timestamp>;
   waybill_no: string | null;
+  witness_id: string | null;
   writeoff_reason: string | null;
 }
 
@@ -1581,6 +1587,26 @@ export interface StockSettings {
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
   writeoff_approval_threshold: Generated<Numeric>;
+}
+
+export interface StockShiftCountLines {
+  counted_qty: Numeric;
+  expected_qty: Numeric;
+  id: Generated<string>;
+  item_id: string;
+  lot_id: string;
+  shift_id: string;
+}
+
+export interface StockShiftCounts {
+  created_at: Generated<Timestamp>;
+  handed_by: string;
+  id: Generated<string>;
+  location_id: string;
+  notes: string | null;
+  received_by: string;
+  shift_no: string;
+  status: string;
 }
 
 export interface StockSuppliers {
@@ -1771,6 +1797,8 @@ export interface DB {
   stock_request_lines: StockRequestLines;
   stock_requests: StockRequests;
   stock_settings: StockSettings;
+  stock_shift_count_lines: StockShiftCountLines;
+  stock_shift_counts: StockShiftCounts;
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;
   user_capabilities: UserCapabilities;
