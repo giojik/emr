@@ -508,6 +508,7 @@ export interface InvoiceLineItems {
   original_price: Numeric | null;
   quantity: Generated<number>;
   referral_id: string | null;
+  stock_doc_line_id: string | null;
   tariff_id: string | null;
   unit_price: Numeric;
 }
@@ -1311,6 +1312,41 @@ export interface StockCategories {
   updated_at: Generated<Timestamp>;
 }
 
+export interface StockCountLines {
+  count_id: string;
+  counted_at: Timestamp | null;
+  counted_by: string | null;
+  counted_qty: Numeric | null;
+  expected_qty: Generated<Numeric>;
+  expires_on: string | null;
+  id: Generated<string>;
+  is_extra: Generated<boolean>;
+  item_id: string;
+  lot_id: string | null;
+  lot_no: string | null;
+  note: string | null;
+  serial_no: string | null;
+}
+
+export interface StockCounts {
+  adjustment_doc_id: string | null;
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  blind: Generated<boolean>;
+  category_id: string | null;
+  count_no: string;
+  id: Generated<string>;
+  location_id: string;
+  notes: string | null;
+  reason: string | null;
+  started_at: Generated<Timestamp>;
+  started_by: string;
+  status: Generated<string>;
+  submitted_at: Timestamp | null;
+  submitted_by: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface StockDocLines {
   doc_id: string;
   expires_on: string | null;
@@ -1331,6 +1367,7 @@ export interface StockDocLines {
   qty: Numeric;
   qty_base: Numeric;
   request_line_id: string | null;
+  sale_price: Numeric | null;
   serial_no: string | null;
   short_expiry_reason: string | null;
   unit_cost: Numeric | null;
@@ -1338,17 +1375,23 @@ export interface StockDocLines {
 }
 
 export interface StockDocs {
+  approval_status: string | null;
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  count_id: string | null;
   created_at: Generated<Timestamp>;
   created_by: string;
   doc_date: string;
   doc_no: string | null;
   doc_type: string;
+  encounter_id: string | null;
   from_location_id: string | null;
   id: Generated<string>;
   invoice_date: string | null;
   invoice_no: string | null;
   location_id: string | null;
   notes: string | null;
+  patient_id: string | null;
   posted_at: Timestamp | null;
   posted_by: string | null;
   prices_include_vat: Generated<boolean>;
@@ -1367,6 +1410,7 @@ export interface StockDocs {
   total_vat: Generated<Numeric>;
   updated_at: Generated<Timestamp>;
   waybill_no: string | null;
+  writeoff_reason: string | null;
 }
 
 export interface StockItemBarcodes {
@@ -1507,6 +1551,7 @@ export interface StockSettings {
   short_expiry_months: Generated<number>;
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
+  writeoff_approval_threshold: Generated<Numeric>;
 }
 
 export interface StockSuppliers {
@@ -1680,6 +1725,8 @@ export interface DB {
   service_tariffs: ServiceTariffs;
   stock_balances: StockBalances;
   stock_categories: StockCategories;
+  stock_count_lines: StockCountLines;
+  stock_counts: StockCounts;
   stock_doc_lines: StockDocLines;
   stock_docs: StockDocs;
   stock_item_barcodes: StockItemBarcodes;

@@ -39,12 +39,12 @@ export default function Setup() {
 
 function SettingsCard({ s }: { s: StockSettings }) {
   const qc = useQueryClient();
-  const [f, setF] = useState({ costing_method: s.costing_method, short_expiry_months: s.short_expiry_months, reason: '' });
+  const [f, setF] = useState({ costing_method: s.costing_method, short_expiry_months: s.short_expiry_months, writeoff_approval_threshold: String(Number(s.writeoff_approval_threshold)), reason: '' });
   const m = useMutation({
-    mutationFn: () => api('/stock/settings', { method: 'PUT', body: { costing_method: f.costing_method, short_expiry_months: f.short_expiry_months, reason: f.reason.trim() } }),
+    mutationFn: () => api('/stock/settings', { method: 'PUT', body: { costing_method: f.costing_method, short_expiry_months: f.short_expiry_months, writeoff_approval_threshold: Number(f.writeoff_approval_threshold.replace(',', '.')), reason: f.reason.trim() } }),
     onSuccess: () => { setF((p) => ({ ...p, reason: '' })); void qc.invalidateQueries({ queryKey: ['stock-refs'] }); },
   });
-  const changed = f.costing_method !== s.costing_method || f.short_expiry_months !== s.short_expiry_months;
+  const changed = f.costing_method !== s.costing_method || f.short_expiry_months !== s.short_expiry_months || Number(f.writeoff_approval_threshold.replace(',', '.')) !== Number(s.writeoff_approval_threshold);
   return (
     <section className="card card-pad stack">
       <h2>პარამეტრები</h2>
@@ -58,6 +58,8 @@ function SettingsCard({ s }: { s: StockSettings }) {
       <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ maxWidth: 260 }}><Field label="მოკლევადიანის ზღვარი მიღებისას (თვე)" htmlFor="sem" hint="ნარჩენი ვადა ნაკლებია → გაფრთხილება და მიზეზი">
           <input id="sem" className="input mono" type="number" min={0} max={60} value={f.short_expiry_months} onChange={(e) => setF({ ...f, short_expiry_months: Number(e.target.value) })} /></Field></div>
+        <div style={{ maxWidth: 260 }}><Field label="ჩამოწერის დამტკიცების ზღვარი (₾)" htmlFor="swt" hint="მეტი ღირებულება → საწყობის მენეჯერის დამტკიცება">
+          <input id="swt" className="input mono" inputMode="decimal" value={f.writeoff_approval_threshold} onChange={(e) => setF({ ...f, writeoff_approval_threshold: e.target.value })} /></Field></div>
         {changed && <div className="grow" style={{ minWidth: 260 }}><Field label="ცვლილების მიზეზი" htmlFor="sr" required><input id="sr" className="input" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></Field></div>}
         {changed && <button className="btn primary" type="button" disabled={m.isPending || f.reason.trim().length < 3} onClick={() => m.mutate()}>შენახვა</button>}
       </div>

@@ -11,7 +11,7 @@ export interface StockCategory {
   requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; expiry_warn_days: number | null;
   billing_mode: 'none' | 'invoice'; markup_pct: string | null; is_active: boolean; sort_order: number;
 }
-export interface StockSettings { costing_method: 'fifo' | 'average'; short_expiry_months: number; updated_at: string }
+export interface StockSettings { costing_method: 'fifo' | 'average'; short_expiry_months: number; writeoff_approval_threshold: string; updated_at: string }
 export interface StockRefs { units: StockUnit[]; forms: DosageForm[]; routes: MedRoute[]; categories: StockCategory[]; settings: StockSettings; allergen_groups: { code: string; name: string }[] }
 
 export interface StockPack { id: string; name: string; qty_base: number | string; is_receipt_default: boolean }
@@ -141,3 +141,31 @@ export interface TransitRow {
 }
 export const STOCK_ROLES = ['admin', 'storekeeper', 'stock_manager'] as const;
 export const ISSUER_ROLES = ['admin', 'storekeeper', 'stock_manager', 'pharmacist'] as const;
+
+// ---------------------------------------------------------------- 0033: ჩამოწერა, ხარჯი, ინვენტარიზაცია
+export const WO_REASON_KA: Record<string, string> = { expired: 'ვადაგასული', damaged: 'დაზიანებული', lost: 'დაკარგული', department_use: 'განყოფილების ხარჯი', recall: 'გაწვევა (recall)', other: 'სხვა' };
+export interface OpsRow {
+  id: string; doc_no: string | null; status: DocStatus; doc_date: string; writeoff_reason: string | null; approval_status: 'pending' | 'approved' | 'rejected' | null; total_net: string;
+  notes: string | null; created_at: string; reversed_by: string | null; reversed_by_no: string | null; location_name: string; created_by_name: string; patient_name: string | null; lines: number;
+}
+export interface OpsDoc extends Omit<OpsRow, 'lines'> {
+  location_id: string; approved_at: string | null; approved_by_name: string | null; reason: string | null; patient_id: string | null; encounter_id: string | null; patient_pn: string | null;
+  posted_at: string | null; created_by: string;
+  lines: { id: string; line_no: number; item_id: string; qty_base: string; lot_no: string | null; serial_no: string | null; expires_on: string | null; unit_cost: string | null; line_net: string | null;
+    sale_price: string | null; notes: string | null; item_name: string; item_code: string; base_unit_name: string; invoiced: boolean }[];
+  warnings?: string[];
+}
+export type CountStatus = 'open' | 'counted' | 'approved' | 'cancelled';
+export const COUNT_STATUS: Record<CountStatus, [string, string]> = { open: ['warn', 'მიმდინარე — ლოკაცია დაბლოკილია'], counted: ['info', 'დათვლილი — დასამტკიცებელი'], approved: ['ok', 'დამტკიცებული'], cancelled: ['', 'გაუქმებული'] };
+export interface CountRow {
+  id: string; count_no: string; status: CountStatus; blind: boolean; started_at: string; submitted_at: string | null; approved_at: string | null; location_name: string; category_name: string | null;
+  adjustment_no: string | null; started_by_name: string; lines: number; counted: number;
+}
+export interface CountLine {
+  id: string; item_id: string; lot_id: string | null; lot_no: string | null; serial_no: string | null; expires_on: string | null; expected_qty: string | null; counted_qty: string | null;
+  counted_at: string | null; is_extra: boolean; note: string | null; item_name: string; item_code: string; base_unit_name: string; counted_by_name: string | null; diff: number | null; diff_value: number | null;
+}
+export interface StockCount extends Omit<CountRow, 'lines' | 'counted'> {
+  location_id: string; category_id: string | null; notes: string | null; reason: string | null; approved_by_name: string | null; can_approve: boolean;
+  lines: CountLine[]; totals: { shortage: number; surplus: number; lines_diff: number } | null;
+}

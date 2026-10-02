@@ -85,10 +85,11 @@ export class StockCatalogService {
     return { units, forms, routes, categories, settings, allergen_groups };
   }
   settings() { return this.db.selectFrom('stock_settings').selectAll().where('id', '=', 1).executeTakeFirstOrThrow(); }
-  async putSettings(dto: { costing_method?: 'fifo' | 'average'; short_expiry_months?: number; reason: string }, u: AuthUser, ctx: AuditContext) {
+  async putSettings(dto: { costing_method?: 'fifo' | 'average'; short_expiry_months?: number; writeoff_approval_threshold?: number; reason: string }, u: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const old = await trx.selectFrom('stock_settings').selectAll().where('id', '=', 1).forUpdate().executeTakeFirstOrThrow();
-      const set = { ...(dto.costing_method && { costing_method: dto.costing_method }), ...(dto.short_expiry_months !== undefined && { short_expiry_months: dto.short_expiry_months }) };
+      const set = { ...(dto.costing_method && { costing_method: dto.costing_method }), ...(dto.short_expiry_months !== undefined && { short_expiry_months: dto.short_expiry_months }),
+        ...(dto.writeoff_approval_threshold !== undefined && { writeoff_approval_threshold: String(dto.writeoff_approval_threshold) }) };
       const r = await trx.updateTable('stock_settings').set({ ...set, updated_by: u.id, updated_at: sql`now()` }).where('id', '=', 1).returningAll().executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'UPDATE_STOCK_SETTINGS', entityName: 'stock_settings', entityId: '1', oldData: old, newData: { ...set, reason: dto.reason.trim() } }, trx);
       return r;
@@ -465,7 +466,8 @@ export class CategoryDto {
   @IsOptional() @IsNumber() @Min(0) @Max(1000) markup_pct?: number | null; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsInt() sort_order?: number;
 }
 class UnitDto { @IsOptional() @Matches(/^[a-z][a-z0-9_]{0,19}$/, { message: 'კოდი: პატარა ლათინური ასოები' }) code?: string; @IsOptional() @IsString() @Length(1, 60) name?: string; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsInt() sort_order?: number }
-class SettingsDto { @IsOptional() @IsIn(['fifo', 'average']) costing_method?: 'fifo' | 'average'; @IsOptional() @IsInt() @Min(0) @Max(60) short_expiry_months?: number; @IsString() @Length(3, 500) reason: string }
+class SettingsDto { @IsOptional() @IsIn(['fifo', 'average']) costing_method?: 'fifo' | 'average'; @IsOptional() @IsInt() @Min(0) @Max(60) short_expiry_months?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(1_000_000) writeoff_approval_threshold?: number; @IsString() @Length(3, 500) reason: string }
 const bool = (v?: string) => v === 'true' || v === '1';
 
 @Controller('stock')
@@ -473,7 +475,7 @@ export class StockCatalogController {
   constructor(private readonly s: StockCatalogService) {}
   @Get('refs') @Roles(...STOCK_READ) refs() { return this.s.refs(); }
   @Put('settings') @Roles(...STOCK_ADMIN) settings(@Body() d: SettingsDto, @CurrentUser() u: AuthUser, @Req() r: Request) {
-    if (d.costing_method === undefined && d.short_expiry_months === undefined) throw new BadRequestException('შესაცვლელი პარამეტრი არ არის');
+    if (d.costing_method === undefined && d.short_expiry_months === undefined && d.writeoff_approval_threshold === undefined) throw new BadRequestException('შესაცვლელი პარამეტრი არ არის');
     return this.s.putSettings(d, u, auditCtx(r));
   }
   @Post('units') @Roles(...STOCK_ADMIN) createUnit(@Body() d: UnitDto, @Req() r: Request) { if (!d.code || !d.name) throw new BadRequestException('კოდი და დასახელება სავალდებულოა'); return this.s.saveUnit(null, d, auditCtx(r)); }

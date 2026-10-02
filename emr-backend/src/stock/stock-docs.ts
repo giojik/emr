@@ -269,18 +269,25 @@ export class StockDocsService {
         const d = await trx.selectFrom('stock_docs').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
         if (!d) throw new NotFoundException('დოკუმენტი ვერ მოიძებნა');
         if (d.status !== 'posted') throw new ConflictException('შემობრუნდება მხოლოდ გატარებული დოკუმენტი');
-        if (d.doc_type !== 'receipt') throw new BadRequestException('ამ ეტაპზე შემობრუნდება მიღება');
+        if (!['receipt', 'writeoff', 'consumption'].includes(d.doc_type)) throw new BadRequestException('შემობრუნდება მიღება, ჩამოწერა და ხარჯი (გადაცემა — დაბრუნებით, ინვენტარიზაცია — ახალი დათვლით)');
         if (d.reversed_by) throw new ConflictException('დოკუმენტი უკვე შემობრუნებულია');
         const today = await this.today(trx);
         const r = await trx.insertInto('stock_docs').values({ doc_type: 'reversal', doc_date: today, location_id: d.location_id, supplier_id: d.supplier_id, invoice_no: d.invoice_no,
           invoice_date: d.invoice_date, waybill_no: d.waybill_no, prices_include_vat: d.prices_include_vat, total_net: String(-Number(d.total_net)), total_vat: String(-Number(d.total_vat)),
-          reversal_of: id, reason: reason.trim(), notes: `შემობრუნება: ${d.doc_no}`, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
+          reversal_of: id, reason: reason.trim(), notes: `შემობრუნება: ${d.doc_no}`, patient_id: d.patient_id, encounter_id: d.encounter_id, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
         rid = r.id;
         const lines = await trx.selectFrom('stock_doc_lines').selectAll().where('doc_id', '=', id).orderBy('line_no').execute();
         for (const l of lines) {
           const { id: _i, doc_id: _d, ...rest } = l;
           const nl = await trx.insertInto('stock_doc_lines').values({ ...rest, doc_id: rid }).returning('id').executeTakeFirstOrThrow();
           const q = Number(l.qty_base); const c = Number(l.unit_cost ?? 0);
+          if (d.doc_type !== 'receipt') {
+            // ჩამოწერა / ხარჯი: მარაგი ბრუნდება იმავე ლოტზე და ლოკაციაზე; ხარჯის ინვოისის ხაზი იშლება
+            if (d.doc_type === 'consumption') await trx.deleteFrom('invoice_line_items').where('stock_doc_line_id', '=', l.id).execute();
+            await trx.insertInto('stock_moves').values({ doc_id: rid, line_id: nl.id, move_type: d.doc_type as 'writeoff' | 'consumption', location_id: d.location_id!, lot_id: l.lot_id!, item_id: l.item_id,
+              qty: String(q), cost_lot: String(c), patient_id: d.patient_id, encounter_id: d.encounter_id, created_by: u.id }).execute();
+            continue;
+          }
           const lot = await trx.selectFrom('stock_lots').select(['id', 'unit_cost', 'received_qty', 'received_value']).where('id', '=', l.lot_id!).forUpdate().executeTakeFirstOrThrow();
           const rq = Number(lot.received_qty) - q; const rv = Math.max(0, Number(lot.received_value) - c * q);
           await trx.updateTable('stock_lots').set({ received_qty: String(Math.max(0, rq)), received_value: (rq > 0 ? rv : 0).toFixed(8), ...(rq > 0 && { unit_cost: String(r6(rv / rq)) }) })
@@ -301,6 +308,8 @@ export class StockDocsService {
     if (err.constraint === 'stock_balances_non_negative') throw new ConflictException('ნაშთი არასაკმარისია — მარაგის ნაწილი უკვე გაცემულია / გადატანილია');
     if (err.constraint === 'ux_stock_lots_key') throw new ConflictException('ლოტი ერთდროულად სხვა დოკუმენტით შეიქმნა — სცადეთ ხელახლა');
     if (err.constraint === 'ux_stock_docs_reversal') throw new ConflictException('დოკუმენტი უკვე შემობრუნებულია');
+    if (err.constraint === 'stock_location_counting') throw new ConflictException((e as Error).message);
+    if (err.constraint === 'chk_invoice_overpaid') throw new ConflictException('ინვოისი უკვე გადახდილია — ხაზის მოხსნამდე საჭიროა გადახდის კორექცია (სალარო)');
     throw e;
   }
 

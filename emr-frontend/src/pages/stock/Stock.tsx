@@ -3,6 +3,8 @@ import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { can, type Role } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import Balances from './Balances';
+import Consumption from './Consumption';
+import Counts from './Counts';
 import Generics from './Generics';
 import ImportPage from './Import';
 import Interactions from './Interactions';
@@ -12,6 +14,7 @@ import Receipts from './Receipts';
 import Requests from './Requests';
 import Transfer from './Transfer';
 import Transit from './Transit';
+import Writeoffs from './Writeoffs';
 import Setup from './Setup';
 import Suppliers from './Suppliers';
 
@@ -28,6 +31,9 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] =
   { key: 'requests', label: 'მოთხოვნები', roles: STOCK_READ, el: Requests },
   { key: 'transit', label: 'მისაღები', roles: STOCK_READ, el: Transit },
   { key: 'transfer', label: 'გადაცემა / დაბრუნება', roles: STOCK_READ, el: Transfer },
+  { key: 'consumption', label: 'ხარჯი პაციენტზე', roles: STOCK_READ, el: Consumption },
+  { key: 'writeoffs', label: 'ჩამოწერა', roles: STOCK_READ, el: Writeoffs },
+  { key: 'counts', label: 'ინვენტარიზაცია', roles: STOCK_READ, el: Counts },
   { key: 'receipts', label: 'მიღება (მომწოდებელი)', roles: CATALOG_VIEW, el: Receipts },
   { key: 'items', label: 'საქონელი', roles: CATALOG_VIEW, el: Items },
   { key: 'generics', label: 'ჯენერიკები', roles: CATALOG_VIEW, el: Generics },

@@ -38,33 +38,33 @@ export class StockTransfersService {
     const r = await ex.selectFrom('stock_locations').select('id').where('kind', '=', 'transit').executeTakeFirstOrThrow();
     return (this.transitCache = r.id);
   }
-  private async today(ex: Ex = this.db) {
+  async today(ex: Ex = this.db) {
     return (await sql<{ d: string }>`SELECT to_char((now() AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS d`.execute(ex)).rows[0].d;
   }
-  private async nextNo(trx: Trx, prefix: string, date: string) {
+  async nextNo(trx: Trx, prefix: string, date: string) {
     const year = Number(date.slice(0, 4));
     const { last_value } = await trx.insertInto('document_counters').values({ document_type: `stock_${prefix}`, year, last_value: 1 })
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` }))
       .returning('last_value').executeTakeFirstOrThrow();
     return `${prefix}${String(year).slice(2)}-${String(last_value).padStart(6, '0')}`;
   }
-  private async loc(id: string, ex: Ex = this.db): Promise<Loc> {
+  async loc(id: string, ex: Ex = this.db): Promise<Loc> {
     const l = await ex.selectFrom('stock_locations').select(['id', 'name', 'kind', 'department_id', 'requires_approval', 'is_active']).where('id', '=', id).executeTakeFirst();
     if (!l) throw new BadRequestException('ლოკაცია ვერ მოიძებნა');
     if (l.kind === 'transit') throw new BadRequestException('„გზაში“ სისტემური ლოკაციაა');
     return l;
   }
-  private async me(u: AuthUser, ex: Ex = this.db) {
+  async me(u: AuthUser, ex: Ex = this.db) {
     return ex.selectFrom('users').select(['department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow();
   }
   /** ლოკაციით მუშაობა: საწყობი — ნებისმიერი; ფარმაცევტი — აფთიაქი; სხვა — მხოლოდ საკუთარი განყოფილების ქვესაწყობი */
-  private async canOperate(u: AuthUser, l: Loc, ex: Ex = this.db) {
+  async canOperate(u: AuthUser, l: Loc, ex: Ex = this.db) {
     if (has(u, 'admin', 'stock_manager', 'storekeeper')) return true;
     if (has(u, 'pharmacist') && l.kind === 'pharmacy') return true;
     if (!l.department_id) return false;
     return (await this.me(u, ex)).department_id === l.department_id;
   }
-  private async requireOperate(u: AuthUser, l: Loc, what: string, ex: Ex = this.db) {
+  async requireOperate(u: AuthUser, l: Loc, what: string, ex: Ex = this.db) {
     if (!l.is_active) throw new BadRequestException(`ლოკაცია „${l.name}“ გათიშულია`);
     if (!(await this.canOperate(u, l, ex))) throw new ForbiddenException(`${what}: ლოკაცია „${l.name}“ თქვენი არ არის`);
   }
@@ -75,14 +75,14 @@ export class StockTransfersService {
     const m = await this.me(u, ex);
     return m.department_id === to.department_id && (m.is_section_head || has(u, 'manager'));
   }
-  private async usersWith(caps: string[], ex: Ex = this.db, departmentId?: string | null, headsOnly = false) {
+  async usersWith(caps: string[], ex: Ex = this.db, departmentId?: string | null, headsOnly = false) {
     let x = ex.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').where('u.is_active', '=', true)
       .where(sql<boolean>`c.capabilities && ${sql.val(caps)}::varchar[]`);
     if (departmentId) x = x.where('u.department_id', '=', departmentId);
     if (headsOnly) x = x.where((eb) => eb.or([eb('u.is_section_head', '=', true), eb(sql<boolean>`'manager' = ANY(c.capabilities)`, '=', true)]));
     return (await x.execute()).map((r) => r.id);
   }
-  private async notifyMany(ids: string[], n: { kind: string; title: string; body?: string; link: string; entityId: string; urgent?: boolean }, except?: string) {
+  async notifyMany(ids: string[], n: { kind: string; title: string; body?: string; link: string; entityId: string; urgent?: boolean }, except?: string) {
     for (const id of new Set(ids)) if (id !== except) await this.notifications.notify(id, n).catch(() => undefined);
   }
 
