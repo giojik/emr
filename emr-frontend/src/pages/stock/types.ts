@@ -196,8 +196,6 @@ export const downloadCsv = (name: string, head: string[], rows: (string | number
 };
 
 // ---------------------------------------------------------------- 0035: ნარკოტიკული / ფსიქოტროპული
-export const WITNESS_CLASSES: Controlled[] = ['narcotic', 'psychotropic'];
-export const needsWitness = (c: Controlled | null | undefined) => !!c && WITNESS_CLASSES.includes(c);
 export interface Witness { username: string; password: string }
 
 // ---------------------------------------------------------------- 0036: ლაბორატორია

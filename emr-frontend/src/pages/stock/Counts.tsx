@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { ErrorBox, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
 import ItemSearch, { type ScanHit } from './ItemSearch';
+import { useStockRules } from '../../lib/modules';
 import { COUNT_STATUS, money2, qtyFmt, useStockRefs, type CountRow, type StockCount, type StockItem, type StockLocation } from './types';
 
 /** ინვენტარიზაცია (4A): ბრმა დათვლა, ლოკაციის ბლოკი, დამტკიცება → კორექტირება */
@@ -46,12 +47,14 @@ function CountList({ onOpen }: { onOpen: (id: string) => void }) {
 function StartDialog({ onClose, onStarted }: { onClose: () => void; onStarted: (id: string) => void }) {
   const refs = useStockRefs();
   const mine = useQuery({ queryKey: ['stock-my-locations'], queryFn: () => api<StockLocation[]>('/stock/my-locations') });
-  const [f, setF] = useState({ location_id: '', category_id: '', blind: true, notes: '' });
-  const m = useMutation({ mutationFn: () => api<StockCount>('/stock/counts', { body: { ...f, category_id: f.category_id || null, notes: f.notes || null } }), onSuccess: (r) => onStarted(r.id) });
+  const rules = useStockRules();
+  const [f, setF] = useState<{ location_id: string; category_id: string; blind: boolean | null; notes: string }>({ location_id: '', category_id: '', blind: null, notes: '' });
+  const blind = f.blind ?? rules.count_blind_default;
+  const m = useMutation({ mutationFn: () => api<StockCount>('/stock/counts', { body: { ...f, blind, category_id: f.category_id || null, notes: f.notes || null } }), onSuccess: (r) => onStarted(r.id) });
   return (
     <Modal title="ინვენტარიზაციის დაწყება" onClose={onClose} width={620}
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button>
-        <button className="btn primary" type="button" disabled={!f.location_id || m.isPending} onClick={() => { if (confirm('ლოკაცია დაიბლოკება დამტკიცებამდე. დავიწყოთ?')) m.mutate(); }}>დაწყება</button></>}>
+        <button className="btn primary" type="button" disabled={!f.location_id || m.isPending} onClick={() => { if (confirm(rules.count_lock ? 'ლოკაცია დაიბლოკება დამტკიცებამდე. დავიწყოთ?' : 'დავიწყოთ ინვენტარიზაცია?')) m.mutate(); }}>დაწყება</button></>}>
       <div className="stack">
         <div className="field"><label htmlFor="sl">ლოკაცია</label>
           <select id="sl" className="select" value={f.location_id} onChange={(e) => setF({ ...f, location_id: e.target.value })}>
@@ -59,7 +62,7 @@ function StartDialog({ onClose, onStarted }: { onClose: () => void; onStarted: (
         <div className="field"><label htmlFor="sc">არეალი</label>
           <select id="sc" className="select" value={f.category_id} onChange={(e) => setF({ ...f, category_id: e.target.value })}>
             <option value="">მთელი ლოკაცია</option>{refs.data?.categories.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-        <label className="row"><input type="checkbox" checked={f.blind} onChange={(e) => setF({ ...f, blind: e.target.checked })} /> ბრმა დათვლა (მთვლელი სისტემურ რაოდენობას ვერ ხედავს — რეკომენდებულია)</label>
+        <label className="row"><input type="checkbox" checked={blind} onChange={(e) => setF({ ...f, blind: e.target.checked })} /> ბრმა დათვლა (მთვლელი სისტემურ რაოდენობას ვერ ხედავს — რეკომენდებულია)</label>
         <div className="field"><label htmlFor="sn">შენიშვნა</label><input id="sn" className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
         <ErrorBox error={m.error} />
       </div>

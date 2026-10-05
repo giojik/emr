@@ -17,7 +17,14 @@ const bool = (v: unknown) => typeof v === 'boolean';
 const int = (v: unknown, a: number, b: number) => Number.isInteger(v) && (v as number) >= a && (v as number) <= b;
 const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes(v);
 
+const classes = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => ['narcotic', 'psychotropic', 'precursor', 'potent'].includes(x as string)) && new Set(v).size === v.length;
 const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>; extra?: Validator }> = {
+  stock: {
+    keys: {
+      issue_mode: (v) => oneOf(v, ['two_step', 'one_step']), witness_classes: classes, empty_return_classes: classes, dose_required: bool, count_lock: bool, count_blind_default: bool,
+      pharmacist_scope: (v) => oneOf(v, ['pharmacy', 'any']), lost_requires_approval: bool, alert_expiry: bool, alert_minmax: bool, alert_lab: bool,
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),
@@ -59,6 +66,7 @@ export class ModulesService {
 
   async put(code: string, dto: { enabled?: boolean; settings?: Record<string, unknown>; reason: string }, u: AuthUser, req: Request) {
     const m = await this.get(code);
+    if (dto.enabled === false && !m.can_disable) throw new BadRequestException(`მოდული „${m.name}“ არ ითიშება`);
     const v = VALIDATORS[code];
     let settings = m.settings as Record<string, unknown>;
     if (dto.settings) {

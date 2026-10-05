@@ -11,15 +11,14 @@ import { has, type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { STOCK_READ } from './stock-catalog';
+import { stockRules } from './stock-rules';
 import { StockTransfersService } from './stock-transfers';
 
 const TZ = loadEnv().CLINIC_TZ;
 /** მოწმე / ცვლის ჩაბარება: სამედიცინო ან საწყობის თანამშრომელი */
 const WITNESS_CAPS = ['nurse', 'doctor', 'pharmacist', 'admin', 'stock_manager', 'storekeeper', 'endoscopy_nurse', 'lab_doctor'];
-/** მოწმე სავალდებულოა: ხარჯი პაციენტზე, ჩამოწერა */
-export const WITNESS_CLASSES = ['narcotic', 'psychotropic'];
-/** ცარიელი ამპულის დაბრუნება */
-export const EMPTY_RETURN_CLASSES = ['narcotic'];
+/** მოწმის / ცარიელი ამპულის კლასები — კლინიკის პარამეტრი (0038, system_modules.stock); ცარიელი სია → '-' (არცერთი) */
+export const cls = (x: string[]) => (x.length ? x : ['-']);
 /** ცარიელების მიღება აფთიაქში */
 const EMPTIES_CONFIRM: Role[] = ['admin', 'pharmacist', 'storekeeper', 'stock_manager'];
 const CONTROLLED_VIEW: Role[] = ['admin', 'stock_manager', 'storekeeper', 'pharmacist', 'manager', 'viewer'];
@@ -52,6 +51,7 @@ export class StockControlledService {
 
   /** ნაშთი ლოკაციებზე + დაუბრუნებელი ცარიელები */
   async summary(u: AuthUser) {
+    const WITNESS_CLASSES = cls((await stockRules(this.db)).witness_classes);
     const rows = await this.db.selectFrom('stock_balances as b').innerJoin('stock_items as i', 'i.id', 'b.item_id').innerJoin('med_generics as g', 'g.id', 'i.generic_id')
       .innerJoin('stock_locations as l', 'l.id', 'b.location_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .select(['l.id as location_id', 'l.name as location_name', 'l.kind', 'l.department_id', 'i.id as item_id', 'i.name as item_name', 'i.code as item_code', 'g.controlled_class', 'un.name as base_unit_name',
@@ -69,6 +69,7 @@ export class StockControlledService {
     await this.canView(u, q.location_id);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(q.from) || !/^\d{4}-\d{2}-\d{2}$/.test(q.to) || q.from > q.to) throw new BadRequestException('პერიოდი: from ≤ to');
     const a = sql<Date>`(${q.from}::date)::timestamp AT TIME ZONE ${TZ}`; const b = sql<Date>`(${q.to}::date + 1)::timestamp AT TIME ZONE ${TZ}`;
+    const WITNESS_CLASSES = cls((await stockRules(this.db)).witness_classes);
     let items = this.db.selectFrom('stock_items as i').innerJoin('med_generics as g', 'g.id', 'i.generic_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .select(['i.id', 'i.name', 'i.code', 'g.inn', 'g.strength', 'g.controlled_class', 'un.name as base_unit_name',
         sql<string>`coalesce((SELECT sum(m.qty) FROM stock_moves m WHERE m.item_id = i.id AND m.location_id = ${q.location_id} AND m.created_at < ${a}), 0)`.as('opening')])
@@ -100,7 +101,8 @@ export class StockControlledService {
   }
 
   // ---------------------------------------------------------------- ცარიელი ამპულები
-  pendingEmpties(locationId?: string) {
+  async pendingEmpties(locationId?: string) {
+    const EMPTY_RETURN_CLASSES = cls((await stockRules(this.db)).empty_return_classes);
     let x = this.db.selectFrom('stock_doc_lines as x').innerJoin('stock_docs as d', 'd.id', 'x.doc_id').innerJoin('stock_items as i', 'i.id', 'x.item_id')
       .innerJoin('med_generics as g', 'g.id', 'i.generic_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit').innerJoin('stock_locations as l', 'l.id', 'd.location_id')
       .leftJoin('patients as p', 'p.id', 'd.patient_id').innerJoin('users as u', 'u.id', 'd.created_by')
@@ -127,6 +129,7 @@ export class StockControlledService {
   async shiftTemplate(u: AuthUser, locationId: string) {
     const l = await this.t.loc(locationId);
     await this.t.requireOperate(u, l, 'ცვლის ჩაბარება');
+    const WITNESS_CLASSES = cls((await stockRules(this.db)).witness_classes);
     return this.db.selectFrom('stock_balances as b').innerJoin('stock_lots as lt', 'lt.id', 'b.lot_id').innerJoin('stock_items as i', 'i.id', 'b.item_id')
       .innerJoin('med_generics as g', 'g.id', 'i.generic_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .select(['b.lot_id', 'b.item_id', 'b.qty as expected_qty', 'lt.lot_no', 'lt.serial_no', 'lt.expires_on', 'i.name as item_name', 'un.name as base_unit_name', 'g.controlled_class'])
@@ -138,6 +141,7 @@ export class StockControlledService {
     await this.t.requireOperate(u, l, 'ცვლის ჩაბარება');
     const wit = await this.w.verify(dto.witness, u, ctx, `shift:${l.id}`);
     const exp = await this.shiftTemplate(u, l.id);
+    const WITNESS_CLASSES = (await stockRules(this.db)).witness_classes;
     const missing = exp.filter((e) => !dto.lines.some((x) => x.lot_id === e.lot_id));
     if (missing.length) throw new BadRequestException(`დასათვლელია: ${missing.map((m) => `${m.item_name} (${m.lot_no ?? '—'})`).join(', ')}`);
     let id = ''; let bad: string[] = [];

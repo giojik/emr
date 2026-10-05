@@ -10,7 +10,8 @@ import { has, type AuthUser, type Role } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { STOCK_READ } from './stock-catalog';
-import { StockWitnessService, WITNESS_CLASSES, WitnessDto, type WitnessIn } from './stock-controlled';
+import { cls, StockWitnessService, WitnessDto, type WitnessIn } from './stock-controlled';
+import { stockRules } from './stock-rules';
 import { StockTransfersService } from './stock-transfers';
 
 type Trx = Transaction<DB>;
@@ -39,6 +40,7 @@ export class StockOpsService {
     throw e;
   }
   private async counting(locationId: string, ex: Ex = this.db) {
+    if (!(await stockRules(this.db)).count_lock) return;          // ბლოკი გამორთულია (0038)
     const c = await ex.selectFrom('stock_counts').select('count_no').where('location_id', '=', locationId).where('status', 'in', ['open', 'counted']).executeTakeFirst();
     if (c) throw new ConflictException(`ლოკაციაზე მიმდინარეობს ინვენტარიზაცია ${c.count_no} — მოძრაობა დაბლოკილია`);
   }
@@ -59,8 +61,9 @@ export class StockOpsService {
     const loc = await this.t.loc(dto.location_id);
     await this.t.requireOperate(u, loc, 'ჩამოწერა');
     // ნარკოტიკული / ფსიქოტროპული — მოწმე სავალდებულოა
+    const rules = await stockRules(this.db);
     const ctl = dto.lines.length ? await this.db.selectFrom('stock_lots as lt').innerJoin('stock_items as i', 'i.id', 'lt.item_id').innerJoin('med_generics as g', 'g.id', 'i.generic_id')
-      .select('lt.id').where('lt.id', 'in', dto.lines.map((l) => l.lot_id)).where('g.controlled_class', 'in', WITNESS_CLASSES).execute() : [];
+      .select('lt.id').where('lt.id', 'in', dto.lines.map((l) => l.lot_id)).where('g.controlled_class', 'in', cls(rules.witness_classes)).execute() : [];
     const wit = ctl.length ? await this.w.verify(dto.witness, u, ctx, 'writeoff') : null;
     if (dto.writeoff_reason !== 'expired' && (!dto.notes || dto.notes.trim().length < 3)) throw new BadRequestException('ჩამოწერის აღწერა სავალდებულოა (ვადაგასულის გარდა)');
     await this.counting(loc.id);
@@ -86,7 +89,7 @@ export class StockOpsService {
           await trx.insertInto('stock_doc_lines').values({ doc_id: id, line_no: n, item_id: l.item_id, qty: String(q), qty_base: String(q), lot_no: l.lot_no, serial_no: l.serial_no,
             expires_on: l.expires_on, produced_on: l.produced_on, unit_cost: l.unit_cost, lot_id: l.id, notes: p.notes?.trim() || null, line_net: String(r2(q * Number(l.unit_cost))) }).execute();
         }
-        pending = controlled || dto.writeoff_reason === 'lost' || value > Number(st.writeoff_approval_threshold);
+        pending = controlled || (dto.writeoff_reason === 'lost' && rules.lost_requires_approval) || value > Number(st.writeoff_approval_threshold);
         await trx.updateTable('stock_docs').set({ total_net: String(r2(value)), ...(pending && { approval_status: 'pending' }) }).where('id', '=', id).execute();
         if (!pending) await this.postWriteoff(trx, id, u);
         await this.audit.log(ctx, { action: 'CREATE_STOCK_WRITEOFF', entityName: 'stock_docs', entityId: id, newData: { ...dto, value: r2(value), pending } }, trx);
@@ -142,10 +145,12 @@ export class StockOpsService {
     // ნარკოტიკული / ფსიქოტროპული: მიღებული დოზა სავალდებულო, ნარჩენი — სურვილით; ჯამი = რაოდენობა × აქტ. ნივთიერება ერთეულში; მოწმე სავალდებულო
     const gens = await this.db.selectFrom('stock_items as i').innerJoin('med_generics as g', 'g.id', 'i.generic_id')
       .select(['i.id', 'i.name', 'g.controlled_class', 'g.dose_unit', 'g.dose_per_unit']).where('i.id', 'in', [...new Set(dto.lines.map((l) => l.item_id))]).execute();
-    const ctl = new Map(gens.filter((g) => WITNESS_CLASSES.includes(g.controlled_class ?? '')).map((g) => [g.id, g]));
+    const rules = await stockRules(this.db);
+    const ctl = new Map(gens.filter((g) => rules.witness_classes.includes(g.controlled_class ?? '')).map((g) => [g.id, g]));
     for (const l of dto.lines) {
       const g = ctl.get(l.item_id);
       if (!g) continue;
+      if (!rules.dose_required && (l.dose_given === undefined || l.dose_given === null)) continue;
       if (l.dose_given === undefined || l.dose_given === null) throw new BadRequestException(`„${g.name}“: მიუთითეთ პაციენტის მიღებული დოზა${g.dose_unit ? ` (${g.dose_unit})` : ''}`);
       if (g.dose_per_unit) {
         const total = q3(Number(g.dose_per_unit) * l.qty_base); const sum = q3(l.dose_given + (l.dose_wasted ?? 0));
@@ -273,7 +278,7 @@ export class StockOpsService {
           .where('doc_type', 'in', ['transfer', 'return']).where((eb) => eb.or([eb('to_location_id', '=', loc.id), eb('from_location_id', '=', loc.id)])).execute();
         if (transit.length) throw new ConflictException(`ჯერ დაასრულეთ გზაში მყოფი: ${transit.map((x) => x.doc_no).join(', ')}`);
         const no = await this.t.nextNo(trx, 'IC', await this.t.today(trx));
-        const c = await trx.insertInto('stock_counts').values({ count_no: no, location_id: loc.id, category_id: dto.category_id ?? null, blind: dto.blind ?? true, notes: dto.notes?.trim() || null, started_by: u.id })
+        const c = await trx.insertInto('stock_counts').values({ count_no: no, location_id: loc.id, category_id: dto.category_id ?? null, blind: dto.blind ?? (await stockRules(trx)).count_blind_default, notes: dto.notes?.trim() || null, started_by: u.id })
           .returning('id').executeTakeFirstOrThrow();
         id = c.id;
         let snap = trx.selectFrom('stock_balances as b').innerJoin('stock_lots as lt', 'lt.id', 'b.lot_id').innerJoin('stock_items as i', 'i.id', 'b.item_id')

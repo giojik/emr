@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
@@ -32,9 +33,11 @@ function ModuleCard({ m }: { m: SystemModule }) {
     <section className="card card-pad stack">
       {toast.node}
       <div className="row"><h2 className="grow" style={{ margin: 0 }}>{m.name}</h2>
-        <label className="row"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> <strong>{enabled ? 'ჩართულია' : 'გამორთულია'}</strong></label></div>
+        {m.can_disable === false ? <span className="chip ok">ძირითადი მოდული — არ ითიშება</span>
+          : <label className="row"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> <strong>{enabled ? 'ჩართულია' : 'გამორთულია'}</strong></label>}</div>
       {m.description && <span className="small muted">{m.description}</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
+      {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -85,6 +88,45 @@ function AssetSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record
           {q.trim().length >= 2 && <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{people.data?.filter((p) => !committee.includes(p.id)).slice(0, 10).map((p) =>
             <button key={p.id} className="btn sm" type="button" onClick={() => { upd('writeoff_committee', [...committee, p.id]); setQ(''); }}>+ {p.name}{p.department_name ? ` · ${p.department_name}` : ''}</button>)}</div>}
         </div>)}
+    </div>
+  );
+}
+
+const CLASSES: [string, string][] = [['narcotic', 'ნარკოტიკული'], ['psychotropic', 'ფსიქოტროპული'], ['precursor', 'პრეკურსორი'], ['potent', 'ძლიერმოქმედი']];
+/** საწყობის წესები (0038); თვითღირებულება / ზღვრები / შემოწმების საათი — საწყობი → პარამეტრები */
+function StockSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const toggleIn = (k: string, c: string) => { const cur = v<string[]>(k) ?? []; upd(k, cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]); };
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div className="stack">
+      <div style={grid}>
+        <Field label="გაცემა" htmlFor="sim" hint="ორმხრივი: მარაგი „გზაშია“ მიმღების დადასტურებამდე; ცალმხრივი: გაცემისთანავე ჩაირიცხება">
+          <select id="sim" className="select" value={v<string>('issue_mode')} onChange={(e) => upd('issue_mode', e.target.value)}>
+            <option value="two_step">ორმხრივი — მიმღები ადასტურებს</option><option value="one_step">ცალმხრივი — დადასტურების გარეშე</option></select></Field>
+        <Field label="ფარმაცევტი" htmlFor="sps" hint="მიღება მომწოდებლისგან, გაცემა, ხარჯი">
+          <select id="sps" className="select" value={v<string>('pharmacist_scope')} onChange={(e) => upd('pharmacist_scope', e.target.value)}>
+            <option value="pharmacy">მხოლოდ აფთიაქის ლოკაციებზე</option><option value="any">ნებისმიერ ლოკაციაზე</option></select></Field>
+      </div>
+      <div style={grid}>
+        <div className="stack" style={{ gap: 6 }}><span className="label">მოწმე სავალდებულოა (ხარჯი, ჩამოწერა; ჟურნალი, ცვლის ჩაბარება)</span>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>{CLASSES.map(([c, l]) => <label key={c} className="row"><input type="checkbox" checked={(v<string[]>('witness_classes') ?? []).includes(c)} onChange={() => toggleIn('witness_classes', c)} /> {l}</label>)}</div>
+          {!(v<string[]>('witness_classes') ?? []).length && <span className="small" style={{ color: 'var(--danger-ink)' }}>არცერთი — მოწმე და ჟურნალი გამორთულია</span>}</div>
+        <div className="stack" style={{ gap: 6 }}><span className="label">ცარიელი ამპულის დაბრუნება აფთიაქში</span>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>{CLASSES.map(([c, l]) => <label key={c} className="row"><input type="checkbox" checked={(v<string[]>('empty_return_classes') ?? []).includes(c)} onChange={() => toggleIn('empty_return_classes', c)} /> {l}</label>)}</div></div>
+      </div>
+      <div style={grid}>
+        {chk('dose_required', 'მოწმის კლასებზე — მიღებული დოზა სავალდებულო', 'გამორთვისას დოზა / ნარჩენი სურვილისამებრ')}
+        {chk('lost_requires_approval', '„დაკარგულის“ ჩამოწერა — ყოველთვის დამტკიცებით', 'გამორთვისას — ზღვრით, როგორც სხვა მიზეზები')}
+        {chk('count_lock', 'ინვენტარიზაციისას ლოკაციის ბლოკი', 'დაწყებიდან დამტკიცებამდე მოძრაობა აკრძალულია')}
+        {chk('count_blind_default', 'ინვენტარიზაცია — ნაგულისხმევად ბრმა', 'მთვლელი სისტემურ რაოდენობას ვერ ხედავს')}
+      </div>
+      <div className="stack" style={{ gap: 6 }}><span className="label">დილის შემოწმება (შეტყობინებები)</span>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 18 }}>{chk('alert_expiry', 'ვადები')}{chk('alert_minmax', 'მინიმუმზე ქვემოთ')}{chk('alert_lab', 'ლაბორატორია: on-board ვადა')}</div></div>
+      <span className="small">თვითღირებულების მეთოდი, მოკლე ვადა, ჩამოწერის დამტკიცების ზღვარი, შემოწმების საათი — <Link to="/stock/setup">საწყობი → პარამეტრები</Link>.</span>
     </div>
   );
 }

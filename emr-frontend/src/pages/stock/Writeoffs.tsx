@@ -6,7 +6,8 @@ import { ErrorBox, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
 import ItemSearch from './ItemSearch';
 import WitnessFields from './Witness';
-import { money2, needsWitness, qtyFmt, REVERSE_ROLES, useStockRefs, WO_REASON_KA, type Witness, type LotAvail, type OpsDoc, type OpsRow, type StockItem, type StockLocation } from './types';
+import { useStockRules } from '../../lib/modules';
+import { money2, qtyFmt, REVERSE_ROLES, useStockRefs, WO_REASON_KA, type Witness, type LotAvail, type OpsDoc, type OpsRow, type StockItem, type StockLocation } from './types';
 
 interface Line { key: string; item: Pick<StockItem, 'id' | 'name' | 'code' | 'base_unit_name' | 'controlled_class'>; lots: (LotAvail & { qty?: string })[]; lot_id: string; qty: string }
 let seq = 0;
@@ -57,7 +58,8 @@ function WriteoffForm({ onClose }: { onClose: () => void }) {
   const [h, setH] = useState({ loc: '', reason: 'damaged', notes: '' });
   const [lines, setLines] = useState<Line[]>([]);
   const [wit, setWit] = useState<Witness>({ username: '', password: '' });
-  const controlled = lines.some((l) => needsWitness(l.item.controlled_class));
+  const rules = useStockRules();
+  const controlled = lines.some((l) => !!l.item.controlled_class && rules.witness_classes.includes(l.item.controlled_class));
   const add = async (i: StockItem, lotNo?: string | null, serial?: string | null) => {
     const lots = await api<(LotAvail & { qty: string })[]>(`/stock/locations/${h.loc}/lots`, { query: { item_id: i.id } });
     // ვადაგასულიც ჩანს: ვადაგასული ლოტები ცალკე — ნაშთებიდან

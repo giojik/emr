@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
+import { stockRules } from './stock-rules';
 
 const TZ = loadEnv().CLINIC_TZ;
 
@@ -131,7 +132,9 @@ export class StockAlertsService {
     const st = await this.db.selectFrom('stock_settings').select('alert_hour').where('id', '=', 1).executeTakeFirstOrThrow();
     if (!force && h < st.alert_hour) return null;
     const out: Record<string, unknown> = {};
+    const rules = await stockRules(this.db);
     for (const kind of ['expiry', 'minmax', 'lab'] as const) {
+      if (!rules[`alert_${kind}`]) continue;                     // შემადგენლობა — კლინიკის პარამეტრი (0038)
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა

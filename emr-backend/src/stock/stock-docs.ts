@@ -9,6 +9,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
+import { stockRules } from './stock-rules';
 import type { DB } from '../database/db';
 import { STOCK_READ } from './stock-catalog';
 
@@ -56,7 +57,7 @@ export class StockDocsService {
     if (!l) throw new BadRequestException('ლოკაცია ვერ მოიძებნა');
     if (l.kind === 'transit') throw new BadRequestException('„გზაში“ სისტემური ლოკაციაა');
     if (!l.is_active) throw new BadRequestException(`ლოკაცია „${l.name}“ გათიშულია`);
-    if (!has(u, 'admin', 'storekeeper', 'stock_manager') && l.kind !== 'pharmacy') throw new ForbiddenException('ფარმაცევტი მიღებას აფორმებს მხოლოდ აფთიაქში');
+    if (!has(u, 'admin', 'storekeeper', 'stock_manager') && l.kind !== 'pharmacy' && (await stockRules(this.db)).pharmacist_scope !== 'any') throw new ForbiddenException('ფარმაცევტი მიღებას აფორმებს მხოლოდ აფთიაქში (პარამეტრი)');
     return l;
   }
 

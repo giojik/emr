@@ -1749,6 +1749,7 @@ export interface StockUnits {
 }
 
 export interface SystemModules {
+  can_disable: Generated<boolean>;
   code: string;
   description: string | null;
   enabled: Generated<boolean>;

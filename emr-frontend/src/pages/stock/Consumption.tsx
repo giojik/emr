@@ -8,7 +8,8 @@ import { ErrorBox, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
 import ItemSearch from './ItemSearch';
 import WitnessFields from './Witness';
-import { money2, needsWitness, qtyFmt, REVERSE_ROLES, type OpsDoc, type OpsRow, type StockItem, type StockLocation, type Witness } from './types';
+import { useStockRules } from '../../lib/modules';
+import { money2, qtyFmt, REVERSE_ROLES, type OpsDoc, type OpsRow, type StockItem, type StockLocation, type Witness } from './types';
 
 interface Line { key: string; item: Pick<StockItem, 'id' | 'name' | 'code' | 'base_unit_name' | 'serial_tracked' | 'controlled_class' | 'dose_unit' | 'dose_per_unit'>; qty: string; lot_id: string | null; lot_label: string | null; given: string; wasted: string }
 let seq = 0;
@@ -27,6 +28,8 @@ export default function Consumption() {
   const [notes, setNotes] = useState('');
   const [last, setLast] = useState<OpsDoc | null>(null);
   const [wit, setWit] = useState<Witness>({ username: '', password: '' });
+  const rules = useStockRules();
+  const needsWitness = (c: string | null | undefined) => !!c && rules.witness_classes.includes(c);
   const controlled = lines.some((l) => needsWitness(l.item.controlled_class));
   const total = (l: Line) => (l.item.dose_per_unit ? Number(l.item.dose_per_unit) * (Number(l.qty.replace(',', '.')) || 0) : null);
   const resolveLot = async (itemId: string, lotNo: string | null, serial: string | null) => {
@@ -38,10 +41,10 @@ export default function Consumption() {
     mutationFn: () => api<OpsDoc>('/stock/consumptions', { body: { location_id: loc, patient_id: pat!.id, encounter_id: encId || null, notes: notes || null,
       witness: controlled ? wit : undefined,
       lines: lines.map((l) => ({ item_id: l.item.id, qty_base: Number(l.qty.replace(',', '.')), lot_id: l.lot_id,
-        ...(needsWitness(l.item.controlled_class) && { dose_given: Number(l.given.replace(',', '.')), dose_wasted: Number((l.wasted || '0').replace(',', '.')) }) })) } }),
+        ...(needsWitness(l.item.controlled_class) && l.given.trim() !== '' && { dose_given: Number(l.given.replace(',', '.')), dose_wasted: Number((l.wasted || '0').replace(',', '.')) }) })) } }),
     onSuccess: (r) => { setLast(r); setLines([]); setNotes(''); setWit({ username: '', password: '' }); toast.show(`გატარდა: ${r.doc_no}`); for (const k of ['stock-balances', 'stock-consumptions']) void qc.invalidateQueries({ queryKey: [k] }); },
   });
-  const valid = loc && pat && lines.length && lines.every((l) => Number(l.qty.replace(',', '.')) > 0 && (!l.item.serial_tracked || l.lot_id) && (!needsWitness(l.item.controlled_class) || l.given.trim() !== ''))
+  const valid = loc && pat && lines.length && lines.every((l) => Number(l.qty.replace(',', '.')) > 0 && (!l.item.serial_tracked || l.lot_id) && (!needsWitness(l.item.controlled_class) || !rules.dose_required || l.given.trim() !== ''))
     && (!controlled || (wit.username.trim() && wit.password));
   return (
     <div className="content">

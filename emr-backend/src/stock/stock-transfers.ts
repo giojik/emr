@@ -9,6 +9,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
+import { stockRules } from './stock-rules';
 import type { DB } from '../database/db';
 import { NotificationsService } from '../notifications/notifications';
 import { STOCK_READ } from './stock-catalog';
@@ -60,7 +61,7 @@ export class StockTransfersService {
   /** ლოკაციით მუშაობა: საწყობი — ნებისმიერი; ფარმაცევტი — აფთიაქი; ლაბორატორია — ლაბორატორიის ქვესაწყობი; სხვა — მხოლოდ საკუთარი განყოფილების ქვესაწყობი */
   async canOperate(u: AuthUser, l: Loc, ex: Ex = this.db) {
     if (has(u, 'admin', 'stock_manager', 'storekeeper')) return true;
-    if (has(u, 'pharmacist') && l.kind === 'pharmacy') return true;
+    if (has(u, 'pharmacist') && (l.kind === 'pharmacy' || (l.kind !== 'transit' && (await stockRules(this.db)).pharmacist_scope === 'any'))) return true;
     if (has(u, 'lab_doctor', 'lab_manager', 'diagnostic') && l.kind === 'lab') return true;   // ლაბორატორიის ქვესაწყობი (0036)
     if (!l.department_id) return false;
     return (await this.me(u, ex)).department_id === l.department_id;
@@ -387,7 +388,10 @@ export class StockTransfersService {
         await this.audit.log(ctx, { action: 'ISSUE_STOCK_REQUEST', entityName: 'stock_requests', entityId: id, newData: { doc_id: res.id, doc_no: res.no, lines: picks.length } }, trx);
       });
     } catch (e) { this.mapErr(e); }
-    await this.notifyMany([creator], { kind: 'stock_receive', title: `${res.no} გაგზავნილია — დაადასტურეთ მიღება`, body: `მოთხოვნა ${reqNo}`, link: `/stock/transit`, entityId: res.id }, u.id);
+    if ((await stockRules(this.db)).issue_mode === 'one_step') {
+      await this.receive(res.id, 'receive', 'ცალმხრივი გაცემა', u, ctx, true);
+      await this.notifyMany([creator], { kind: 'stock_receive', title: `${res.no} გაცემულია და ჩაირიცხა`, body: `მოთხოვნა ${reqNo}`, link: `/stock/requests?req=${id}`, entityId: res.id }, u.id);
+    } else await this.notifyMany([creator], { kind: 'stock_receive', title: `${res.no} გაგზავნილია — დაადასტურეთ მიღება`, body: `მოთხოვნა ${reqNo}`, link: `/stock/transit`, entityId: res.id }, u.id);
     return this.request(id);
   }
 
@@ -405,6 +409,7 @@ export class StockTransfersService {
         await this.audit.log(ctx, { action: dto.doc_type === 'return' ? 'RETURN_STOCK' : 'TRANSFER_STOCK', entityName: 'stock_docs', entityId: res.id, newData: { ...dto, doc_no: res.no } }, trx);
       });
     } catch (e) { this.mapErr(e); }
+    if ((await stockRules(this.db)).issue_mode === 'one_step') { await this.receive(res.id, 'receive', 'ცალმხრივი გაცემა', u, ctx, true); return res; }
     const receivers = to.department_id ? (await this.db.selectFrom('users').select('id').where('department_id', '=', to.department_id).where('is_active', '=', true).execute()).map((x) => x.id)
       : await this.usersWith(to.kind === 'pharmacy' ? ['storekeeper', 'stock_manager', 'pharmacist'] : ['storekeeper', 'stock_manager']);
     await this.notifyMany(receivers.slice(0, 50), { kind: 'stock_receive', title: `${res.no} — მისაღები (${from.name})`, link: '/stock/transit', entityId: res.id }, u.id);
@@ -428,7 +433,8 @@ export class StockTransfersService {
     return out;
   }
 
-  async receive(docId: string, action: 'receive' | 'return', note: string | undefined, u: AuthUser, ctx: AuditContext) {
+  /** system=true — ცალმხრივი გაცემა (0038, issue_mode = one_step): ჩაირიცხება გამგზავნის სახელით, მიმღების დადასტურების გარეშე */
+  async receive(docId: string, action: 'receive' | 'return', note: string | undefined, u: AuthUser, ctx: AuditContext, system = false) {
     let notify: { to: string[]; title: string } | null = null;
     try {
       await this.db.transaction().execute(async (trx) => {
@@ -437,7 +443,7 @@ export class StockTransfersService {
         if (d.status !== 'posted') throw new ConflictException('დოკუმენტი გაგზავნილი არ არის');
         if (d.receive_status) throw new ConflictException(d.receive_status === 'received' ? 'უკვე მიღებულია' : 'უკვე დაბრუნებულია გამგზავნთან');
         const to = await this.loc(d.to_location_id!, trx);
-        if (!(await this.canOperate(u, to, trx))) throw new ForbiddenException(`მიღებას ადასტურებს „${to.name}“`);
+        if (!system && !(await this.canOperate(u, to, trx))) throw new ForbiddenException(`მიღებას ადასტურებს „${to.name}“`);
         if (action === 'return' && (!note || note.trim().length < 3)) throw new BadRequestException('უარის მიზეზი სავალდებულოა');
         const transit = await this.transit(trx);
         const dest = action === 'receive' ? d.to_location_id! : d.from_location_id!;
