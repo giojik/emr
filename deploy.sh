@@ -29,4 +29,16 @@ printf '\033[32m✓\033[0m backend + სქემა %s\n' "$EXPECTED"
 NEW=$(docker exec emr-frontend sh -c 'ls /usr/share/nginx/html/assets/index-*.js' | head -1)
 [ -n "$NEW" ] || die "frontend build ვერ მოიძებნა კონტეინერში"
 printf '\033[32m✓\033[0m frontend: %s\n' "$(basename "$NEW")"
+# ფონური პროცესები (0037): worker და lab-gateway — running და 15 წამში არცერთი გადატვირთვა (crash-loop-ის დასაჭერად)
+declare -A RC0
+for C in emr-worker emr-lab-gateway; do RC0[$C]=$(docker inspect -f '{{.RestartCount}}' "$C" 2>/dev/null || echo x); done
+sleep 15
+for C in emr-worker emr-lab-gateway; do
+  ST=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$C" 2>/dev/null || echo "missing x")
+  if [ "${ST%% *}" != "running" ] || [ "${ST##* }" != "${RC0[$C]}" ]; then
+    docker logs "$C" --tail 20 2>&1 || true
+    die "$C: ${ST%% *}, გადატვირთვები ${RC0[$C]} → ${ST##* } (ლოგი ზემოთ)"
+  fi
+  printf '\033[32m✓\033[0m %s: running, სტაბილური\n' "$C"
+done
 say "მზადაა — ბრაუზერში Ctrl+Shift+R. არ დაგავიწყდეს: git add -A && git commit"

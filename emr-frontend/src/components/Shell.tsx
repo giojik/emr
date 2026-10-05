@@ -3,8 +3,10 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { initials, ROLE_KA } from '../lib/format';
+import { useModules } from '../lib/modules';
 
-const NAV: { to: string; label: string; roles: Role[] }[] = [
+/** roles — ვის ჩანს (ცარიელი — ყველა უფლებიანს); module — მხოლოდ ჩართული მოდულისას (0037) */
+const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/reception', label: 'რეგისტრატურა', roles: ['admin', 'receptionist', 'manager', 'viewer'] },
   { to: '/patients', label: 'პაციენტები', roles: ['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'manager'] },
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
@@ -16,6 +18,7 @@ const NAV: { to: string; label: string; roles: Role[] }[] = [
   { to: '/stock', label: 'საწყობი და აფთიაქი', roles: ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'manager', 'viewer', 'accountant'] },
   { to: '/stock/requests', label: 'მარაგი / მოთხოვნები', roles: ['nurse'] },
   { to: '/stock/lab', label: 'ლაბ. მარაგი', roles: ['lab_doctor', 'lab_manager', 'diagnostic'] },
+  { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
@@ -41,7 +44,9 @@ export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {
 export default function Shell() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const mods = useModules();
   if (!user) return null;
+  const on = (code?: string) => !code || !!mods.data?.find((m) => m.code === code)?.enabled;
   return (
     <div className="app">
       <aside className="side">
@@ -50,7 +55,7 @@ export default function Shell() {
           <div className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 14 }}>ინოვა მედიკალი</strong><span className="small muted">ამბულატორია</span></div>
         </div>
         <nav className="nav" aria-label="მთავარი მენიუ">
-          {NAV.filter((n) => can(user, ...n.roles)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
+          {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
         </nav>
         <div className="me">
           <div className="avatar" aria-hidden="true">{initials(user.name)}</div>

@@ -82,6 +82,98 @@ export interface Appointments {
   status: Generated<AppointmentStatus>;
 }
 
+export interface AssetCategories {
+  code: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface AssetConditions {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+  usable: Generated<boolean>;
+}
+
+export interface AssetEvents {
+  asset_id: string;
+  created_at: Generated<Timestamp>;
+  data: Generated<Json>;
+  id: Generated<Int8>;
+  kind: string;
+  user_id: string;
+}
+
+export interface AssetMoves {
+  asset_id: string;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  from_department_id: string | null;
+  from_responsible_id: string | null;
+  from_room: string | null;
+  id: Generated<string>;
+  reason: string | null;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  status: string;
+  to_department_id: string | null;
+  to_responsible_id: string | null;
+  to_room: string | null;
+}
+
+export interface Assets {
+  category_id: string;
+  condition_code: Generated<string>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  id: Generated<string>;
+  inv_no: string;
+  manufacturer: string | null;
+  model: string | null;
+  name: string;
+  notes: string | null;
+  purchase_date: string | null;
+  purchase_value: Numeric | null;
+  responsible_user_id: string | null;
+  room: string | null;
+  serial_no: string | null;
+  status: Generated<string>;
+  supplier_id: string | null;
+  updated_at: Generated<Timestamp>;
+  warranty_until: string | null;
+}
+
+export interface AssetWriteoffLines {
+  asset_id: string;
+  writeoff_id: string;
+}
+
+export interface AssetWriteoffs {
+  act_no: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  decided_at: Timestamp | null;
+  id: Generated<string>;
+  method: Generated<string>;
+  mode: string;
+  quorum: Generated<number>;
+  reason: string;
+  status: string;
+}
+
+export interface AssetWriteoffVotes {
+  approve: boolean;
+  created_at: Generated<Timestamp>;
+  note: string | null;
+  user_id: string;
+  writeoff_id: string;
+}
+
 export interface AuditLogs {
   action: string;
   created_at: Generated<Timestamp>;
@@ -1656,6 +1748,17 @@ export interface StockUnits {
   sort_order: Generated<number>;
 }
 
+export interface SystemModules {
+  code: string;
+  description: string | null;
+  enabled: Generated<boolean>;
+  name: string;
+  settings: Generated<Json>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface UserCapabilities {
   capabilities: string[] | null;
   user_id: string | null;
@@ -1715,6 +1818,14 @@ export interface DB {
   allergen_group_terms: AllergenGroupTerms;
   allergen_groups: AllergenGroups;
   appointments: Appointments;
+  asset_categories: AssetCategories;
+  asset_conditions: AssetConditions;
+  asset_events: AssetEvents;
+  asset_moves: AssetMoves;
+  asset_writeoff_lines: AssetWriteoffLines;
+  asset_writeoff_votes: AssetWriteoffVotes;
+  asset_writeoffs: AssetWriteoffs;
+  assets: Assets;
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;
   clinic_settings: ClinicSettings;
@@ -1827,6 +1938,7 @@ export interface DB {
   stock_shift_counts: StockShiftCounts;
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;
+  system_modules: SystemModules;
   user_capabilities: UserCapabilities;
   user_notifications: UserNotifications;
   user_roles: UserRoles;

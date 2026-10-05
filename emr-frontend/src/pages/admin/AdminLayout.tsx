@@ -12,6 +12,7 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/analyzers', label: 'ანალიზატორები', roles: ['admin'] },
   { to: '/admin/lab-delivery', label: 'პასუხის მიწოდება', roles: ['admin'] },
   { to: '/admin/clinic', label: 'კლინიკა', roles: ['admin'] },
+  { to: '/admin/modules', label: 'მოდულები', roles: ['admin'] },
   { to: '/admin/consents', label: 'თანხმობები', roles: ['admin'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['admin', 'pharmacist'] },
   { to: '/admin/overrides', label: 'ალერგიის override-ები', roles: ['admin', 'pharmacist'] },

@@ -23,6 +23,8 @@ import DeliverySettings from './pages/lab/Delivery';
 import Audit from './pages/admin/Audit';
 import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
+import Modules from './pages/admin/Modules';
+import Assets from './pages/assets/Assets';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
@@ -77,6 +79,7 @@ export default function App() {
         <Route path="/diagnostics" element={<Navigate to={can(user, 'admin', 'diagnostic', 'lab_doctor', 'lab_manager') ? '/diagnostics/lab' : can(user, 'radiographer', 'radiologist', 'receptionist', 'manager', 'viewer') ? '/diagnostics/radiology' : '/diagnostics/endoscopy'} replace />} />
         <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'receptionist', 'manager', 'viewer', 'med_engineer']}><DiagnosticsHub /></Guard>} />
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
+        <Route path="/assets" element={<Assets />} />
         <Route path="/stock" element={<Navigate to="/stock/balances" replace />} />
         <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
@@ -86,6 +89,7 @@ export default function App() {
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
           <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
+          <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
           <Route path="analyzers" element={<Guard roles={['admin']}><Analyzers /></Guard>} />
           <Route path="lab-delivery" element={<Guard roles={['admin']}><DeliverySettings /></Guard>} />
