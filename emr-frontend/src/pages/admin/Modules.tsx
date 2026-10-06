@@ -38,6 +38,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.description && <span className="small muted">{m.description}</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
+      {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -127,6 +128,38 @@ function StockSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record
       <div className="stack" style={{ gap: 6 }}><span className="label">დილის შემოწმება (შეტყობინებები)</span>
         <div className="row" style={{ flexWrap: 'wrap', gap: 18 }}>{chk('alert_expiry', 'ვადები')}{chk('alert_minmax', 'მინიმუმზე ქვემოთ')}{chk('alert_lab', 'ლაბორატორია: on-board ვადა')}</div></div>
       <span className="small">თვითღირებულების მეთოდი, მოკლე ვადა, ჩამოწერის დამტკიცების ზღვარი, შემოწმების საათი — <Link to="/stock/setup">საწყობი → პარამეტრები</Link>.</span>
+    </div>
+  );
+}
+
+/** CSSD (0039) */
+function CssdSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div className="stack">
+      <div style={grid}>
+        <Field label="ბიოლოგიური ინდიკატორი (BI)" htmlFor="cbf"><select id="cbf" className="select" value={v<string>('bi_frequency')} onChange={(e) => upd('bi_frequency', e.target.value)}>
+          <option value="each">ყოველ ციკლზე</option><option value="daily">დღის პირველ ციკლზე</option><option value="weekly">კვირის პირველ ციკლზე</option><option value="off">გამორთული (მხოლოდ იმპლანტზე — თუ მოლოდინი ჩართულია)</option></select></Field>
+        <Field label="გაშვება BI-ს პასუხამდე" htmlFor="cbh"><select id="cbh" className="select" value={v<string>('bi_hold')} onChange={(e) => upd('bi_hold', e.target.value)}>
+          <option value="implant">იმპლანტი — ელოდება; დანარჩენი — ქიმიურით</option><option value="all">ყველა BI-იანი ჩატვირთვა ელოდება</option><option value="none">არ ელოდება (ქიმიური ინდიკატორით)</option></select></Field>
+        <Field label="სტერილობის ვადა" htmlFor="csl"><select id="csl" className="select" value={v<string>('shelf_life_mode')} onChange={(e) => upd('shelf_life_mode', e.target.value)}>
+          <option value="time">დროზე დამოკიდებული (შეფუთვის ტიპით)</option><option value="event">მოვლენაზე დამოკიდებული (ვადის გარეშე)</option></select></Field>
+      </div>
+      <div style={grid}>
+        {chk('bd_required', 'Bowie-Dick ყოველდღე', 'ორთქლის აპარატი — დღის პირველ ციკლამდე; ჩავარდნისას იბლოკება')}
+        {chk('wash_record', 'რეცხვის ციკლის აღრიცხვა', 'სარეცხი აპარატი + შედეგი; გამორთვისას — მიღებიდან პირდაპირ შეფუთვა')}
+        {chk('patient_trace', 'პაციენტზე მიკვლევა', 'განყოფილებაში გამოყენებისას პაციენტი სავალდებულოა')}
+        {chk('auto_consume', 'შეფუთვის მასალის ავტომატური ჩამოწერა', 'CSSD-ის ქვესაწყობიდან, შეფუთვის ტიპის მიხედვით')}
+        {chk('instrument_tracking', 'ინსტრუმენტების ცალკე აღრიცხვა', 'კოდი, ციკლების რაოდენობა, ზღვარი')}
+        <Field label="ეტიკეტი" htmlFor="clb"><div className="row" style={{ gap: 6 }}>
+          <select id="clb" className="select" value={v<string>('label_size')} onChange={(e) => upd('label_size', e.target.value)}><option value="50x25">50×25 მმ</option><option value="40x20">40×20 მმ</option><option value="70x35">70×35 მმ</option></select>
+          <select className="select" aria-label="კოდი" value={v<string>('label_code')} onChange={(e) => upd('label_code', e.target.value)}><option value="qr">QR</option><option value="code128">Code128</option></select></div></Field>
+      </div>
+      <span className="small">CSSD ერთეული = ლოკაცია ტიპით „სტერილიზაცია (CSSD)“, განყოფილებაზე მიბმული (საწყობი → ლოკაციები). ცენტრალური CSSD — ერთი ერთეული; დეცენტრალიზებული — თითო განყოფილებას თავისი.</span>
     </div>
   );
 }

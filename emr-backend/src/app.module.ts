@@ -1,4 +1,5 @@
 import { AssetsModule } from './assets/assets';
+import { CssdModule } from './cssd/cssd';
 import { ModulesModule } from './modules/modules';
 import { NotificationsModule } from './notifications/notifications';
 import { Module } from '@nestjs/common';
@@ -27,7 +28,7 @@ import { ManagementReportsModule } from './reports/management';
 import { StockModule } from './stock/stock.module';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
+  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
     StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule],
   controllers: [HealthController],

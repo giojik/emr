@@ -230,6 +230,131 @@ export interface ConsentTypeVersions {
   version: number;
 }
 
+export interface CssdCycles {
+  attachment_key: string | null;
+  bi_lot: string | null;
+  bi_read_at: Timestamp | null;
+  bi_read_by: string | null;
+  bi_result: string | null;
+  bi_used: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  cycle_no: string;
+  id: Generated<string>;
+  kind: string;
+  machine_id: string;
+  minutes: Numeric | null;
+  notes: string | null;
+  operator_id: string;
+  pressure_bar: Numeric | null;
+  program: string | null;
+  result: string;
+  started_at: Generated<Timestamp>;
+  temp_c: Numeric | null;
+}
+
+export interface CssdEvents {
+  created_at: Generated<Timestamp>;
+  data: Generated<Json>;
+  id: Generated<Int8>;
+  kind: string;
+  pack_id: string | null;
+  set_id: string;
+  user_id: string;
+}
+
+export interface CssdInstruments {
+  code: string;
+  created_at: Generated<Timestamp>;
+  cycles: Generated<number>;
+  id: Generated<string>;
+  max_cycles: number | null;
+  name: string;
+  notes: string | null;
+  set_id: string | null;
+  status: Generated<string>;
+}
+
+export interface CssdMachines {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  location_id: string;
+  manufacturer: string | null;
+  model: string | null;
+  name: string;
+  programs: Generated<Json>;
+  serial_no: string | null;
+}
+
+export interface CssdPackagingTypes {
+  consumables: Generated<Json>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  shelf_days: number | null;
+  sort_order: Generated<number>;
+}
+
+export interface CssdPacks {
+  checklist: Generated<Json>;
+  ci_pass: boolean | null;
+  cycle_id: string | null;
+  encounter_id: string | null;
+  expires_on: string | null;
+  id: Generated<string>;
+  incomplete: Generated<boolean>;
+  issued_at: Timestamp | null;
+  issued_by: string | null;
+  issued_department_id: string | null;
+  location_id: string;
+  note: string | null;
+  pack_no: string;
+  packaging_type_id: string;
+  packed_at: Generated<Timestamp>;
+  packed_by: string;
+  patient_id: string | null;
+  set_id: string;
+  status: Generated<string>;
+  used_at: Timestamp | null;
+  used_by: string | null;
+  wash_cycle_id: string | null;
+}
+
+export interface CssdSets {
+  barcode: string;
+  created_at: Generated<Timestamp>;
+  holder_department_id: string | null;
+  home_location_id: string;
+  id: Generated<string>;
+  notes: string | null;
+  serial: string | null;
+  status: Generated<string>;
+  template_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CssdTemplateItems {
+  id: Generated<string>;
+  line_no: number;
+  name: string;
+  qty: number;
+  template_id: string;
+}
+
+export interface CssdTemplates {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_implant: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  owner_department_id: string | null;
+  packaging_type_id: string | null;
+  program_hint: string | null;
+}
+
 export interface Departments {
   code: string;
   created_at: Generated<Timestamp>;
@@ -1832,6 +1957,15 @@ export interface DB {
   clinic_settings: ClinicSettings;
   consent_type_versions: ConsentTypeVersions;
   consent_types: ConsentTypes;
+  cssd_cycles: CssdCycles;
+  cssd_events: CssdEvents;
+  cssd_instruments: CssdInstruments;
+  cssd_machines: CssdMachines;
+  cssd_packaging_types: CssdPackagingTypes;
+  cssd_packs: CssdPacks;
+  cssd_sets: CssdSets;
+  cssd_template_items: CssdTemplateItems;
+  cssd_templates: CssdTemplates;
   departments: Departments;
   document_counters: DocumentCounters;
   dx_devices: DxDevices;

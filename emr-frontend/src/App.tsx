@@ -25,6 +25,7 @@ import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
 import Modules from './pages/admin/Modules';
 import Assets from './pages/assets/Assets';
+import Cssd from './pages/cssd/Cssd';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/diagnostics/:section" element={<Guard roles={['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'receptionist', 'manager', 'viewer', 'med_engineer']}><DiagnosticsHub /></Guard>} />
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/assets" element={<Assets />} />
+        <Route path="/cssd" element={<Cssd />} />
         <Route path="/stock" element={<Navigate to="/stock/balances" replace />} />
         <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />

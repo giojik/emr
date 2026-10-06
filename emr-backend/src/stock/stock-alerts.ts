@@ -126,6 +126,32 @@ export class StockAlertsService {
     return { kits: rows.length, sent };
   }
 
+  /** CSSD (0039): შენახვაში ვადაგასული სტერილური შეფუთვა → „ვადაგასული“ (ხელახალი დამუშავება); ერთეულის თანამშრომლებს — შეტყობინება */
+  async cssdExpiry() {
+    const mod = await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'cssd').executeTakeFirst();
+    if (!mod?.enabled) return { skipped: true };
+    const expired = await this.db.updateTable('cssd_packs').set({ status: 'expired' }).where('status', '=', 'sterile')
+      .where('expires_on', '<', sql<string>`(now() AT TIME ZONE ${TZ})::date`).returning(['id', 'set_id', 'location_id']).execute();
+    for (const p of expired) await this.db.updateTable('cssd_sets').set({ status: 'received' }).where('id', '=', p.set_id).where('status', '=', 'packed').execute();
+    const soon = await this.db.selectFrom('cssd_packs').select(['location_id', sql<number>`count(*)::int`.as('n')]).where('status', 'in', ['sterile', 'issued'])
+      .where('expires_on', '<=', sql<string>`(now() AT TIME ZONE ${TZ})::date + 7`).groupBy('location_id').execute();
+    const locs = new Map<string, { exp: number; soon: number }>();
+    for (const p of expired) locs.set(p.location_id, { exp: (locs.get(p.location_id)?.exp ?? 0) + 1, soon: locs.get(p.location_id)?.soon ?? 0 });
+    for (const x of soon) locs.set(x.location_id, { exp: locs.get(x.location_id)?.exp ?? 0, soon: x.n });
+    let sent = 0;
+    for (const [id, v] of locs) {
+      const l = await this.db.selectFrom('stock_locations').select(['name', 'department_id']).where('id', '=', id).executeTakeFirst();
+      if (!l?.department_id) continue;
+      const staff = (await this.db.selectFrom('users').select('id').where('department_id', '=', l.department_id).where('is_active', '=', true).execute()).map((x) => x.id);
+      for (const uid of staff) {
+        await this.notifications.notify(uid, { kind: 'cssd_expiry', title: `CSSD — სტერილობის ვადა (${l.name})`, body: [v.exp ? `ვადაგასული: ${v.exp} (ხელახალი დამუშავება)` : '', v.soon ? `≤ 7 დღე: ${v.soon}` : ''].filter(Boolean).join('; '),
+          urgent: v.exp > 0, entityId: id, link: '/cssd?tab=storage' });
+        sent++;
+      }
+    }
+    return { expired: expired.length, sent };
+  }
+
   /** worker: ყოველ 5 წუთში; `alert_hour`-ის შემდეგ — დღეში ერთხელ */
   async tick(force = false) {
     const { d, h } = await this.now();
@@ -133,13 +159,13 @@ export class StockAlertsService {
     if (!force && h < st.alert_hour) return null;
     const out: Record<string, unknown> = {};
     const rules = await stockRules(this.db);
-    for (const kind of ['expiry', 'minmax', 'lab'] as const) {
-      if (!rules[`alert_${kind}`]) continue;                     // შემადგენლობა — კლინიკის პარამეტრი (0038)
+    for (const kind of ['expiry', 'minmax', 'lab', 'cssd'] as const) {
+      if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                     // შემადგენლობა — კლინიკის პარამეტრი (0038)
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა
       }
-      const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : await this.labOnboard();
+      const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : kind === 'lab' ? await this.labOnboard() : await this.cssdExpiry();
       out[kind] = stats;
       await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d, stats: JSON.stringify(stats) })
         .onConflict((oc) => oc.columns(['kind', 'run_date']).doUpdateSet({ stats: JSON.stringify(stats), created_at: sql`now()` })).execute();
