@@ -19,6 +19,14 @@ const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes
 
 const classes = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => ['narcotic', 'psychotropic', 'precursor', 'potent'].includes(x as string)) && new Set(v).size === v.length;
 const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>; extra?: Validator }> = {
+  inpatient: {
+    keys: {
+      bed_assign_mode: (v) => oneOf(v, ['two_step', 'direct']), cleaning_required: bool, sex_rule: (v) => oneOf(v, ['block', 'warn', 'off']), overflow_beds: bool,
+      planned_queue: bool, planned_sms: bool, cancel_hours: (v) => int(v, 0, 168),
+      wristband: bool, wristband_print: (v) => oneOf(v, ['zpl', 'pdf']), wristband_width_mm: (v) => int(v, 15, 40), wristband_length_mm: (v) => int(v, 80, 400), wristband_offset_mm: (v) => int(v, 0, 200),
+    },
+    extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს' : null),
+  },
   cssd: {
     keys: {
       instrument_tracking: bool, cycle_entry: (v) => oneOf(v, ['manual']), wash_record: bool, bd_required: bool, bi_frequency: (v) => oneOf(v, ['each', 'daily', 'weekly', 'off']),

@@ -107,7 +107,7 @@ export class ManagementReportsService {
   async activity(from: string, to: string, departmentId?: string) {
     const [a, b] = this.range(from, to);
     const enc = () => {
-      let q = this.db.selectFrom('encounters as e').where('e.start_time', '>=', a).where('e.start_time', '<', b);
+      let q = this.db.selectFrom('encounters as e').where('e.start_time', '>=', a).where('e.start_time', '<', b).where('e.type', '<>', 'inpatient');   // სტაციონარი — ცალკე (0040+)
       if (departmentId) q = q.where('e.department_id', '=', departmentId);
       return q;
     };

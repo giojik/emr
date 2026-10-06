@@ -26,6 +26,10 @@ import Clinic from './pages/admin/Clinic';
 import Modules from './pages/admin/Modules';
 import Assets from './pages/assets/Assets';
 import Cssd from './pages/cssd/Cssd';
+import Inpatient from './pages/inpatient/Inpatient';
+import Stay from './pages/inpatient/Stay';
+import Beds from './pages/admin/Beds';
+import Printers from './pages/admin/Printers';
 import ConsentTypes from './pages/admin/ConsentTypes';
 import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
@@ -34,6 +38,8 @@ import Reports from './pages/Reports';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/Tariffs';
 import Users from './pages/admin/Users';
+
+const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing'];
 
 function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -82,6 +88,8 @@ export default function App() {
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/assets" element={<Assets />} />
         <Route path="/cssd" element={<Cssd />} />
+        <Route path="/inpatient" element={<Guard roles={IPD_READ}><Inpatient /></Guard>} />
+        <Route path="/inpatient/stay/:id" element={<Guard roles={IPD_READ}><Stay /></Guard>} />
         <Route path="/stock" element={<Navigate to="/stock/balances" replace />} />
         <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
@@ -92,6 +100,8 @@ export default function App() {
           <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
+          <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
+          <Route path="printers" element={<Guard roles={['admin']}><Printers /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
           <Route path="analyzers" element={<Guard roles={['admin']}><Analyzers /></Guard>} />
           <Route path="lab-delivery" element={<Guard roles={['admin']}><DeliverySettings /></Guard>} />

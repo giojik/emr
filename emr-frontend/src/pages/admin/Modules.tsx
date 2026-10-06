@@ -39,6 +39,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
+      {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -160,6 +161,43 @@ function CssdSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<
           <select className="select" aria-label="კოდი" value={v<string>('label_code')} onChange={(e) => upd('label_code', e.target.value)}><option value="qr">QR</option><option value="code128">Code128</option></select></div></Field>
       </div>
       <span className="small">CSSD ერთეული = ლოკაცია ტიპით „სტერილიზაცია (CSSD)“, განყოფილებაზე მიბმული (საწყობი → ლოკაციები). ცენტრალური CSSD — ერთი ერთეული; დეცენტრალიზებული — თითო განყოფილებას თავისი.</span>
+    </div>
+  );
+}
+
+/** სტაციონარი (0040) */
+function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const num = (k: string, label: string, min: number, max: number, hint?: string) => <Field label={label} htmlFor={`ip-${k}`} hint={hint}>
+    <input id={`ip-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? ''} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div className="stack">
+      <div style={grid}>
+        <Field label="საწოლის მინიჭება" htmlFor="ipm" hint="ორეტაპიანი: მიმღები → განყოფილება, განყოფილება → საწოლი"><select id="ipm" className="select" value={v<string>('bed_assign_mode')} onChange={(e) => upd('bed_assign_mode', e.target.value)}>
+          <option value="two_step">ორეტაპიანი (განყოფილება ანიჭებს)</option><option value="direct">პირდაპირ (მიმღები ანიჭებს)</option></select></Field>
+        <Field label="სქესის წესი პალატაში" htmlFor="ips"><select id="ips" className="select" value={v<string>('sex_rule')} onChange={(e) => upd('sex_rule', e.target.value)}>
+          <option value="warn">გაფრთხილება (დადასტურებით)</option><option value="block">აკრძალულია</option><option value="off">გამორთული</option></select></Field>
+        {num('cancel_hours', 'გაუქმების ვადა (სთ)', 0, 168, 'შეცდომით გაფორმებული ჰოსპიტალიზაცია; admin — ნებისმიერ დროს')}
+      </div>
+      <div style={grid}>
+        {chk('cleaning_required', 'დალაგება სავალდებულოა', 'გათავისუფლებული საწოლი → „დასალაგებელი“, სანამ თანამშრომელი არ დაადასტურებს')}
+        {chk('overflow_beds', 'დამატებითი საწოლები', 'დერეფანი და სხვ. — სტატისტიკაში ცალკე')}
+        {chk('planned_queue', 'გეგმიური ჰოსპიტალიზაციის რიგი', 'თარიღი, საწოლის დაჯავშნა')}
+        {chk('planned_sms', 'SMS შეხსენება წინა დღეს', 'მხოლოდ პაციენტის SMS თანხმობით; 10:00-დან')}
+        {chk('wristband', 'პაციენტის სამაჯური')}
+        <Field label="სამაჯურის ბეჭდვა" htmlFor="ipw"><select id="ipw" className="select" value={v<string>('wristband_print')} onChange={(e) => upd('wristband_print', e.target.value)}>
+          <option value="zpl">Zebra (ქსელით, ZPL)</option><option value="pdf">PDF (ნებისმიერი პრინტერი)</option></select></Field>
+      </div>
+      {v<boolean>('wristband') && <div style={grid}>
+        {num('wristband_width_mm', 'სამაჯურის სიგანე (მმ)', 15, 40, 'მოზრდილი — 25')}
+        {num('wristband_length_mm', 'სამაჯურის სიგრძე (მმ)', 80, 400, 'მოზრდილი — 279, ბავშვის — 152')}
+        {num('wristband_offset_mm', 'საკეტის ზონა (მმ)', 0, 200, 'დასაწყისიდან — ბეჭდვის გარეშე')}
+      </div>}
+      <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ჰოსპიტალიზაციის თანხმობის ტექსტი — <Link to="/admin/consents">თანხმობები</Link>.</span>
     </div>
   );
 }

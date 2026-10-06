@@ -7,10 +7,11 @@ import { LabMailPoller, LabMailService } from './diagnostics/lab-mail';
 import { StorageModule } from './storage/storage.service';
 import { NotificationsService } from './notifications/notifications';
 import { StockAlertsService } from './stock/stock-alerts';
+import { InpatientRemindersService } from './inpatient/inpatient-reminders';
 
 /**
  * ფონური პროცესები: SSA სინქრონიზაცია, SMS, ფორმა 100-ის მასიური გენერაცია.
  * რიგები (BullMQ + Redis) აქ დაემატება — worker HTTP-ს არ ისმენს.
  */
-@Module({ imports: [DatabaseModule, AuditModule, NotifyModule, StorageModule], providers: [LabAlertsService, LabMailService, LabMailPoller, NotificationsService, StockAlertsService] })
+@Module({ imports: [DatabaseModule, AuditModule, NotifyModule, StorageModule], providers: [LabAlertsService, LabMailService, LabMailPoller, NotificationsService, StockAlertsService, InpatientRemindersService] })
 export class WorkerModule {}

@@ -19,7 +19,7 @@ export class EncountersService {
               private readonly core: EncounterCoreService) {}
 
   /** ღია ვიზიტების სია (რეცეფცია/სალარო/ექიმი) — ინვოისის ჯამებით */
-  list(q: { status?: string[]; doctorId?: string; date?: string; patientId?: string }) {
+  list(q: { status?: string[]; doctorId?: string; date?: string; patientId?: string; type?: string }) {
     let query = this.db.selectFrom('encounters as e')
       .innerJoin('patients as p', 'p.id', 'e.patient_id')
       .leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
@@ -34,6 +34,9 @@ export class EncountersService {
     if (q.status?.length) query = query.where('e.status', 'in', q.status as never[]);
     if (q.doctorId) query = query.where('e.attending_doctor_id', '=', q.doctorId);
     if (q.patientId) query = query.where('e.patient_id', '=', q.patientId);
+    // სტაციონარი (0040): დღის სამუშაო სიები (რეგისტრატურა / სალარო / ექიმის რიგი) — ამბულატორიული; პაციენტის ისტორიაში — ყველა
+    if (q.type) query = query.where('e.type', '=', q.type as never);
+    else if (q.date) query = query.where('e.type', '<>', 'inpatient');
     if (q.date) {
       const [from, to] = dayRange(q.date, this.tz);
       query = query.where('e.start_time', '>=', from).where('e.start_time', '<', to);
@@ -148,6 +151,7 @@ export class EncountersService {
   discharge(id: string, force: boolean, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, id, ['active']);
+      if (e.type === 'inpatient') throw new ConflictException({ code: 'INPATIENT_DISCHARGE', message: 'სტაციონარული ვიზიტი იხურება სტაციონარის გაწერით (ეპიკრიზი, საწოლის გათავისუფლება)' });
       this.core.assertClinicalWriter(e, user);
 
       const primary = await trx.selectFrom('encounter_diagnoses').select('id')

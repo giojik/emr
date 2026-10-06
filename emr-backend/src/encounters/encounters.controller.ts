@@ -15,8 +15,8 @@ export class EncountersController {
   constructor(private readonly encounters: EncountersService, private readonly clinical: ClinicalService) {}
 
   @Get() @Roles(...CLINICAL_READ)
-  list(@Query('status') status?: string, @Query('doctor_id') doctorId?: string, @Query('date') date?: string, @Query('patient_id') patientId?: string) {
-    return this.encounters.list({ status: status?.split(',').filter(Boolean), doctorId, date, patientId });
+  list(@Query('status') status?: string, @Query('doctor_id') doctorId?: string, @Query('date') date?: string, @Query('patient_id') patientId?: string, @Query('type') type?: string) {
+    return this.encounters.list({ status: status?.split(',').filter(Boolean), doctorId, date, patientId, type: type && ['outpatient', 'inpatient', 'emergency'].includes(type) ? type : undefined });
   }
 
   @Get(':id') @Roles('admin', 'doctor', 'nurse', 'billing', 'receptionist')

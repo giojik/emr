@@ -1,0 +1,157 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { api, ApiError } from '../../api/client';
+import type { Doctor } from '../../api/types';
+import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
+import { age, dateGe, genderShort, tsDate } from '../../lib/format';
+import { AssignDialog, invalIpd, openWristband, ReasonDialog } from './Inpatient';
+import { chipOf, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, type Board, type InpatientSettings, type Printer } from './types';
+
+interface StayDetail {
+  encounter_id: string; adm_no: string; patient_id: string; source: string; source_encounter_id: string | null; referral_id: string | null; planned_id: string | null; plan_no: string | null;
+  referring_institution: string | null; severity: string | null; isolation: string | null; admitted_at: string; admitted_by_name: string; status: string; ended_at: string | null; cancel_reason: string | null;
+  department_id: string; department_name: string; attending_doctor_id: string | null; doctor_name: string | null; chief_complaint: string | null; parent_encounter_id: string | null;
+  first_name: string; last_name: string; personal_number: string | null; birth_date: string; gender: string; phone_number: string;
+  current: Assignment | null; assignments: Assignment[]; events: { id: string; kind: string; data: Record<string, unknown>; at: string; user_name: string | null }[];
+  diagnoses: { id: string; icd10_code: string; icd10_title: string; diagnosis_type: string }[]; allergies: { substance: string; severity: string; allergy_type: string }[];
+  consent: 'granted' | 'refused' | 'revoked' | 'missing'; settings: InpatientSettings; can: { assign: boolean; manage: boolean; staff: boolean; cancel: boolean };
+}
+interface Assignment { id: string; department_id: string; department_name: string; bed_id: string | null; bed_code: string | null; ward_code: string | null; started_at: string; bed_at: string | null; ended_at: string | null; end_kind: string | null; reason: string | null; assigned_by_name: string; bed_by_name: string | null }
+
+const EV_KA: Record<string, string> = { admitted: 'ჰოსპიტალიზაცია', bed_assigned: 'საწოლი მიენიჭა', bed_changed: 'საწოლი შეიცვალა', attending_changed: 'მკურნალი ექიმი შეიცვალა', severity: 'მდგომარეობა',
+  isolation: 'იზოლაცია', cancelled: 'გაუქმდა', bed_released: 'საწოლი გათავისუფლდა', wristband: 'სამაჯური დაიბეჭდა' };
+const END_KA: Record<string, string> = { bed_change: 'საწოლის შეცვლა', transfer: 'გადაყვანა', discharge: 'გაწერა', cancel: 'გაუქმება' };
+const DX_KA: Record<string, string> = { admission: 'მიმღები', primary: 'ძირითადი', secondary: 'თანმხლები', complication: 'გართულება' };
+
+function evText(k: string, d: Record<string, unknown>) {
+  const x = (v: unknown) => (v == null ? '—' : String(v));
+  switch (k) {
+    case 'admitted': return `${x(d.adm_no)} · ${SOURCE_KA[x(d.source)] ?? d.source} · ${x(d.department)}${d.bed ? ` · საწოლი ${d.bed}` : ''}`;
+    case 'bed_assigned': return `${x(d.bed)} (პალატა ${x(d.ward)})`;
+    case 'bed_changed': return `${x(d.from)} → ${x(d.to)} · ${x(d.reason)}`;
+    case 'attending_changed': return `${x(d.to_name)} · ${x(d.reason)}`;
+    case 'severity': return `${SEVERITY_KA[x(d.from)]?.[1] ?? '—'} → ${SEVERITY_KA[x(d.to)]?.[1] ?? '—'}`;
+    case 'isolation': return `${ISOLATION_KA[x(d.from)] ?? 'არა'} → ${ISOLATION_KA[x(d.to)] ?? 'არა'}`;
+    case 'cancelled': return x(d.reason);
+    case 'bed_released': return `${x(d.bed)}`;
+    case 'wristband': return d.mode === 'zpl' ? `Zebra: ${x(d.printer)}` : 'PDF';
+    default: return '';
+  }
+}
+
+/** ჰოსპიტალიზაციის ბარათი (0040): ადგილი, ექიმი, მდგომარეობა, სამაჯური, ისტორია */
+export default function Stay() {
+  const { id } = useParams(); const [sp] = useSearchParams(); const nav = useNavigate(); const qc = useQueryClient(); const toast = useToast();
+  const q = useQuery({ queryKey: ['ipd-stay', id], queryFn: () => api<StayDetail>(`/inpatient/stays/${id}`) });
+  const s = q.data;
+  const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
+  const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
+  const [dlg, setDlg] = useState<'bed' | 'doctor' | 'cancel' | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const patch = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/inpatient/stays/${id}`, { method: 'PATCH', body }), onSuccess: () => invalIpd(qc), onError: setErr });
+  const print = useMutation({ mutationFn: (printer_id?: string) => api<{ printer: string }>(`/inpatient/stays/${id}/wristband`, { body: { printer_id } }),
+    onSuccess: (r) => { toast.show(`სამაჯური გაიგზავნა: ${r.printer}`); invalIpd(qc); }, onError: setErr });
+  if (q.isLoading) return <div className="content"><Loading /></div>;
+  if (!s) return <div className="content"><ErrorBox error={q.error} /></div>;
+  const active = s.status === 'active';
+  const activePrinters = (printers.data ?? []).filter((p) => p.is_active);
+  const wb = async () => { setErr(null); if (s.settings.wristband_print === 'pdf') { try { await openWristband(s.encounter_id); invalIpd(qc); } catch (e) { setErr(e); } } else print.mutate(undefined); };
+  return (
+    <>
+      <header className="topbar" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <button className="btn sm" type="button" onClick={() => nav(-1)}>←</button>
+        <h1 style={{ margin: 0 }}>{s.last_name} {s.first_name}</h1>
+        <span className="muted">{genderShort(s.gender)} · {age(s.birth_date)} · {dateGe(s.birth_date)} · {s.personal_number}</span>
+        <span className="mono">{s.adm_no}</span>{chipOf(STAY_ST, s.status)}
+        <span className="grow" />
+        <Link className="btn sm" to={`/patients/${s.patient_id}`}>პაციენტის ბარათი</Link>
+      </header>
+      <div className="content">
+        {toast.node}
+        {sp.get('new') && active && <div className="alert info">ჰოსპიტალიზაცია გაფორმდა ({s.adm_no}). {!s.current?.bed_id && 'საწოლს მიანიჭებს განყოფილება.'} დაბეჭდეთ სამაჯური{s.consent !== 'granted' ? ' და გააფორმეთ ჰოსპიტალიზაციის თანხმობა (პაციენტის ბარათი → თანხმობები)' : ''}.</div>}
+        {s.allergies.length > 0 && <div className="alert danger">ალერგია: {s.allergies.map((a) => a.substance).join(', ')}</div>}
+        {s.status === 'cancelled' && <div className="alert warn">გაუქმებულია: {s.cancel_reason}</div>}
+        <ErrorBox error={err} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+          <section className="card card-pad stack" style={{ gap: 10 }}>
+            <h2 style={{ margin: 0 }}>ადგილი</h2>
+            <div className="row"><span className="muted" style={{ width: 130 }}>განყოფილება</span><strong>{s.current?.department_name ?? s.department_name}</strong></div>
+            <div className="row"><span className="muted" style={{ width: 130 }}>საწოლი</span>
+              {s.current?.bed_code ? <strong className="mono">{s.current.bed_code} <span className="small muted">(პალატა {s.current.ward_code})</span></strong> : active ? <span className="chip warn">ელოდება საწოლს</span> : '—'}
+              <span className="grow" />
+              {active && s.can.assign && board.data && <button className="btn sm" type="button" onClick={() => setDlg('bed')}>{s.current?.bed_id ? 'შეცვლა' : 'მინიჭება'}</button>}</div>
+            <div className="row"><span className="muted" style={{ width: 130 }}>მკურნალი ექიმი</span><strong>{s.doctor_name ?? '—'}</strong><span className="grow" />
+              {active && (s.can.manage || s.can.staff) && <button className="btn sm" type="button" onClick={() => setDlg('doctor')}>შეცვლა</button>}</div>
+            <div className="row"><span className="muted" style={{ width: 130 }}>მიღება</span><span>{tsDate(s.admitted_at)} · {SOURCE_KA[s.source]}{s.plan_no ? ` (${s.plan_no})` : ''}{s.referring_institution ? ` · ${s.referring_institution}` : ''}</span></div>
+            <div className="row"><span className="muted" style={{ width: 130 }}>გააფორმა</span><span>{s.admitted_by_name}</span></div>
+            {s.parent_encounter_id && <div className="row"><span className="muted" style={{ width: 130 }}>წყარო ვიზიტი</span><Link to={`/encounters/${s.parent_encounter_id}`}>გახსნა</Link></div>}
+          </section>
+          <section className="card card-pad stack" style={{ gap: 10 }}>
+            <h2 style={{ margin: 0 }}>მდგომარეობა</h2>
+            <Field label="სიმძიმე" htmlFor="sv"><select id="sv" className="select" disabled={!active || !s.can.staff || patch.isPending} value={s.severity ?? ''} onChange={(e) => patch.mutate({ severity: e.target.value || null })}>
+              <option value="">—</option>{Object.entries(SEVERITY_KA).map(([k, [, l]]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+            <Field label="იზოლაცია" htmlFor="is"><select id="is" className="select" disabled={!active || !s.can.staff || patch.isPending} value={s.isolation ?? ''} onChange={(e) => patch.mutate({ isolation: e.target.value || null })}>
+              <option value="">არ სჭირდება</option>{Object.entries(ISOLATION_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+            <div className="stack" style={{ gap: 4 }}><span className="label">დიაგნოზები</span>
+              {s.diagnoses.map((d) => <span key={d.id} className="small"><span className="chip">{DX_KA[d.diagnosis_type] ?? d.diagnosis_type}</span> <span className="mono">{d.icd10_code}</span> {d.icd10_title}</span>)}</div>
+            {s.chief_complaint && <div className="small"><span className="muted">ჩივილები: </span>{s.chief_complaint}</div>}
+            <div className="row"><span className="muted">ჰოსპიტალიზაციის თანხმობა:</span>
+              {s.consent === 'granted' ? <span className="chip ok">მოწერილია</span> : s.consent === 'refused' ? <span className="chip danger">უარი</span> : <span className="chip warn">{s.consent === 'revoked' ? 'გაუქმებულია' : 'არ არის'}</span>}
+              {s.consent !== 'granted' && <Link className="small" to={`/patients/${s.patient_id}`}>გაფორმება →</Link>}</div>
+          </section>
+          {active && <section className="card card-pad stack" style={{ gap: 10 }}>
+            <h2 style={{ margin: 0 }}>მოქმედებები</h2>
+            {s.settings.wristband && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn primary" type="button" disabled={print.isPending} onClick={wb}>სამაჯურის ბეჭდვა</button>
+              {s.settings.wristband_print === 'zpl' && activePrinters.length > 1 && <select className="select" style={{ maxWidth: 220, height: 40 }} aria-label="პრინტერი" defaultValue=""
+                onChange={(e) => { if (e.target.value) { setErr(null); print.mutate(e.target.value); e.target.value = ''; } }}>
+                <option value="">სხვა პრინტერზე…</option>{activePrinters.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
+              {s.settings.wristband_print === 'zpl' && <button className="btn" type="button" onClick={() => openWristband(s.encounter_id).catch(setErr)}>PDF</button>}
+            </div>}
+            {s.can.cancel && <button className="btn" type="button" onClick={() => setDlg('cancel')}>ჰოსპიტალიზაციის გაუქმება (შეცდომა)</button>}
+            <span className="small muted">გადაყვანა სხვა განყოფილებაში და გაწერა (ეპიკრიზი) — შემდეგ ეტაპზე.</span>
+          </section>}
+        </div>
+        <section className="card">
+          <div className="card-head"><h2 style={{ margin: 0 }}>ეპიზოდები</h2></div>
+          <table className="table"><thead><tr><th>განყოფილება</th><th>საწოლი</th><th>დან</th><th>მდე</th><th>მიზეზი</th><th>ვინ</th></tr></thead>
+            <tbody>{s.assignments.map((a) => (
+              <tr key={a.id}><td>{a.department_name}</td><td className="mono">{a.bed_code ?? '—'}</td><td className="small">{tsDate(a.bed_at ?? a.started_at)}</td>
+                <td className="small">{a.ended_at ? `${tsDate(a.ended_at)} · ${END_KA[a.end_kind ?? ''] ?? ''}` : <span className="chip ok">მიმდინარე</span>}</td>
+                <td className="small">{a.reason ?? ''}</td><td className="small">{a.bed_by_name ?? a.assigned_by_name}</td></tr>))}</tbody></table>
+        </section>
+        <section className="card">
+          <div className="card-head"><h2 style={{ margin: 0 }}>ისტორია</h2></div>
+          <table className="table"><tbody>{s.events.map((e) => (
+            <tr key={e.id}><td className="small mono" style={{ whiteSpace: 'nowrap' }}>{new Date(e.at).toLocaleString('ka-GE', { timeZone: 'Asia/Tbilisi', hour12: false })}</td>
+              <td><strong>{EV_KA[e.kind] ?? e.kind}</strong></td><td className="small">{evText(e.kind, e.data)}
+                {Array.isArray(e.data.warnings) && e.data.warnings.length > 0 && <div style={{ color: 'var(--warn-ink)' }}>გაფრთხილება დადასტურდა: {(e.data.warnings as string[]).join('; ')}</div>}</td>
+              <td className="small muted">{e.user_name ?? 'სისტემა'}</td></tr>))}</tbody></table>
+        </section>
+      </div>
+      {dlg === 'bed' && board.data && <AssignDialog encounterId={s.encounter_id} title={`${s.last_name} ${s.first_name}`} board={board.data} change={!!s.current?.bed_id} onClose={() => setDlg(null)} />}
+      {dlg === 'doctor' && <DoctorDialog s={s} onClose={() => setDlg(null)} />}
+      {dlg === 'cancel' && <ReasonDialog title={`ჰოსპიტალიზაციის გაუქმება — ${s.adm_no}`} path={`/inpatient/stays/${s.encounter_id}/cancel`} onClose={() => setDlg(null)} />}
+    </>
+  );
+}
+
+function DoctorDialog({ s, onClose }: { s: StayDetail; onClose: () => void }) {
+  const qc = useQueryClient();
+  const doctors = useQuery({ queryKey: ['doctors'], queryFn: () => api<Doctor[]>('/doctors') });
+  const [doc, setDoc] = useState(''); const [reason, setReason] = useState('');
+  const m = useMutation({ mutationFn: () => api(`/inpatient/stays/${s.encounter_id}`, { method: 'PATCH', body: { attending_doctor_id: doc, reason } }), onSuccess: () => { invalIpd(qc); onClose(); } });
+  return (
+    <Modal title="მკურნალი ექიმის შეცვლა" onClose={onClose} width={480}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending || !doc || reason.trim().length < 3} onClick={() => m.mutate()}>შენახვა</button></>}>
+      <div className="stack" style={{ gap: 12 }}>
+        <Field label="ექიმი" htmlFor="dd"><select id="dd" className="select" value={doc} onChange={(e) => setDoc(e.target.value)}>
+          <option value="">— აირჩიეთ —</option>{doctors.data?.filter((d) => d.id !== s.attending_doctor_id).map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name}{d.department_name ? ` · ${d.department_name}` : ''}</option>)}</select></Field>
+        <Field label="მიზეზი" htmlFor="dr" required><input id="dr" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        {m.error instanceof ApiError && m.error.status === 403 && <span className="small muted">ექიმს ცვლის განყოფილების ხელმძღვანელი, admin ან ამჟამინდელი მკურნალი ექიმი.</span>}
+        <ErrorBox error={m.error} />
+      </div>
+    </Modal>
+  );
+}

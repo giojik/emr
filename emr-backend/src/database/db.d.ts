@@ -200,6 +200,43 @@ export interface AuthSessions {
   user_id: string;
 }
 
+export interface BedAssignments {
+  assigned_by: string;
+  bed_at: Timestamp | null;
+  bed_by: string | null;
+  bed_id: string | null;
+  department_id: string;
+  encounter_id: string;
+  end_kind: string | null;
+  ended_at: Timestamp | null;
+  ended_by: string | null;
+  id: Generated<Int8>;
+  reason: string | null;
+  started_at: Generated<Timestamp>;
+}
+
+export interface Beds {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_overflow: Generated<boolean>;
+  sort_order: Generated<number>;
+  status: Generated<string>;
+  status_at: Generated<Timestamp>;
+  status_by: string | null;
+  status_reason: string | null;
+  type_code: Generated<string>;
+  ward_id: string;
+}
+
+export interface BedTypes {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
 export interface ClinicSettings {
   address: string;
   consent_methods: Generated<string[]>;
@@ -583,6 +620,7 @@ export interface Encounters {
   history_of_present_illness: string | null;
   id: Generated<string>;
   objective_status: string | null;
+  parent_encounter_id: string | null;
   patient_id: string;
   start_time: Generated<Timestamp>;
   status: Generated<EncounterStatus>;
@@ -714,6 +752,56 @@ export interface Icd10Codes {
   title: string;
 }
 
+export interface InpatientEvents {
+  at: Generated<Timestamp>;
+  bed_id: string | null;
+  data: Generated<Json>;
+  encounter_id: string | null;
+  id: Generated<Int8>;
+  kind: string;
+  planned_id: string | null;
+  user_id: string | null;
+}
+
+export interface InpatientPlanned {
+  bed_id: string | null;
+  cancel_reason: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string;
+  doctor_id: string | null;
+  encounter_id: string | null;
+  icd10_code: string | null;
+  icd10_title: string | null;
+  id: Generated<string>;
+  notes: string | null;
+  patient_id: string;
+  plan_no: string;
+  planned_date: string;
+  reason: string;
+  sms_sent_at: Timestamp | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface InpatientStays {
+  adm_no: string;
+  admitted_at: Generated<Timestamp>;
+  admitted_by: string;
+  cancel_reason: string | null;
+  encounter_id: string;
+  ended_at: Timestamp | null;
+  isolation: string | null;
+  patient_id: string;
+  planned_id: string | null;
+  referral_id: string | null;
+  referring_institution: string | null;
+  severity: string | null;
+  source: string;
+  source_encounter_id: string | null;
+  status: Generated<string>;
+}
+
 export interface InvoiceLineItems {
   adjusted_by: string | null;
   description: string;
@@ -807,6 +895,18 @@ export interface LabDeliverySettings {
   sms_ready: Generated<string>;
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
+}
+
+export interface LabelPrinters {
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  dpi: Generated<number>;
+  host: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: Generated<string>;
+  name: string;
+  port: Generated<number>;
 }
 
 export interface LabExternalLabs {
@@ -1938,6 +2038,20 @@ export interface Users {
   updated_at: Generated<Timestamp>;
 }
 
+export interface Wards {
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  floor: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  isolation_capable: Generated<boolean>;
+  name: string | null;
+  sex: Generated<string>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   address_units: AddressUnits;
   allergen_cross_reactivity: AllergenCrossReactivity;
@@ -1954,6 +2068,9 @@ export interface DB {
   assets: Assets;
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;
+  bed_assignments: BedAssignments;
+  bed_types: BedTypes;
+  beds: Beds;
   clinic_settings: ClinicSettings;
   consent_type_versions: ConsentTypeVersions;
   consent_types: ConsentTypes;
@@ -1987,6 +2104,9 @@ export interface DB {
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;
+  inpatient_events: InpatientEvents;
+  inpatient_planned: InpatientPlanned;
+  inpatient_stays: InpatientStays;
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
   lab_analytes: LabAnalytes;
@@ -2023,6 +2143,7 @@ export interface DB {
   lab_result_images: LabResultImages;
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
+  label_printers: LabelPrinters;
   med_dosage_forms: MedDosageForms;
   med_generic_allergens: MedGenericAllergens;
   med_generics: MedGenerics;
@@ -2078,4 +2199,5 @@ export interface DB {
   user_notifications: UserNotifications;
   user_roles: UserRoles;
   users: Users;
+  wards: Wards;
 }

@@ -7,6 +7,7 @@ import { KYSELY, type Database } from './database/database.module';
 import { LabMailPoller } from './diagnostics/lab-mail';
 import { LabAlertsService } from './lab-gateway/lab-alerts.service';
 import { StockAlertsService } from './stock/stock-alerts';
+import { InpatientRemindersService } from './inpatient/inpatient-reminders';
 import { WorkerModule } from './worker.module';
 
 const HEARTBEAT_MS = 60_000;
@@ -32,8 +33,11 @@ async function bootstrap() {
   const stock = app.get(StockAlertsService);
   const stockTick = () => void stock.tick().catch((e) => log.error(`საწყობის შემოწმება: ${(e as Error).message}`));
   const stockTimer = setInterval(stockTick, 5 * 60_000); setTimeout(stockTick, 30_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); });
+  // სტაციონარი: გეგმიური ჰოსპიტალიზაციის SMS შეხსენება (წინა დღეს, 10:00-დან) — ყოველ 10 წუთში
+  const ipd = app.get(InpatientRemindersService);
+  const ipdTimer = setInterval(() => void ipd.tick().catch((e) => log.error(`სტაციონარის შეხსენება: ${(e as Error).message}`)), 10 * 60_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }
