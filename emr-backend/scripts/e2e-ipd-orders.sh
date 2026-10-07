@@ -58,7 +58,7 @@ api POST "/patients/$P1/allergies" "$NA" -d '{"substance":"პენიცილ
 
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')
 mod()  { api PUT /modules/inpatient "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}" >/dev/null; }
-mod '{"med_verification":"high_risk","dose_rule":"warn","interaction_rule":"warn","verbal_orders":true,"antibiotic_default_days":7,"weight_max_age_days":7}'
+mod '{"med_verification":"high_risk","med_verifier":"both","dose_rule":"warn","interaction_rule":"warn","verbal_orders":true,"antibiotic_default_days":7,"weight_max_age_days":7}'
 gen() { api POST /pharmacy/generics "$ADM" -d "$1" | jq -r '.id // empty'; }
 G_CEF=$(gen "{\"inn\":\"ტესტ-E2E ცეფტრიაქსონი $S\",\"atc_code\":\"J01DD04\",\"form_code\":\"INJ_PWD\",\"strength\":\"1 გ\",\"dose_unit\":\"mg\",\"dose_per_unit\":1000,\"max_single_dose\":2000,\"max_daily_dose\":4000,\"routes\":[\"IV\",\"IM\"],\"allergen_groups\":[\"CEPHALOSPORINS\"]}")
 G_AMX=$(gen "{\"inn\":\"ტესტ-E2E ამოქსიცილინი $S\",\"atc_code\":\"J01CA04\",\"form_code\":\"TAB\",\"strength\":\"500 მგ\",\"dose_unit\":\"mg\",\"max_single_dose\":1000,\"max_daily_dose\":3000,\"routes\":[\"PO\"],\"allergen_groups\":[\"PENICILLINS\"]}")

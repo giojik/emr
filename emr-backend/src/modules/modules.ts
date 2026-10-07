@@ -33,6 +33,7 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       // 0043: MAR
       mar_window_min: (v) => int(v, 15, 240), mar_missed_hours: (v) => int(v, 1, 24), mar_horizon_hours: (v) => int(v, 12, 96), mar_stock_deduct: bool,
       mar_allow_no_stock: bool, mar_double_check: bool, mar_barcode: (v) => oneOf(v, ['off', 'optional', 'required']),
+      med_verifier: (v) => oneOf(v, ['pharmacist', 'head_nurse', 'both']),
     },
     extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს' : null),
   },

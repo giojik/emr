@@ -50,14 +50,15 @@ NB=$(mkuser '["nurse"]' 63 ",\"department_id\":\"$DA\"")                      # 
 DR=$(mkuser '["doctor"]' 64 ",\"department_id\":\"$DA\"")
 NX=$(mkuser '["nurse"]' 65 ",\"department_id\":\"$DB\"")                      # სხვა განყოფილება
 PH=$(mkuser '["pharmacist"]' 66)
-for t in RC NA NB DR NX PH; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
-ok "მომხმარებლები (რეგისტრატორი, 2 ექთანი A, ექიმი A, ექთანი B, ფარმაცევტი)"
+HN=$(mkuser '["nurse"]' 67 ",\"department_id\":\"$DA\",\"is_section_head\":true")   # მთავარი ექთანი (0043b)
+for t in RC NA NB DR NX PH HN; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
+ok "მომხმარებლები (რეგისტრატორი, 2 ექთანი A, ექიმი A, ექთანი B, ფარმაცევტი, მთავარი ექთანი A)"
 P1=$(api POST /patients "$ADM" -d "{\"personal_number\":\"91$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"MAR\",\"birth_date\":\"1965-04-04\",\"gender\":\"male\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
 [ -n "$P1" ] || die "პაციენტი ვერ შეიქმნა"
 
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')
 mod()  { api PUT /modules/inpatient "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}" >/dev/null; }
-mod '{"med_verification":"high_risk","mar_window_min":60,"mar_barcode":"optional","mar_stock_deduct":true,"mar_allow_no_stock":false,"mar_double_check":true}'
+mod '{"med_verification":"high_risk","med_verifier":"both","mar_window_min":60,"mar_barcode":"optional","mar_stock_deduct":true,"mar_allow_no_stock":false,"mar_double_check":true}'
 gen() { api POST /pharmacy/generics "$ADM" -d "$1" | jq -r '.id // empty'; }
 G_CEF=$(gen "{\"inn\":\"ტესტ-E2E MAR ცეფაზოლინი $S\",\"atc_code\":\"J01DB04\",\"form_code\":\"INJ_PWD\",\"strength\":\"1 გ\",\"dose_unit\":\"mg\",\"dose_per_unit\":1000,\"routes\":[\"IV\",\"IM\"]}")
 G_WAR=$(gen "{\"inn\":\"ტესტ-E2E MAR ჰეპარინი $S\",\"atc_code\":\"B01AB01\",\"form_code\":\"INJ_SOL\",\"strength\":\"5000 ერთ.\",\"dose_unit\":\"IU\",\"dose_per_unit\":5000,\"routes\":[\"SC\",\"IV\"],\"high_alert\":true}")
@@ -65,7 +66,8 @@ G_MOR=$(gen "{\"inn\":\"ტესტ-E2E MAR მორფინი $S\",\"form_c
 G_PAR=$(gen "{\"inn\":\"ტესტ-E2E MAR პარაცეტამოლი $S\",\"atc_code\":\"N02BE01\",\"form_code\":\"TAB\",\"strength\":\"500 მგ\",\"dose_unit\":\"mg\",\"dose_per_unit\":500,\"routes\":[\"PO\"]}")
 G_NOS=$(gen "{\"inn\":\"ტესტ-E2E MAR ომეპრაზოლი $S\",\"atc_code\":\"A02BC01\",\"form_code\":\"CAP\",\"strength\":\"20 მგ\",\"dose_unit\":\"mg\",\"dose_per_unit\":20,\"routes\":[\"PO\"]}")
 G_NS=$(gen "{\"inn\":\"ტესტ-E2E MAR ნატრიუმის ქლორიდი 0.9% $S\",\"form_code\":\"INF_SOL\",\"strength\":\"500 მლ\",\"routes\":[\"IV\"]}")
-for g in G_CEF G_WAR G_MOR G_PAR G_NOS G_NS; do [ -n "${!g}" ] || die "ჯენერიკი $g ვერ შეიქმნა"; done
+G_VIT=$(gen "{\"inn\":\"ტესტ-E2E MAR თიამინი $S\",\"form_code\":\"TAB\",\"strength\":\"100 მგ\",\"dose_unit\":\"mg\",\"routes\":[\"PO\"]}")
+for g in G_CEF G_WAR G_MOR G_PAR G_NOS G_NS G_VIT; do [ -n "${!g}" ] || die "ჯენერიკი $g ვერ შეიქმნა"; done
 CAT=$(api GET /stock/refs "$ADM" | jq -r '.categories[]|select(.kind=="medication")|.id' | head -1)
 EAN="$(printf '29%011d' "$S")"; EAN2="$(printf '28%011d' "$S")"
 item() { api POST /stock/items "$ADM" -d "{\"name\":\"ტესტ-E2E MAR $1 $S\",\"category_id\":\"$CAT\",\"generic_id\":\"$2\",\"base_unit\":\"$3\"${4:-}}" | jq -r '.id // empty'; }
@@ -224,6 +226,32 @@ api POST "/inpatient/stays/$E1/leave" "$NA" -d "{\"expected_return_at\":\"$(date
 chk "დროებით გასულზე მიცემა — 409; „არ მიეცა“ მიზეზით — OK" "$(code POST "/inpatient/mar/$(slot "$O_CEF" 0)/document" "$NA" -d '{"outcome":"given"}'):$(api POST "/inpatient/mar/$(slot "$O_CEF" 0)/document" "$NA" -d '{"outcome":"not_given","reason":"პაციენტი დროებით გასულია"}' | jq -r .status)" "409:not_given"
 api POST "/inpatient/stays/$E1/leave/return" "$NA" >/dev/null
 
+step "10b. დადასტურება: მთავარი ექთანი (med_verifier)"
+mod '{"med_verification":"all","med_verifier":"both"}'
+VIT=$(jq -nc --arg g "$G_VIT" '{category:"medication",generic_id:$g,order_type:"scheduled",dose:100,dose_unit:"mg",route_code:"PO",frequency_code:"Q24H"}')
+O_V1=$(api POST "$OR" "$DR" -d "$VIT" | jq -r '.id // empty')
+chk "ყველა მედიკამენტი (all) — თიამინი pending" "$(api GET "/inpatient/orders/$O_V1" "$NA" | jq -r '.verify_status // .order.verify_status')" "pending"
+chk "შეტყობინება: მთავარ ექთანს — კი; ფარმაცევტს (არაკონტროლირებადი) — არა" \
+  "$(api GET /notifications "$HN" | jq -r --arg n "თიამინი $S" '[.[] | select(.kind == "ipd_order_verify" and (.title|contains($n)))]|length>0'):$(api GET /notifications "$PH" | jq -r --arg n "თიამინი $S" '[.[] | select(.kind == "ipd_order_verify" and (.title|contains($n)))]|length>0')" "true:false"
+chk "რიგი: მთავარი ექთანი — თავისი განყოფილება; რიგითი ექთანი — 403; სხვა განყოფილების ექთანი — 403" \
+  "$(api GET /pharmacy/verification "$HN" | jq -r --arg o "$O_V1" '[.[]|select(.id==$o)]|length'):$(code GET /pharmacy/verification "$NA"):$(code GET /pharmacy/verification "$NX")" "1:403:403"
+chk "განყოფილების დანიშნულებები: can_verify — მთავარი ექთანი true, ექთანი false" "$(api GET "/inpatient/departments/$DA/orders" "$HN" | jq -r .can_verify):$(api GET "/inpatient/departments/$DA/orders" "$NA" | jq -r .can_verify)" "true:false"
+chk "რიგითი ექთანი ადასტურებს — 403" "$(code POST "/pharmacy/verification/$O_V1/verify" "$NA" -d '{}')" "403"
+R=$(api POST "/pharmacy/verification/$O_V1/verify" "$HN" -d '{"note":"ტესტ-E2E: მარაგშია"}')
+chk "მთავარი ექთანი ადასტურებს → verified; ისტორიაში by_role=head_nurse; ექიმს შენიშვნა" \
+  "$(echo "$R" | jq -r '.verify_status // .order.verify_status'):$(api GET "/inpatient/orders/$O_V1" "$DR" | jq -r '[.events[]|select(.kind=="verified")][0].data.by_role'):$(api GET /notifications "$DR" | jq -r '[.. | objects | select(.kind? == "ipd_order_note" and ((.title? // "")|test("მთავარი ექთანი")))]|length>0')" "verified:head_nurse:true"
+api POST "/inpatient/orders/$O_V1/stop" "$DR" -d '{"reason":"ტესტ-E2E"}' >/dev/null
+mod '{"med_verifier":"pharmacist"}'
+O_V2=$(api POST "$OR" "$DR" -d "$VIT" | jq -r '.id // empty')
+chk "მხოლოდ ფარმაცევტი: მთავარი ექთანი — 403 (რიგიც); ფარმაცევტი → verified" \
+  "$(code GET /pharmacy/verification "$HN"):$(code POST "/pharmacy/verification/$O_V2/verify" "$HN" -d '{}'):$(api POST "/pharmacy/verification/$O_V2/verify" "$PH" -d '{}' | jq -r '.verify_status // .order.verify_status')" "403:403:verified"
+api POST "/inpatient/orders/$O_V2/stop" "$DR" -d '{"reason":"ტესტ-E2E"}' >/dev/null
+mod '{"med_verifier":"head_nurse"}'
+O_V3=$(api POST "$OR" "$DR" -d "$VIT" | jq -r '.id // empty')
+chk "მხოლოდ მთავარი ექთანი: ფარმაცევტი — 403; მთავარი ექთანი უარყოფს (მიზეზით) → rejected → MAR ბლოკი" \
+  "$(code POST "/pharmacy/verification/$O_V3/verify" "$PH" -d '{}'):$(api POST "/pharmacy/verification/$O_V3/reject" "$HN" -d '{"note":"ტესტ-E2E: დოზა დასაზუსტებელია"}' | jq -r '.verify_status // .order.verify_status'):$(api POST "/inpatient/mar/$(api GET "$M" "$NA" | jq -r --arg o "$O_V3" '[.entries[]|select(.order_id==$o and .status=="due")][0].id')/document" "$NA" -d '{"outcome":"given","override_reason":"ტესტ-E2E"}' | jq -r .code)" "403:rejected:MAR_BLOCKED"
+mod '{"med_verifier":"both","med_verification":"high_risk"}'
+
 step "11. განყოფილების ეკრანი, გაწერა"
 R=$(api GET "/inpatient/departments/$DA/mar?hours=12" "$NA")
 chk "ექთნის ეკრანი: პაციენტი, სლოტები ≤ 12 სთ, PRN (3 → აქტიური), can_document" \
@@ -236,7 +264,7 @@ R=$(api GET "$M" "$NA")
 chk "გაწერის შემდეგ: ღია სლოტები cancelled, can_document=false" "$(echo "$R" | jq -r '"\([.entries[]|select(.status=="due")]|length):\(.can_document)"')" "0:false"
 
 step "12. აღდგენა"
-for g in "$G_CEF" "$G_WAR" "$G_MOR" "$G_PAR" "$G_NOS" "$G_NS"; do api PATCH "/pharmacy/generics/$g" "$ADM" -d '{"is_active":false}' >/dev/null; done
+for g in "$G_CEF" "$G_WAR" "$G_MOR" "$G_PAR" "$G_NOS" "$G_NS" "$G_VIT"; do api PATCH "/pharmacy/generics/$g" "$ADM" -d '{"is_active":false}' >/dev/null; done
 api PUT /modules/inpatient "$ADM" -d "{\"settings\":$ORIG,\"reason\":\"ტესტ-E2E აღდგენა\"}" >/dev/null
 ok "პარამეტრები აღდგენილია; სატესტო ჯენერიკები გათიშულია (ქვესაწყობში მორფინის ნაშთი რჩება — ჩამოწერეთ ხელით, თუ საჭიროა)"
 

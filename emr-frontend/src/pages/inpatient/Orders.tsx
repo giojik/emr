@@ -6,6 +6,7 @@ import type { Doctor } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { localISO, todayISO, tsDate } from '../../lib/format';
+import Verification from '../stock/Verification';
 
 // ---------------------------------------------------------------- ტიპები
 export interface OrderCheck { code: string; level: 'info' | 'warn' | 'reason' | 'block'; message: string; severe?: boolean }
@@ -66,9 +67,9 @@ export function OrderBadges({ o }: { o: Order }) {
   return <>
     {o.high_alert && <span className="chip danger" title="მაღალი რისკის მედიკამენტი">მაღ. რისკი</span>}
     {o.controlled_class && <span className="chip danger">კონტროლირებადი</span>}
-    {o.verify_status === 'pending' && <span className="chip warn" title="ფარმაცევტის ვერიფიკაციის მოლოდინში">ვერიფიკაცია</span>}
-    {o.verify_status === 'verified' && o.verify_note && <span className="chip info" title={o.verify_note}>ფარმ. შენიშვნა</span>}
-    {o.verify_status === 'rejected' && <span className="chip danger" title={o.verify_note ?? ''}>ფარმაცევტმა უარყო</span>}
+    {o.verify_status === 'pending' && <span className="chip warn" title="დადასტურების მოლოდინში (მთავარი ექთანი / ფარმაცევტი)">დასადასტურებელი</span>}
+    {o.verify_status === 'verified' && o.verify_note && <span className="chip info" title={o.verify_note}>შენიშვნა</span>}
+    {o.verify_status === 'rejected' && <span className="chip danger" title={o.verify_note ?? ''}>უარყოფილია</span>}
     {o.approval_status === 'pending' && <span className="chip warn" title="სარეზერვო ანტიბიოტიკი — დამტკიცების მოლოდინში">დასამტკიცებელი</span>}
     {o.approval_status === 'approved' && <span className="chip ok" title={o.approval_note ?? ''}>დამტკიცებული</span>}
     {o.is_verbal && !o.verbal_confirmed_at && <span className="chip warn" title="ზეპირი დანიშნულება — ექიმის დადასტურების მოლოდინში">ზეპირი</span>}
@@ -347,7 +348,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
 
 // ================================================================= დეტალები
 const EV_KA: Record<string, string> = { created: 'შეიქმნა', held: 'შეჩერდა', resumed: 'განახლდა', stopped: 'შეწყდა', modified: 'შეიცვალა', completed: 'დასრულდა (ვადა)',
-  verified: 'ვერიფიცირებულია', verify_rejected: 'ფარმაცევტმა უარყო', approved: 'დამტკიცდა', approval_rejected: 'დამტკიცებაზე უარი', verbal_confirmed: 'ზეპირი დადასტურდა',
+  verified: 'დადასტურდა', verify_rejected: 'უარყოფილია (დადასტურებისას)', approved: 'დამტკიცდა', approval_rejected: 'დამტკიცებაზე უარი', verbal_confirmed: 'ზეპირი დადასტურდა',
   supply_requested: 'აფთიაქის მოთხოვნა', end_reminder: 'შეხსენება: სრულდება', discharge_stop: 'შეწყდა გაწერისას' };
 function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ['ipd-order', id], queryFn: () => api<Order & { events: { id: string; kind: string; data: Record<string, unknown>; at: string; user_name: string | null }[] }>(`/inpatient/orders/${id}`) });
@@ -359,7 +360,7 @@ function OrderDetail({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}><span className={`chip ${STATUS[o.status][0]}`}>{STATUS[o.status][1]}</span><OrderBadges o={o} /></div>
         {o.instructions && <div className="small">ინსტრუქცია: {o.instructions}</div>}
         <div className="small">დანიშნა: <strong>{o.ordered_by_name}</strong>{o.is_verbal ? ` (ზეპირად; შეიყვანა ${o.entered_by_name}${o.verbal_confirmed_at ? `, დადასტურდა ${dt(o.verbal_confirmed_at)}` : ', დაუდასტურებელი'})` : ''} · {dt(o.created_at)}</div>
-        {o.verified_by_name && <div className="small">ფარმაცევტი: {o.verified_by_name}{o.verify_note ? ` — ${o.verify_note}` : ''}</div>}
+        {o.verified_by_name && <div className="small">დაადასტურა: {o.verified_by_name}{o.verify_note ? ` — ${o.verify_note}` : ''}</div>}
         {o.approved_by_name && <div className="small">დამტკიცება: {o.approved_by_name}{o.approval_note ? ` — ${o.approval_note}` : ''}</div>}
         {o.checks.length > 0 && <div className="stack" style={{ gap: 4 }}><span className="label">შემოწმებები</span>
           {o.checks.map((c, i) => <div key={i} className={`alert ${LEVEL[c.level]}`} style={{ padding: '4px 10px' }}>{c.message}</div>)}
@@ -406,7 +407,7 @@ function SetsDialog({ departmentId, active, onClose, onPick }: { departmentId: s
 // ================================================================= განყოფილების ხედი (სტაციონარი → დანიშნულებები)
 export function DepartmentOrders({ departmentId }: { departmentId: string }) {
   const toast = useToast(); const inval = useInvalidate(); const { user } = useAuth();
-  const q = useQuery({ queryKey: ['ipd-dep-orders', departmentId], queryFn: () => api<{ orders: Order[]; can_approve: boolean }>(`/inpatient/departments/${departmentId}/orders`), enabled: !!departmentId, refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ['ipd-dep-orders', departmentId], queryFn: () => api<{ orders: Order[]; can_approve: boolean; can_verify: boolean }>(`/inpatient/departments/${departmentId}/orders`), enabled: !!departmentId, refetchInterval: 60_000 });
   const [attention, setAttention] = useState(true);
   const [rej, setRej] = useState<Order | null>(null);
   const act = useMutation({ mutationFn: (a: { path: string; body?: unknown }) => api(a.path, { body: a.body ?? {} }), onSuccess: () => { toast.show('შესრულდა'); inval(); } });
@@ -419,8 +420,12 @@ export function DepartmentOrders({ departmentId }: { departmentId: string }) {
   return (
     <div className="stack">
       {toast.node}
+      {q.data.can_verify && <section className="stack" style={{ gap: 8 }}>
+        <h3 style={{ margin: 0 }}>დასადასტურებელი დანიშნულებები</h3>
+        <Verification departmentId={departmentId} />
+      </section>}
       <div className="row"><label className="row"><input type="checkbox" checked={attention} onChange={(e) => setAttention(e.target.checked)} /> მხოლოდ ყურადღების მოთხოვნით
-        <span className="small muted">(დასამტკიცებელი, ვერიფიკაცია, ზეპირი, შეჩერებული)</span></label>
+        <span className="small muted">(დასამტკიცებელი, დასადასტურებელი, ზეპირი, შეჩერებული)</span></label>
         <span className="grow" /><span className="small muted">აქტიური: {q.data.orders.length}</span></div>
       <ErrorBox error={act.error} />
       {!rows.length && <div className="card empty">{attention ? 'ყურადღების მოთხოვნით დანიშნულება არ არის.' : 'აქტიური დანიშნულება არ არის.'}</div>}

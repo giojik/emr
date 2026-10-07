@@ -53,7 +53,7 @@ type OrderCtx = Awaited<ReturnType<MarService['order']>>;
 /**
  * MAR (0043): დოზების / დავალებების სლოტები, ჩანაწერი, მარაგის ჩამოწერა, შესწორება.
  *   ჩაწერს: მიმდინარე განყოფილების ექთანი ან ექიმი (admin). მიცემისას (given / partial):
- *     ბლოკი — დანიშნულება შეჩერებულია / ფარმაცევტმა უარყო / სარეზერვო ანტიბიოტიკი დამტკიცებამდე მეორე დოზა / სამაჯური ან მედიკამენტი არ ემთხვევა;
+ *     ბლოკი — დანიშნულება შეჩერებულია / დადასტურებისას უარყოფილი / სარეზერვო ანტიბიოტიკი დამტკიცებამდე მეორე დოზა / სამაჯური ან მედიკამენტი არ ემთხვევა;
  *     მიზეზით (409 MAR_CHECKS → override_reason) — ვერიფიკაციის მოლოდინში, დამტკიცებამდე პირველი დოზა, ფანჯრის გარეთ, PRN ინტერვალი / დღიური მაქსიმუმი;
  *     high-alert — მეორე ექთანი (double_check), კონტროლირებადი — მოწმე (0035), მარაგი — ხარჯი პაციენტზე (0033) იმავე ტრანზაქციაში.
  *   შესწორება — გაუქმება მიზეზით (ხარჯი შემობრუნდება), სლოტი თავიდან იხსნება.
@@ -146,8 +146,8 @@ export class MarService {
       if (o.status !== 'active') throw new ConflictException(o.status === 'on_hold' ? 'დანიშნულება შეჩერებულია' : 'დანიშნულება აქტიური არ არის');
       if (o.on_leave) throw new ConflictException('პაციენტი დროებით გასულია');
       if (med) {
-        if (o.verify_status === 'rejected') throw new UnprocessableEntityException({ code: 'MAR_BLOCKED', message: 'ფარმაცევტმა დანიშნულება უარყო — მიმართეთ ექიმს' });
-        if (o.verify_status === 'pending') checks.push({ code: 'verify_pending', message: 'ფარმაცევტის ვერიფიკაცია ჯერ არ არის' });
+        if (o.verify_status === 'rejected') throw new UnprocessableEntityException({ code: 'MAR_BLOCKED', message: 'დანიშნულება უარყოფილია (ფარმაცევტი / მთავარი ექთანი) — მიმართეთ ექიმს' });
+        if (o.verify_status === 'pending') checks.push({ code: 'verify_pending', message: 'დანიშნულება ჯერ დადასტურებული არ არის (მთავარი ექთანი / ფარმაცევტი)' });
         if (o.approval_status === 'pending') {
           const prev = await this.db.selectFrom('mar_entries').select('id').where('order_id', '=', o.id).where('status', 'in', ['given', 'partial']).where('voided_at', 'is', null).executeTakeFirst();
           if (prev) throw new UnprocessableEntityException({ code: 'MAR_BLOCKED', message: 'სარეზერვო ანტიბიოტიკი: დამტკიცებამდე მხოლოდ პირველი დოზა' });

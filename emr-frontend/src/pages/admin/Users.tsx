@@ -53,7 +53,7 @@ export default function Users() {
                   <tr key={u.id} className="clickable" onClick={() => setEdit(u)}>
                     <td><strong>{u.last_name} {u.first_name}</strong>{u.specialty && <div className="small muted">{u.specialty}</div>}</td>
                     <td className="small">{u.auth_provider === 'ldap' ? <><span className="chip info">AD</span> {u.ldap_username}</> : u.email}</td>
-                    <td>{[...u.roles].sort((a, b) => Number(b.code === u.role) - Number(a.code === u.role)).map((r, i) => <span key={r.code} className={i === 0 ? '' : 'small muted'} style={{ textDecoration: r.is_active ? undefined : 'line-through' }}>{i ? ', ' : ''}{r.name}</span>)}{u.is_section_head && <span className="chip info" style={{ marginLeft: 6 }}>ხელმძღვანელი</span>}</td>
+                    <td>{[...u.roles].sort((a, b) => Number(b.code === u.role) - Number(a.code === u.role)).map((r, i) => <span key={r.code} className={i === 0 ? '' : 'small muted'} style={{ textDecoration: r.is_active ? undefined : 'line-through' }}>{i ? ', ' : ''}{r.name}</span>)}{u.is_section_head && <span className="chip info" style={{ marginLeft: 6 }}>{u.roles.some((r) => r.code === 'nurse') && !u.roles.some((r) => r.code === 'doctor') ? 'მთავარი ექთანი' : 'ხელმძღვანელი'}</span>}</td>
                     <td className="muted">{u.department_name ?? '—'}</td>
                     <td className="num">{u.capabilities?.includes('doctor') ? (u.consultation_price ? money(u.consultation_price) : <span className="chip warn">ტარიფი არ აქვს</span>) : ''}</td>
                     <td><UserStatus u={u} /></td>
@@ -176,7 +176,9 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
   const [codes, setCodes] = useState<string[]>(initial);
   const caps = capsOf(codes, roles.data);
   const rolesChanged = codes.join(',') !== initial.join(',');
-  const canHead = caps.includes('radiologist') || caps.includes('endoscopist') || caps.includes('lab_doctor');
+  // „განყოფილების ხელმძღვანელი“: ექიმი (სტაციონარი, 0040), მთავარი ექთანი (0043b), რადიოლოგი / ენდოსკოპისტი / ლაბ. ექიმი, CSSD / ინვენტარი
+  const canHead = !!f.department_id || u.is_section_head;
+  const nurseHead = caps.includes('nurse') && !caps.includes('doctor');
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const [temp, setTemp] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['admin-users'] });
@@ -243,9 +245,11 @@ function EditUser({ u, depts, onClose }: { u: AdminUser; depts: Department[]; on
             </Field>
           </div>
         </>}
-        {canHead && !caps.includes('doctor') && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
+        {(caps.includes('radiologist') || caps.includes('endoscopist') || caps.includes('lab_doctor')) && !caps.includes('doctor') && <Field label="სერტიფიკატის №" htmlFor="elc2"><input id="elc2" className="input mono" value={f.license_number} onChange={set('license_number')} /></Field>}
         {canHead && <label className="row" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
-          განყოფილების ხელმძღვანელი <span className="small muted">— მართავს საერთო შაბლონებს, ხსნის სხვის ხელმოწერილ დასკვნას</span></label>}
+          <span>{nurseHead ? 'მთავარი ექთანი' : 'განყოფილების ხელმძღვანელი'} <span className="small muted">— {nurseHead
+            ? 'ადასტურებს განყოფილების დანიშნულებებს, მართავს საწოლებს და განყოფილების მარაგის მოთხოვნებს'
+            : 'მართავს საერთო შაბლონებს, ამტკიცებს სარეზერვო ანტიბიოტიკს, ხსნის სხვის ხელმოწერილ დასკვნას'}</span></span></label>}
         <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={save.error} /></div>
       </form>}
       {toast.node}

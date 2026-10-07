@@ -6,14 +6,17 @@ import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { age, genderShort } from '../../lib/format';
 import { OrderBadges, orderDateTime, orderSummary, type Order } from '../inpatient/Orders';
 
-/** აფთიაქი → დანიშნულებების ვერიფიკაცია (0042): დადასტურება (შენიშვნით, აფთიაქიდან გაცემის მოთხოვნით) / უარყოფა */
-export default function Verification() {
+/**
+ * დანიშნულებების დადასტურება (0042; 0043b): ფარმაცევტი — საწყობი და აფთიაქი → ვერიფიკაცია (ყველა განყოფილება);
+ * მთავარი ექთანი — სტაციონარი → დანიშნულებები (departmentId — მხოლოდ თავისი განყოფილება). დადასტურება (შენიშვნით, აფთიაქიდან გაცემის მოთხოვნით) / უარყოფა.
+ */
+export default function Verification({ departmentId }: { departmentId?: string } = {}) {
   const qc = useQueryClient(); const toast = useToast();
   const [status, setStatus] = useState<'pending' | 'done'>('pending');
-  const q = useQuery({ queryKey: ['pharm-verify', status], queryFn: () => api<(Order & { birth_date: string; gender: string })[]>('/pharmacy/verification', { query: { status } }), refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ['pharm-verify', status, departmentId ?? ''], queryFn: () => api<(Order & { birth_date: string; gender: string })[]>('/pharmacy/verification', { query: { status, ...(departmentId && { department_id: departmentId }) } }), refetchInterval: 60_000 });
   const [sel, setSel] = useState<{ o: Order; ok: boolean } | null>(null);
   return (
-    <div className="content">
+    <div className={departmentId ? 'stack' : 'content'}>
       {toast.node}
       <div className="row">
         <div className="seg" role="group" aria-label="სტატუსი">
@@ -23,7 +26,7 @@ export default function Verification() {
         <span className="grow" />{status === 'pending' && q.data && <span className="chip warn">{q.data.length}</span>}
       </div>
       <ErrorBox error={q.error} />
-      {q.isLoading ? <Loading /> : !q.data?.length ? <div className="card empty">{status === 'pending' ? 'ვერიფიკაციის მოლოდინში დანიშნულება არ არის.' : 'ჩანაწერი არ არის.'}</div> : (
+      {q.isLoading ? <Loading /> : !q.data?.length ? <div className="card empty">{status === 'pending' ? 'დასადასტურებელი დანიშნულება არ არის.' : 'ჩანაწერი არ არის.'}</div> : (
         <div className="card"><table className="table">
           <thead><tr><th>პაციენტი</th><th>დანიშნულება</th><th>შემოწმებები</th><th>ექიმი</th><th /></tr></thead>
           <tbody>{q.data.map((o) => (
@@ -42,7 +45,7 @@ export default function Verification() {
                 <button className="btn sm" type="button" onClick={() => setSel({ o, ok: false })}>უარყოფა</button></>
                 : <span className={`chip ${o.verify_status === 'verified' ? 'ok' : 'danger'}`}>{o.verify_status === 'verified' ? 'დადასტურებული' : 'უარყოფილი'}</span>}</td>
             </tr>))}</tbody></table></div>)}
-      {sel && <VerifyDialog o={sel.o} ok={sel.ok} onClose={() => setSel(null)} onDone={(m) => { toast.show(m); void qc.invalidateQueries({ queryKey: ['pharm-verify'] }); setSel(null); }} />}
+      {sel && <VerifyDialog o={sel.o} ok={sel.ok} onClose={() => setSel(null)} onDone={(m) => { toast.show(m); void qc.invalidateQueries({ queryKey: ['pharm-verify'] }); void qc.invalidateQueries({ queryKey: ['ipd-dep-orders'] }); setSel(null); }} />}
     </div>
   );
 }
@@ -58,7 +61,7 @@ function VerifyDialog({ o, ok, onClose, onDone }: { o: Order; ok: boolean; onClo
   });
   const ready = ok ? (!item || Number(qty) > 0) : note.trim().length >= 3;
   return (
-    <Modal title={`${ok ? 'ვერიფიკაცია' : 'უარყოფა'} — ${o.title}`} onClose={onClose} width={560}
+    <Modal title={`${ok ? 'დადასტურება' : 'უარყოფა'} — ${o.title}`} onClose={onClose} width={560}
       footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button>
         <button className={`btn ${ok ? 'primary' : 'danger'}`} type="button" disabled={!ready || m.isPending} onClick={() => m.mutate()}>{ok ? 'დადასტურება' : 'უარყოფა'}</button></>}>
       <div className="stack" style={{ gap: 12 }}>

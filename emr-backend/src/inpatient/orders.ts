@@ -94,6 +94,11 @@ const RANK = { info: 0, warn: 1, reason: 2, block: 3 } as const;
  *   ვერიფიკაცია: med_verification (all / high_risk / off); აფთიაქიდან მომარაგება — ვერიფიკაციისას მოთხოვნა (0032).
  *   შეცვლა = შეწყვეტა + ახალი (replaces_id); გაწერისას — ყველა აქტიური წყდება.
  */
+const VERIFIER_KA: Record<string, string> = {
+  pharmacist: 'დანიშნულებას ადასტურებს ფარმაცევტი', head_nurse: 'დანიშნულებას ადასტურებს განყოფილების მთავარი ექთანი',
+  both: 'დანიშნულებას ადასტურებს განყოფილების მთავარი ექთანი ან ფარმაცევტი',
+};
+
 @Injectable()
 export class OrdersService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly ipd: InpatientService,
@@ -123,6 +128,20 @@ export class OrdersService {
     if (!has(u, 'doctor')) return false;
     const me = await this.ipd.me(u, ex);
     return me.department_id === departmentId && me.is_section_head;
+  }
+  /**
+   * 0043b: ვინ ადასტურებს დანიშნულებას (med_verifier): pharmacist / head_nurse (განყოფილების მთავარი ექთანი — nurse + is_section_head) / both.
+   * აბრუნებს როლს, რომლითაც მომხმარებელი ადასტურებს, ან null.
+   */
+  async verifierRole(u: AuthUser, departmentId: string | null, s?: InpatientSettings, ex: Ex = this.db): Promise<'admin' | 'pharmacist' | 'head_nurse' | null> {
+    const mode = (s ?? await this.ipd.settings()).med_verifier ?? 'both';
+    if (has(u, 'admin')) return 'admin';
+    if (has(u, 'pharmacist') && mode !== 'head_nurse') return 'pharmacist';
+    if (has(u, 'nurse') && mode !== 'pharmacist') {
+      const me = await this.ipd.me(u, ex);
+      if (me.is_section_head && me.department_id && (!departmentId || me.department_id === departmentId)) return 'head_nurse';
+    }
+    return null;
   }
   async latestWeight(patientId: string, ex: Ex = this.db) {
     return ex.selectFrom('encounter_vitals as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').select(['v.weight_kg', 'v.recorded_at'])
@@ -324,7 +343,16 @@ export class OrdersService {
     const name = out.p.generic?.inn ?? v.drug_text ?? v.text ?? '';
     const who = `${out.st.last_name} ${out.st.first_name} (${out.st.adm_no})`;
     const link = `/inpatient/stay/${encounterId}?tab=orders`;
-    if (out.p.verify) await this.notify(await this.staffIds(null, ['pharmacist']), { kind: 'ipd_order_verify', title: `დანიშნულება — ვერიფიკაცია: ${name}`, body: who, item: name, entityId: out.id, link: '/stock/verification' }, u.id);
+    if (out.p.verify) {
+      // მთავარი ექთანი — ყველა; ფარმაცევტი — pharmacist რეჟიმში, ან both-ში მხოლოდ კონტროლირებადი / სარეზერვო / აფთიაქიდან / კატალოგის გარეშე (ან თუ მთავარი ექთანი არ ჰყავს)
+      const mode = s.med_verifier ?? 'both'; const g = out.p.generic;
+      const heads = mode !== 'pharmacist' ? await this.staffIds(out.st.department_id, ['nurse'], true) : [];
+      const pharmFocus = !g || !!g.controlled_class || !!g.reserve_antibiotic || out.p.values.supply_mode === 'pharmacy';
+      const pharm = mode === 'pharmacist' || (mode === 'both' && (pharmFocus || !heads.length)) ? await this.staffIds(null, ['pharmacist']) : [];
+      const n = { kind: 'ipd_order_verify', title: `დანიშნულება — დასადასტურებელი: ${name}`, body: who, item: name, entityId: out.id };
+      await this.notify(heads, { ...n, link: `/inpatient?tab=orders&department_id=${out.st.department_id}` }, u.id);
+      await this.notify(pharm.filter((x) => !heads.includes(x)), { ...n, link: '/stock/verification' }, u.id);
+    }
     if (out.p.approval) {
       const heads = await this.staffIds(out.st.department_id, ['doctor'], true);
       await this.notify([...heads, ...await this.staffIds(null, ['pharmacist'])], { kind: 'ipd_order_approve', title: `სარეზერვო ანტიბიოტიკი — დასამტკიცებელი: ${name}`, body: who, item: name, entityId: out.id, link, urgent: true }, u.id);
@@ -446,21 +474,30 @@ export class OrdersService {
   }
 
   // ================================================================= ფარმაცევტი
-  async verificationQueue(status: string) {
+  async verificationQueue(status: string, u: AuthUser, departmentId?: string) {
+    const s = await this.ipd.settings();
+    const role = await this.verifierRole(u, null, s);
+    if (!role) throw new ForbiddenException(VERIFIER_KA[s.med_verifier ?? 'both']);
+    const dep = role === 'head_nurse' ? (await this.ipd.me(u)).department_id : departmentId ?? null;
     let q = this.base().innerJoin('inpatient_stays as st', 'st.encounter_id', 'o.encounter_id').innerJoin('patients as p', 'p.id', 'o.patient_id')
       .select(['st.adm_no', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
         sql<string | null>`(SELECT d.name FROM bed_assignments a JOIN departments d ON d.id = a.department_id WHERE a.encounter_id = o.encounter_id AND a.ended_at IS NULL LIMIT 1)`.as('department_name'),
         sql<number>`(SELECT count(*)::int FROM patient_allergies pa WHERE pa.patient_id = o.patient_id AND pa.is_active)`.as('allergies')])
       .where('o.category', '=', 'medication').orderBy('o.created_at').limit(300);
+    if (dep) q = q.where(sql<boolean>`EXISTS (SELECT 1 FROM bed_assignments a WHERE a.encounter_id = o.encounter_id AND a.ended_at IS NULL AND a.department_id = ${dep})`);
     if (status === 'pending') q = q.where('o.verify_status', '=', 'pending').where('o.status', 'in', ['active', 'on_hold']);
     else q = q.where('o.verify_status', 'in', ['verified', 'rejected']).where('o.verified_at', '>', sql<Date>`now() - interval '3 days'`);
     return q.execute();
   }
 
   async verify(id: string, ok: boolean, dto: VerifyDto, u: AuthUser, ctx: AuditContext) {
-    if (!has(u, 'pharmacist', 'admin')) throw new ForbiddenException('ვერიფიკაცია — ფარმაცევტი');
+    const s = await this.ipd.settings();
+    if (!has(u, 'pharmacist', 'admin', 'nurse')) throw new ForbiddenException('დადასტურება — ფარმაცევტი ან მთავარი ექთანი');
+    let role: Awaited<ReturnType<OrdersService['verifierRole']>> = null;
     const res = await this.db.transaction().execute(async (trx) => {
       const o = await this.lockOrder(trx, id);
+      role = await this.verifierRole(u, (await this.stay(o.encounter_id, trx)).department_id, s, trx);
+      if (!role) throw new ForbiddenException(VERIFIER_KA[s.med_verifier ?? 'both']);
       if (o.verify_status !== 'pending') throw new ConflictException('დანიშნულება ვერიფიკაციას არ ელოდება');
       if (!['active', 'on_hold'].includes(o.status)) throw new ConflictException('დანიშნულება შეწყვეტილია');
       if (!ok && (dto.note ?? '').trim().length < 3) throw new BadRequestException('უარყოფის მიზეზი სავალდებულოა');
@@ -482,14 +519,15 @@ export class OrdersService {
       }
       await trx.updateTable('med_orders').set({ verify_status: ok ? 'verified' : 'rejected', verified_by: u.id, verified_at: sql`now()`, verify_note: dto.note?.trim() || null })
         .where('id', '=', id).execute();
-      await this.ev(trx, id, ok ? 'verified' : 'verify_rejected', { note: dto.note ?? null }, u);
+      await this.ev(trx, id, ok ? 'verified' : 'verify_rejected', { note: dto.note ?? null, by_role: role }, u);
       await this.audit.log(ctx, { action: ok ? 'MED_ORDER_VERIFY' : 'MED_ORDER_VERIFY_REJECT', entityName: 'med_orders', entityId: id, newData: dto }, trx);
       return { o, req };
     });
     if (res.req) await this.stock.notifyPatientDispense(res.req, true, u);
     if (!ok || dto.note?.trim()) {
       const r = await this.get(id);
-      await this.notify([res.o.ordered_by], { kind: ok ? 'ipd_order_note' : 'ipd_order_rejected', title: ok ? `ფარმაცევტის შენიშვნა: ${r.title}` : `ფარმაცევტმა უარყო: ${r.title}`,
+      const who = role === 'head_nurse' ? 'მთავარი ექთანი' : 'ფარმაცევტი';
+      await this.notify([res.o.ordered_by], { kind: ok ? 'ipd_order_note' : 'ipd_order_rejected', title: ok ? `შენიშვნა (${who}): ${r.title}` : `უარყოფილია (${who}): ${r.title}`,
         body: dto.note ?? '', item: r.title, entityId: id, link: `/inpatient/stay/${res.o.encounter_id}?tab=orders`, urgent: !ok });
     }
     return this.get(id);
@@ -502,7 +540,7 @@ export class OrdersService {
       .select(['st.adm_no', 'p.first_name', 'p.last_name', 'b.code as bed_code'])
       .where('a.department_id', '=', departmentId).where('st.status', '=', 'active').where('o.status', 'in', ['active', 'on_hold'])
       .orderBy('p.last_name').orderBy('o.created_at').execute();
-    return { orders: rows, can_approve: await this.canApprove(u, departmentId) };
+    return { orders: rows, can_approve: await this.canApprove(u, departmentId), can_verify: !!(await this.verifierRole(u, departmentId)) };
   }
 
   /** გაწერისას: ყველა აქტიური / შეჩერებული დანიშნულება წყდება (იმავე ტრანზაქციაში) */
@@ -594,10 +632,13 @@ export class OrdersController {
   approve(@Param('id', ParseUUIDPipe) id: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.approval(id, true, d.note ?? null, u, auditCtx(r)); }
   @Post('inpatient/orders/:id/approve-reject') @HttpCode(200) @Roles('doctor', 'pharmacist')
   approveReject(@Param('id', ParseUUIDPipe) id: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.approval(id, false, d.note ?? null, u, auditCtx(r)); }
-  @Get('pharmacy/verification') @Roles('pharmacist', 'admin') queue(@Query('status') status?: string) { return this.s.verificationQueue(status === 'done' ? 'done' : 'pending'); }
-  @Post('pharmacy/verification/:id/verify') @HttpCode(200) @Roles('pharmacist', 'admin')
+  @Get('pharmacy/verification') @Roles('pharmacist', 'admin', 'nurse')
+  queue(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('department_id') dep?: string) {
+    return this.s.verificationQueue(status === 'done' ? 'done' : 'pending', u, dep && /^[0-9a-f-]{36}$/i.test(dep) ? dep : undefined);
+  }
+  @Post('pharmacy/verification/:id/verify') @HttpCode(200) @Roles('pharmacist', 'admin', 'nurse')
   verify(@Param('id', ParseUUIDPipe) id: string, @Body() d: VerifyDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.verify(id, true, d, u, auditCtx(r)); }
-  @Post('pharmacy/verification/:id/reject') @HttpCode(200) @Roles('pharmacist', 'admin')
+  @Post('pharmacy/verification/:id/reject') @HttpCode(200) @Roles('pharmacist', 'admin', 'nurse')
   reject(@Param('id', ParseUUIDPipe) id: string, @Body() d: VerifyDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.verify(id, false, d, u, auditCtx(r)); }
 }
 

@@ -110,7 +110,7 @@ export default function MarPanel({ encounterId, admNo }: { encounterId: string; 
                         {o.status === 'on_hold' && <span className="chip warn">შეჩერებული</span>}
                         {o.status !== 'active' && o.status !== 'on_hold' && <span className="chip">{o.status === 'completed' ? 'დასრულებული' : 'შეწყვეტილი'}</span>}
                         {o.high_alert && <span className="chip danger">მაღ. რისკი</span>}{o.controlled_class && <span className="chip danger">კონტროლირებადი</span>}
-                        {o.verify_status === 'pending' && <span className="chip warn">ვერიფიკაცია</span>}{o.verify_status === 'rejected' && <span className="chip danger">ფარმაცევტმა უარყო</span>}
+                        {o.verify_status === 'pending' && <span className="chip warn">დასადასტურებელი</span>}{o.verify_status === 'rejected' && <span className="chip danger">უარყოფილია</span>}
                         {o.infusion_state && <span className="chip info">ინფუზია: {INF_KA[o.infusion_state]}</span>}
                         {prnLike && d.can_document && o.status === 'active' && isToday && <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'doc', order: o, entry: null })}>
                           {o.order_type === 'prn' ? '+ მიცემა' : '+ ჩანაწერი'}</button>}
@@ -199,7 +199,7 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone }: { order: MarO
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
           {o.high_alert && <span className="chip danger">მაღალი რისკი — მეორე ექთნის დადასტურება</span>}
           {o.controlled_class && <span className="chip danger">კონტროლირებადი — მოწმე</span>}
-          {o.verify_status === 'pending' && <span className="chip warn">ფარმაცევტის ვერიფიკაცია ჯერ არ არის</span>}
+          {o.verify_status === 'pending' && <span className="chip warn">დანიშნულება ჯერ დადასტურებული არ არის</span>}
         </div>
         {inf ? <div className="seg" role="group" aria-label="მოქმედება" style={{ width: 'max-content', flexWrap: 'wrap' }}>
           {(Object.keys(INF_KA) as InfAction[]).map((a) => <button key={a} type="button" aria-pressed={action === a} onClick={() => setAction(a)}>{INF_KA[a]}</button>)}</div>

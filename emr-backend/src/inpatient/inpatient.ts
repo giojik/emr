@@ -30,6 +30,8 @@ export interface InpatientSettings {
   // 0043 MAR
   mar_window_min: number; mar_missed_hours: number; mar_horizon_hours: number; mar_stock_deduct: boolean; mar_allow_no_stock: boolean;
   mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
+  // 0043b: ვინ ადასტურებს დანიშნულებას (ნაგულისხმევი — both)
+  med_verifier?: 'pharmacist' | 'head_nurse' | 'both';
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;

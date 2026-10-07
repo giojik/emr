@@ -208,7 +208,9 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
       </div>
       <h3 style={{ margin: '6px 0 0' }}>დანიშნულებები</h3>
       <div style={grid}>
-        <Field label="ფარმაცევტის ვერიფიკაცია" htmlFor="ip-mv" hint="მაღალი რისკი: high-alert, კონტროლირებადი, სარეზერვო, კატალოგის გარეშე, აფთიაქიდან"><select id="ip-mv" className="select" value={v<string>('med_verification')} onChange={(e) => upd('med_verification', e.target.value)}>
+        <Field label="ვინ ადასტურებს დანიშნულებას" htmlFor="ip-mvr" hint="მთავარი ექთანი = ექთანი + „განყოფილების ხელმძღვანელი“ (მომხმარებლები)"><select id="ip-mvr" className="select" value={v<string>('med_verifier') ?? 'both'} onChange={(e) => upd('med_verifier', e.target.value)}>
+          <option value="both">მთავარი ექთანი ან ფარმაცევტი</option><option value="head_nurse">მხოლოდ მთავარი ექთანი</option><option value="pharmacist">მხოლოდ ფარმაცევტი</option></select></Field>
+        <Field label="რა საჭიროებს დადასტურებას" htmlFor="ip-mv" hint="მაღალი რისკი: high-alert, კონტროლირებადი, სარეზერვო, კატალოგის გარეშე, აფთიაქიდან"><select id="ip-mv" className="select" value={v<string>('med_verification')} onChange={(e) => upd('med_verification', e.target.value)}>
           <option value="high_risk">მხოლოდ მაღალი რისკის</option><option value="all">ყველა მედიკამენტი</option><option value="off">გამორთული</option></select></Field>
         <Field label="დოზის ზღვრის გადაჭარბება" htmlFor="ip-dr"><select id="ip-dr" className="select" value={v<string>('dose_rule')} onChange={(e) => upd('dose_rule', e.target.value)}>
           <option value="warn">გაფრთხილება (დასაბუთებით)</option><option value="block">აკრძალულია</option></select></Field>
