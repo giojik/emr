@@ -9,6 +9,8 @@ export interface InpatientSettings {
   transfer_wait_hours: number; epicrisis_cosign: boolean; discharge_cancel_hours: number; leave_counts_bed_day: boolean; leave_max_hours: number; docs_pending_alert_hours: number;
   med_verification: 'all' | 'high_risk' | 'off'; dose_rule: 'warn' | 'block'; interaction_rule: 'warn' | 'block'; antibiotic_default_days: number; verbal_orders: boolean; verbal_confirm_hours: number; weight_max_age_days: number;
   mar_window_min: number; mar_missed_hours: number; mar_horizon_hours: number; mar_stock_deduct: boolean; mar_allow_no_stock: boolean; mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
+  med_verifier?: 'pharmacist' | 'head_nurse' | 'both'; news2_enabled: boolean; news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number;
+  fluid_day_start: string; shift_times: string[]; scale_reminders: boolean; line_alert_hours: Record<string, number>;
 }
 export interface BedType { code: string; name: string; is_active: boolean; sort_order: number }
 export interface Bed { id: string; ward_id: string; code: string; type_code: string; type_name: string; is_overflow: boolean; status: BedStatus; status_reason: string | null; status_at: string; is_active: boolean; sort_order: number }
@@ -19,6 +21,7 @@ export interface Occupant {
   bed_id: string | null; encounter_id: string; started_at: string; adm_no: string; severity: string | null; isolation: string | null; admitted_at: string; patient_id: string;
   first_name: string; last_name: string; birth_date: string; gender: string; attending_doctor_id: string | null; doctor_name: string | null; day: number; diagnosis: string | null; allergies: number; consent: boolean;
   consents_missing: string[]; transfer_to: string | null; on_leave_until: string | null;
+  news2?: { score: number; level: 'low' | 'low_red' | 'medium' | 'high'; at: string } | null; risks?: { label: string; level: string }[]; lines?: number;
 }
 export interface IncomingTransfer { id: string; encounter_id: string; reason: string; requested_at: string; adm_no: string; severity: string | null; isolation: string | null; first_name: string; last_name: string; gender: string; from_department: string }
 export interface BoardBed extends Bed { occupant: Occupant | null; reservation: { id: string; plan_no: string; planned_date: string; patient_name: string } | null }
@@ -49,6 +52,8 @@ export const occupantChips = (o: Occupant) => <>
   {o.transfer_to && <span className="chip info" title="გადაყვანის მოთხოვნა — მიმღების დადასტურებას ელოდება">→ {o.transfer_to}</span>}
   {o.on_leave_until && <span className="chip warn" title="დროებით გასულია">გასულია {o.on_leave_until}-მდე</span>}
   {!o.consent && <span className="chip" title={`აკლია: ${(o.consents_missing ?? []).join(', ')}`}>თანხმობა —</span>}
+  {o.news2 && o.news2.level !== 'low' && <span className={`chip ${o.news2.level === 'high' ? 'danger' : 'warn'}`} title="ბოლო NEWS2 (24 სთ)">⚠ NEWS2 {o.news2.score}</span>}
+  {(o.risks ?? []).map((r) => <span key={r.label} className={`chip ${r.level === 'high' ? 'danger' : 'warn'}`} title={r.level === 'high' ? 'მაღალი' : 'საშუალო'}>{r.label}</span>)}
 </>;
 
 export const useStructure = (all = false) => useQuery({ queryKey: ['ipd-structure', all], queryFn: () => api<Structure>('/inpatient/structure', { query: { all } }) });

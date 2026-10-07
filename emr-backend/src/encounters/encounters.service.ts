@@ -58,7 +58,7 @@ export class EncountersService {
           .whereRef('p.id', '=', 'e.patient_id')).as('patient'),
         jsonObjectFrom(eb.selectFrom('users as d').select(['d.id', 'd.first_name', 'd.last_name', 'd.specialty'])
           .whereRef('d.id', '=', 'e.attending_doctor_id')).as('doctor'),
-        jsonArrayFrom(eb.selectFrom('encounter_vitals as v').selectAll('v').whereRef('v.encounter_id', '=', 'e.id').orderBy('v.recorded_at')).as('vitals'),
+        jsonArrayFrom(eb.selectFrom('encounter_vitals as v').selectAll('v').whereRef('v.encounter_id', '=', 'e.id').where('v.voided_at', 'is', null).orderBy('v.recorded_at')).as('vitals'),
         jsonArrayFrom(eb.selectFrom('encounter_diagnoses as dx').selectAll('dx').whereRef('dx.encounter_id', '=', 'e.id').orderBy('dx.created_at')).as('diagnoses'),
         jsonArrayFrom(eb.selectFrom('prescriptions as rx').selectAll('rx').whereRef('rx.encounter_id', '=', 'e.id').orderBy('rx.created_at')).as('prescriptions'),
         jsonArrayFrom(eb.selectFrom('referrals as r').selectAll('r').whereRef('r.encounter_id', '=', 'e.id').orderBy('r.created_at')).as('referrals'),

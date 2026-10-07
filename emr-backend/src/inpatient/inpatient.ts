@@ -32,6 +32,9 @@ export interface InpatientSettings {
   mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
   // 0043b: ვინ ადასტურებს დანიშნულებას (ნაგულისხმევი — both)
   med_verifier?: 'pharmacist' | 'head_nurse' | 'both';
+  // 0044: ექთნის დოკუმენტაცია
+  news2_enabled: boolean; news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number;
+  fluid_day_start: string; shift_times: string[]; scale_reminders: boolean; line_alert_hours: Record<string, number>;
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
@@ -373,7 +376,14 @@ export class InpatientService {
           SELECT 1 FROM patient_consents c WHERE c.type_code = t.code AND c.patient_id = p.id AND (t.scope = 'patient' OR c.encounter_id = e.id)
             AND c.decision = 'granted' AND c.revoked_at IS NULL) ORDER BY t.sort_order)`.as('consents_missing'),
         sql<string | null>`(SELECT td.name FROM inpatient_transfers t JOIN departments td ON td.id = t.to_department_id WHERE t.encounter_id = a.encounter_id AND t.status = 'requested')`.as('transfer_to'),
-        sql<string | null>`(SELECT to_char(l.expected_return_at AT TIME ZONE ${TZ}, 'DD.MM HH24:MI') FROM inpatient_leaves l WHERE l.encounter_id = a.encounter_id AND l.returned_at IS NULL)`.as('on_leave_until')])
+        sql<string | null>`(SELECT to_char(l.expected_return_at AT TIME ZONE ${TZ}, 'DD.MM HH24:MI') FROM inpatient_leaves l WHERE l.encounter_id = a.encounter_id AND l.returned_at IS NULL)`.as('on_leave_until'),
+        // 0044: ბოლო NEWS2 (24 სთ), შკალების რისკები (საშუალო / მაღალი), ხაზები
+        sql<{ score: number; level: string; at: string } | null>`(SELECT json_build_object('score', v.news2, 'level', v.news2_level, 'at', v.recorded_at) FROM encounter_vitals v
+          WHERE v.encounter_id = a.encounter_id AND v.voided_at IS NULL AND v.news2 IS NOT NULL AND v.recorded_at > now() - interval '24 hours' ORDER BY v.recorded_at DESC LIMIT 1)`.as('news2'),
+        sql<{ label: string; level: string }[]>`(SELECT coalesce(json_agg(json_build_object('label', d.risk_label, 'level', x.level) ORDER BY d.sort_order), '[]'::json) FROM (
+          SELECT DISTINCT ON (sa.scale_code) sa.scale_code, sa.level FROM scale_assessments sa WHERE sa.encounter_id = a.encounter_id AND sa.voided_at IS NULL
+          ORDER BY sa.scale_code, sa.assessed_at DESC) x JOIN scale_defs d ON d.code = x.scale_code WHERE d.risk_label IS NOT NULL AND x.level IN ('medium', 'high'))`.as('risks'),
+        sql<number>`(SELECT count(*)::int FROM lines_drains ld WHERE ld.encounter_id = a.encounter_id AND ld.removed_at IS NULL AND ld.voided_at IS NULL)`.as('lines')])
       .where('a.department_id', '=', departmentId).where('a.ended_at', 'is', null).orderBy('a.started_at').execute();
     const occ = occRaw.map((o) => ({ ...o, consent: o.consents_missing.length === 0 }));
     const reserved = await this.db.selectFrom('inpatient_planned as pl').innerJoin('patients as p', 'p.id', 'pl.patient_id')
@@ -572,7 +582,11 @@ export class InpatientService {
         + (SELECT count(*) FROM cssd_packs c WHERE c.encounter_id = ${encounterId})
         + (SELECT count(*) FROM encounter_vitals v WHERE v.encounter_id = ${encounterId})
         + (SELECT count(*) FROM prescriptions r WHERE r.encounter_id = ${encounterId})
-        + (SELECT count(*) FROM med_orders mo WHERE mo.encounter_id = ${encounterId}))::int AS n`.execute(trx);
+        + (SELECT count(*) FROM med_orders mo WHERE mo.encounter_id = ${encounterId})
+        + (SELECT count(*) FROM fluid_entries fe WHERE fe.encounter_id = ${encounterId})
+        + (SELECT count(*) FROM scale_assessments sa WHERE sa.encounter_id = ${encounterId})
+        + (SELECT count(*) FROM lines_drains ld WHERE ld.encounter_id = ${encounterId})
+        + (SELECT count(*) FROM nursing_notes nn WHERE nn.encounter_id = ${encounterId}))::int AS n`.execute(trx);
       if (used.rows[0].n > 0) throw new ConflictException({ code: 'STAY_IN_USE', message: 'ვიზიტზე უკვე არის ჩანაწერები (მომსახურება, შეკვეთები, დანიშნულებები, ხარჯი, ვიტალები) — გაუქმება შეუძლებელია; გამოიყენეთ გაწერა' });
       const cur = await trx.selectFrom('bed_assignments').selectAll().where('encounter_id', '=', encounterId).where('ended_at', 'is', null).forUpdate().executeTakeFirst();
       if (cur) {

@@ -232,6 +232,23 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         {chk('mar_allow_no_stock', 'მიცემა ნაშთის გარეშე (მიზეზით)', 'გამორთულისას — ნაშთი სავალდებულოა')}
         {chk('mar_double_check', 'მაღალი რისკი — მეორე ექთანი', 'high-alert მედიკამენტზე მეორე თანამშრომლის პაროლით დადასტურება')}
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>საექთნო დოკუმენტაცია</h3>
+      <div style={grid}>
+        {chk('news2_enabled', 'NEWS2 (16 წლიდან)', 'ადრეული გაფრთხილების ქულა ვიტალებიდან — მხოლოდ მინიშნება')}
+        {num('news2_alert', 'NEWS2 შეტყობინება ≥', 1, 20, 'მკურნალ ექიმს და მთავარ ექთანს; ერთ პარამეტრზე 3 — ასევე')}
+        {num('news2_urgent', 'NEWS2 სასწრაფო ≥', 1, 20)}
+        <Field label="გლუკოზა — ნორმა (მმოლ/ლ)" htmlFor="ip-gl"><div className="row" style={{ gap: 6 }}>
+          <input id="ip-gl" className="input mono" type="number" step="0.1" value={v<number>('glucose_low') ?? ''} onChange={(e) => upd('glucose_low', Number(e.target.value))} />
+          <span>–</span><input aria-label="გლუკოზა ზედა" className="input mono" type="number" step="0.1" value={v<number>('glucose_high') ?? ''} onChange={(e) => upd('glucose_high', Number(e.target.value))} /></div></Field>
+        <Field label="ბალანსის დღის დასაწყისი" htmlFor="ip-fd"><input id="ip-fd" className="input" type="time" value={v<string>('fluid_day_start') ?? '08:00'} onChange={(e) => upd('fluid_day_start', e.target.value)} /></Field>
+        <Field label="ცვლების დასაწყისი" htmlFor="ip-sh" hint="მძიმით, მაგ. 08:00, 20:00"><input id="ip-sh" className="input mono" value={(v<string[]>('shift_times') ?? []).join(', ')}
+          onChange={(e) => upd('shift_times', e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} /></Field>
+        {chk('scale_reminders', 'შკალების შეხსენება', 'Morse / Braden — 24 სთ-ში და პერიოდულად; ვადის გასვლაზე — ექთნებს')}
+        <Field label="პერიფ. კათეტერი — შეხსენება (სთ)" htmlFor="ip-pvc" hint="0 — გამორთული"><input id="ip-pvc" className="input mono" type="number" min={0} value={v<Record<string, number>>('line_alert_hours')?.pvc ?? 0}
+          onChange={(e) => upd('line_alert_hours', { ...(v<Record<string, number>>('line_alert_hours') ?? {}), pvc: Number(e.target.value) || 0 })} /></Field>
+        <Field label="შარდის კათეტერი — შეხსენება (სთ)" htmlFor="ip-uc" hint="0 — გამორთული"><input id="ip-uc" className="input mono" type="number" min={0} value={v<Record<string, number>>('line_alert_hours')?.urinary ?? 0}
+          onChange={(e) => upd('line_alert_hours', { ...(v<Record<string, number>>('line_alert_hours') ?? {}), urinary: Number(e.target.value) || 0 })} /></Field>
+      </div>
       <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>

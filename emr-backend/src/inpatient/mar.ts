@@ -136,6 +136,7 @@ export class MarService {
       if (p <= now || p > now + 24 * 3_600_000) throw new BadRequestException('გადადება: მომავალი 24 სთ-ის ფარგლებში');
     }
     if (infusion && !dto.infusion_action) throw new BadRequestException('ინფუზია: მიუთითეთ მოქმედება');
+    if (o.nursing_task && given) throw new BadRequestException({ code: 'MAR_TASK_FORM', message: 'შეავსეთ შესაბამისი ფორმა (ვიტალები / ბალანსი / შკალა) — დავალება ავტომატურად შესრულდება' });
 
     const checks: MarCheck[] = [];
     let timing: 'on_time' | 'early' | 'late' | null = null;
@@ -321,7 +322,7 @@ export class MarService {
       .leftJoin('med_routes as r', 'r.code', 'o.route_code').leftJoin('med_frequencies as fq', 'fq.code', 'o.frequency_code')
       .select(['o.id', 'o.encounter_id', 'o.category', 'o.order_type', 'o.dose', 'o.dose_unit', 'o.route_code', 'o.status', 'o.verify_status', 'o.approval_status', 'o.prn_reason',
         'o.prn_max_per_day', 'o.prn_min_interval_h', 'o.rate_ml_h', 'o.instructions', 'o.start_at', 'o.end_at', 'g.high_alert', 'g.controlled_class', 'r.name as route_name',
-        'fq.name as frequency_name', 'o.generic_id',
+        'fq.name as frequency_name', 'o.generic_id', 'o.nursing_task', 'o.task_scale_code',
         sql<string>`CASE WHEN o.category = 'medication' THEN coalesce(g.inn || coalesce(' ' || g.strength, '') || coalesce(', ' || f.name, ''), o.drug_text) ELSE o.text END`.as('title'),
         sql<string | null>`(SELECT max(m.documented_at) FROM mar_entries m WHERE m.order_id = o.id AND m.status IN ('given', 'partial') AND m.voided_at IS NULL)`.as('last_given_at'),
         sql<string | null>`(SELECT m.infusion_action FROM mar_entries m WHERE m.order_id = o.id AND m.source = 'infusion' AND m.voided_at IS NULL ORDER BY m.documented_at DESC LIMIT 1)`.as('infusion_state')]);

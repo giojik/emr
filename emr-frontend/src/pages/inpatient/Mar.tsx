@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dayTitle, hhmm, localISO, shiftDay, todayISO, tsDate } from '../../lib/format';
+import { TaskDialog } from './Nursing';
 
 // ================================================================= ტიპები (0043 MAR)
 type MStatus = 'due' | 'given' | 'partial' | 'held' | 'refused' | 'not_given' | 'missed' | 'cancelled';
@@ -23,6 +24,7 @@ export interface MarOrder {
   verify_status: string; approval_status: string; prn_reason: string | null; prn_max_per_day: number | null; prn_min_interval_h: string | null; rate_ml_h: string | null;
   instructions: string | null; high_alert: boolean | null; controlled_class: string | null; generic_id: string | null; title: string;
   last_given_at: string | null; infusion_state: InfAction | null;
+  nursing_task?: 'vitals' | 'fluid' | 'scale' | null; task_scale_code?: string | null;
 }
 interface Common { window_min: number; can_document: boolean; barcode: 'off' | 'optional' | 'required'; double_check: boolean }
 interface StayMar extends Common { day: string; orders: MarOrder[]; entries: MarEntry[] }
@@ -71,7 +73,7 @@ function useInval() {
   const qc = useQueryClient();
   return () => { void qc.invalidateQueries({ queryKey: ['ipd-mar'] }); void qc.invalidateQueries({ queryKey: ['ipd-dep-mar'] }); void qc.invalidateQueries({ queryKey: ['ipd-orders'] }); };
 }
-type Dlg = null | { kind: 'doc'; order: MarOrder; entry: MarEntry | null } | { kind: 'view'; order: MarOrder | null; entry: MarEntry };
+type Dlg = null | { kind: 'doc'; order: MarOrder; entry: MarEntry | null } | { kind: 'view'; order: MarOrder | null; entry: MarEntry } | { kind: 'task'; order: MarOrder; entry: MarEntry };
 
 // ================================================================= ჰოსპიტალიზაციის გვერდი: 24 სთ-ის ბადე
 export default function MarPanel({ encounterId, admNo }: { encounterId: string; admNo?: string }) {
@@ -126,7 +128,9 @@ export default function MarPanel({ encounterId, admNo }: { encounterId: string; 
             </table>)}
           <div className="card-pad small muted" style={{ paddingTop: 0 }}>ფანჯარა ±{d.window_min} წთ · ↑ ადრე · ↓ დაგვიანებით · დააჭირეთ დოზას ჩასაწერად / დეტალებისთვის.</div>
         </div>)}
-      {dlg?.kind === 'doc' && d && <DocumentDialog order={dlg.order} entry={dlg.entry} ctx={{ ...d, adm_no: admNo }} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
+      {dlg?.kind === 'doc' && d && <DocumentDialog order={dlg.order} entry={dlg.entry} ctx={{ ...d, adm_no: admNo }} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)}
+        onTask={dlg.entry ? () => setDlg({ kind: 'task', order: dlg.order, entry: dlg.entry! }) : undefined} />}
+      {dlg?.kind === 'task' && <TaskDialog encounterId={encounterId} task={dlg.order.nursing_task!} scaleCode={dlg.order.task_scale_code} marEntryId={dlg.entry.id} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
       {dlg?.kind === 'view' && d && <EntryDialog order={dlg.order} entry={dlg.entry} canVoid={d.can_document} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
     </section>
   );
@@ -140,7 +144,7 @@ function orderLine(o: MarOrder) {
 }
 
 // ================================================================= ჩაწერის ფორმა
-function DocumentDialog({ order: o, entry, ctx, onClose, onDone }: { order: MarOrder; entry: MarEntry | null; ctx: Ctx; onClose: () => void; onDone: (m: string) => void }) {
+function DocumentDialog({ order: o, entry, ctx, onClose, onDone, onTask }: { order: MarOrder; entry: MarEntry | null; ctx: Ctx; onClose: () => void; onDone: (m: string) => void; onTask?: () => void }) {
   const inval = useInval();
   const med = o.category === 'medication'; const inf = o.order_type === 'continuous';
   const [outcome, setOutcome] = useState<Outcome>('given');
@@ -193,8 +197,10 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone }: { order: MarO
   return (
     <Modal title={`${o.title}${sched ? ` — ${hhmm(sched)}` : ''}`} onClose={onClose} width={680}
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button>
-        <button className="btn primary" type="button" disabled={!ready || m.isPending} onClick={() => m.mutate()}>{checks ? 'დასაბუთებით შენახვა' : 'შენახვა'}</button></>}>
+        {o.nursing_task && outcome === 'given' && onTask ? <button className="btn primary" type="button" onClick={onTask}>ფორმის გახსნა</button>
+          : <button className="btn primary" type="button" disabled={!ready || m.isPending} onClick={() => m.mutate()}>{checks ? 'დასაბუთებით შენახვა' : 'შენახვა'}</button>}</>}>
       <div className="stack" style={{ gap: 12 }}>
+        {o.nursing_task && outcome === 'given' && <div className="alert info">დავალება სრულდება {o.nursing_task === 'vitals' ? 'ვიტალების' : o.nursing_task === 'fluid' ? 'სითხის ბალანსის' : 'შკალის'} ფორმის შევსებით — „ფორმის გახსნა“.</div>}
         <div className="small muted">{orderLine(o)}{o.instructions ? ` · ${o.instructions}` : ''}{o.last_given_at ? ` · ბოლო: ${tsDate(o.last_given_at)} ${hhmm(o.last_given_at)}` : ''}</div>
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
           {o.high_alert && <span className="chip danger">მაღალი რისკი — მეორე ექთნის დადასტურება</span>}
@@ -345,7 +351,9 @@ export function DepartmentMar({ departmentId }: { departmentId: string }) {
               </tr>))}
           </tbody></table>}
         </section>))}
-      {dlg?.kind === 'doc' && <DocumentDialog order={dlg.order} entry={dlg.entry} ctx={{ ...d, adm_no: dlg.adm }} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
+      {dlg?.kind === 'doc' && <DocumentDialog order={dlg.order} entry={dlg.entry} ctx={{ ...d, adm_no: dlg.adm }} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)}
+        onTask={dlg.entry ? () => setDlg({ kind: 'task', order: dlg.order, entry: dlg.entry!, adm: dlg.adm }) : undefined} />}
+      {dlg?.kind === 'task' && <TaskDialog encounterId={dlg.order.encounter_id} task={dlg.order.nursing_task!} scaleCode={dlg.order.task_scale_code} marEntryId={dlg.entry.id} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
     </div>
   );
 }

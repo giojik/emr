@@ -12,6 +12,7 @@ import type { DB } from '../database/db';
 import { InjectDb, type Database } from '../database/database.module';
 import { DISCHARGE_KA } from '../templates/template-context';
 import { EpicrisisModule, EpicrisisService } from './epicrisis';
+import { LINE_KA } from './nursing';
 import { OrdersModule, OrdersService } from './orders';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 
@@ -98,6 +99,9 @@ export class DischargeService {
       .where((eb) => eb.or([eb('status', '=', 'missed'), eb.and([eb('status', '=', 'due'), eb('scheduled_at', '<', sql<Date>`now() - make_interval(mins => ${win})`)])]))
       .where('scheduled_at', '>', sql<Date>`now() - interval '24 hours'`).executeTakeFirstOrThrow();
     if (mar.n) out.push({ code: 'MAR_MISSED', message: `MAR: ბოლო 24 სთ-ში მიუცემელი / გამოტოვებული დოზა (${mar.n})` });
+    // 0044: ამოუღებელი ხაზები / დრენაჟები
+    const lines = await ex.selectFrom('lines_drains').select(['kind', 'site']).where('encounter_id', '=', encounterId).where('removed_at', 'is', null).where('voided_at', 'is', null).execute();
+    if (lines.length) out.push({ code: 'LINES_IN_PLACE', message: `ამოუღებელი კათეტერი / დრენაჟი (${lines.length}): ${lines.map((l) => (LINE_KA[l.kind] ?? l.kind) + (l.site ? ` — ${l.site}` : '')).join(', ')}` });
     return out;
   }
 

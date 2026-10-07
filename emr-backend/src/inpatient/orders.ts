@@ -54,6 +54,9 @@ export class OrderDto {
   @IsOptional() @IsIn(['ward', 'pharmacy']) supply_mode?: 'ward' | 'pharmacy';
   @IsOptional() @IsUUID() verbal_doctor_id?: string;      // ზეპირი დანიშნულება (შეჰყავს ექთანს)
   @IsOptional() @IsUUID() set_id?: string;
+  // 0044: მოვლის დანიშნულების ტიპი — MAR-ში ჩაწერა ხსნის შესაბამის ფორმას
+  @IsOptional() @IsIn(['vitals', 'fluid', 'scale', 'other']) nursing_task?: 'vitals' | 'fluid' | 'scale' | 'other';
+  @IsOptional() @IsString() @Length(2, 20) task_scale_code?: string;
   // შემოწმებების დადასტურება
   @IsOptional() @IsBoolean() ack?: boolean;
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
@@ -145,7 +148,7 @@ export class OrdersService {
   }
   async latestWeight(patientId: string, ex: Ex = this.db) {
     return ex.selectFrom('encounter_vitals as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').select(['v.weight_kg', 'v.recorded_at'])
-      .where('e.patient_id', '=', patientId).where('v.weight_kg', 'is not', null).orderBy('v.recorded_at', 'desc').limit(1).executeTakeFirst();
+      .where('e.patient_id', '=', patientId).where('v.weight_kg', 'is not', null).where('v.voided_at', 'is', null).orderBy('v.recorded_at', 'desc').limit(1).executeTakeFirst();
   }
   private async staffIds(departmentId: string | null, caps: string[], headsOnly = false) {
     let q = this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').distinct().where('u.is_active', '=', true)
@@ -171,10 +174,17 @@ export class OrdersService {
       instructions: dto.instructions?.trim() || null, duration_days: dto.duration_days ?? null,
       end_at: dto.duration_days ? new Date(startAt.getTime() + dto.duration_days * 86_400_000) : null,
     };
+    if (dto.nursing_task && dto.category !== 'nursing') throw new BadRequestException('ტიპი (ვიტალები / ბალანსი / შკალა) — მხოლოდ მოვლის დანიშნულებაზე');
+    if ((dto.nursing_task === 'scale') !== !!dto.task_scale_code) throw new BadRequestException('შკალის დავალებას სჭირდება შკალის არჩევა');
+    if (dto.task_scale_code && !(await ex.selectFrom('scale_defs').select('code').where('code', '=', dto.task_scale_code).where('is_active', '=', true).executeTakeFirst())) {
+      throw new BadRequestException('შკალა ვერ მოიძებნა');
+    }
     if (dto.category !== 'medication') {
       if (!dto.text?.trim()) throw new BadRequestException('დანიშნულების ტექსტი სავალდებულოა');
       if (dto.frequency_code) await this.frequency(dto.frequency_code, ex);
-      return { values: { ...base, text: dto.text.trim(), frequency_code: dto.frequency_code ?? null }, checks, generic: null, verify: false, approval: false };
+      return { values: { ...base, text: dto.text.trim(), frequency_code: dto.frequency_code ?? null,
+        nursing_task: dto.category === 'nursing' && dto.nursing_task && dto.nursing_task !== 'other' ? dto.nursing_task : null, task_scale_code: dto.nursing_task === 'scale' ? dto.task_scale_code! : null },
+        checks, generic: null, verify: false, approval: false };
     }
     if (!dto.order_type) throw new BadRequestException('დანიშნულების ტიპი სავალდებულოა');
     if (!dto.generic_id && !dto.drug_text?.trim()) throw new BadRequestException('მიუთითეთ მედიკამენტი (კატალოგიდან ან ტექსტით)');

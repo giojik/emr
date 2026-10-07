@@ -74,7 +74,8 @@ export class InpatientRemindersService {
     }
     const o = await this.orders(s);
     const mar = await this.mar(s).catch((e) => { this.log.error(`MAR: ${(e as Error).message}`); return { mar_missed: 0 }; });
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar };
+    const nur = await this.nursing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`საექთნო: ${(e as Error).message}`); return { scales_due: 0, lines_alert: 0 }; });
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur };
   }
 
   /**
@@ -168,5 +169,61 @@ export class InpatientRemindersService {
       await this.db.insertInto('inpatient_events').values({ encounter_id: enc, kind: 'mar_missed', data: JSON.stringify({ count: n }) }).execute();
     }
     return { mar_missed: rows.rows.length };
+  }
+
+  /**
+   * 0044: სავალდებულო შკალები (scale_defs.required): ჰოსპიტალიზაციიდან 24 სთ-ში, შემდეგ reassess_hours — ვადის გასვლაზე განყოფილების ექთნებს (ერთხელ ვადაზე);
+   *   ხაზები / დრენაჟები: line_alert_hours[kind] სთ-ზე მეტი — ექთნებს და მკურნალ ექიმს (ერთხელ).
+   */
+  async nursing(s: Record<string, unknown>) {
+    let scales = 0;
+    if (s.scale_reminders !== false) {
+      const due = await sql<{ encounter_id: string; code: string; name: string; due_at: string; adm_no: string; first_name: string; last_name: string; department_id: string }>`
+        SELECT st.encounter_id, d.code, d.name, x.due_at, st.adm_no, p.first_name, p.last_name, a.department_id
+        FROM inpatient_stays st
+        JOIN patients p ON p.id = st.patient_id
+        JOIN bed_assignments a ON a.encounter_id = st.encounter_id AND a.ended_at IS NULL
+        CROSS JOIN scale_defs d
+        CROSS JOIN LATERAL (SELECT coalesce(
+            (SELECT max(sa.assessed_at) + make_interval(hours => d.reassess_hours) FROM scale_assessments sa WHERE sa.encounter_id = st.encounter_id AND sa.scale_code = d.code AND sa.voided_at IS NULL),
+            st.admitted_at + interval '24 hours') AS due_at) x
+        WHERE st.status = 'active' AND d.required AND d.is_active AND d.reassess_hours IS NOT NULL AND x.due_at < now()
+          AND NOT EXISTS (SELECT 1 FROM inpatient_leaves l WHERE l.encounter_id = st.encounter_id AND l.returned_at IS NULL)`.execute(this.db);
+      for (const r of due.rows) {
+        const ins = await sql`INSERT INTO ipd_reminders (encounter_id, kind, ref) VALUES (${r.encounter_id}, 'scale_due', ${`${r.code}:${new Date(r.due_at).toISOString()}`})
+          ON CONFLICT DO NOTHING RETURNING encounter_id`.execute(this.db);
+        if (!ins.rows.length) continue;
+        scales++;
+        for (const id of await this.staff(r.department_id, ['nurse'])) {
+          await this.bell.notify(id, { kind: 'ipd_scale_due', title: `შეფასება ვადაგადაცილებულია: ${r.name}`, body: `${r.last_name} ${r.first_name} (${r.adm_no})`,
+            item: r.adm_no, entityId: r.encounter_id, link: `/inpatient/stay/${r.encounter_id}#nursing` });
+        }
+      }
+    }
+    const hours = (s.line_alert_hours ?? {}) as Record<string, number>;
+    const kinds = Object.entries(hours).filter(([, h]) => h > 0);
+    let lines = 0;
+    if (kinds.length) {
+      const rows = await sql<{ id: string; encounter_id: string; kind: string; site: string | null; adm_no: string; first_name: string; last_name: string; department_id: string; attending_doctor_id: string | null; hours: number }>`
+        SELECT l.id, l.encounter_id, l.kind, l.site, st.adm_no, p.first_name, p.last_name, a.department_id, e.attending_doctor_id, (extract(epoch FROM now() - l.inserted_at) / 3600)::int AS hours
+        FROM lines_drains l
+        JOIN inpatient_stays st ON st.encounter_id = l.encounter_id AND st.status = 'active'
+        JOIN encounters e ON e.id = l.encounter_id
+        JOIN patients p ON p.id = st.patient_id
+        JOIN bed_assignments a ON a.encounter_id = l.encounter_id AND a.ended_at IS NULL
+        JOIN (SELECT k, h FROM jsonb_each_text(${JSON.stringify(Object.fromEntries(kinds))}::jsonb) AS t(k, h)) cfg ON cfg.k = l.kind
+        WHERE l.removed_at IS NULL AND l.voided_at IS NULL AND l.alert_notified_at IS NULL AND l.inserted_at < now() - make_interval(hours => cfg.h::int)`.execute(this.db);
+      for (const l of rows.rows) {
+        const to = new Set(await this.staff(l.department_id, ['nurse']));
+        if (l.attending_doctor_id) to.add(l.attending_doctor_id);
+        for (const id of to) {
+          await this.bell.notify(id, { kind: 'ipd_line_due', title: `კათეტერი / დრენაჟი ${l.hours} სთ — შეაფასეთ საჭიროება / შეცვლა`, body: `${l.last_name} ${l.first_name} (${l.adm_no})${l.site ? ` — ${l.site}` : ''}`,
+            item: l.adm_no, entityId: l.encounter_id, link: `/inpatient/stay/${l.encounter_id}#nursing` });
+        }
+        await this.db.updateTable('lines_drains').set({ alert_notified_at: sql`now()` }).where('id', '=', l.id).execute();
+        lines++;
+      }
+    }
+    return { scales_due: scales, lines_alert: lines };
   }
 }

@@ -641,17 +641,32 @@ export interface Encounters {
 
 export interface EncounterVitals {
   bmi: Generated<Numeric | null>;
+  consciousness: string | null;
+  created_at: Generated<Timestamp>;
   diastolic_bp: number | null;
   encounter_id: string;
+  glucose: Numeric | null;
   heart_rate: number | null;
   height_cm: Numeric | null;
   id: Generated<string>;
+  mar_entry_id: string | null;
+  news2: number | null;
+  news2_level: string | null;
+  news2_parts: Json | null;
+  notes: string | null;
+  o2_flow: Numeric | null;
+  o2_supplement: boolean | null;
+  pain: number | null;
   recorded_at: Generated<Timestamp>;
   respiratory_rate: number | null;
   spo2: number | null;
+  spo2_scale: Generated<number>;
   systolic_bp: number | null;
   taken_by: string | null;
   temperature: Numeric | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
   weight_kg: Numeric | null;
 }
 
@@ -773,6 +788,24 @@ export interface ExternalInstitutions {
   name: string;
   phone: string | null;
   sort_order: Generated<number>;
+}
+
+export interface FluidEntries {
+  category: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  direction: string;
+  encounter_id: string;
+  id: Generated<string>;
+  mar_entry_id: string | null;
+  note: string | null;
+  order_id: string | null;
+  patient_id: string;
+  recorded_at: Timestamp;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  volume_ml: Numeric;
 }
 
 export interface GeneratedDocuments {
@@ -934,6 +967,13 @@ export interface Invoices {
   patient_share: Numeric;
   state_share: Generated<Numeric>;
   total_amount: Numeric;
+}
+
+export interface IpdReminders {
+  created_at: Generated<Timestamp>;
+  encounter_id: string;
+  kind: string;
+  ref: string;
 }
 
 export interface LabAnalytes {
@@ -1391,6 +1431,28 @@ export interface LabSpecimens {
   status: Generated<string>;
 }
 
+export interface LinesDrains {
+  alert_notified_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  details: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  inserted_at: Timestamp;
+  inserted_by: string | null;
+  inserted_where: string | null;
+  kind: string;
+  patient_id: string;
+  removal_reason: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  site: string | null;
+  size: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
 export interface MarEntries {
   created_at: Generated<Timestamp>;
   documented_at: Timestamp | null;
@@ -1528,6 +1590,7 @@ export interface MedOrders {
   id: Generated<string>;
   instructions: string | null;
   is_verbal: Generated<boolean>;
+  nursing_task: string | null;
   order_type: string | null;
   ordered_by: string;
   override_reason: string | null;
@@ -1546,6 +1609,7 @@ export interface MedOrders {
   stopped_at: Timestamp | null;
   stopped_by: string | null;
   supply_mode: string | null;
+  task_scale_code: string | null;
   text: string | null;
   updated_at: Generated<Timestamp>;
   verbal_confirmed_at: Timestamp | null;
@@ -1648,6 +1712,25 @@ export interface MicroReports {
   kind: string;
   order_item_id: string;
   snapshot: Json;
+}
+
+export interface NursingNotes {
+  ack_at: Timestamp | null;
+  ack_by: string | null;
+  author_id: string;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  kind: string;
+  patient_id: string;
+  sbar: Json | null;
+  shift_start: Timestamp | null;
+  summary: Json | null;
+  text: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
 }
 
 export interface PathRequests {
@@ -1824,6 +1907,38 @@ export interface Roles {
   name: string;
   sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface ScaleAssessments {
+  answers: Json;
+  assessed_at: Timestamp;
+  assessed_by: string;
+  band_label: string | null;
+  created_at: Generated<Timestamp>;
+  encounter_id: string;
+  id: Generated<string>;
+  level: string | null;
+  mar_entry_id: string | null;
+  note: string | null;
+  patient_id: string;
+  scale_code: string;
+  score: number;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface ScaleDefs {
+  bands: Json;
+  code: string;
+  description: string | null;
+  is_active: Generated<boolean>;
+  items: Json;
+  name: string;
+  reassess_hours: number | null;
+  required: Generated<boolean>;
+  risk_label: string | null;
+  sort_order: Generated<number>;
 }
 
 export interface ServiceTariffs {
@@ -2334,6 +2449,7 @@ export interface DB {
   epicrisis_revisions: EpicrisisRevisions;
   expenses: Expenses;
   external_institutions: ExternalInstitutions;
+  fluid_entries: FluidEntries;
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;
@@ -2344,6 +2460,7 @@ export interface DB {
   inpatient_transfers: InpatientTransfers;
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
+  ipd_reminders: IpdReminders;
   lab_analytes: LabAnalytes;
   lab_blank_group_assignments: LabBlankGroupAssignments;
   lab_blank_images: LabBlankImages;
@@ -2379,6 +2496,7 @@ export interface DB {
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
   label_printers: LabelPrinters;
+  lines_drains: LinesDrains;
   mar_entries: MarEntries;
   med_dosage_forms: MedDosageForms;
   med_frequencies: MedFrequencies;
@@ -2397,6 +2515,7 @@ export interface DB {
   micro_panel_items: MicroPanelItems;
   micro_panels: MicroPanels;
   micro_reports: MicroReports;
+  nursing_notes: NursingNotes;
   path_requests: PathRequests;
   path_specimens: PathSpecimens;
   patient_allergies: PatientAllergies;
@@ -2409,6 +2528,8 @@ export interface DB {
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;
+  scale_assessments: ScaleAssessments;
+  scale_defs: ScaleDefs;
   service_tariffs: ServiceTariffs;
   stock_alert_runs: StockAlertRuns;
   stock_balances: StockBalances;

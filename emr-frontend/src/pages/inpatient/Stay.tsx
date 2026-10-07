@@ -9,6 +9,7 @@ import { age, dateGe, genderShort, tsDate } from '../../lib/format';
 import { AssignDialog, invalIpd, openWristband, ReasonDialog } from './Inpatient';
 import EpicrisisPanel from './Epicrisis';
 import MarPanel from './Mar';
+import NursingPanel from './Nursing';
 import OrdersPanel from './Orders';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
 import { chipOf, DISCHARGE_KA, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, TRANSPORT_KA, type Board, type InpatientSettings, type Printer } from './types';
@@ -172,6 +173,7 @@ export default function Stay() {
         </div>
         {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}
         {s.status !== 'cancelled' && <MarPanel encounterId={s.encounter_id} admNo={s.adm_no} />}
+        {s.status !== 'cancelled' && <NursingPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <EpicrisisPanel encounterId={s.encounter_id} diagnoses={s.diagnoses} encounterActive={active || (s.status === 'discharged' && !s.closed_at)} />}
         {((transfers.data ?? []).length > 0 || (leaves.data ?? []).length > 0) && <section className="card">
           <div className="card-head"><h2 style={{ margin: 0 }}>გადაყვანები და დროებითი გასვლები</h2></div>

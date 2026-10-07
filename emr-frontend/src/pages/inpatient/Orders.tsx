@@ -40,7 +40,7 @@ export type OrderBody = {
   category: Category; generic_id?: string; drug_text?: string; order_type?: OType; dose?: number; dose_unit?: string; dose_per_kg?: number; weight_kg?: number;
   route_code?: string; frequency_code?: string; prn_reason?: string; prn_max_per_day?: number; prn_min_interval_h?: number; diluent?: string; volume_ml?: number;
   rate_ml_h?: number; duration_min?: number; text?: string; instructions?: string; start_at?: string; duration_days?: number; supply_mode?: 'ward' | 'pharmacy';
-  verbal_doctor_id?: string; set_id?: string; ack?: boolean; override_reason?: string; confirm_severe?: boolean; reason?: string;
+  verbal_doctor_id?: string; set_id?: string; nursing_task?: 'vitals' | 'fluid' | 'scale' | 'other'; task_scale_code?: string; ack?: boolean; override_reason?: string; confirm_severe?: boolean; reason?: string;
 };
 
 export const CATEGORY_KA: Record<Category, string> = { medication: 'მედიკამენტი', diet: 'კვება / დიეტა', nursing: 'მოვლა / პროცედურა', activity: 'რეჟიმი' };
@@ -193,6 +193,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
   const freqs = useQuery({ queryKey: ['med-freqs'], queryFn: () => api<Frequency[]>('/inpatient/orders/frequencies'), staleTime: 300_000 });
   const doctors = useQuery({ queryKey: ['doctors'], queryFn: () => api<Doctor[]>('/doctors'), enabled: mode === 'verbal' });
   const [f, setF] = useState<OrderBody>(() => ({ category: 'medication', order_type: 'scheduled', ...initial }));
+  const scales = useQuery({ queryKey: ['nursing-scales'], queryFn: () => api<{ code: string; name: string }[]>('/inpatient/nursing/scales'), staleTime: 300_000 });
   const [free, setFree] = useState(!!initial?.drug_text);
   const [perKg, setPerKg] = useState(!!initial?.dose_per_kg);
   const [gen, setGen] = useState<GenericRow | null>(null);
@@ -221,7 +222,9 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
   const body = (): OrderBody => {
     const b: OrderBody = { ...f, start_at: localISO(date, time), set_id: setId };
     if (!med) return { category: f.category, text: f.text, frequency_code: f.frequency_code || undefined, duration_days: f.duration_days, instructions: f.instructions, start_at: b.start_at, set_id: setId,
-      ...(mode === 'verbal' && { verbal_doctor_id: f.verbal_doctor_id }) };
+      ...(mode === 'verbal' && { verbal_doctor_id: f.verbal_doctor_id }),
+      ...(f.category === 'nursing' && f.nursing_task && f.nursing_task !== 'other' && { nursing_task: f.nursing_task, ...(f.nursing_task === 'scale' && { task_scale_code: f.task_scale_code }) }) };
+    delete b.nursing_task; delete b.task_scale_code;
     if (free) { delete b.generic_id; } else { delete b.drug_text; b.generic_id = gen?.id; }
     if (perKg) delete b.dose; else delete b.dose_per_kg;
     if (b.order_type !== 'scheduled') delete b.frequency_code;
@@ -242,7 +245,8 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
   const checksOk = !checks || ((!checks.requires.ack || ack || ovr.trim().length >= 5) && (!checks.requires.reason || ovr.trim().length >= 5) && (!checks.requires.severe || severe));
   const doseOk = f.order_type === 'continuous' ? !!f.rate_ml_h : !!(perKg ? f.dose_per_kg : f.dose) && !!f.dose_unit;
   const typeOk = f.order_type === 'scheduled' ? !!f.frequency_code : f.order_type === 'prn' ? (f.prn_reason?.trim().length ?? 0) >= 2 : true;
-  const ready = (med ? ((free ? (f.drug_text?.trim().length ?? 0) >= 2 : !!gen) && !!f.route_code && !!f.order_type && doseOk && typeOk) : (f.text?.trim().length ?? 0) >= 2)
+  const ready = (med ? ((free ? (f.drug_text?.trim().length ?? 0) >= 2 : !!gen) && !!f.route_code && !!f.order_type && doseOk && typeOk)
+    : (f.text?.trim().length ?? 0) >= 2 && (f.category !== 'nursing' || f.nursing_task !== 'scale' || !!f.task_scale_code))
     && (mode !== 'verbal' || !!f.verbal_doctor_id) && (mode !== 'modify' || reason.trim().length >= 3) && checksOk;
   const errShown = m.error instanceof ApiError && m.error.code === 'ORDER_CHECKS' ? null : m.error;
 
@@ -266,6 +270,13 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
               <option value="">—</option>{freqs.data?.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</select></Field>
             <Field label="ხანგრძლივობა (დღე)" htmlFor="od-td"><input id="od-td" className="input" type="number" min={1} max={365} value={f.duration_days ?? ''} onChange={(e) => set('duration_days', e.target.value ? Number(e.target.value) : undefined)} /></Field>
           </div>
+          {f.category === 'nursing' && <div className="row" style={{ gap: 12 }}>
+            <Field label="დავალების ტიპი" htmlFor="od-nt" hint="MAR-ში ჩაწერა გახსნის შესაბამის ფორმას"><select id="od-nt" className="select" value={f.nursing_task ?? 'other'}
+              onChange={(e) => setF((x) => ({ ...x, nursing_task: e.target.value as OrderBody['nursing_task'], task_scale_code: e.target.value === 'scale' ? x.task_scale_code : undefined }))}>
+              <option value="other">სხვა (შესრულდა / არა)</option><option value="vitals">ვიტალური ნიშნები</option><option value="fluid">სითხის ბალანსი</option><option value="scale">შკალით შეფასება</option></select></Field>
+            {f.nursing_task === 'scale' && <Field label="შკალა" htmlFor="od-sc" required><select id="od-sc" className="select" value={f.task_scale_code ?? ''} onChange={(e) => set('task_scale_code', e.target.value || undefined)}>
+              <option value="">—</option>{scales.data?.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</select></Field>}
+          </div>}
         </> : <>
           {/* მედიკამენტი */}
           <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>

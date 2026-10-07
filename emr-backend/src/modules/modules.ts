@@ -16,6 +16,7 @@ type Validator = (s: Record<string, unknown>, db: Database) => Promise<string | 
 const bool = (v: unknown) => typeof v === 'boolean';
 const int = (v: unknown, a: number, b: number) => Number.isInteger(v) && (v as number) >= a && (v as number) <= b;
 const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes(v);
+const hhmm = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 const classes = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => ['narcotic', 'psychotropic', 'precursor', 'potent'].includes(x as string)) && new Set(v).size === v.length;
 const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>; extra?: Validator }> = {
@@ -34,8 +35,17 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       mar_window_min: (v) => int(v, 15, 240), mar_missed_hours: (v) => int(v, 1, 24), mar_horizon_hours: (v) => int(v, 12, 96), mar_stock_deduct: bool,
       mar_allow_no_stock: bool, mar_double_check: bool, mar_barcode: (v) => oneOf(v, ['off', 'optional', 'required']),
       med_verifier: (v) => oneOf(v, ['pharmacist', 'head_nurse', 'both']),
+      // 0044: ექთნის დოკუმენტაცია
+      news2_enabled: bool, news2_alert: (v) => int(v, 1, 20), news2_urgent: (v) => int(v, 1, 20),
+      glucose_low: (v) => typeof v === 'number' && v >= 1 && v <= 10, glucose_high: (v) => typeof v === 'number' && v >= 5 && v <= 40,
+      fluid_day_start: hhmm, shift_times: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 4 && v.every(hhmm) && new Set(v).size === v.length,
+      scale_reminders: bool,
+      line_alert_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>
+        ['pvc', 'cvc', 'picc', 'arterial', 'urinary', 'ng_tube', 'drain', 'trach', 'other'].includes(k) && typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 8760),
     },
-    extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს' : null),
+    extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს'
+      : (s.news2_urgent as number) < (s.news2_alert as number) ? 'NEWS2: სასწრაფო ზღვარი შეტყობინების ზღვარზე ნაკლები ვერ იქნება'
+      : (s.glucose_high as number) <= (s.glucose_low as number) ? 'გლუკოზა: ზედა ზღვარი ქვედაზე მეტი უნდა იყოს' : null),
   },
   cssd: {
     keys: {
