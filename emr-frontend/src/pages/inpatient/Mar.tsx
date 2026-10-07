@@ -26,7 +26,7 @@ export interface MarOrder {
 }
 interface Common { window_min: number; can_document: boolean; barcode: 'off' | 'optional' | 'required'; double_check: boolean }
 interface StayMar extends Common { day: string; orders: MarOrder[]; entries: MarEntry[] }
-interface DepPatient { encounter_id: string; adm_no: string; first_name: string; last_name: string; bed_code: string | null; allergies: number; on_leave: boolean;
+interface DepPatient { encounter_id: string; adm_no: string; first_name: string; last_name: string; bed_code: string | null; allergies: number; on_leave: boolean; next_due_at: string | null; active_orders: number;
   entries: MarEntry[]; prn: MarOrder[]; infusions: MarOrder[] }
 interface DepMar extends Common { patients: DepPatient[]; orders: MarOrder[] }
 interface StockInfo { location: { id: string; name: string } | null; items: { id: string; name: string; code: string; unit_name: string; available: number }[]; qty_suggest: number | null }
@@ -321,7 +321,13 @@ export function DepartmentMar({ departmentId }: { departmentId: string }) {
             {p.allergies > 0 && <span className="chip danger">ალერგია ({p.allergies})</span>}
             {p.on_leave && <span className="chip warn">დროებით გასულია</span>}
           </div>
-          <table className="table"><tbody>
+          {!p.entries.length && !p.prn.length && !p.infusions.length ? (
+            <div className="card-pad small muted">
+              {!p.active_orders ? 'აქტიური დანიშნულება არ არის.'
+                : p.next_due_at ? `მომდევნო ${hours} სთ-ში დოზა / დავალება არ არის — შემდეგი: ${tsDate(p.next_due_at)} ${hhmm(p.next_due_at)}.`
+                : `მომდევნო ${hours} სთ-ში დოზა / დავალება არ არის (დიეტა / რეჟიმი ან სიხშირის გარეშე დავალება).`}
+              {' '}<Link to={`/inpatient/stay/${p.encounter_id}#mar`}>MAR ბადე</Link>
+            </div>) : <table className="table"><tbody>
             {p.entries.map((e) => { const o = byId.get(e.order_id) ?? null; return (
               <tr key={e.id}>
                 <td style={{ width: 70 }} className="mono">{e.scheduled_at && hhmm(e.scheduled_at)}</td>
@@ -337,7 +343,7 @@ export function DepartmentMar({ departmentId }: { departmentId: string }) {
                 <td>{o.infusion_state && <span className="chip info">{INF_KA[o.infusion_state]}</span>}</td>
                 <td style={{ textAlign: 'right' }}>{d.can_document && <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'doc', order: o, entry: null, adm: p.adm_no })}>{o.order_type === 'prn' ? 'მიცემა' : 'ჩანაწერი'}</button>}</td>
               </tr>))}
-          </tbody></table>
+          </tbody></table>}
         </section>))}
       {dlg?.kind === 'doc' && <DocumentDialog order={dlg.order} entry={dlg.entry} ctx={{ ...d, adm_no: dlg.adm }} onClose={() => setDlg(null)} onDone={(m) => toast.show(m)} />}
     </div>

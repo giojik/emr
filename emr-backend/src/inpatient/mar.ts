@@ -335,7 +335,10 @@ export class MarService {
       .leftJoin('beds as b', 'b.id', 'a.bed_id')
       .select(['st.encounter_id', 'st.adm_no', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender', 'b.code as bed_code',
         sql<number>`(SELECT count(*)::int FROM patient_allergies pa WHERE pa.patient_id = p.id AND pa.is_active)`.as('allergies'),
-        sql<boolean>`EXISTS (SELECT 1 FROM inpatient_leaves l WHERE l.encounter_id = st.encounter_id AND l.returned_at IS NULL)`.as('on_leave')])
+        sql<boolean>`EXISTS (SELECT 1 FROM inpatient_leaves l WHERE l.encounter_id = st.encounter_id AND l.returned_at IS NULL)`.as('on_leave'),
+        sql<string | null>`(SELECT min(m.scheduled_at) FROM mar_entries m WHERE m.encounter_id = st.encounter_id AND m.status = 'due' AND m.voided_at IS NULL
+          AND m.scheduled_at > now() + make_interval(hours => ${hours}))`.as('next_due_at'),
+        sql<number>`(SELECT count(*)::int FROM med_orders o WHERE o.encounter_id = st.encounter_id AND o.status IN ('active', 'on_hold'))`.as('active_orders')])
       .where('a.department_id', '=', departmentId).where('a.ended_at', 'is', null).where('st.status', '=', 'active').orderBy('b.code').orderBy('p.last_name').execute();
     const ids = pts.map((p) => p.encounter_id);
     const entries = ids.length ? await this.base().innerJoin('med_orders as o', 'o.id', 'm.order_id')
