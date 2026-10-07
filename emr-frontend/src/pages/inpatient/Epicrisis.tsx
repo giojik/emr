@@ -49,6 +49,8 @@ export default function EpicrisisPanel({ encounterId, diagnoses, encounterActive
     setContent(e.content ?? {}); setLab(new Set(e.selected_lab_ids)); setDx(new Set(e.selected_dx_ids)); setDirty(false);
   }, [e?.id, e?.revision, e?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = () => { void qc.invalidateQueries({ queryKey: key }); invalIpd(qc); };
+  const course = useMutation({ mutationFn: () => api<{ text: string }>(`/inpatient/stays/${encounterId}/notes/course`),
+    onSuccess: (r) => { if (!r.text) return; setContent((c) => ({ ...c, course: [c.course?.trim(), r.text].filter(Boolean).join('\n') })); setDirty(true); } });
   const create = useMutation({ mutationFn: () => api(`/inpatient/stays/${encounterId}/epicrisis`, { body: {} }), onSuccess: refresh });
   const save = useMutation({
     mutationFn: () => api(`/inpatient/stays/${encounterId}/epicrisis`, { method: 'PUT', body: { content, selected_lab_ids: [...lab], selected_dx_ids: [...dx] } }),
@@ -114,6 +116,8 @@ export default function EpicrisisPanel({ encounterId, diagnoses, encounterActive
 
           {fields.map((f) => (
             <Field key={f.key} label={f.label ?? f.key!} htmlFor={`ep-${f.key}`} required={f.required}>
+              {f.key === 'course' && edit && <button className="btn sm" type="button" style={{ alignSelf: 'flex-start', marginBottom: 4 }} disabled={course.isPending} onClick={() => course.mutate()}>
+                ჩასმა დღიურებიდან (შეფასებები, შემოვლა, კონსულტაციები)</button>}
               <textarea id={`ep-${f.key}`} className="textarea" rows={f.key === 'course' || f.key === 'treatment' ? 5 : 3} readOnly={!edit} value={content[f.key!] ?? ''}
                 onChange={(ev) => { setContent({ ...content, [f.key!]: ev.target.value }); setDirty(true); }} />
             </Field>))}

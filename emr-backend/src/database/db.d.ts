@@ -249,6 +249,28 @@ export interface ClinicSettings {
   updated_at: Generated<Timestamp>;
 }
 
+export interface Consultations {
+  answer_note_id: string | null;
+  answered_at: Timestamp | null;
+  answered_by: string | null;
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  created_at: Generated<Timestamp>;
+  due_at: Timestamp;
+  encounter_id: string;
+  from_department_id: string | null;
+  id: Generated<string>;
+  overdue_notified_at: Timestamp | null;
+  patient_id: string;
+  question: string;
+  requested_by: string;
+  status: Generated<string>;
+  target_department_id: string | null;
+  target_doctor_id: string | null;
+  urgency: Generated<string>;
+}
+
 export interface CssdCycles {
   attachment_key: string | null;
   bi_lot: string | null;
@@ -382,6 +404,28 @@ export interface Departments {
   name: string;
   type: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface DoctorNotes {
+  amend_reason: string | null;
+  amends_id: string | null;
+  author_id: string;
+  consultation_id: string | null;
+  content: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  kind: string;
+  note_date: string;
+  participants: Generated<string[]>;
+  patient_id: string;
+  root_id: string | null;
+  signed_at: Timestamp | null;
+  status: Generated<string>;
+  superseded_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
 }
 
 export interface DocumentCounters {
@@ -943,6 +987,7 @@ export interface InpatientTransfers {
 
 export interface InvoiceLineItems {
   adjusted_by: string | null;
+  consultation_id: string | null;
   description: string;
   discount_reason: string | null;
   dx_order_item_id: string | null;
@@ -1714,6 +1759,19 @@ export interface MicroReports {
   snapshot: Json;
 }
 
+export interface NoteTemplates {
+  content: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  owner_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface NursingNotes {
   ack_at: Timestamp | null;
   ack_by: string | null;
@@ -2417,6 +2475,7 @@ export interface DB {
   bed_types: BedTypes;
   beds: Beds;
   clinic_settings: ClinicSettings;
+  consultations: Consultations;
   cssd_cycles: CssdCycles;
   cssd_events: CssdEvents;
   cssd_instruments: CssdInstruments;
@@ -2427,6 +2486,7 @@ export interface DB {
   cssd_template_items: CssdTemplateItems;
   cssd_templates: CssdTemplates;
   departments: Departments;
+  doctor_notes: DoctorNotes;
   document_counters: DocumentCounters;
   document_template_versions: DocumentTemplateVersions;
   document_templates: DocumentTemplates;
@@ -2515,6 +2575,7 @@ export interface DB {
   micro_panel_items: MicroPanelItems;
   micro_panels: MicroPanels;
   micro_reports: MicroReports;
+  note_templates: NoteTemplates;
   nursing_notes: NursingNotes;
   path_requests: PathRequests;
   path_specimens: PathSpecimens;

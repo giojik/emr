@@ -12,6 +12,9 @@ export class IssueForm100Dto {
   @IsOptional() @IsIn(['acute', 'subacute', 'chronic', 'recurrent']) course?: 'acute' | 'subacute' | 'chronic' | 'recurrent'; // პ.13
   @IsOptional() @IsString() @MaxLength(10000) treatment?: string;            // პ.14
   @IsOptional() @IsString() @MaxLength(5000) recommendations?: string;       // პ.17
+  // სტაციონარი (0045)
+  @IsOptional() @IsString() @MaxLength(5000) state_on_referral?: string;     // პ.15
+  @IsOptional() @IsString() @MaxLength(5000) state_on_discharge?: string;    // პ.16
 }
 
 export class RevokeDocumentDto {

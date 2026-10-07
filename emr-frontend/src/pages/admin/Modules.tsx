@@ -249,6 +249,18 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         <Field label="შარდის კათეტერი — შეხსენება (სთ)" htmlFor="ip-uc" hint="0 — გამორთული"><input id="ip-uc" className="input mono" type="number" min={0} value={v<Record<string, number>>('line_alert_hours')?.urinary ?? 0}
           onChange={(e) => upd('line_alert_hours', { ...(v<Record<string, number>>('line_alert_hours') ?? {}), urinary: Number(e.target.value) || 0 })} /></Field>
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>ექიმის ჩანაწერები, კონსულტაციები, ფორმა 100</h3>
+      <div style={grid}>
+        {num('admission_note_hours', 'მიმღები გასინჯვა — ვადა (სთ)', 1, 72, 'ვადის გასვლაზე — მკურნალ ექიმს')}
+        {chk('progress_note_daily', 'დღიური ყოველდღე', 'აკლია — გაფრთხილება ჰოსპიტალიზაციაზე და გაწერისას')}
+        <Field label="დღიურის შეხსენება (გუშინდელი)" htmlFor="ip-pr"><input id="ip-pr" className="input" type="time" value={v<string>('progress_reminder_time') ?? '12:00'} onChange={(e) => upd('progress_reminder_time', e.target.value)} /></Field>
+        {(['routine', 'urgent', 'emergency'] as const).map((k) => <Field key={k} label={`კონსულტაციის ვადა — ${k === 'routine' ? 'გეგმიური' : k === 'urgent' ? 'სასწრაფო' : 'გადაუდებელი'} (სთ)`} htmlFor={`ip-cd-${k}`}>
+          <input id={`ip-cd-${k}`} className="input mono" type="number" min={0.25} step={0.25} value={v<Record<string, number>>('consult_due_hours')?.[k] ?? ''}
+            onChange={(e) => upd('consult_due_hours', { routine: 24, urgent: 2, emergency: 1, ...(v<Record<string, number>>('consult_due_hours') ?? {}), [k]: Number(e.target.value) })} /></Field>)}
+        {chk('consult_billing', 'კონსულტაციის ინვოისში დამატება', 'კონსულტანტის კონსულტაციის ტარიფით (მომხმარებლის პროფილი)')}
+        <Field label="ფორმა 100 გაწერისას" htmlFor="ip-f1"><select id="ip-f1" className="select" value={v<string>('form100_on_discharge') ?? 'warn'} onChange={(e) => upd('form100_on_discharge', e.target.value)}>
+          <option value="warn">გაფრთხილება, თუ არ არის გაცემული</option><option value="off">გამორთული</option></select></Field>
+      </div>
       <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>

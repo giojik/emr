@@ -40,6 +40,11 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       glucose_low: (v) => typeof v === 'number' && v >= 1 && v <= 10, glucose_high: (v) => typeof v === 'number' && v >= 5 && v <= 40,
       fluid_day_start: hhmm, shift_times: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 4 && v.every(hhmm) && new Set(v).size === v.length,
       scale_reminders: bool,
+      // 0045: ექიმის ჩანაწერები / კონსულტაციები / ფორმა 100
+      admission_note_hours: (v) => int(v, 1, 72), progress_note_daily: bool, progress_reminder_time: hhmm, consult_billing: bool,
+      form100_on_discharge: (v) => oneOf(v, ['off', 'warn']),
+      consult_due_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && ['routine', 'urgent', 'emergency'].every((k) => typeof (v as Record<string, unknown>)[k] === 'number'
+        && ((v as Record<string, number>)[k]) > 0 && ((v as Record<string, number>)[k]) <= 168) && Object.keys(v as object).length === 3,
       line_alert_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>
         ['pvc', 'cvc', 'picc', 'arterial', 'urinary', 'ng_tube', 'drain', 'trach', 'other'].includes(k) && typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 8760),
     },

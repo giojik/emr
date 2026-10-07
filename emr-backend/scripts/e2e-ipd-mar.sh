@@ -102,7 +102,10 @@ ok "9 დანიშნულება (გეგმიური ×2, PRN ×3, 
 
 step "1. განრიგი, უფლებები"
 M="/inpatient/stays/$E1/mar"
-R=$(api GET "$M" "$NA")
+TOMORROW=$(date -d "$TODAY +1 day" +%F)
+# დღე + ხვალ (საღამოს გაშვებისას +8 სთ-იანი სლოტი ხვალინდელ ბადეშია)
+MARALL() { jq -s '{entries: (.[0].entries + .[1].entries), orders: .[0].orders, can_document: .[0].can_document}' <(api GET "$M" "$NA") <(api GET "$M?day=$TOMORROW" "$NA"); }
+R=$(MARALL)
 slot() { echo "$R" | jq -r --arg o "$1" "[.entries[]|select(.order_id==\$o and .status==\"${3:-due}\")]|sort_by(.scheduled_at)|.[${2:-0}].id // empty"; }
 chk "დღის ბადე: can_document; ცეფაზოლინი (Q8H) პირველი სლოტი ახლა; მოვლა — სლოტი; PRN — სლოტების გარეშე" \
   "$(echo "$R" | jq -r --arg c "$O_CEF" --arg n "$O_NUR" --arg m "$O_MOR" '"\(.can_document):\([.entries[]|select(.order_id==$c)]|length>=1):\([.entries[]|select(.order_id==$n)]|length>=1):\([.entries[]|select(.order_id==$m)]|length)"')" "true:true:true:0"
@@ -112,7 +115,7 @@ S_CEF0=$(slot "$O_CEF"); S_OWN=$(slot "$O_OWN"); S_REJ=$(slot "$O_REJ"); S_NUR=$
 R2=$(api GET "/inpatient/stays/$E1/mar?day=$(date -d "$TODAY +1 day" +%F)" "$NA")
 chk "ხვალინდელი დღე — ცეფაზოლინის 3 სლოტი (Q8H, 48 სთ წინ)" "$(echo "$R2" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length')" "3"
 chk "იგივე GET ორჯერ — დუბლიკატი არ ჩნდება" "$(api GET "$M" "$NA" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length'):$(api GET "$M" "$NA" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length')" \
-  "$(echo "$R" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length'):$(echo "$R" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length')"
+  "$(N0=$(api GET "$M" "$NA" | jq -r --arg c "$O_CEF" '[.entries[]|select(.order_id==$c)]|length'); echo "$N0:$N0")"
 chk "რეგისტრატორი — 403; სხვა განყოფილების ექთანი: ხედავს, can_document=false, ჩაწერა — 403" \
   "$(code GET "$M" "$RC"):$(api GET "$M" "$NX" | jq -r .can_document):$(code POST "/inpatient/mar/$S_CEF0/document" "$NX" -d '{"outcome":"given"}')" "403:false:403"
 chk "მიზეზის გარეშე უარი — 400; არასწორი შედეგი — 400" "$(code POST "/inpatient/mar/$S_CEF0/document" "$NA" -d '{"outcome":"refused"}'):$(code POST "/inpatient/mar/$S_CEF0/document" "$NA" -d '{"outcome":"done"}')" "400:400"
@@ -122,14 +125,14 @@ R=$(api POST "/inpatient/mar/$S_CEF0/document" "$NA" -d '{"outcome":"given","sit
 chk "მიცემულია: დოზა 1000 mg, დროულად, ჩამოწერა CN (1 ფლაკონი, ერთადერთი SKU)" \
   "$(echo "$R" | jq -r '"\(.status):\((.dose_given|tonumber)+0)\(.dose_unit):\(.timing):\(.stock_doc_no|test("^CN")):\((.qty_base|tonumber)+0):\(.documented_by_name!=null)"')" "given:1000mg:on_time:true:1:true"
 chk "ქვესაწყობი: ცეფაზოლინი 5 → 4" "$(bal "$LOC" "$IT_CEF")" "4"
-R=$(api GET "$M" "$NA"); S_CEF1=$(slot "$O_CEF" 0)
+R=$(MARALL); S_CEF1=$(slot "$O_CEF" 0)
 chk "ხელახლა — 409; ნაწილობრივი დოზით (≥ დანიშნული) — 400" "$(code POST "/inpatient/mar/$S_CEF0/document" "$NA" -d '{"outcome":"given"}'):$(code POST "/inpatient/mar/$S_CEF1/document" "$NA" -d '{"outcome":"partial","dose":1000,"reason":"ტესტ"}')" "409:400"
 R=$(api POST "/inpatient/mar/$S_CEF1/document" "$NA" -d '{"outcome":"given"}')
 chk "შემდეგი დოზა (+8 სთ) ახლა — 409 MAR_CHECKS (timing_early)" "$(echo "$R" | jq -r '"\(.code):\([.checks[].code]|join(","))"')" "MAR_CHECKS:timing_early"
 IN1H=$(date -u -d '+1 hour' +%FT%TZ)
 R=$(api POST "/inpatient/mar/$S_CEF1/document" "$NA" -d "{\"outcome\":\"held\",\"reason\":\"ტესტ-E2E პაციენტი გამოკვლევაზეა\",\"postponed_to\":\"$IN1H\"}")
 chk "გადადებულია +1 სთ-ით (მიზეზით), ჩამოწერის გარეშე" "$(echo "$R" | jq -r '"\(.status):\(.postponed_to!=null):\(.stock_doc_id)"')" "held:true:null"
-R=$(api GET "$M" "$NA")
+R=$(MARALL)
 S_POST=$(echo "$R" | jq -r --arg o "$O_CEF" '[.entries[]|select(.order_id==$o and .source=="postponed" and .status=="due")][0].id // empty')
 [ -n "$S_POST" ] && ok "ახალი სლოტი (postponed)" || bad "ახალი სლოტი (postponed)"
 chk "გადადება წარსულში — 400" "$(code POST "/inpatient/mar/$S_POST/document" "$NA" -d "{\"outcome\":\"held\",\"reason\":\"ტესტ\",\"postponed_to\":\"$(date -u -d '-1 hour' +%FT%TZ)\"}")" "400"
@@ -149,7 +152,7 @@ step "4. გაუქმება"
 chk "მიზეზის გარეშე — 400; სხვა განყოფილების ექთანი — 403" "$(code POST "/inpatient/mar/$S_CEF0/void" "$NA" -d '{}'):$(code POST "/inpatient/mar/$S_CEF0/void" "$NX" -d '{"reason":"ტესტ-E2E"}')" "400:403"
 R=$(api POST "/inpatient/mar/$S_CEF0/void" "$NB" -d '{"reason":"ტესტ-E2E: შეცდომით ჩაიწერა"}')
 chk "გაუქმდა (მეორე ექთანი): voided, შემობრუნება; ქვესაწყობი 3 → 4" "$(echo "$R" | jq -r '"\(.voided_at!=null):\(.void_stock_doc_id!=null):\(.voided_by_name!=null)"'):$(bal "$LOC" "$IT_CEF")" "true:true:true:4"
-R=$(api GET "$M" "$NA")
+R=$(MARALL)
 chk "სლოტი თავიდან ღიაა (due, იგივე დრო); მეორედ გაუქმება — 404" \
   "$(echo "$R" | jq -r --arg o "$O_CEF" --arg v "$S_CEF0" '([.entries[]|select(.id==$v)][0].scheduled_at) as $t | [.entries[]|select(.order_id==$o and .status=="due" and .scheduled_at==$t)]|length'):$(code POST "/inpatient/mar/$S_CEF0/void" "$NA" -d '{"reason":"ტესტ-E2E"}')" "1:404"
 chk "გაუქმებული ჩანაწერი ბადეში ჩანს (voided_at)" "$(echo "$R" | jq -r --arg v "$S_CEF0" '[.entries[]|select(.id==$v and .voided_at!=null)]|length')" "1"
@@ -217,10 +220,10 @@ chk "ფარმაცევტმა უარყო — 422 MAR_BLOCKED (მ�
 
 step "10. შეჩერება / განახლება, დროებითი გასვლა"
 api POST "/inpatient/orders/$O_CEF/hold" "$DR" -d '{"reason":"ტესტ-E2E ოპერაციის წინ"}' >/dev/null
-R=$(api GET "$M" "$NA")
+R=$(MARALL)
 chk "შეჩერებისას ღია სლოტები → cancelled; ჩაწერა — 409" "$(echo "$R" | jq -r --arg o "$O_CEF" '[.entries[]|select(.order_id==$o and .status=="due")]|length'):$(code POST "/inpatient/mar/$(slot "$O_CEF" 0 cancelled)/document" "$NA" -d '{"outcome":"given"}')" "0:409"
 api POST "/inpatient/orders/$O_CEF/resume" "$DR" -d '{}' >/dev/null
-R=$(api GET "$M" "$NA")
+R=$(MARALL)
 chk "განახლებისას სლოტები ისევ due" "$(echo "$R" | jq -r --arg o "$O_CEF" '[.entries[]|select(.order_id==$o and .status=="due")]|length>0')" "true"
 api POST "/inpatient/stays/$E1/leave" "$NA" -d "{\"expected_return_at\":\"$(date -u -d '+2 hours' +%FT%TZ)\",\"reason\":\"ტესტ-E2E ოჯახური\",\"permitted_by\":\"$(uid 64)\"}" >/dev/null
 chk "დროებით გასულზე მიცემა — 409; „არ მიეცა“ მიზეზით — OK" "$(code POST "/inpatient/mar/$(slot "$O_CEF" 0)/document" "$NA" -d '{"outcome":"given"}'):$(api POST "/inpatient/mar/$(slot "$O_CEF" 0)/document" "$NA" -d '{"outcome":"not_given","reason":"პაციენტი დროებით გასულია"}' | jq -r .status)" "409:not_given"
@@ -260,7 +263,7 @@ chk "სხვა განყოფილების ექთანი: can_d
 R=$(api GET "/inpatient/stays/$E1/discharge/check" "$DR")
 chk "გაწერის შემოწმება მუშაობს (MAR — ვადაგადაცილებული არ არის)" "$(echo "$R" | jq -r '[.warnings[].code]|index("MAR_MISSED")==null')" "true"
 api POST "/inpatient/stays/$E1/discharge" "$DR" -d "{\"type\":\"against_advice\",\"refusal_witnesses\":[\"$(uid 62)\",\"$(uid 63)\"],\"override_reason\":\"ტესტ-E2E დასრულება\"}" >/dev/null
-R=$(api GET "$M" "$NA")
+R=$(MARALL)
 chk "გაწერის შემდეგ: ღია სლოტები cancelled, can_document=false" "$(echo "$R" | jq -r '"\([.entries[]|select(.status=="due")]|length):\(.can_document)"')" "0:false"
 
 step "12. აღდგენა"

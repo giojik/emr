@@ -75,7 +75,8 @@ export class InpatientRemindersService {
     const o = await this.orders(s);
     const mar = await this.mar(s).catch((e) => { this.log.error(`MAR: ${(e as Error).message}`); return { mar_missed: 0 }; });
     const nur = await this.nursing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`საექთნო: ${(e as Error).message}`); return { scales_due: 0, lines_alert: 0 }; });
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur };
+    const notes = await this.notes(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`ჩანაწერები: ${(e as Error).message}`); return { notes_due: 0, consults_late: 0 }; });
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur, ...notes };
   }
 
   /**
@@ -225,5 +226,59 @@ export class InpatientRemindersService {
       }
     }
     return { scales_due: scales, lines_alert: lines };
+  }
+
+  /**
+   * 0045: მიმღები გასინჯვა admission_note_hours-ში არ არის → მკურნალ ექიმს (ერთხელ);
+   *   დღიური: progress_reminder_time-ის შემდეგ, გუშინდელი არ წერია → მკურნალ ექიმს (ერთხელ დღეზე);
+   *   კონსულტაცია ვადაგადაცილებული → კონსულტანტს / განყოფილების ექიმებს და მომთხოვნს (ერთხელ).
+   */
+  async notes(s: Record<string, unknown>) {
+    let notes = 0;
+    const admH = Number(s.admission_note_hours ?? 24);
+    const adm = await sql<{ encounter_id: string; attending_doctor_id: string | null; adm_no: string; first_name: string; last_name: string }>`
+      SELECT st.encounter_id, e.attending_doctor_id, st.adm_no, p.first_name, p.last_name FROM inpatient_stays st JOIN encounters e ON e.id = st.encounter_id JOIN patients p ON p.id = st.patient_id
+      WHERE st.status = 'active' AND st.admitted_at < now() - make_interval(hours => ${admH})
+        AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'admission' AND n.status = 'signed')`.execute(this.db);
+    for (const r of adm.rows) {
+      if (!r.attending_doctor_id) continue;
+      const ins = await sql`INSERT INTO ipd_reminders (encounter_id, kind, ref) VALUES (${r.encounter_id}, 'adm_note', 'x') ON CONFLICT DO NOTHING RETURNING encounter_id`.execute(this.db);
+      if (!ins.rows.length) continue;
+      notes++;
+      await this.bell.notify(r.attending_doctor_id, { kind: 'ipd_note_due', title: 'მიმღები გასინჯვა არ არის ხელმოწერილი', body: `${r.last_name} ${r.first_name} (${r.adm_no})`,
+        item: r.adm_no, entityId: r.encounter_id, link: `/inpatient/stay/${r.encounter_id}#notes`, urgent: false });
+    }
+    if (s.progress_note_daily !== false) {
+      const time = typeof s.progress_reminder_time === 'string' ? s.progress_reminder_time : '12:00';
+      const prog = await sql<{ encounter_id: string; attending_doctor_id: string | null; adm_no: string; first_name: string; last_name: string; d: string }>`
+        SELECT st.encounter_id, e.attending_doctor_id, st.adm_no, p.first_name, p.last_name, to_char((now() AT TIME ZONE ${TZ})::date - 1, 'YYYY-MM-DD') AS d
+        FROM inpatient_stays st JOIN encounters e ON e.id = st.encounter_id JOIN patients p ON p.id = st.patient_id
+        WHERE st.status = 'active' AND (now() AT TIME ZONE ${TZ})::time >= ${time}::time
+          AND (st.admitted_at AT TIME ZONE ${TZ})::date < (now() AT TIME ZONE ${TZ})::date - 1
+          AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'progress' AND n.status = 'signed'
+            AND n.note_date = (now() AT TIME ZONE ${TZ})::date - 1)`.execute(this.db);
+      for (const r of prog.rows) {
+        if (!r.attending_doctor_id) continue;
+        const ins = await sql`INSERT INTO ipd_reminders (encounter_id, kind, ref) VALUES (${r.encounter_id}, 'progress', ${r.d}) ON CONFLICT DO NOTHING RETURNING encounter_id`.execute(this.db);
+        if (!ins.rows.length) continue;
+        notes++;
+        await this.bell.notify(r.attending_doctor_id, { kind: 'ipd_note_due', title: `დღიური აკლია (${r.d.split('-').reverse().join('/')})`, body: `${r.last_name} ${r.first_name} (${r.adm_no})`,
+          item: r.adm_no, entityId: r.encounter_id, link: `/inpatient/stay/${r.encounter_id}#notes` });
+      }
+    }
+    const late = await sql<{ id: string; encounter_id: string; requested_by: string; target_doctor_id: string | null; target_department_id: string | null; urgency: string; adm_no: string; first_name: string; last_name: string }>`
+      UPDATE consultations c SET overdue_notified_at = now() FROM inpatient_stays st JOIN patients p ON p.id = st.patient_id
+      WHERE st.encounter_id = c.encounter_id AND c.status = 'requested' AND c.overdue_notified_at IS NULL AND c.due_at < now()
+      RETURNING c.id, c.encounter_id, c.requested_by, c.target_doctor_id, c.target_department_id, c.urgency, st.adm_no, p.first_name, p.last_name`.execute(this.db);
+    for (const c of late.rows) {
+      const to = new Set<string>([c.requested_by]);
+      if (c.target_doctor_id) to.add(c.target_doctor_id);
+      else if (c.target_department_id) for (const id of await this.staff(c.target_department_id, ['doctor'])) to.add(id);
+      for (const id of to) {
+        await this.bell.notify(id, { kind: 'ipd_consult_late', title: 'კონსულტაცია ვადაგადაცილებულია', body: `${c.last_name} ${c.first_name} (${c.adm_no})`, item: c.adm_no,
+          entityId: c.id, link: id === c.requested_by ? `/inpatient/stay/${c.encounter_id}#notes` : '/inpatient?tab=consults', urgent: c.urgency !== 'routine' });
+      }
+    }
+    return { notes_due: notes, consults_late: late.rows.length };
   }
 }

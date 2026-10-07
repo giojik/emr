@@ -72,6 +72,10 @@ export interface Form100Draft {
   encounter_status: EncounterStatus; recipient: string; workplace: string | null; conclusion: 'healthy' | 'practically_healthy' | null;
   diagnosis: { primary: { code: string; title: string }[]; secondary: { code: string; title: string }[]; complications: { code: string; title: string }[] };
   past_diseases: string | null; anamnesis: string | null; investigations: string | null; course: string | null; treatment: string | null; recommendations: string | null;
+  // სტაციონარი (0045)
+  inpatient: boolean; dates: { outpatient_visit: string | null; sent_to_hospital: string | null; admitted: string | null; discharged: string | null } | null;
+  state_on_referral: string | null; state_on_discharge: string | null; sources: string[];
+  last_issued: { id: string; number: string | null; generated_at: string; payload: Record<string, unknown> & { course?: string | null; conclusion?: string | null; workplace?: string | null } } | null;
 }
 
 // ---------------------------------------------------------------- ადმინისტრირება

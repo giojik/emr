@@ -7,6 +7,8 @@ import type { Doctor } from '../../api/types';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { age, dateGe, genderShort, tsDate } from '../../lib/format';
 import { AssignDialog, invalIpd, openWristband, ReasonDialog } from './Inpatient';
+import Form100Dialog from '../../components/Form100Dialog';
+import DoctorNotesPanel from './DoctorNotes';
 import EpicrisisPanel from './Epicrisis';
 import MarPanel from './Mar';
 import NursingPanel from './Nursing';
@@ -70,7 +72,7 @@ export default function Stay() {
   const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
   const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
   const [err, setErr] = useState<unknown>(null);
-  const [dlg, setDlg] = useState<'bed' | 'doctor' | 'cancel' | 'transfer' | 'leave' | 'discharge' | 'undischarge' | null>(null);
+  const [dlg, setDlg] = useState<'bed' | 'doctor' | 'cancel' | 'transfer' | 'leave' | 'discharge' | 'undischarge' | 'form100' | null>(null);
   const { user } = useAuth();
   const transfers = useQuery({ queryKey: ['ipd-stay-transfers', id], queryFn: () => api<TransferRow[]>('/inpatient/transfers', { query: { encounter_id: id } }), enabled: !!s });
   const leaves = useQuery({ queryKey: ['ipd-stay-leaves', id], queryFn: () => api<LeaveRow[]>(`/inpatient/stays/${id}/leaves`), enabled: !!s });
@@ -148,7 +150,9 @@ export default function Stay() {
                 {s.can.staff && <button className="btn sm" type="button" onClick={() => post.mutate({ path: `/inpatient/stays/${s.encounter_id}/leave/return`, msg: 'დაბრუნება დაფიქსირდა' })}>დაბრუნდა</button>}</>
                 : (s.can.staff || isAttending) && !pendingTransfer && <button className="btn" type="button" onClick={() => setDlg('leave')}>დროებითი გასვლა</button>}
             </div>
-            {can(user, 'doctor', 'admin') && <button className="btn primary" type="button" onClick={() => setDlg('discharge')}>გაწერა…</button>}
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {can(user, 'doctor', 'admin') && <button className="btn primary" type="button" onClick={() => setDlg('discharge')}>გაწერა…</button>}
+              {can(user, 'doctor', 'admin') && <button className="btn" type="button" onClick={() => setDlg('form100')}>ფორმა №100/ა</button>}</div>
             {s.can.cancel && <button className="btn" type="button" onClick={() => setDlg('cancel')}>ჰოსპიტალიზაციის გაუქმება (შეცდომა)</button>}
           </section>}
           {s.status === 'discharged' && <section className="card card-pad stack" style={{ gap: 8 }}>
@@ -167,10 +171,12 @@ export default function Stay() {
               {s.death_at && !s.body_released_at && s.can.staff && <button className="btn" type="button" disabled={post.isPending}
                 onClick={() => window.confirm('გვამის გატანა — ახლა?') && post.mutate({ path: `/inpatient/stays/${s.encounter_id}/body-released`, msg: 'გატანა დაფიქსირდა; საწოლი — დასალაგებელი' })}>გვამის გატანა</button>}
               {s.body_released_at && <span className="small muted">გვამი გატანილია: {tsDate(s.body_released_at)}</span>}
+              {can(user, 'doctor', 'admin') && <button className="btn" type="button" onClick={() => setDlg('form100')}>ფორმა №100/ა</button>}
               {s.can.manage && !s.body_released_at && <button className="btn" type="button" onClick={() => setDlg('undischarge')}>გაწერის გაუქმება (შეცდომა)</button>}
             </div>
           </section>}
         </div>
+        {s.status !== 'cancelled' && <DoctorNotesPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}
         {s.status !== 'cancelled' && <MarPanel encounterId={s.encounter_id} admNo={s.adm_no} />}
         {s.status !== 'cancelled' && <NursingPanel encounterId={s.encounter_id} />}
@@ -207,6 +213,7 @@ export default function Stay() {
       {dlg === 'cancel' && <ReasonDialog title={`ჰოსპიტალიზაციის გაუქმება — ${s.adm_no}`} path={`/inpatient/stays/${s.encounter_id}/cancel`} onClose={() => setDlg(null)} />}
       {dlg === 'transfer' && <TransferDialog encounterId={s.encounter_id} currentDepartmentId={s.current?.department_id ?? s.department_id} onClose={() => { setDlg(null); void qc.invalidateQueries({ queryKey: ['ipd-stay-transfers', id] }); }} />}
       {dlg === 'leave' && <LeaveDialog encounterId={s.encounter_id} maxHours={s.settings.leave_max_hours} onClose={() => { setDlg(null); void qc.invalidateQueries({ queryKey: ['ipd-stay-leaves', id] }); }} />}
+      {dlg === 'form100' && <Form100Dialog encounterId={s.encounter_id} onClose={() => setDlg(null)} />}
       {dlg === 'discharge' && <DischargeDialog encounterId={s.encounter_id} patientId={s.patient_id} departmentId={s.current?.department_id ?? s.department_id} onClose={() => setDlg(null)} />}
       {dlg === 'undischarge' && <ReasonDialog title={`გაწერის გაუქმება — ${s.adm_no}`} path={`/inpatient/stays/${s.encounter_id}/discharge/cancel`} onClose={() => setDlg(null)} />}
     </>

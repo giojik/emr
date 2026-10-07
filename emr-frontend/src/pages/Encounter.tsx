@@ -1,14 +1,15 @@
+import Form100Dialog from '../components/Form100Dialog';
 import Form100History from '../components/Form100History';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { can, api, ApiError, openBlob } from '../api/client';
-import type { EncounterDetail, EncounterListItem, Form100Draft } from '../api/types';
+import { can, api, ApiError } from '../api/client';
+import type { EncounterDetail, EncounterListItem } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
 import AllergyDialog from '../components/AllergyDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
-import { CloseButton, ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
+import { CloseButton, ErrorBox, Loading, Modal, StatusChip } from '../components/ui';
 import { age, genderShort, hhmm, money, tsDate } from '../lib/format';
 import { Diagnoses, Notes, Referrals, VitalsStrip } from './encounter/Clinical';
 import DiagnosticsPanel from './encounter/DiagnosticsPanel';
@@ -74,7 +75,7 @@ export default function Encounter() {
       </div>
 
       {dlg === 'discharge' && <DischargeDialog e={e} onClose={() => setDlg(null)} />}
-      {dlg === 'form100' && <Form100Dialog e={e} onClose={() => setDlg(null)} />}
+      {dlg === 'form100' && <Form100Dialog encounterId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'f100hist' && <Form100History patientId={e.patient.id} currentEncounterId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'history' && <HistoryDrawer patientId={e.patient.id} currentId={e.id} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={e.patient.id} onClose={() => setDlg(null)} />}
@@ -111,64 +112,6 @@ function DischargeDialog({ e, onClose }: { e: EncounterDetail; onClose: () => vo
       <p style={{ margin: 0 }}>დასრულების შემდეგ ჩანაწერების შეცვლა აღარ იქნება შესაძლებელი. ფორმა №100/ა შეგიძლიათ გასცეთ დასრულების შემდეგაც.</p>
       <ErrorBox error={m.error} />
       {openRefs && can(user, 'admin') && <label className="row"><input type="checkbox" checked={force} onChange={(x) => setForce(x.target.checked)} /> მაინც დასრულება (ადმინისტრატორი)</label>}
-    </Modal>
-  );
-}
-
-function Form100Dialog({ e, onClose }: { e: EncounterDetail; onClose: () => void }) {
-  const draft = useQuery({ queryKey: ['form100-draft', e.id], queryFn: () => api<Form100Draft>(`/encounters/${e.id}/form100/draft`) });
-  const docs = useQuery({ queryKey: ['documents', e.id], queryFn: () => api<{ id: string; document_number: string; status: string; generated_at: string }[]>('/documents', { query: { encounter_id: e.id } }) });
-  const [f, setF] = useState<Record<string, string>>({});
-  const val = (k: keyof Form100Draft) => f[k] ?? (draft.data?.[k] as string | null) ?? '';
-  const set = (k: string) => (x: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: x.target.value });
-  const [conclusion, setConclusion] = useState('');
-  const m = useMutation({
-    mutationFn: () => api<{ id: string }>(`/encounters/${e.id}/form100`, { body: {
-      recipient: val('recipient') || undefined, workplace: val('workplace') || undefined, conclusion: conclusion || undefined,
-      course: f.course || undefined, anamnesis: val('anamnesis'), investigations: val('investigations'), treatment: val('treatment'),
-      past_diseases: val('past_diseases'), recommendations: val('recommendations') || undefined,
-    } }),
-    onSuccess: async (d) => { await openBlob(`/documents/${d.id}/pdf`); void docs.refetch(); },
-  });
-  const d = draft.data;
-  const noDx = d && d.diagnosis.primary.length === 0 && !conclusion;
-  return (
-    <Modal title="ფორმა №IV-100/ა — ცნობა ჯანმრთელობის მდგომარეობის შესახებ" onClose={onClose} width={860}
-      footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button><button className="btn primary" type="button" disabled={!d || !!noDx || m.isPending} onClick={() => m.mutate()}>გაცემა და ბეჭდვა</button></>}>
-      {draft.isLoading ? <Loading /> : d && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
-          <div style={{ gridColumn: '1 / -1' }}><Field label="2. დაწესებულება, სადაც იგზავნება ცნობა" htmlFor="rc"><input id="rc" className="input" value={val('recipient')} onChange={set('recipient')} /></Field></div>
-          <Field label="7. სამუშაო ადგილი და თანამდებობა" htmlFor="wp"><input id="wp" className="input" value={val('workplace')} onChange={set('workplace')} /></Field>
-          <Field label="13. მიმდინარეობა" htmlFor="cs">
-            <select id="cs" className="select" value={f.course ?? ''} onChange={set('course')}><option value="">—</option><option value="acute">მწვავე</option><option value="subacute">ქვემწვავე</option><option value="chronic">ქრონიკული</option><option value="recurrent">მორეციდივე</option></select>
-          </Field>
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="label">9. დასკვნა / დიაგნოზი</span>
-            <div className="seg" role="group" aria-label="დასკვნა" style={{ width: 'max-content' }}>
-              <button type="button" aria-pressed={conclusion === ''} onClick={() => setConclusion('')}>დიაგნოზი</button>
-              <button type="button" aria-pressed={conclusion === 'healthy'} onClick={() => setConclusion('healthy')}>ჯანმრთელი</button>
-              <button type="button" aria-pressed={conclusion === 'practically_healthy'} onClick={() => setConclusion('practically_healthy')}>პრაქტიკულად ჯანმრთელი</button>
-            </div>
-            {d.diagnosis.primary.map((x) => <span key={x.code}><span className="muted">ძირითადი:</span> {x.title} <span className="mono">({x.code})</span></span>)}
-            {d.diagnosis.secondary.map((x) => <span key={x.code}><span className="muted">თანმხლები:</span> {x.title} <span className="mono">({x.code})</span></span>)}
-            {noDx && <span className="hint err">ძირითადი დიაგნოზი არ არის — აირჩიეთ დასკვნა ან დაამატეთ დიაგნოზი.</span>}
-          </div>
-          {([['anamnesis', '11. მოკლე ანამნეზი'], ['investigations', '12. კვლევები და კონსულტაციები'], ['treatment', '14. ჩატარებული მკურნალობა'], ['past_diseases', '10. გადატანილი დაავადებები']] as const).map(([k, l]) => (
-            <Field key={k} label={l} htmlFor={k}><textarea id={k} className="textarea" rows={3} value={val(k)} onChange={set(k)} /></Field>
-          ))}
-          <div style={{ gridColumn: '1 / -1' }}><Field label="17. სამკურნალო და შრომითი რეკომენდაციები" htmlFor="rec"><textarea id="rec" className="textarea" rows={2} value={val('recommendations')} onChange={set('recommendations')} /></Field></div>
-          <div style={{ gridColumn: '1 / -1' }}><ErrorBox error={m.error} /></div>
-          {docs.data && docs.data.length > 0 && (
-            <div style={{ gridColumn: '1 / -1' }} className="stack">
-              <span className="label">ამ ვიზიტზე გაცემული</span>
-              {docs.data.map((doc) => (
-                <div key={doc.id} className="row"><span className="mono grow">{doc.document_number}</span><StatusChip status={doc.status === 'issued' ? 'paid' : 'cancelled'} />
-                  <button className="btn sm" type="button" onClick={() => void openBlob(`/documents/${doc.id}/pdf`)}>PDF</button></div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </Modal>
   );
 }

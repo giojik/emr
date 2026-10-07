@@ -11,6 +11,7 @@ export interface InpatientSettings {
   mar_window_min: number; mar_missed_hours: number; mar_horizon_hours: number; mar_stock_deduct: boolean; mar_allow_no_stock: boolean; mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
   med_verifier?: 'pharmacist' | 'head_nurse' | 'both'; news2_enabled: boolean; news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number;
   fluid_day_start: string; shift_times: string[]; scale_reminders: boolean; line_alert_hours: Record<string, number>;
+  admission_note_hours: number; progress_note_daily: boolean; progress_reminder_time: string; consult_due_hours: Record<string, number>; consult_billing: boolean; form100_on_discharge: 'off' | 'warn';
 }
 export interface BedType { code: string; name: string; is_active: boolean; sort_order: number }
 export interface Bed { id: string; ward_id: string; code: string; type_code: string; type_name: string; is_overflow: boolean; status: BedStatus; status_reason: string | null; status_at: string; is_active: boolean; sort_order: number }

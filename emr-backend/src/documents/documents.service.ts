@@ -35,6 +35,8 @@ export class DocumentsService {
    * ექიმი ეკრანზე ასწორებს და ასრულებს (issue).
    */
   async draft(encounterId: string) {
+    const ipd = await this.inpatientDraft(encounterId);
+    if (ipd) return ipd;
     const e = await this.db.selectFrom('encounters as e')
       .innerJoin('patients as p', 'p.id', 'e.patient_id')
       .select(['e.id', 'e.status', 'e.start_time', 'e.end_time', 'e.history_of_present_illness', 'e.attending_doctor_id', 'e.patient_id'])
@@ -78,6 +80,85 @@ export class DocumentsService {
       course: null as Form100Payload['course'],
       treatment: rx.map((r) => `${r.medication_name} ${r.dosage}, ${r.frequency}${r.duration_days ? `, ${r.duration_days} დღე` : ''}`).join('; ') || null,
       recommendations: null as string | null,
+      inpatient: false as boolean, dates: null as Form100Payload['dates'] | null, state_on_referral: null as string | null, state_on_discharge: null as string | null,
+      sources: [] as string[], last_issued: await this.lastIssued(encounterId),
+    };
+  }
+
+  private async lastIssued(encounterId: string) {
+    const d = await this.db.selectFrom('generated_documents').select(['id', 'document_number', 'generated_at', 'payload']).where('encounter_id', '=', encounterId)
+      .where('document_type', '=', 'form_100').orderBy('generated_at', 'desc').limit(1).executeTakeFirst();
+    return d ? { id: d.id, number: d.document_number, generated_at: d.generated_at, payload: d.payload as unknown as Form100Payload } : null;
+  }
+
+  /**
+   * 0045: ფორმა 100 სტაციონარიდან — ავტომატური შევსება: ეპიკრიზი (თუ არის) → მიმღები გასინჯვა / დღიურები → დანიშნულებები / კვლევები;
+   *   თარიღები (გაგზავნა / მოთავსება / გაწერა), მდგომარეობა შემოსვლისას / გაწერისას. ექიმი ასწორებს ეკრანზე და გასცემს.
+   */
+  private async inpatientDraft(encounterId: string) {
+    const st = await this.db.selectFrom('inpatient_stays as st').innerJoin('encounters as e', 'e.id', 'st.encounter_id')
+      .leftJoin('encounters as src', 'src.id', 'st.source_encounter_id')
+      .select(['st.encounter_id', 'st.patient_id', 'st.status', 'st.admitted_at', 'st.ended_at', 'st.source', 'st.discharge_type', 'e.status as encounter_status',
+        'e.chief_complaint', 'e.history_of_present_illness', 'src.start_time as source_time'])
+      .where('st.encounter_id', '=', encounterId).executeTakeFirst();
+    if (!st) return null;
+    const sources: string[] = [];
+    const [dxRows, chronic, epi, adm, dxItems, meds, consults] = await Promise.all([
+      this.db.selectFrom('encounter_diagnoses').select(['icd10_code', 'icd10_title', 'diagnosis_type']).where('encounter_id', '=', encounterId).orderBy('created_at').execute(),
+      this.db.selectFrom('patient_chronic_conditions').select(['icd10_code', 'condition_name']).where('patient_id', '=', st.patient_id).where('is_active', '=', true).execute(),
+      this.db.selectFrom('epicrises').select(['status', 'content']).where('encounter_id', '=', encounterId).executeTakeFirst(),
+      this.db.selectFrom('doctor_notes').select(['content']).where('encounter_id', '=', encounterId).where('kind', '=', 'admission').where('status', '=', 'signed')
+        .where('superseded_at', 'is', null).executeTakeFirst(),
+      this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as sv', 'sv.id', 'i.service_id').leftJoin('dx_reports as rep', 'rep.order_item_id', 'i.id')
+        .select(['i.section', 'sv.name', 'i.report_text', 'rep.impression',
+          (eb) => jsonArrayFrom(eb.selectFrom('lab_results as r').innerJoin('lab_analytes as a', 'a.id', 'r.analyte_id')
+            .select(['a.name', 'r.value_num', 'r.value_text', 'r.unit', 'r.flag']).whereRef('r.order_item_id', '=', 'i.id').orderBy('a.sort_order')).as('results')])
+        .where('i.encounter_id', '=', encounterId).where('i.status', '=', 'validated').orderBy('i.ordered_at').execute(),
+      this.db.selectFrom('med_orders as o').leftJoin('med_generics as g', 'g.id', 'o.generic_id')
+        .select([sql<string>`coalesce(g.inn || coalesce(' ' || g.strength, ''), o.drug_text)`.as('name'), sql<string>`min(o.start_at)`.as('first'),
+          sql<number>`(SELECT count(*)::int FROM mar_entries m JOIN med_orders o2 ON o2.id = m.order_id WHERE o2.encounter_id = ${encounterId}
+            AND coalesce(o2.generic_id::text, o2.drug_text) = coalesce(o.generic_id::text, o.drug_text) AND m.status IN ('given', 'partial') AND m.voided_at IS NULL)`.as('doses')])
+        .where('o.encounter_id', '=', encounterId).where('o.category', '=', 'medication')
+        .groupBy(['o.generic_id', 'o.drug_text', 'g.inn', 'g.strength']).orderBy(sql`min(o.start_at)`).execute(),
+      this.db.selectFrom('doctor_notes as n').leftJoin('users as u', 'u.id', 'n.author_id').leftJoin('departments as d', 'd.id', 'n.department_id')
+        .select(['n.content', 'd.name as dep', 'u.specialty']).where('n.encounter_id', '=', encounterId).where('n.kind', '=', 'consult').where('n.status', '=', 'signed')
+        .where('n.superseded_at', 'is', null).orderBy('n.signed_at').execute(),
+    ]);
+    const c = (epi?.content ?? {}) as Record<string, string>;
+    const a = (adm?.content ?? {}) as Record<string, string>;
+    if (epi) sources.push(epi.status === 'signed' ? 'ეპიკრიზი (ხელმოწერილი)' : 'ეპიკრიზი (შავი ვერსია)');
+    if (adm) sources.push('მიმღები გასინჯვა');
+    const arrow: Record<string, string> = { L: '(დაბ.)', H: '(მაღ.)', LL: '(კრიტ. დაბ.)', HH: '(კრიტ. მაღ.)', A: '(გადახრა)' };
+    const dxLines = dxItems.map((i) => {
+      if (i.section !== 'lab') return `${i.name}: ${i.impression ?? i.report_text ?? ''}`;
+      const abn = i.results.filter((r) => r.flag && r.flag !== 'N');
+      return `${i.name}: ${abn.length ? abn.map((r) => `${r.name} ${r.value_num !== null ? Number(r.value_num) : r.value_text}${r.unit ? ` ${r.unit}` : ''} ${arrow[r.flag!] ?? ''}`.trim()).join('; ') : 'ნორმის ფარგლებში'}`;
+    });
+    const consultLines = consults.map((x) => `კონსულტაცია (${x.dep ?? x.specialty ?? ''}): ${((x.content as Record<string, string>).assessment ?? '').trim()}`);
+    const pick = (t: string): DxItem[] => dxRows.filter((d) => d.diagnosis_type === t).map((d) => ({ code: d.icd10_code, title: d.icd10_title }));
+    // საბოლოო (primary) დიაგნოზი ჯერ არ არის — შემოსვლისას დასმული (ექიმმა უნდა დაადასტუროს / შეცვალოს ჰოსპიტალიზაციის დიაგნოზებში)
+    const primary = pick('primary').length ? pick('primary') : pick('admission');
+    if (!pick('primary').length && primary.length) sources.push('დიაგნოზი — შემოსვლისას (საბოლოო ჯერ არ არის)');
+    const t = (...xs: (string | null | undefined)[]) => xs.map((x) => x?.trim()).filter(Boolean).join('\n') || null;
+    const day = (x: string | Date | null | undefined) => (x ? new Intl.DateTimeFormat('en-CA', { timeZone: this.env.CLINIC_TZ }).format(new Date(x)) : null);
+    return {
+      encounter_status: st.encounter_status as never,
+      recipient: 'მოთხოვნის ადგილზე წარსადგენად',
+      workplace: null as string | null,
+      conclusion: null as Form100Payload['conclusion'],
+      diagnosis: { primary, secondary: pick('secondary'), complications: pick('complication') },
+      diagnosis_note: null as string | null,
+      past_diseases: c.past_diseases?.trim() || a.anamnesis_vitae?.trim() || chronic.map((x) => (x.icd10_code ? `${x.condition_name} (${x.icd10_code})` : x.condition_name)).join('; ') || null,
+      anamnesis: c.anamnesis?.trim() || t(a.complaints && `ჩივილები: ${a.complaints}`, a.anamnesis_morbi) || t(st.chief_complaint, st.history_of_present_illness),
+      investigations: t(c.investigations, ...dxLines, ...consultLines),
+      course: null as Form100Payload['course'],
+      treatment: c.treatment?.trim() || (meds.length ? meds.map((m) => `${m.name}${m.doses ? ` (${m.doses} დოზა)` : ''}`).join('; ') : null),
+      recommendations: c.recommendations?.trim() || null,
+      inpatient: true as boolean,
+      dates: { outpatient_visit: null, sent_to_hospital: day(st.source_time), admitted: day(st.admitted_at), discharged: day(st.ended_at) ?? (st.status === 'active' ? day(new Date()) : null) },
+      state_on_referral: c.state_on_admission?.trim() || a.objective?.trim() || null,
+      state_on_discharge: c.state_on_discharge?.trim() || null,
+      sources, last_issued: await this.lastIssued(encounterId),
     };
   }
 
@@ -96,8 +177,16 @@ export class DocumentsService {
         .where('e.id', '=', encounterId).forUpdate(['e']).executeTakeFirstOrThrow();
 
       if (!['active', 'discharged'].includes(e.status)) throw new ConflictException(`ცნობა ვერ გაიცემა ვიზიტის სტატუსზე "${e.status}"`);
-      if (!(has(user, 'admin') || (has(user, 'doctor') && user.id === e.attending_doctor_id))) {
-        throw new ForbiddenException('ცნობას გასცემს მკურნალი ექიმი');
+      // სტაციონარი (0045): მკურნალი ექიმი ან განყოფილების ხელმძღვანელი (ექიმი)
+      let head = false;
+      if (d.inpatient && has(user, 'doctor')) {
+        const me = await trx.selectFrom('users').select(['department_id', 'is_section_head']).where('id', '=', user.id).executeTakeFirstOrThrow();
+        const dep = await trx.selectFrom('bed_assignments').select('department_id').where('encounter_id', '=', encounterId).where('end_kind', 'is distinct from', 'cancel')
+          .orderBy(sql`ended_at IS NULL`, 'desc').orderBy('started_at', 'desc').limit(1).executeTakeFirst();
+        head = me.is_section_head && !!dep && me.department_id === dep.department_id;
+      }
+      if (!(has(user, 'admin') || (has(user, 'doctor') && (user.id === e.attending_doctor_id || head)))) {
+        throw new ForbiddenException(d.inpatient ? 'ცნობას გასცემს მკურნალი ექიმი ან განყოფილების ხელმძღვანელი' : 'ცნობას გასცემს მკურნალი ექიმი');
       }
       const conclusion = dto.conclusion ?? null;
       if (!conclusion && d.diagnosis.primary.length === 0) {
@@ -125,7 +214,7 @@ export class DocumentsService {
           address: e.address, phone: e.phone_number,
         },
         workplace: dto.workplace ?? null,
-        dates: { outpatient_visit: e.start_time.toISOString().slice(0, 10), sent_to_hospital: null, admitted: null, discharged: null },
+        dates: d.inpatient && d.dates ? d.dates : { outpatient_visit: e.start_time.toISOString().slice(0, 10), sent_to_hospital: null, admitted: null, discharged: null },
         conclusion,
         diagnosis: { ...d.diagnosis, note: dto.diagnosis_note ?? null },
         past_diseases: dto.past_diseases !== undefined ? dto.past_diseases : d.past_diseases,
@@ -133,8 +222,9 @@ export class DocumentsService {
         investigations: dto.investigations !== undefined ? dto.investigations : d.investigations,
         course: dto.course ?? null,
         treatment: dto.treatment !== undefined ? dto.treatment : d.treatment,
-        state_on_referral: null, state_on_discharge: null,
-        recommendations: dto.recommendations ?? null,
+        state_on_referral: d.inpatient ? (dto.state_on_referral !== undefined ? dto.state_on_referral : d.state_on_referral) : null,
+        state_on_discharge: d.inpatient ? (dto.state_on_discharge !== undefined ? dto.state_on_discharge : d.state_on_discharge) : null,
+        recommendations: dto.recommendations !== undefined ? dto.recommendations : d.recommendations,
         doctor: { name: `${e.doc_first} ${e.doc_last}`, specialty: e.specialty, license_number: e.license_number },
         director: { name: clinic.director_name, title: clinic.director_title },
         verify_url: `${this.env.PUBLIC_VERIFY_BASE_URL.replace(/\/$/, '')}/${token}`,
@@ -151,6 +241,9 @@ export class DocumentsService {
       }).returning(['id', 'document_number', 'verification_token', 'generated_at']).executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'ISSUE_FORM_100', entityName: 'generated_documents', entityId: doc.id,
         newData: { number, encounter_id: encounterId, sha256: sha } }, trx);
+      if (d.inpatient) {
+        await trx.insertInto('inpatient_events').values({ encounter_id: encounterId, kind: 'form100_issued', data: JSON.stringify({ document_id: doc.id, number }), user_id: user.id }).execute();
+      }
       return { ...doc, verify_url: payload.verify_url, file_sha256: sha };
     });
   }

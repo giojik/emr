@@ -60,7 +60,7 @@ export function LeaveDialog({ encounterId, maxHours, onClose }: { encounterId: s
 
 // ---------------------------------------------------------------- გაწერა
 interface Check {
-  status: string; warnings: { code: string; message: string }[]; closure_missing: string[]; epicrisis_status: string | null; on_leave: boolean; transfer_pending: boolean;
+  status: string; warnings: { code: string; message: string; soft?: boolean }[]; closure_missing: string[]; epicrisis_status: string | null; on_leave: boolean; transfer_pending: boolean;
   can_sign_with_discharge: boolean; can_discharge: boolean;
 }
 type DType = 'home' | 'other_clinic' | 'against_advice' | 'death';
@@ -94,7 +94,7 @@ export function DischargeDialog({ encounterId, patientId, departmentId, onClose 
   const regular = type === 'home' || type === 'other_clinic';
   const signable = regular && c?.can_sign_with_discharge;
   const blocked = regular && !!c && c.closure_missing.length > 0 && !(signable && sign);
-  const needOverride = (c?.warnings.length ?? 0) > 0;
+  const needOverride = (c?.warnings.filter((w) => !w.soft).length ?? 0) > 0;
   const ready = !!c && c.can_discharge && !blocked && (!needOverride || override.trim().length >= 5) && (
     type === 'home' ? true
     : type === 'other_clinic' ? !!destId || destText.trim().length >= 3
@@ -158,8 +158,9 @@ export function DischargeDialog({ encounterId, patientId, departmentId, onClose 
           <span className="small muted">საწოლი დაიბლოკება გვამის გატანამდე. ჩანაწერს აუქმებს მხოლოდ admin.</span>
         </div>}
 
+        {c && c.warnings.some((w) => w.soft) && <div className="alert info"><div className="stack" style={{ gap: 4 }}>{c.warnings.filter((w) => w.soft).map((w) => <div key={w.code}>{w.message}</div>)}</div></div>}
         {needOverride && <div className="stack" style={{ gap: 6 }}>
-          <div className="alert warn">{c.warnings.map((w) => <div key={w.code}>{w.message}</div>)}</div>
+          <div className="alert warn"><div className="stack" style={{ gap: 4 }}>{c.warnings.filter((w) => !w.soft).map((w) => <div key={w.code}>• {w.message}</div>)}</div></div>
           <Field label="გაგრძელების მიზეზი" htmlFor="dc-o" required><input id="dc-o" className="input" value={override} onChange={(e) => setOverride(e.target.value)} placeholder="მაგ. ანალიზი — ამბულატორიულად" /></Field>
         </div>}
         <Field label="შენიშვნა" htmlFor="dc-n"><input id="dc-n" className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>

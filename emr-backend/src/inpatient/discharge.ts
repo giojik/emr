@@ -12,10 +12,12 @@ import type { DB } from '../database/db';
 import { InjectDb, type Database } from '../database/database.module';
 import { DISCHARGE_KA } from '../templates/template-context';
 import { EpicrisisModule, EpicrisisService } from './epicrisis';
+import { loadEnv } from '../config/env';
 import { LINE_KA } from './nursing';
 import { OrdersModule, OrdersService } from './orders';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 
+const TZ = loadEnv().CLINIC_TZ;
 type Trx = Transaction<DB>;
 const TYPES = ['home', 'other_clinic', 'against_advice', 'death'] as const;
 type DischargeType = (typeof TYPES)[number];
@@ -56,7 +58,8 @@ export class InstitutionDto {
   @IsOptional() @IsInt() @Min(0) sort_order?: number;
 }
 
-export interface DischargeWarning { code: string; message: string }
+/** soft — შეხსენება (ჩანს შემოწმებაში / დიალოგში), დასაბუთებას არ მოითხოვს (0045: ჩანაწერები, ფორმა 100) */
+export interface DischargeWarning { code: string; message: string; soft?: boolean }
 
 /**
  * გაწერა (0041). ტიპები: ბინაზე / სხვა კლინიკაში / თვითნებური (ხელწერილით ან 2 მოწმით) / გარდაცვალება.
@@ -99,6 +102,23 @@ export class DischargeService {
       .where((eb) => eb.or([eb('status', '=', 'missed'), eb.and([eb('status', '=', 'due'), eb('scheduled_at', '<', sql<Date>`now() - make_interval(mins => ${win})`)])]))
       .where('scheduled_at', '>', sql<Date>`now() - interval '24 hours'`).executeTakeFirstOrThrow();
     if (mar.n) out.push({ code: 'MAR_MISSED', message: `MAR: ბოლო 24 სთ-ში მიუცემელი / გამოტოვებული დოზა (${mar.n})` });
+    // 0045: ექიმის ჩანაწერები (მიმღები გასინჯვა, დღიურები) და ფორმა 100
+    const s45 = await this.ipd.settings();
+    const nm = await sql<{ adm: boolean; days: string[] }>`SELECT
+        NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'admission' AND n.status = 'signed' AND n.superseded_at IS NULL) AS adm,
+        ARRAY(SELECT to_char(d, 'DD/MM') FROM generate_series((st.admitted_at AT TIME ZONE ${TZ})::date + 1, (now() AT TIME ZONE ${TZ})::date - 1, interval '1 day') d
+          WHERE ${s45.progress_note_daily !== false} AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'progress'
+            AND n.status = 'signed' AND n.superseded_at IS NULL AND n.note_date = d::date) ORDER BY d) AS days
+      FROM inpatient_stays st WHERE st.encounter_id = ${encounterId}`.execute(ex);
+    const n0 = nm.rows[0];
+    if (n0 && (n0.adm || n0.days.length)) {
+      out.push({ code: 'NOTES_MISSING', soft: true, message: [n0.adm && 'მიმღები გასინჯვა არ არის ხელმოწერილი',
+        n0.days.length && `დღიური აკლია (${n0.days.length}): ${n0.days.slice(0, 7).join(', ')}${n0.days.length > 7 ? '…' : ''}`].filter(Boolean).join('; ') });
+    }
+    if ((s45.form100_on_discharge ?? 'warn') === 'warn') {
+      const f = await ex.selectFrom('generated_documents').select('id').where('encounter_id', '=', encounterId).where('document_type', '=', 'form_100').where('status', '=', 'issued').executeTakeFirst();
+      if (!f) out.push({ code: 'FORM100_MISSING', soft: true, message: 'ფორმა №IV-100/ა არ არის გაცემული (შეგიძლიათ გასცეთ გაწერამდე ან გაწერის შემდეგ)' });
+    }
     // 0044: ამოუღებელი ხაზები / დრენაჟები
     const lines = await ex.selectFrom('lines_drains').select(['kind', 'site']).where('encounter_id', '=', encounterId).where('removed_at', 'is', null).where('voided_at', 'is', null).execute();
     if (lines.length) out.push({ code: 'LINES_IN_PLACE', message: `ამოუღებელი კათეტერი / დრენაჟი (${lines.length}): ${lines.map((l) => (LINE_KA[l.kind] ?? l.kind) + (l.site ? ` — ${l.site}` : '')).join(', ')}` });
@@ -180,7 +200,7 @@ export class DischargeService {
         }
 
         // --- გაფრთხილებები
-        const warnings = await this.warnings(encounterId, trx);
+        const warnings = (await this.warnings(encounterId, trx)).filter((w) => !w.soft);
         if (warnings.length) {
           if (!dto.override_reason?.trim()) throw new ConflictException({ code: 'DISCHARGE_WARNINGS', message: warnings.map((w) => w.message).join('; '), warnings });
           set.discharge_overrides = JSON.stringify({ warnings, reason: dto.override_reason.trim() });

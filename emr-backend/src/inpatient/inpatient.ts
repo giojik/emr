@@ -35,6 +35,9 @@ export interface InpatientSettings {
   // 0044: ექთნის დოკუმენტაცია
   news2_enabled: boolean; news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number;
   fluid_day_start: string; shift_times: string[]; scale_reminders: boolean; line_alert_hours: Record<string, number>;
+  // 0045: ექიმის ჩანაწერები / კონსულტაციები / ფორმა 100
+  admission_note_hours: number; progress_note_daily: boolean; progress_reminder_time: string; consult_due_hours: Record<'routine' | 'urgent' | 'emergency', number>;
+  consult_billing: boolean; form100_on_discharge: 'off' | 'warn';
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
