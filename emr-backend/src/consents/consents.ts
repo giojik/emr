@@ -2,7 +2,8 @@ import { BadRequestException, Body, ConflictException, Controller, ForbiddenExce
   Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min } from 'class-validator';
 import type { Request, Response } from 'express';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
+import type { DB } from '../database/db';
 import { randomUUID } from 'node:crypto';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -11,6 +12,9 @@ import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { PatientFilesModule, PatientFilesService, sniffMime } from '../patient-files/patient-files';
 import { ClinicSettingsModule, ClinicSettingsService } from '../settings/clinic-settings';
+import { TemplateContextService } from '../templates/template-context';
+import { plainText, type Body as TplBody } from '../templates/template-blocks';
+import { TemplatesModule, TemplatesService } from '../templates/templates';
 import { renderConsent } from './consent.pdf';
 
 export class CreateConsentDto {
@@ -39,45 +43,50 @@ type Status = 'granted' | 'refused' | 'revoked' | 'missing';
 @Injectable()
 export class ConsentsService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService,
-              private readonly files: PatientFilesService, private readonly settings: ClinicSettingsService) {}
+              private readonly files: PatientFilesService, private readonly settings: ClinicSettingsService,
+              private readonly templates: TemplatesService, private readonly vars: TemplateContextService) {}
 
-  private currentVersions() {
-    return this.db.selectFrom('consent_types as t')
-      .innerJoin('consent_type_versions as v', (j) => j.onRef('v.type_code', '=', 't.code')
-        .on('v.version', '=', (eb) => eb.selectFrom('consent_type_versions as v2').select((e) => e.fn.max('v2.version').as('m')).whereRef('v2.type_code', '=', 't.code')))
-      .select(['t.code', 't.name', 't.scope', 't.is_active', 't.sort_order', 'v.id as version_id', 'v.version', 'v.body_text', 'v.text_approved', 'v.created_at as version_created_at'])
+  /**
+   * თანხმობები — document_templates (kind = consent; ხელწერილი — refusal), 0041. body_text — შაბლონის ტექსტი (ცვლადებით, შეუვსებელი).
+   * refusal-ები (მაგ. SELF_DISCHARGE) პაციენტის ბარათის სიაში არ ჩანს — მათ გაწერის პროცესი იყენებს.
+   */
+  private currentVersions(kinds: ('consent' | 'refusal')[] = ['consent'], ex: Database | Transaction<DB> = this.db) {
+    return ex.selectFrom('document_templates as t')
+      .innerJoin('document_template_versions as v', (j) => j.onRef('v.template_code', '=', 't.code').on('v.status', '=', 'published'))
+      .select(['t.code', 't.kind', 't.name', 't.scope', 't.is_active', 't.sort_order', 't.required_on_admission', 'v.id as version_id', 'v.version', 'v.body',
+        'v.text_approved', 'v.published_at as version_created_at'])
+      .where('t.kind', 'in', kinds)
       .orderBy('t.sort_order');
   }
+  private withText<T extends { body: unknown }>(r: T) { const { body, ...rest } = r; return { ...rest, body_text: plainText(body as TplBody) }; }
 
-  types(activeOnly: boolean) {
-    let q = this.currentVersions();
+  async types(activeOnly: boolean, kinds: ('consent' | 'refusal')[] = ['consent']) {
+    let q = this.currentVersions(kinds);
     if (activeOnly) q = q.where('t.is_active', '=', true);
-    return q.execute();
+    return (await q.execute()).map((r) => this.withText(r));
   }
 
   /** ტექსტის ან დამტკიცების ცვლილება = ახალი ვერსია (ძველ ვერსიაზე მოწერილი თანხმობები ხელუხლებელია) */
   async updateType(code: string, dto: UpdateConsentTypeDto, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
-      const cur = await this.currentVersions().where('t.code', '=', code).executeTakeFirst();
-      if (!cur) throw new NotFoundException('თანხმობის ტიპი ვერ მოიძებნა');
+      const curRaw = await this.currentVersions(['consent', 'refusal'], trx).where('t.code', '=', code).forUpdate('t').executeTakeFirst();
+      if (!curRaw) throw new NotFoundException('თანხმობის ტიპი ვერ მოიძებნა');
+      const cur = this.withText(curRaw);
       const meta: Record<string, unknown> = {};
       if (dto.name !== undefined) meta.name = dto.name;
       if (dto.is_active !== undefined) meta.is_active = dto.is_active;
       if (dto.sort_order !== undefined) meta.sort_order = dto.sort_order;
-      if (Object.keys(meta).length) await trx.updateTable('consent_types').set(meta).where('code', '=', code).execute();
+      if (Object.keys(meta).length) await trx.updateTable('document_templates').set(meta).where('code', '=', code).execute();
       const textChanged = dto.body_text !== undefined && dto.body_text.trim() !== cur.body_text;
       const approveChanged = dto.text_approved !== undefined && dto.text_approved !== cur.text_approved;
       let version = cur.version;
       if (textChanged || approveChanged) {
-        version = cur.version + 1;
-        await trx.insertInto('consent_type_versions').values({
-          type_code: code, version, body_text: textChanged ? dto.body_text!.trim() : cur.body_text,
-          text_approved: dto.text_approved ?? (textChanged ? false : cur.text_approved), created_by: user.id,
-        }).execute();
+        version = await this.templates.publishText(code, textChanged ? dto.body_text!.trim() : cur.body_text,
+          dto.text_approved ?? (textChanged ? false : cur.text_approved), user, trx);
       }
-      await this.audit.log(ctx, { action: 'UPDATE_CONSENT_TYPE', entityName: 'consent_types', entityId: code,
+      await this.audit.log(ctx, { action: 'UPDATE_CONSENT_TYPE', entityName: 'document_templates', entityId: code,
         newData: { ...meta, new_version: version !== cur.version ? version : undefined, text_changed: textChanged, text_approved: dto.text_approved } }, trx);
-      return this.currentVersions().where('t.code', '=', code).executeTakeFirstOrThrow();
+      return this.withText(await this.currentVersions(['consent', 'refusal'], trx).where('t.code', '=', code).executeTakeFirstOrThrow());
     });
   }
 
@@ -86,7 +95,7 @@ export class ConsentsService {
     const [types, rows] = await Promise.all([
       this.types(true),
       this.db.selectFrom('patient_consents as c')
-        .innerJoin('consent_type_versions as v', 'v.id', 'c.version_id')
+        .innerJoin('document_template_versions as v', 'v.id', 'c.version_id')
         .leftJoin('users as u', 'u.id', 'c.recorded_by')
         .select(['c.id', 'c.type_code', 'c.encounter_id', 'c.decision', 'c.method', 'c.signer_type', 'c.representative_name', 'c.representative_relation',
           'c.file_id', 'c.signed_at', 'c.revoked_at', 'c.revoke_reason', 'v.version', 'v.text_approved',
@@ -112,14 +121,17 @@ export class ConsentsService {
     return !!r && r.decision === 'granted' && !r.revoked_at;
   }
 
-  private async context(patientId: string, typeCode: string, encounterId?: string) {
-    const [type, clinic, patient] = await Promise.all([
-      this.currentVersions().where('t.code', '=', typeCode).where('t.is_active', '=', true).executeTakeFirst(),
+  private async context(patientId: string, typeCode: string, encounterId: string | undefined, user: AuthUser) {
+    const [typeRaw, clinic, patient] = await Promise.all([
+      this.currentVersions(['consent', 'refusal']).where('t.code', '=', typeCode).where('t.is_active', '=', true).executeTakeFirst(),
       this.settings.get(),
       this.db.selectFrom('patients').select(['id', 'first_name', 'last_name', 'birth_date', 'personal_number', 'passport_number', 'address'])
         .where('id', '=', patientId).executeTakeFirst(),
     ]);
-    if (!type) throw new NotFoundException('თანხმობის ტიპი ვერ მოიძებნა ან გათიშულია');
+    if (!typeRaw) throw new NotFoundException('თანხმობის ტიპი ვერ მოიძებნა ან გათიშულია');
+    // ტექსტი — ცვლადებით შევსებული (პაციენტი, კლინიკა, ჰოსპიტალიზაცია…)
+    const vars = await this.vars.resolve(patientId, typeRaw.scope === 'encounter' ? encounterId : undefined, user);
+    const type = { ...this.withText(typeRaw), body_text: plainText(typeRaw.body as TplBody, vars) };
     if (!patient) throw new NotFoundException('პაციენტი ვერ მოიძებნა');
     let encounterDate: string | null = null;
     if (type.scope === 'encounter') {
@@ -131,8 +143,8 @@ export class ConsentsService {
     return { type, clinic, patient, encounterDate };
   }
 
-  async blankForm(patientId: string, typeCode: string, encounterId: string | undefined, ctx: AuditContext) {
-    const c = await this.context(patientId, typeCode, encounterId);
+  async blankForm(patientId: string, typeCode: string, encounterId: string | undefined, user: AuthUser, ctx: AuditContext) {
+    const c = await this.context(patientId, typeCode, encounterId, user);
     await this.audit.log(ctx, { action: 'PRINT_CONSENT_FORM', entityName: 'patients', entityId: patientId, newData: { type: typeCode, version: c.type.version } });
     return renderConsent({
       clinic: c.clinic, title: c.type.name, version: c.type.version, body: c.type.body_text, textApproved: c.type.text_approved,
@@ -142,7 +154,7 @@ export class ConsentsService {
   }
 
   async create(patientId: string, dto: CreateConsentDto, user: AuthUser, ctx: AuditContext) {
-    const c = await this.context(patientId, dto.type_code, dto.encounter_id);
+    const c = await this.context(patientId, dto.type_code, dto.encounter_id, user);
     if (!(c.clinic.consent_methods ?? []).includes(dto.method)) throw new BadRequestException(`ხელმოწერის მეთოდი "${dto.method}" ამ კლინიკაში გათიშულია`);
     if (dto.signer_type === 'representative' && (!dto.representative_name?.trim() || !dto.representative_relation?.trim())) {
       throw new BadRequestException('წარმომადგენლის სახელი და კავშირი სავალდებულოა');
@@ -207,7 +219,7 @@ export class ConsentsController {
   constructor(private readonly consents: ConsentsService) {}
 
   @Get('consent-types')
-  types(@Query('all') all?: string) { return this.consents.types(all !== 'true'); }
+  types(@Query('all') all?: string) { return this.consents.types(all !== 'true', all === 'true' ? ['consent', 'refusal'] : ['consent']); }
 
   @Put('consent-types/:code') @Roles('admin')
   update(@Param('code') code: string, @Body() dto: UpdateConsentTypeDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
@@ -219,8 +231,8 @@ export class ConsentsController {
 
   @Get('patients/:id/consents/:code/form') @Roles(...FRONT)
   async form(@Param('id', ParseUUIDPipe) id: string, @Param('code') code: string, @Query('encounter_id') encounterId: string | undefined,
-             @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const pdf = await this.consents.blankForm(id, code, encounterId, auditCtx(req));
+             @CurrentUser() u: AuthUser, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const pdf = await this.consents.blankForm(id, code, encounterId, u, auditCtx(req));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
     return new StreamableFile(pdf);
   }
@@ -236,5 +248,5 @@ export class ConsentsController {
   }
 }
 
-@Module({ imports: [PatientFilesModule, ClinicSettingsModule], controllers: [ConsentsController], providers: [ConsentsService], exports: [ConsentsService] })
+@Module({ imports: [PatientFilesModule, ClinicSettingsModule, TemplatesModule], controllers: [ConsentsController], providers: [ConsentsService], exports: [ConsentsService] })
 export class ConsentsModule {}

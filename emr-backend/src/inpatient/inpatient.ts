@@ -23,6 +23,8 @@ export interface InpatientSettings {
   bed_assign_mode: 'two_step' | 'direct'; cleaning_required: boolean; sex_rule: 'block' | 'warn' | 'off'; overflow_beds: boolean;
   planned_queue: boolean; planned_sms: boolean; cancel_hours: number;
   wristband: boolean; wristband_print: 'zpl' | 'pdf'; wristband_width_mm: number; wristband_length_mm: number; wristband_offset_mm: number;
+  // 0041
+  transfer_wait_hours: number; epicrisis_cosign: boolean; discharge_cancel_hours: number; leave_counts_bed_day: boolean; leave_max_hours: number; docs_pending_alert_hours: number;
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
@@ -123,38 +125,39 @@ export class InpatientService {
     private readonly notifications: NotificationsService) {}
 
   settings() { return this.modules.require<InpatientSettings>('inpatient'); }
-  private me(u: AuthUser, ex: Ex = this.db) { return ex.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
-  private async isStaff(u: AuthUser, departmentId: string, ex: Ex = this.db) {
+  /** @internal (0041: გამოიყენება გადაყვანა / გაწერა / ეპიკრიზი სერვისებში) */
+  me(u: AuthUser, ex: Ex = this.db) { return ex.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
+  async isStaff(u: AuthUser, departmentId: string, ex: Ex = this.db) {
     if (has(u, 'admin')) return true;
     if (!has(u, 'nurse', 'doctor', 'manager')) return false;
     return (await this.me(u, ex)).department_id === departmentId;
   }
-  private async isHead(u: AuthUser, departmentId: string, ex: Ex = this.db) {
+  async isHead(u: AuthUser, departmentId: string, ex: Ex = this.db) {
     if (has(u, 'admin')) return true;
     const me = await this.me(u, ex);
     return me.department_id === departmentId && (me.is_section_head || has(u, 'manager'));
   }
-  private async canAssign(u: AuthUser, departmentId: string, s: InpatientSettings, ex: Ex = this.db) {
+  async canAssign(u: AuthUser, departmentId: string, s: InpatientSettings, ex: Ex = this.db) {
     if (await this.isStaff(u, departmentId, ex)) return true;
     return s.bed_assign_mode === 'direct' && has(u, 'receptionist', 'doctor');
   }
-  private event(ex: Ex, e: { encounter_id?: string | null; bed_id?: string | null; planned_id?: string | null; kind: string; data?: Record<string, unknown> }, u: AuthUser | null) {
+  event(ex: Ex, e: { encounter_id?: string | null; bed_id?: string | null; planned_id?: string | null; kind: string; data?: Record<string, unknown> }, u: AuthUser | null) {
     return ex.insertInto('inpatient_events').values({ encounter_id: e.encounter_id ?? null, bed_id: e.bed_id ?? null, planned_id: e.planned_id ?? null, kind: e.kind,
       data: JSON.stringify(e.data ?? {}), user_id: u?.id ?? null }).execute();
   }
-  private async nextNo(trx: Trx, type: string, prefix: string) {
+  async nextNo(trx: Trx, type: string, prefix: string) {
     const year = Number((await sql<{ y: string }>`SELECT to_char(now() AT TIME ZONE ${TZ}, 'YYYY') AS y`.execute(trx)).rows[0].y);
     const { last_value } = await trx.insertInto('document_counters').values({ document_type: type, year, last_value: 1 })
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` })).returning('last_value').executeTakeFirstOrThrow();
     return `${prefix}${String(year).slice(2)}-${String(last_value).padStart(6, '0')}`;
   }
-  private async department(id: string, ex: Ex = this.db) {
+  async department(id: string, ex: Ex = this.db) {
     const d = await ex.selectFrom('departments').select(['id', 'name', 'type', 'is_active']).where('id', '=', id).executeTakeFirst();
     if (!d || !d.is_active) throw new BadRequestException('განყოფილება ვერ მოიძებნა ან გათიშულია');
     if (d.type !== 'inpatient') throw new BadRequestException(`„${d.name}“ სტაციონარული განყოფილება არ არის (ტიპი: inpatient)`);
     return d;
   }
-  private async doctor(id: string, ex: Ex = this.db) {
+  async doctor(id: string, ex: Ex = this.db) {
     const d = await ex.selectFrom('users as u').select(['u.id', 'u.first_name', 'u.last_name', 'u.is_active',
       sql<boolean>`EXISTS (SELECT 1 FROM user_capabilities c WHERE c.user_id = u.id AND 'doctor' = ANY(c.capabilities))`.as('is_doctor')]).where('u.id', '=', id).executeTakeFirst();
     if (!d || !d.is_doctor || !d.is_active) throw new BadRequestException('მკურნალი ექიმი ვერ მოიძებნა ან აქტიური არ არის');
@@ -167,7 +170,7 @@ export class InpatientService {
   }
 
   /** საწოლი ბლოკით + შემოწმებები: აქტიური, განყოფილება, სტატუსი; გაფრთხილებები (სქესი, იზოლაცია) — confirm-ით */
-  private async lockBed(trx: Trx, bedId: string, p: { departmentId: string; gender: string; isolation?: string | null; plannedId?: string | null; confirm?: boolean }, s: InpatientSettings) {
+  async lockBed(trx: Trx, bedId: string, p: { departmentId: string; gender: string; isolation?: string | null; plannedId?: string | null; confirm?: boolean }, s: InpatientSettings) {
     const b = await trx.selectFrom('beds as b').innerJoin('wards as w', 'w.id', 'b.ward_id')
       .select(['b.id', 'b.code', 'b.status', 'b.is_active', 'b.is_overflow', 'w.id as ward_id', 'w.code as ward_code', 'w.department_id', 'w.sex', 'w.isolation_capable', 'w.is_active as ward_active'])
       .where('b.id', '=', bedId).forUpdate('b').executeTakeFirst();
@@ -190,11 +193,11 @@ export class InpatientService {
     if (warnings.length && !p.confirm) throw new ConflictException({ code: 'CONFIRM_REQUIRED', message: warnings.join('; '), warnings });
     return { ...b, warnings };
   }
-  private async setBed(ex: Ex, bedId: string, status: string, u: AuthUser | null, reason: string | null = null) {
+  async setBed(ex: Ex, bedId: string, status: string, u: AuthUser | null, reason: string | null = null) {
     await ex.updateTable('beds').set({ status, status_reason: reason, status_at: sql`now()`, status_by: u?.id ?? null }).where('id', '=', bedId).execute();
   }
   /** გათავისუფლებული საწოლი: დალაგება სავალდებულოა → „დასალაგებელი“, არადა → „თავისუფალი“ */
-  private async releaseBed(ex: Ex, bedId: string, s: InpatientSettings, u: AuthUser) {
+  async releaseBed(ex: Ex, bedId: string, s: InpatientSettings, u: AuthUser) {
     await this.setBed(ex, bedId, s.cleaning_required ? 'cleaning' : 'free', u);
   }
 
@@ -351,15 +354,21 @@ export class InpatientService {
   async board(departmentId: string, u: AuthUser) {
     const s = await this.settings();
     const dep = await this.department(departmentId);
-    const occ = await this.db.selectFrom('bed_assignments as a').innerJoin('inpatient_stays as st', 'st.encounter_id', 'a.encounter_id')
+    const occRaw = await this.db.selectFrom('bed_assignments as a').innerJoin('inpatient_stays as st', 'st.encounter_id', 'a.encounter_id')
       .innerJoin('encounters as e', 'e.id', 'a.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id').leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
       .select(['a.bed_id', 'a.encounter_id', 'a.started_at', 'st.adm_no', 'st.severity', 'st.isolation', 'st.admitted_at', 'p.id as patient_id', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
         'e.attending_doctor_id', sql<string | null>`d.last_name || ' ' || left(d.first_name, 1) || '.'`.as('doctor_name'),
         sql<number>`((now() AT TIME ZONE ${TZ})::date - (st.admitted_at AT TIME ZONE ${TZ})::date)::int`.as('day'),
         sql<string | null>`(SELECT x.icd10_code || ' ' || x.icd10_title FROM encounter_diagnoses x WHERE x.encounter_id = e.id ORDER BY (x.diagnosis_type = 'primary') DESC, (x.diagnosis_type = 'admission') DESC, x.created_at LIMIT 1)`.as('diagnosis'),
         sql<number>`(SELECT count(*)::int FROM patient_allergies al WHERE al.patient_id = p.id AND al.is_active)`.as('allergies'),
-        sql<boolean>`EXISTS (SELECT 1 FROM patient_consents c WHERE c.encounter_id = e.id AND c.type_code = 'HOSPITALIZATION' AND c.decision = 'granted' AND c.revoked_at IS NULL)`.as('consent')])
+        // 0041: სავალდებულო თანხმობები (document_templates.required_on_admission) — consent = ყველა გაცემულია; consents_missing — რომელი აკლია
+        sql<string[]>`ARRAY(SELECT t.name FROM document_templates t WHERE t.required_on_admission AND t.is_active AND NOT EXISTS (
+          SELECT 1 FROM patient_consents c WHERE c.type_code = t.code AND c.patient_id = p.id AND (t.scope = 'patient' OR c.encounter_id = e.id)
+            AND c.decision = 'granted' AND c.revoked_at IS NULL) ORDER BY t.sort_order)`.as('consents_missing'),
+        sql<string | null>`(SELECT td.name FROM inpatient_transfers t JOIN departments td ON td.id = t.to_department_id WHERE t.encounter_id = a.encounter_id AND t.status = 'requested')`.as('transfer_to'),
+        sql<string | null>`(SELECT to_char(l.expected_return_at AT TIME ZONE ${TZ}, 'DD.MM HH24:MI') FROM inpatient_leaves l WHERE l.encounter_id = a.encounter_id AND l.returned_at IS NULL)`.as('on_leave_until')])
       .where('a.department_id', '=', departmentId).where('a.ended_at', 'is', null).orderBy('a.started_at').execute();
+    const occ = occRaw.map((o) => ({ ...o, consent: o.consents_missing.length === 0 }));
     const reserved = await this.db.selectFrom('inpatient_planned as pl').innerJoin('patients as p', 'p.id', 'pl.patient_id')
       .select(['pl.id', 'pl.bed_id', 'pl.plan_no', 'pl.planned_date', sql<string>`p.last_name || ' ' || p.first_name`.as('patient_name')])
       .where('pl.department_id', '=', departmentId).where('pl.status', '=', 'waiting').where('pl.bed_id', 'is not', null).execute();
@@ -369,6 +378,11 @@ export class InpatientService {
       department: dep, settings: s, can_assign: await this.canAssign(u, departmentId, s), can_manage: await this.isHead(u, departmentId),
       wards: wards.map((w) => ({ ...w, beds: w.beds.map((b) => ({ ...b, occupant: occ.find((o) => o.bed_id === b.id) ?? null, reservation: reserved.find((r) => r.bed_id === b.id) ?? null })) })),
       awaiting: occ.filter((o) => !o.bed_id),
+      // 0041: გადმოყვანის მოთხოვნები ამ განყოფილებაში
+      incoming_transfers: await this.db.selectFrom('inpatient_transfers as t').innerJoin('inpatient_stays as st', 'st.encounter_id', 't.encounter_id')
+        .innerJoin('patients as p', 'p.id', 'st.patient_id').innerJoin('departments as fd', 'fd.id', 't.from_department_id')
+        .select(['t.id', 't.encounter_id', 't.reason', 't.requested_at', 'st.adm_no', 'st.severity', 'st.isolation', 'p.first_name', 'p.last_name', 'p.gender', 'fd.name as from_department'])
+        .where('t.to_department_id', '=', departmentId).where('t.status', '=', 'requested').orderBy('t.requested_at').execute(),
     };
   }
 
@@ -448,6 +462,12 @@ export class InpatientService {
   }
 
   /** ორეტაპიანი: განყოფილების ექთნებს / ხელმძღვანელს — „პაციენტი ელოდება საწოლს“ */
+  /** განყოფილების თანამშრომლებს (ჩამოთვლილი უფლებით) — შეტყობინება ზარში */
+  async notifyDepartment(departmentId: string, caps: string[], n: { kind: string; title: string; body?: string; item?: string; entityId: string; link: string; urgent?: boolean }) {
+    const ids = await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').distinct()
+      .where('u.is_active', '=', true).where('u.department_id', '=', departmentId).where(sql<boolean>`c.capabilities && ${sql.val(caps)}::varchar[]`).execute();
+    for (const { id } of ids) await this.notifications.notify(id, { ...n, urgent: !!n.urgent });
+  }
   private async notifyAwaiting(departmentId: string, depName: string, patient: string, admNo: string) {
     const ids = await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').distinct()
       .where('u.is_active', '=', true).where('u.department_id', '=', departmentId).where(sql<boolean>`c.capabilities && ARRAY['nurse', 'manager']::varchar[]`).execute();
@@ -488,7 +508,7 @@ export class InpatientService {
     } catch (e) { mapPgError(e, { ux_bed_assignments_bed: 'საწოლი უკვე დაკავებულია' }); }
   }
 
-  private async lockStay(trx: Trx, encounterId: string) {
+  async lockStay(trx: Trx, encounterId: string) {
     const st = await trx.selectFrom('inpatient_stays').selectAll().where('encounter_id', '=', encounterId).forUpdate().executeTakeFirst();
     if (!st) throw new NotFoundException('ჰოსპიტალიზაცია ვერ მოიძებნა');
     if (st.status !== 'active') throw new ConflictException('ჰოსპიტალიზაცია აქტიური არ არის');

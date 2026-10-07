@@ -6,10 +6,10 @@ import type { Doctor, IcdCode, PatientListItem } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import PatientSearch from '../../components/PatientSearch';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
-import { age, dateGe, genderShort, shiftDay, todayISO, tsDate } from '../../lib/format';
+import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import IcdPicker from '../encounter/IcdPicker';
-import { BED_ST, chipOf, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type Occupant, type Planned, type StayListItem } from './types';
+import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
 
 const ADMITTERS = ['admin', 'receptionist', 'doctor'] as const;
 const inval = (qc: ReturnType<typeof useQueryClient>) => { for (const k of ['ipd-board', 'ipd-census', 'ipd-stays', 'ipd-planned', 'ipd-stay', 'ipd-structure']) void qc.invalidateQueries({ queryKey: [k] }); };
@@ -58,6 +58,8 @@ function BoardView() {
   const b = useQuery({ queryKey: ['ipd-board', id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: id } }), enabled: !!id, refetchInterval: 30_000 });
   const [assign, setAssign] = useState<Occupant | null>(null);
   const [blockBed, setBlockBed] = useState<BoardBed | null>(null);
+  const [accept, setAccept] = useState<IncomingTransfer | null>(null);
+  const [reject, setReject] = useState<IncomingTransfer | null>(null);
   const act = useMutation({ mutationFn: (a: { id: string; action: 'clean' | 'unblock' }) => api(`/inpatient/beds/${a.id}/${a.action}`, { body: {} }), onSuccess: () => { toast.show('შესრულდა'); inval(qc); } });
   if (loading) return <div className="content"><Loading /></div>;
   if (empty) return <div className="content"><div className="card empty">საწოლფონდი ჯერ არ არის შექმნილი (ადმინისტრირება → საწოლფონდი).</div></div>;
@@ -72,6 +74,20 @@ function BoardView() {
         {(['free', 'occupied', 'reserved', 'cleaning', 'blocked'] as const).map((s) => <span key={s} className={`chip ${BED_ST[s][0]}`}>{BED_ST[s][1]}: {cnt(s)}</span>)}
       </div>
       <ErrorBox error={b.error ?? act.error} />
+      {b.data && b.data.incoming_transfers?.length > 0 && (
+        <section className="card" style={{ borderColor: 'var(--info)' }}>
+          <div className="card-head"><h2 style={{ margin: 0 }}>გადმოყვანის მოთხოვნები</h2><span className="chip info">{b.data.incoming_transfers.length}</span></div>
+          <table className="table"><tbody>{b.data.incoming_transfers.map((t) => (
+            <tr key={t.id}>
+              <td><Link to={`/inpatient/stay/${t.encounter_id}`}><strong>{t.last_name} {t.first_name}</strong></Link> <span className="small muted">{genderShort(t.gender)}</span></td>
+              <td className="mono small">{t.adm_no}</td><td className="small">{t.from_department}</td><td className="small">{t.reason}</td>
+              <td>{chipOf(SEVERITY_KA, t.severity)} {t.isolation && <span className="chip warn">{ISOLATION_KA[t.isolation]}</span>}</td>
+              <td className="small muted">{tsDate(t.requested_at)} {hhmm(t.requested_at)}</td>
+              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{b.data.can_assign && <>
+                <button className="btn sm primary" type="button" onClick={() => setAccept(t)}>მიღება</button>{' '}
+                <button className="btn sm" type="button" onClick={() => setReject(t)}>უარყოფა</button></>}</td>
+            </tr>))}</tbody></table>
+        </section>)}
       {b.data && b.data.awaiting.length > 0 && (
         <section className="card" style={{ borderColor: 'var(--warn)' }}>
           <div className="card-head"><h2 style={{ margin: 0 }}>ელოდება საწოლს</h2><span className="chip warn">{b.data.awaiting.length}</span></div>
@@ -79,7 +95,7 @@ function BoardView() {
             <tr key={o.encounter_id}>
               <td><Link to={`/inpatient/stay/${o.encounter_id}`}><strong>{o.last_name} {o.first_name}</strong></Link> <span className="small muted">{genderShort(o.gender)} · {age(o.birth_date)}</span></td>
               <td className="mono small">{o.adm_no}</td><td className="small">{o.diagnosis}</td><td className="small">{o.doctor_name}</td>
-              <td>{chipOf(SEVERITY_KA, o.severity)} {o.isolation && <span className="chip warn">{ISOLATION_KA[o.isolation]}</span>}</td>
+              <td>{chipOf(SEVERITY_KA, o.severity)} {o.isolation && <span className="chip warn">{ISOLATION_KA[o.isolation]}</span>} {occupantChips(o)}</td>
               <td className="small muted">{tsDate(o.started_at)}</td>
               <td style={{ textAlign: 'right' }}>{b.data.can_assign && <button className="btn sm primary" type="button" onClick={() => setAssign(o)}>საწოლის მინიჭება</button>}</td>
             </tr>))}</tbody></table>
@@ -96,6 +112,8 @@ function BoardView() {
         </section>))}
       {assign && b.data && <AssignDialog encounterId={assign.encounter_id} title={`${assign.last_name} ${assign.first_name}`} board={b.data} onClose={() => setAssign(null)} />}
       {blockBed && <BlockDialog bed={blockBed} onClose={() => setBlockBed(null)} />}
+      {accept && b.data && <AcceptTransferDialog t={accept} board={b.data} onClose={() => setAccept(null)} />}
+      {reject && <ReasonDialog title={`გადმოყვანის უარყოფა — ${reject.last_name} ${reject.first_name}`} path={`/inpatient/transfers/${reject.id}/reject`} onClose={() => setReject(null)} />}
     </div>
   );
 }
@@ -116,7 +134,7 @@ function BedTile({ b, board, onOpen, onClean, onBlock, onUnblock }: { b: BoardBe
           <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>{chipOf(SEVERITY_KA, o.severity)}
             {o.isolation && <span className="chip warn">{ISOLATION_KA[o.isolation]}</span>}
             {o.allergies > 0 && <span className="chip danger">ალერგია</span>}
-            {!o.consent && <span className="chip" title="ჰოსპიტალიზაციის თანხმობა არ არის">თანხმობა —</span>}</div>
+            {occupantChips(o)}</div>
         </div>
       ) : (
         <div className="stack" style={{ gap: 6, marginTop: 6 }}>
@@ -168,6 +186,38 @@ export function AssignDialog({ encounterId, plannedId, title, board, change, onC
               </label>))}
           </div>)}
         {change && <Field label="მიზეზი" htmlFor="ar" required><input id="ar" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
+        <ErrorBox error={m.error} />
+      </div>
+    </Modal>
+  );
+}
+
+/** გადმოყვანის მიღება (0041): ახალი მკურნალი ექიმი (სავალდებულო) + საწოლი (ან მის გარეშე — „ელოდება საწოლს“) */
+function AcceptTransferDialog({ t, board, onClose }: { t: IncomingTransfer; board: Board; onClose: () => void }) {
+  const qc = useQueryClient(); const [bed, setBed] = useState(''); const [doc, setDoc] = useState('');
+  const doctors = useQuery({ queryKey: ['doctors'], queryFn: () => api<Doctor[]>('/doctors') });
+  const m = useMutation({
+    mutationFn: () => withConfirm((confirm) => api(`/inpatient/transfers/${t.id}/accept`, { body: { attending_doctor_id: doc, bed_id: bed || undefined, confirm } })),
+    onSuccess: (r) => { if (r) { inval(qc); onClose(); } },
+  });
+  const free = board.wards.flatMap((w) => w.beds.filter((b) => b.status === 'free' && (!b.is_overflow || board.settings.overflow_beds)).map((b) => ({ ...b, ward: w })));
+  const docs = [...(doctors.data ?? [])].sort((a, b) => Number(b.department_id === board.department.id) - Number(a.department_id === board.department.id));
+  return (
+    <Modal title={`გადმოყვანის მიღება — ${t.last_name} ${t.first_name}`} onClose={onClose} width={580}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending || !doc} onClick={() => m.mutate()}>მიღება</button></>}>
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="small">{t.from_department} → <strong>{board.department.name}</strong> · {t.reason}</div>
+        <Field label="მკურნალი ექიმი" htmlFor="ta-doc" required><select id="ta-doc" className="select" value={doc} onChange={(e) => setDoc(e.target.value)}>
+          <option value="">— აირჩიეთ —</option>{docs.map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name}{d.department_name ? ` · ${d.department_name}` : ''}</option>)}</select></Field>
+        <span className="label">საწოლი <span className="small muted">(არასავალდებულო — მის გარეშე პაციენტი „ელოდება საწოლს“ სიაშია)</span></span>
+        {!free.length ? <div className="alert warn">თავისუფალი საწოლი არ არის.</div> : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+            {free.map((b) => (
+              <label key={b.id} className="card" style={{ padding: 8, cursor: 'pointer', borderColor: bed === b.id ? 'var(--accent)' : undefined, borderWidth: bed === b.id ? 2 : 1 }}>
+                <input type="radio" name="tbed" className="sr-only" checked={bed === b.id} onChange={() => setBed(bed === b.id ? '' : b.id)} onClick={() => bed === b.id && setBed('')} />
+                <strong>{b.code}</strong><div className="small muted">{b.type_name}{b.ward.sex !== 'mixed' ? ` · ${b.ward.sex === 'male' ? 'მამ.' : 'ქალ.'}` : ''}</div>
+              </label>))}
+          </div>)}
         <ErrorBox error={m.error} />
       </div>
     </Modal>

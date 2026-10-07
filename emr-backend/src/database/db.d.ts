@@ -249,24 +249,6 @@ export interface ClinicSettings {
   updated_at: Generated<Timestamp>;
 }
 
-export interface ConsentTypes {
-  code: string;
-  is_active: Generated<boolean>;
-  name: string;
-  scope: string;
-  sort_order: Generated<number>;
-}
-
-export interface ConsentTypeVersions {
-  body_text: string;
-  created_at: Generated<Timestamp>;
-  created_by: string | null;
-  id: Generated<string>;
-  text_approved: Generated<boolean>;
-  type_code: string;
-  version: number;
-}
-
 export interface CssdCycles {
   attachment_key: string | null;
   bi_lot: string | null;
@@ -406,6 +388,34 @@ export interface DocumentCounters {
   document_type: string;
   last_value: Generated<number>;
   year: number;
+}
+
+export interface DocumentTemplates {
+  code: string;
+  created_at: Generated<Timestamp>;
+  is_active: Generated<boolean>;
+  is_system: Generated<boolean>;
+  kind: string;
+  name: string;
+  required_on_admission: Generated<boolean>;
+  scope: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface DocumentTemplateVersions {
+  archived_at: Timestamp | null;
+  body: Json;
+  change_note: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  published_at: Timestamp | null;
+  published_by: string | null;
+  status: Generated<string>;
+  template_code: string;
+  text_approved: Generated<boolean>;
+  version: number;
 }
 
 export interface DxDevices {
@@ -700,6 +710,44 @@ export interface EndoScopes {
   serial_number: string;
 }
 
+export interface Epicrises {
+  content: Generated<Json>;
+  cosigned_at: Timestamp | null;
+  cosigned_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  document_id: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  patient_id: string;
+  revision: Generated<number>;
+  selected_dx_ids: Generated<string[]>;
+  selected_lab_ids: Generated<string[]>;
+  signed_at: Timestamp | null;
+  signed_by: string | null;
+  status: Generated<string>;
+  template_version_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface EpicrisisRevisions {
+  content: Json;
+  cosigned_at: Timestamp | null;
+  cosigned_by: string | null;
+  document_id: string | null;
+  epicrisis_id: string;
+  id: Generated<string>;
+  reopen_reason: string;
+  reopened_at: Generated<Timestamp>;
+  reopened_by: string;
+  revision: number;
+  selected_dx_ids: string[];
+  selected_lab_ids: string[];
+  signed_at: Timestamp;
+  signed_by: string;
+  template_version_id: string;
+}
+
 export interface Expenses {
   amount: Numeric;
   category: string;
@@ -715,6 +763,16 @@ export interface Expenses {
   supplier: string | null;
   updated_at: Generated<Timestamp>;
   void_reason: string | null;
+}
+
+export interface ExternalInstitutions {
+  address: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  phone: string | null;
+  sort_order: Generated<number>;
 }
 
 export interface GeneratedDocuments {
@@ -763,6 +821,19 @@ export interface InpatientEvents {
   user_id: string | null;
 }
 
+export interface InpatientLeaves {
+  created_by: string;
+  encounter_id: string;
+  expected_return_at: Timestamp;
+  id: Generated<string>;
+  overdue_notified_at: Timestamp | null;
+  permitted_by: string;
+  reason: string;
+  returned_at: Timestamp | null;
+  returned_by: string | null;
+  started_at: Generated<Timestamp>;
+}
+
 export interface InpatientPlanned {
   bed_id: string | null;
   cancel_reason: string | null;
@@ -788,7 +859,21 @@ export interface InpatientStays {
   adm_no: string;
   admitted_at: Generated<Timestamp>;
   admitted_by: string;
+  autopsy_required: boolean | null;
+  body_released_at: Timestamp | null;
+  body_released_by: string | null;
   cancel_reason: string | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  death_at: Timestamp | null;
+  death_icd10_code: string | null;
+  death_icd10_title: string | null;
+  destination_id: string | null;
+  destination_text: string | null;
+  discharge_note: string | null;
+  discharge_overrides: Json | null;
+  discharge_type: string | null;
+  discharged_by: string | null;
   encounter_id: string;
   ended_at: Timestamp | null;
   isolation: string | null;
@@ -796,10 +881,31 @@ export interface InpatientStays {
   planned_id: string | null;
   referral_id: string | null;
   referring_institution: string | null;
+  refusal_consent_id: string | null;
+  refusal_witnesses: string[] | null;
   severity: string | null;
   source: string;
   source_encounter_id: string | null;
   status: Generated<string>;
+  transport: string | null;
+}
+
+export interface InpatientTransfers {
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_reason: string | null;
+  encounter_id: string;
+  from_assignment_id: Int8;
+  from_department_id: string;
+  id: Generated<string>;
+  new_attending_id: string | null;
+  overdue_notified_at: Timestamp | null;
+  reason: string;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  status: Generated<string>;
+  to_assignment_id: Int8 | null;
+  to_department_id: string;
 }
 
 export interface InvoiceLineItems {
@@ -2072,8 +2178,6 @@ export interface DB {
   bed_types: BedTypes;
   beds: Beds;
   clinic_settings: ClinicSettings;
-  consent_type_versions: ConsentTypeVersions;
-  consent_types: ConsentTypes;
   cssd_cycles: CssdCycles;
   cssd_events: CssdEvents;
   cssd_instruments: CssdInstruments;
@@ -2085,6 +2189,8 @@ export interface DB {
   cssd_templates: CssdTemplates;
   departments: Departments;
   document_counters: DocumentCounters;
+  document_template_versions: DocumentTemplateVersions;
+  document_templates: DocumentTemplates;
   dx_devices: DxDevices;
   dx_images: DxImages;
   dx_item_files: DxItemFiles;
@@ -2100,13 +2206,18 @@ export interface DB {
   endo_procedures: EndoProcedures;
   endo_reprocessing: EndoReprocessing;
   endo_scopes: EndoScopes;
+  epicrises: Epicrises;
+  epicrisis_revisions: EpicrisisRevisions;
   expenses: Expenses;
+  external_institutions: ExternalInstitutions;
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;
   inpatient_events: InpatientEvents;
+  inpatient_leaves: InpatientLeaves;
   inpatient_planned: InpatientPlanned;
   inpatient_stays: InpatientStays;
+  inpatient_transfers: InpatientTransfers;
   invoice_line_items: InvoiceLineItems;
   invoices: Invoices;
   lab_analytes: LabAnalytes;

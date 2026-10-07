@@ -199,7 +199,7 @@ export class DocumentsService {
     });
   }
 
-  /** საჯარო ვერიფიკაცია — მინიმალური ინფორმაცია, პაციენტის პერსონალური მონაცემების გარეშე (მხოლოდ ინიციალები) */
+  /** საჯარო ვერიფიკაცია (form_100, epicrisis — payload-ში institution.name + patient.full_name) — მინიმალური ინფორმაცია, პაციენტის პერსონალური მონაცემების გარეშე (მხოლოდ ინიციალები) */
   async verify(token: string) {
     const d = await this.db.selectFrom('generated_documents')
       .select(['document_type', 'document_number', 'status', 'generated_at', 'revoked_at', 'file_sha256', 'payload'])
@@ -210,7 +210,7 @@ export class DocumentsService {
     return {
       valid: d.status === 'issued',
       status: d.status,
-      document_type: d.document_type === 'form_100' ? 'ფორმა №IV-100/ა — ცნობა ჯანმრთელობის მდგომარეობის შესახებ' : d.document_type,
+      document_type: DOC_TYPE_KA[d.document_type] ?? d.document_type,
       document_number: d.document_number,
       issued_at: d.generated_at,
       revoked_at: d.revoked_at,
@@ -220,3 +220,8 @@ export class DocumentsService {
     };
   }
 }
+
+const DOC_TYPE_KA: Record<string, string> = {
+  form_100: 'ფორმა №IV-100/ა — ცნობა ჯანმრთელობის მდგომარეობის შესახებ',
+  epicrisis: 'ეპიკრიზი (სტაციონარი)',
+};

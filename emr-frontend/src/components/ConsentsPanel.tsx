@@ -80,10 +80,11 @@ export default function ConsentsPanel({ patientId, encounterId, scope, canSign }
   );
 }
 
-function SignDialog({ patientId, encounterId, consent, onClose }: { patientId: string; encounterId?: string; consent: PatientConsent; onClose: () => void }) {
+/** ხელმოწერის დიალოგი — თანხმობა ან ხელწერილი (SELF_DISCHARGE: გაწერის დიალოგიდან, onSigned → refusal_consent_id) */
+export function SignDialog({ patientId, encounterId, consent, onClose, onSigned }: { patientId: string; encounterId?: string; consent: Pick<PatientConsent, 'code' | 'name' | 'text_approved'>; onClose: () => void; onSigned?: (id: string) => void }) {
   const qc = useQueryClient();
   const clinic = useQuery({ queryKey: ['clinic'], queryFn: () => api<ClinicSettings>('/settings/clinic'), retry: false });
-  const types = useQuery({ queryKey: ['consent-types'], queryFn: () => api<ConsentType[]>('/consent-types') });
+  const types = useQuery({ queryKey: ['consent-types', 'all'], queryFn: () => api<ConsentType[]>('/consent-types', { query: { all: true } }) });
   const methods = clinic.data?.consent_methods ?? ['paper', 'electronic'];
   const [method, setMethod] = useState<'paper' | 'electronic'>(methods.includes('electronic') ? 'electronic' : 'paper');
   const [decision, setDecision] = useState<'granted' | 'refused'>('granted');
@@ -96,14 +97,14 @@ function SignDialog({ patientId, encounterId, consent, onClose }: { patientId: s
   const text = types.data?.find((t) => t.code === consent.code)?.body_text;
 
   const m = useMutation({
-    mutationFn: () => api(`/patients/${patientId}/consents`, { body: {
+    mutationFn: () => api<{ id: string }>(`/patients/${patientId}/consents`, { body: {
       type_code: consent.code, decision, method, signer_type: signer, encounter_id: encounterId,
       representative_name: signer === 'representative' ? rep.name : undefined, representative_relation: signer === 'representative' ? rep.relation : undefined,
       representative_id_number: signer === 'representative' ? rep.id || undefined : undefined,
       signature_png: method === 'electronic' ? pad.current?.toDataURL() ?? undefined : undefined,
       file_id: method === 'paper' ? scanId ?? undefined : undefined,
     } }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['consents', patientId] }); void qc.invalidateQueries({ queryKey: ['patient-files', patientId] }); onClose(); },
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['consents', patientId] }); void qc.invalidateQueries({ queryKey: ['patient-files', patientId] }); onSigned?.(r.id); onClose(); },
   });
   const repOk = signer === 'patient' || (rep.name.trim() && rep.relation.trim());
   const ready = repOk && (method === 'electronic' ? !sigEmpty : !!scanId);

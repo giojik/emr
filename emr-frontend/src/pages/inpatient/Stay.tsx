@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, ApiError } from '../../api/client';
+import { api, ApiError, can } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import type { Doctor } from '../../api/types';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { age, dateGe, genderShort, tsDate } from '../../lib/format';
 import { AssignDialog, invalIpd, openWristband, ReasonDialog } from './Inpatient';
-import { chipOf, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, type Board, type InpatientSettings, type Printer } from './types';
+import EpicrisisPanel from './Epicrisis';
+import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
+import { chipOf, DISCHARGE_KA, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, TRANSPORT_KA, type Board, type InpatientSettings, type Printer } from './types';
 
 interface StayDetail {
   encounter_id: string; adm_no: string; patient_id: string; source: string; source_encounter_id: string | null; referral_id: string | null; planned_id: string | null; plan_no: string | null;
@@ -16,12 +19,22 @@ interface StayDetail {
   current: Assignment | null; assignments: Assignment[]; events: { id: string; kind: string; data: Record<string, unknown>; at: string; user_name: string | null }[];
   diagnoses: { id: string; icd10_code: string; icd10_title: string; diagnosis_type: string }[]; allergies: { substance: string; severity: string; allergy_type: string }[];
   consent: 'granted' | 'refused' | 'revoked' | 'missing'; settings: InpatientSettings; can: { assign: boolean; manage: boolean; staff: boolean; cancel: boolean };
+  // 0041
+  discharge_type: string | null; discharge_note: string | null; destination_text: string | null; transport: string | null; closed_at: string | null;
+  death_at: string | null; death_icd10_code: string | null; death_icd10_title: string | null; autopsy_required: boolean | null; body_released_at: string | null;
 }
+interface TransferRow { id: string; status: string; to_department: string; from_department: string; reason: string; requested_at: string; requested_by_name: string; decision_reason: string | null }
+interface LeaveRow { id: string; started_at: string; expected_return_at: string; returned_at: string | null; reason: string; permitted_by_name: string | null }
 interface Assignment { id: string; department_id: string; department_name: string; bed_id: string | null; bed_code: string | null; ward_code: string | null; started_at: string; bed_at: string | null; ended_at: string | null; end_kind: string | null; reason: string | null; assigned_by_name: string; bed_by_name: string | null }
 
 const EV_KA: Record<string, string> = { admitted: 'ჰოსპიტალიზაცია', bed_assigned: 'საწოლი მიენიჭა', bed_changed: 'საწოლი შეიცვალა', attending_changed: 'მკურნალი ექიმი შეიცვალა', severity: 'მდგომარეობა',
-  isolation: 'იზოლაცია', cancelled: 'გაუქმდა', bed_released: 'საწოლი გათავისუფლდა', wristband: 'სამაჯური დაიბეჭდა' };
+  isolation: 'იზოლაცია', cancelled: 'გაუქმდა', bed_released: 'საწოლი გათავისუფლდა', wristband: 'სამაჯური დაიბეჭდა',
+  transfer_requested: 'გადაყვანის მოთხოვნა', transfer_accepted: 'გადაყვანა', transfer_rejected: 'გადაყვანა უარყოფილია', transfer_cancelled: 'გადაყვანის მოთხოვნა გაუქმდა', transfer_overdue: 'გადაყვანა — პასუხი აგვიანებს',
+  leave_started: 'დროებითი გასვლა', leave_returned: 'დაბრუნდა', leave_overdue: 'გასვლიდან არ დაბრუნებულა', discharged: 'გაწერა', discharge_cancelled: 'გაწერა გაუქმდა', death: 'გარდაცვალება',
+  body_released: 'გვამის გატანა', closed: 'შემთხვევა დაიხურა', epicrisis_created: 'ეპიკრიზი შეიქმნა', epicrisis_signed: 'ეპიკრიზი ხელმოწერილია', epicrisis_cosigned: 'ეპიკრიზი თანახელმოწერილია',
+  epicrisis_reopened: 'ეპიკრიზი ხელახლა გაიხსნა' };
 const END_KA: Record<string, string> = { bed_change: 'საწოლის შეცვლა', transfer: 'გადაყვანა', discharge: 'გაწერა', cancel: 'გაუქმება' };
+const TR_KA: Record<string, string> = { requested: 'მოლოდინში', accepted: 'მიღებულია', rejected: 'უარყოფილია', cancelled: 'გაუქმებულია' };
 const DX_KA: Record<string, string> = { admission: 'მიმღები', primary: 'ძირითადი', secondary: 'თანმხლები', complication: 'გართულება' };
 
 function evText(k: string, d: Record<string, unknown>) {
@@ -36,6 +49,12 @@ function evText(k: string, d: Record<string, unknown>) {
     case 'cancelled': return x(d.reason);
     case 'bed_released': return `${x(d.bed)}`;
     case 'wristband': return d.mode === 'zpl' ? `Zebra: ${x(d.printer)}` : 'PDF';
+    case 'transfer_requested': return `${x(d.from)} → ${x(d.to)} · ${x(d.reason)}`;
+    case 'transfer_accepted': return `${x(d.to)}${d.bed ? ` · საწოლი ${d.bed}` : ' · საწოლის გარეშე'}`;
+    case 'transfer_rejected': case 'transfer_cancelled': case 'leave_started': case 'discharge_cancelled': case 'epicrisis_reopened': return x(d.reason);
+    case 'discharged': case 'death': return `${DISCHARGE_KA[x(d.type)] ?? ''}${d.bed ? ` · საწოლი ${d.bed}` : ''}${d.epicrisis_signed_now ? ' · ეპიკრიზი ხელმოწერილია' : ''}`;
+    case 'epicrisis_signed': case 'epicrisis_cosigned': return d.number ? `№ ${x(d.number)}` : 'თანახელმოწერას ელოდება';
+    case 'leave_returned': return d.late ? 'დაგვიანებით' : '';
     default: return '';
   }
 }
@@ -47,14 +66,23 @@ export default function Stay() {
   const s = q.data;
   const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
   const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
-  const [dlg, setDlg] = useState<'bed' | 'doctor' | 'cancel' | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [dlg, setDlg] = useState<'bed' | 'doctor' | 'cancel' | 'transfer' | 'leave' | 'discharge' | 'undischarge' | null>(null);
+  const { user } = useAuth();
+  const transfers = useQuery({ queryKey: ['ipd-stay-transfers', id], queryFn: () => api<TransferRow[]>('/inpatient/transfers', { query: { encounter_id: id } }), enabled: !!s });
+  const leaves = useQuery({ queryKey: ['ipd-stay-leaves', id], queryFn: () => api<LeaveRow[]>(`/inpatient/stays/${id}/leaves`), enabled: !!s });
+  const post = useMutation({ mutationFn: (a: { path: string; body?: unknown; msg: string }) => api(a.path, { body: a.body ?? {} }).then(() => a.msg),
+    onSuccess: (msg) => { toast.show(msg); invalIpd(qc); void qc.invalidateQueries({ queryKey: ['ipd-stay-transfers', id] }); void qc.invalidateQueries({ queryKey: ['ipd-stay-leaves', id] });
+      void qc.invalidateQueries({ queryKey: ['ipd-epicrisis', id] }); }, onError: setErr });
   const patch = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/inpatient/stays/${id}`, { method: 'PATCH', body }), onSuccess: () => invalIpd(qc), onError: setErr });
   const print = useMutation({ mutationFn: (printer_id?: string) => api<{ printer: string }>(`/inpatient/stays/${id}/wristband`, { body: { printer_id } }),
     onSuccess: (r) => { toast.show(`სამაჯური გაიგზავნა: ${r.printer}`); invalIpd(qc); }, onError: setErr });
   if (q.isLoading) return <div className="content"><Loading /></div>;
   if (!s) return <div className="content"><ErrorBox error={q.error} /></div>;
   const active = s.status === 'active';
+  const isAttending = s.attending_doctor_id === user?.id;
+  const pendingTransfer = (transfers.data ?? []).find((t) => t.status === 'requested');
+  const openLeave = (leaves.data ?? []).find((l) => !l.returned_at);
   const activePrinters = (printers.data ?? []).filter((p) => p.is_active);
   const wb = async () => { setErr(null); if (s.settings.wristband_print === 'pdf') { try { await openWristband(s.encounter_id); invalIpd(qc); } catch (e) { setErr(e); } } else print.mutate(undefined); };
   return (
@@ -109,10 +137,48 @@ export default function Stay() {
                 <option value="">სხვა პრინტერზე…</option>{activePrinters.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
               {s.settings.wristband_print === 'zpl' && <button className="btn" type="button" onClick={() => openWristband(s.encounter_id).catch(setErr)}>PDF</button>}
             </div>}
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {pendingTransfer ? <><span className="chip info">→ {pendingTransfer.to_department} (ელოდება მიღებას)</span>
+                <button className="btn sm" type="button" onClick={() => { const r = window.prompt('გაუქმების მიზეზი'); if (r && r.trim().length >= 3) post.mutate({ path: `/inpatient/transfers/${pendingTransfer.id}/cancel`, body: { reason: r }, msg: 'მოთხოვნა გაუქმდა' }); }}>მოთხოვნის გაუქმება</button></>
+                : (s.can.staff || isAttending) && !openLeave && <button className="btn" type="button" onClick={() => setDlg('transfer')}>გადაყვანა სხვა განყოფილებაში</button>}
+              {openLeave ? <><span className="chip warn">გასულია · დაბრუნება {tsDate(openLeave.expected_return_at)} {new Date(openLeave.expected_return_at).toLocaleTimeString('ka-GE', { timeZone: 'Asia/Tbilisi', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                {s.can.staff && <button className="btn sm" type="button" onClick={() => post.mutate({ path: `/inpatient/stays/${s.encounter_id}/leave/return`, msg: 'დაბრუნება დაფიქსირდა' })}>დაბრუნდა</button>}</>
+                : (s.can.staff || isAttending) && !pendingTransfer && <button className="btn" type="button" onClick={() => setDlg('leave')}>დროებითი გასვლა</button>}
+            </div>
+            {can(user, 'doctor', 'admin') && <button className="btn primary" type="button" onClick={() => setDlg('discharge')}>გაწერა…</button>}
             {s.can.cancel && <button className="btn" type="button" onClick={() => setDlg('cancel')}>ჰოსპიტალიზაციის გაუქმება (შეცდომა)</button>}
-            <span className="small muted">გადაყვანა სხვა განყოფილებაში და გაწერა (ეპიკრიზი) — შემდეგ ეტაპზე.</span>
+          </section>}
+          {s.status === 'discharged' && <section className="card card-pad stack" style={{ gap: 8 }}>
+            <h2 style={{ margin: 0 }}>გაწერა</h2>
+            <div className="row"><span className="muted" style={{ width: 130 }}>ტიპი</span><strong>{DISCHARGE_KA[s.discharge_type ?? ''] ?? s.discharge_type}</strong></div>
+            <div className="row"><span className="muted" style={{ width: 130 }}>თარიღი</span><span>{s.ended_at && `${tsDate(s.ended_at)} ${new Date(s.ended_at).toLocaleTimeString('ka-GE', { timeZone: 'Asia/Tbilisi', hour: '2-digit', minute: '2-digit', hour12: false })}`}</span></div>
+            {s.destination_text && <div className="row"><span className="muted" style={{ width: 130 }}>დაწესებულება</span><span>{s.destination_text}</span></div>}
+            {s.transport && <div className="row"><span className="muted" style={{ width: 130 }}>ტრანსპორტი</span><span>{TRANSPORT_KA[s.transport]}</span></div>}
+            {s.death_at && <div className="row"><span className="muted" style={{ width: 130 }}>გარდაცვალება</span><span>{tsDate(s.death_at)} · <span className="mono">{s.death_icd10_code}</span> {s.death_icd10_title} · აუტოფსია: {s.autopsy_required ? 'საჭიროა' : 'არა'}</span></div>}
+            {s.discharge_note && <div className="small">{s.discharge_note}</div>}
+            <div className="row"><span className="muted" style={{ width: 130 }}>დოკუმენტაცია</span>
+              {s.closed_at ? <span className="chip ok">შემთხვევა დახურულია</span> : <span className="chip warn">მოსალოდნელია (ეპიკრიზი / საბოლოო დიაგნოზი)</span>}</div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {!s.closed_at && can(user, 'doctor', 'admin') && <button className="btn primary" type="button" disabled={post.isPending}
+                onClick={() => post.mutate({ path: `/inpatient/stays/${s.encounter_id}/close`, body: { sign_epicrisis: true }, msg: 'შემთხვევა დაიხურა' })}>შემთხვევის დახურვა</button>}
+              {s.death_at && !s.body_released_at && s.can.staff && <button className="btn" type="button" disabled={post.isPending}
+                onClick={() => window.confirm('გვამის გატანა — ახლა?') && post.mutate({ path: `/inpatient/stays/${s.encounter_id}/body-released`, msg: 'გატანა დაფიქსირდა; საწოლი — დასალაგებელი' })}>გვამის გატანა</button>}
+              {s.body_released_at && <span className="small muted">გვამი გატანილია: {tsDate(s.body_released_at)}</span>}
+              {s.can.manage && !s.body_released_at && <button className="btn" type="button" onClick={() => setDlg('undischarge')}>გაწერის გაუქმება (შეცდომა)</button>}
+            </div>
           </section>}
         </div>
+        {s.status !== 'cancelled' && <EpicrisisPanel encounterId={s.encounter_id} diagnoses={s.diagnoses} encounterActive={active || (s.status === 'discharged' && !s.closed_at)} />}
+        {((transfers.data ?? []).length > 0 || (leaves.data ?? []).length > 0) && <section className="card">
+          <div className="card-head"><h2 style={{ margin: 0 }}>გადაყვანები და დროებითი გასვლები</h2></div>
+          <table className="table"><tbody>
+            {(transfers.data ?? []).map((t) => <tr key={t.id}><td className="small">{tsDate(t.requested_at)}</td><td>გადაყვანა: {t.from_department} → {t.to_department}</td>
+              <td><span className={`chip ${t.status === 'accepted' ? 'ok' : t.status === 'requested' ? 'info' : ''}`}>{TR_KA[t.status]}</span></td><td className="small">{t.reason}{t.decision_reason ? ` · ${t.decision_reason}` : ''}</td><td className="small muted">{t.requested_by_name}</td></tr>)}
+            {(leaves.data ?? []).map((l) => <tr key={l.id}><td className="small">{tsDate(l.started_at)}</td><td>დროებითი გასვლა — {tsDate(l.expected_return_at)}-მდე</td>
+              <td>{l.returned_at ? <span className={`chip ${new Date(l.returned_at) > new Date(l.expected_return_at) ? 'warn' : 'ok'}`}>დაბრუნდა {tsDate(l.returned_at)}</span> : <span className="chip warn">გასულია</span>}</td>
+              <td className="small">{l.reason}</td><td className="small muted">{l.permitted_by_name}</td></tr>)}
+          </tbody></table>
+        </section>}
         <section className="card">
           <div className="card-head"><h2 style={{ margin: 0 }}>ეპიზოდები</h2></div>
           <table className="table"><thead><tr><th>განყოფილება</th><th>საწოლი</th><th>დან</th><th>მდე</th><th>მიზეზი</th><th>ვინ</th></tr></thead>
@@ -133,6 +199,10 @@ export default function Stay() {
       {dlg === 'bed' && board.data && <AssignDialog encounterId={s.encounter_id} title={`${s.last_name} ${s.first_name}`} board={board.data} change={!!s.current?.bed_id} onClose={() => setDlg(null)} />}
       {dlg === 'doctor' && <DoctorDialog s={s} onClose={() => setDlg(null)} />}
       {dlg === 'cancel' && <ReasonDialog title={`ჰოსპიტალიზაციის გაუქმება — ${s.adm_no}`} path={`/inpatient/stays/${s.encounter_id}/cancel`} onClose={() => setDlg(null)} />}
+      {dlg === 'transfer' && <TransferDialog encounterId={s.encounter_id} currentDepartmentId={s.current?.department_id ?? s.department_id} onClose={() => { setDlg(null); void qc.invalidateQueries({ queryKey: ['ipd-stay-transfers', id] }); }} />}
+      {dlg === 'leave' && <LeaveDialog encounterId={s.encounter_id} maxHours={s.settings.leave_max_hours} onClose={() => { setDlg(null); void qc.invalidateQueries({ queryKey: ['ipd-stay-leaves', id] }); }} />}
+      {dlg === 'discharge' && <DischargeDialog encounterId={s.encounter_id} patientId={s.patient_id} departmentId={s.current?.department_id ?? s.department_id} onClose={() => setDlg(null)} />}
+      {dlg === 'undischarge' && <ReasonDialog title={`გაწერის გაუქმება — ${s.adm_no}`} path={`/inpatient/stays/${s.encounter_id}/discharge/cancel`} onClose={() => setDlg(null)} />}
     </>
   );
 }

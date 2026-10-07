@@ -197,7 +197,16 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         {num('wristband_length_mm', 'სამაჯურის სიგრძე (მმ)', 80, 400, 'მოზრდილი — 279, ბავშვის — 152')}
         {num('wristband_offset_mm', 'საკეტის ზონა (მმ)', 0, 200, 'დასაწყისიდან — ბეჭდვის გარეშე')}
       </div>}
-      <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ჰოსპიტალიზაციის თანხმობის ტექსტი — <Link to="/admin/consents">თანხმობები</Link>.</span>
+      <h3 style={{ margin: '6px 0 0' }}>გადაყვანა, ეპიკრიზი, გაწერა</h3>
+      <div style={grid}>
+        {num('transfer_wait_hours', 'გადაყვანის პასუხის ვადა (სთ)', 1, 72, 'გადაცილებისას — შეტყობინება ორივე განყოფილებას')}
+        {num('discharge_cancel_hours', 'გაწერის გაუქმების ვადა (სთ)', 0, 168, 'შეცდომით გაწერა; გარდაცვალება — მხოლოდ admin')}
+        {num('docs_pending_alert_hours', 'დაუხურავი დოკუმენტაცია (სთ)', 1, 720, 'თვითნებური / გარდაცვალება — შეხსენება მკურნალ ექიმს')}
+        {num('leave_max_hours', 'დროებითი გასვლა — მაქს. (სთ)', 1, 336)}
+        {chk('leave_counts_bed_day', 'დროებითი გასვლის ღამე — საწოლდღე', 'გამორთულისას საწოლდღეებს აკლდება გასვლაზე გატარებული ღამეები')}
+        {chk('epicrisis_cosign', 'ეპიკრიზის თანახელმოწერა', 'მკურნალი ექიმის შემდეგ — განყოფილების ხელმძღვანელი; № და PDF — თანახელმოწერისას')}
+      </div>
+      <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>
   );
 }
