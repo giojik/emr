@@ -10,7 +10,7 @@ export default function Institutions() {
   const q = useQuery({ queryKey: ['ipd-institutions', 'all'], queryFn: () => api<Inst[]>('/inpatient/institutions', { query: { all: true } }) });
   const [edit, setEdit] = useState<Inst | 'new' | null>(null);
   return (
-    <div className="stack">
+    <div className="content">
       <div className="row"><h2 style={{ margin: 0 }} className="grow">სხვა სამედიცინო დაწესებულებები</h2><button className="btn primary" type="button" onClick={() => setEdit('new')}>+ დამატება</button></div>
       <span className="small muted">გამოიყენება სტაციონარიდან სხვა კლინიკაში გაწერისას. ცნობარში არარსებული დაწესებულება შეიძლება ჩაიწეროს ტექსტითაც.</span>
       <ErrorBox error={q.error} />

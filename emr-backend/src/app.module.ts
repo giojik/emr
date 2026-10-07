@@ -5,6 +5,7 @@ import { TemplatesModule } from './templates/templates';
 import { EpicrisisModule } from './inpatient/epicrisis';
 import { TransfersModule } from './inpatient/transfers';
 import { DischargeModule } from './inpatient/discharge';
+import { OrdersModule } from './inpatient/orders';
 import { ModulesModule } from './modules/modules';
 import { NotificationsModule } from './notifications/notifications';
 import { Module } from '@nestjs/common';
@@ -33,7 +34,7 @@ import { ManagementReportsModule } from './reports/management';
 import { StockModule } from './stock/stock.module';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
+  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
     StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule],
   controllers: [HealthController],

@@ -32,6 +32,7 @@ import Beds from './pages/admin/Beds';
 import Printers from './pages/admin/Printers';
 import DocumentTemplates from './pages/admin/DocumentTemplates';
 import Institutions from './pages/admin/Institutions';
+import Frequencies from './pages/admin/Frequencies';
 import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
 import RolesPage from './pages/admin/Roles';
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="templates" element={<Guard roles={['admin']}><DocumentTemplates /></Guard>} />
           <Route path="consents" element={<Navigate to="/admin/templates" replace />} />
           <Route path="institutions" element={<Guard roles={['admin']}><Institutions /></Guard>} />
+          <Route path="frequencies" element={<Guard roles={['admin']}><Frequencies /></Guard>} />
           <Route path="allergens" element={<Guard roles={['admin', 'pharmacist']}><Allergens /></Guard>} />
           <Route path="overrides" element={<Guard roles={['admin', 'pharmacist']}><Overrides /></Guard>} />
           <Route path="devices" element={<Guard roles={['admin', 'med_engineer']}><Devices /></Guard>} />

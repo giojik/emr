@@ -22,6 +22,7 @@ import Transit from './Transit';
 import Writeoffs from './Writeoffs';
 import Setup from './Setup';
 import Suppliers from './Suppliers';
+import Verification from './Verification';
 
 /** კატალოგის ნახვა (სერვერის STOCK_READ-ის შესაბამისი) */
 export const STOCK_READ: Role[] = ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'nurse', 'doctor', 'lab_doctor', 'lab_manager', 'diagnostic', 'manager', 'viewer', 'accountant'];
@@ -32,6 +33,7 @@ export const STOCK_ADMIN: Role[] = ['admin', 'stock_manager'];
 export const CLINICAL_EDIT: Role[] = ['admin', 'pharmacist'];
 
 const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] = [
+  { key: 'verification', label: 'დანიშნულებების ვერიფიკაცია', roles: ['admin', 'pharmacist'], el: Verification },
   { key: 'balances', label: 'ნაშთები', roles: STOCK_READ, el: Balances },
   { key: 'requests', label: 'მოთხოვნები', roles: STOCK_READ, el: Requests },
   { key: 'transit', label: 'მისაღები', roles: STOCK_READ, el: Transit },

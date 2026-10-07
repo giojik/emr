@@ -27,6 +27,9 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       // 0041: გადაყვანა / ეპიკრიზი / გაწერა / დროებითი გასვლა
       transfer_wait_hours: (v) => int(v, 1, 72), epicrisis_cosign: bool, discharge_cancel_hours: (v) => int(v, 0, 168), leave_counts_bed_day: bool,
       leave_max_hours: (v) => int(v, 1, 336), docs_pending_alert_hours: (v) => int(v, 1, 720),
+      // 0042: დანიშნულებები
+      med_verification: (v) => oneOf(v, ['all', 'high_risk', 'off']), dose_rule: (v) => oneOf(v, ['warn', 'block']), interaction_rule: (v) => oneOf(v, ['warn', 'block']),
+      antibiotic_default_days: (v) => int(v, 1, 60), verbal_orders: bool, verbal_confirm_hours: (v) => int(v, 1, 168), weight_max_age_days: (v) => int(v, 1, 90),
     },
     extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს' : null),
   },

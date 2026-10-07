@@ -206,6 +206,20 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         {chk('leave_counts_bed_day', 'დროებითი გასვლის ღამე — საწოლდღე', 'გამორთულისას საწოლდღეებს აკლდება გასვლაზე გატარებული ღამეები')}
         {chk('epicrisis_cosign', 'ეპიკრიზის თანახელმოწერა', 'მკურნალი ექიმის შემდეგ — განყოფილების ხელმძღვანელი; № და PDF — თანახელმოწერისას')}
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>დანიშნულებები</h3>
+      <div style={grid}>
+        <Field label="ფარმაცევტის ვერიფიკაცია" htmlFor="ip-mv" hint="მაღალი რისკი: high-alert, კონტროლირებადი, სარეზერვო, კატალოგის გარეშე, აფთიაქიდან"><select id="ip-mv" className="select" value={v<string>('med_verification')} onChange={(e) => upd('med_verification', e.target.value)}>
+          <option value="high_risk">მხოლოდ მაღალი რისკის</option><option value="all">ყველა მედიკამენტი</option><option value="off">გამორთული</option></select></Field>
+        <Field label="დოზის ზღვრის გადაჭარბება" htmlFor="ip-dr"><select id="ip-dr" className="select" value={v<string>('dose_rule')} onChange={(e) => upd('dose_rule', e.target.value)}>
+          <option value="warn">გაფრთხილება (დასაბუთებით)</option><option value="block">აკრძალულია</option></select></Field>
+        <Field label="მძიმე ურთიერთქმედება" htmlFor="ip-ir"><select id="ip-ir" className="select" value={v<string>('interaction_rule')} onChange={(e) => upd('interaction_rule', e.target.value)}>
+          <option value="warn">გაფრთხილება (დასაბუთებით)</option><option value="block">აკრძალულია</option></select></Field>
+        {num('antibiotic_default_days', 'ანტიბიოტიკი — ნაგულისხმევი დღეები', 1, 60, 'ხანგრძლივობა სავალდებულოა; დასრულებამდე 24 სთ — შეხსენება')}
+        {num('weight_max_age_days', 'წონის აქტუალობა (დღე)', 1, 90, 'ძველ წონაზე — გაფრთხილება')}
+        {num('verbal_confirm_hours', 'ზეპირის დადასტურების ვადა (სთ)', 1, 168)}
+        {chk('verbal_orders', 'ზეპირი / სატელეფონო დანიშნულება', 'ექთანი შეიყვანს ექიმის სახელით, ექიმი ადასტურებს')}
+      </div>
+      <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>
   );

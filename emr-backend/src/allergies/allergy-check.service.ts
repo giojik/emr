@@ -47,7 +47,8 @@ function levelFor(match: 'direct' | 'cross', severity: string, type: string): Al
 export class AllergyCheckService {
   constructor(@InjectDb() private readonly db: Database) {}
 
-  async check(patientId: string, medicationName: string, executor: Kysely<DB> | Transaction<DB> = this.db): Promise<AllergyCheckResult> {
+  /** extraGroups — ჯენერიკის ალერგენული ჯგუფები (med_generic_allergens, 0030): დასახელების ფუძეებთან ერთად (0042) */
+  async check(patientId: string, medicationName: string, executor: Kysely<DB> | Transaction<DB> = this.db, extraGroups: string[] = []): Promise<AllergyCheckResult> {
     const drug = medicationName.trim().toLowerCase();
     const [allergies, terms, cross] = await Promise.all([
       executor.selectFrom('patient_allergies').select(['id', 'substance', 'severity', 'allergy_type'])
@@ -61,7 +62,7 @@ export class AllergyCheckService {
 
     const groupName = new Map(terms.map((t) => [t.group_code, t.name]));
     const groupsOf = (text: string) => new Set(terms.filter((t) => text.includes(String(t.term).toLowerCase())).map((t) => t.group_code));
-    const drugGroups = groupsOf(drug);
+    const drugGroups = new Set([...groupsOf(drug), ...extraGroups]);
     const related = (g: string) => cross.filter((c) => c.group_a === g || c.group_b === g).map((c) => (c.group_a === g ? c.group_b : c.group_a));
 
     const matches: AllergyMatch[] = [];

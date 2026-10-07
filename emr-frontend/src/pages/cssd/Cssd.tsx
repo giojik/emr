@@ -479,7 +479,7 @@ function MachineDialog({ m, units, onClose, onDone }: { m: Partial<Machine>; uni
           <Field label="სერიული №" htmlFor="ms"><input id="ms" className="input mono" value={f.serial_no} onChange={(e) => setF({ ...f, serial_no: e.target.value })} /></Field>
           {m.id && <label className="row" style={{ marginTop: 26 }}><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> აქტიური</label>}
         </div>
-        <Field label="პროგრამები (თითო ხაზზე: დასახელება|°C|წთ)" htmlFor="mp"><textarea id="mp" className="input" rows={3} value={f.programs} onChange={(e) => setF({ ...f, programs: e.target.value })} placeholder={'134° სტანდარტი|134|5\n121° რეზინი|121|20'} /></Field>
+        <Field label="პროგრამები (თითო ხაზზე: დასახელება|°C|წთ)" htmlFor="mp"><textarea id="mp" className="textarea" rows={3} value={f.programs} onChange={(e) => setF({ ...f, programs: e.target.value })} placeholder={'134° სტანდარტი|134|5\n121° რეზინი|121|20'} /></Field>
         <ErrorBox error={s.error} />
       </div>
     </Modal>

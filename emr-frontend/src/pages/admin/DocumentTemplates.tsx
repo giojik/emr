@@ -37,7 +37,7 @@ export default function DocumentTemplates() {
   const [sel, setSel] = useState<string | null>(null); const [creating, setCreating] = useState(false);
   useEffect(() => { if (!sel && list.data?.length) setSel(list.data.find((t) => t.kind === 'epicrisis')?.code ?? list.data[0].code); }, [list.data, sel]);
   return (
-    <div className="stack">
+    <div className="content">
       <div className="row"><h2 style={{ margin: 0 }} className="grow">დოკუმენტების შაბლონები</h2><button className="btn primary" type="button" onClick={() => setCreating(true)}>+ ახალი შაბლონი</button></div>
       <ErrorBox error={list.error} />
       <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
@@ -132,7 +132,7 @@ function Editor({ code }: { code: string }) {
                   <button className="btn sm" type="button" disabled={i === 0} onClick={() => move(i, -1)} aria-label="ზემოთ">↑</button>
                   <button className="btn sm" type="button" disabled={i === blocks.length - 1} onClick={() => move(i, 1)} aria-label="ქვემოთ">↓</button>
                   <button className="btn sm" type="button" onClick={() => { setBlocks(blocks.filter((_, j) => j !== i)); setDirty(true); }} aria-label="წაშლა">×</button></div>
-                {(b.type === 'heading' || b.type === 'text') && <textarea className="input" rows={b.type === 'text' ? 5 : 1} value={b.text} style={{ marginTop: 6 }}
+                {(b.type === 'heading' || b.type === 'text') && <textarea className="textarea" rows={b.type === 'text' ? 5 : 1} value={b.text} style={{ marginTop: 6 }}
                   onFocus={(e) => { focus.current = { i, el: e.currentTarget }; }} onSelect={(e) => { focus.current = { i, el: e.currentTarget }; }} onChange={(e) => upd(i, { text: e.target.value })} />}
                 {b.type === 'field' && <div className="stack" style={{ gap: 6, marginTop: 6 }}>
                   <div className="row" style={{ gap: 8 }}>
@@ -163,7 +163,7 @@ function Editor({ code }: { code: string }) {
           <div className="card-head"><h3 style={{ margin: 0 }}>ცვლადები</h3></div>
           <div className="card-pad stack" style={{ gap: 4, maxHeight: 520, overflow: 'auto' }}>
             <span className="small muted">დააჭირეთ — ჩაისმება ბოლოს არჩეულ ტექსტში (კურსორთან).</span>
-            {vars.data?.map((v) => <button key={v.key} type="button" className="btn sm" style={{ justifyContent: 'flex-start', textAlign: 'left' }} title={`ნიმუში: ${v.sample}`} onClick={() => insertVar(v.key)}>
+            {vars.data?.map((v) => <button key={v.key} type="button" className="btn sm" style={{ justifyContent: 'flex-start', textAlign: 'left', height: 'auto', padding: '4px 8px', whiteSpace: 'normal', overflowWrap: 'anywhere', width: '100%' }} title={`ნიმუში: ${v.sample}`} onClick={() => insertVar(v.key)}>
               <span className="stack" style={{ gap: 0 }}><span className="mono small">{`{{${v.key}}}`}</span><span className="small muted">{v.label}</span></span></button>)}
           </div>
         </section>

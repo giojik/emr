@@ -71,7 +71,42 @@ export class InpatientRemindersService {
       await this.bell.notify(d.attending_doctor_id, { kind: 'ipd_docs_pending', title: 'გაწერილი პაციენტი: დოკუმენტაცია დაუხურავია (ეპიკრიზი / საბოლოო დიაგნოზი)',
         body: `${d.last_name} ${d.first_name} (${d.adm_no})`, item: d.adm_no, entityId: d.encounter_id, link: `/inpatient/stay/${d.encounter_id}` });
     }
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length };
+    const o = await this.orders(s);
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o };
+  }
+
+  /**
+   * 0042: დანიშნულებები — ვადის ამოწურვა (completed), ანტიბიოტიკის დასრულებამდე 24 სთ (ექიმს), დაუდასტურებელი ზეპირი (verbal_confirm_hours).
+   */
+  async orders(s: Record<string, number>) {
+    const done = await this.db.updateTable('med_orders').set({ status: 'completed', stopped_at: sql`end_at` })
+      .where('status', 'in', ['active', 'on_hold']).where('end_at', '<', sql<Date>`now()`).returning('id').execute();
+    for (const r of done) await this.db.insertInto('med_order_events').values({ order_id: r.id, kind: 'completed', data: JSON.stringify({ auto: true }) }).execute();
+    const abx = await this.db.selectFrom('med_orders as o').innerJoin('med_generics as g', 'g.id', 'o.generic_id').innerJoin('encounters as e', 'e.id', 'o.encounter_id')
+      .innerJoin('inpatient_stays as st', 'st.encounter_id', 'o.encounter_id').innerJoin('patients as p', 'p.id', 'o.patient_id')
+      .select(['o.id', 'o.encounter_id', 'o.ordered_by', 'e.attending_doctor_id', 'g.inn', 'st.adm_no', 'p.first_name', 'p.last_name'])
+      .where('o.status', '=', 'active').where('o.end_notified_at', 'is', null).where('g.atc_code', 'like', 'J01%')
+      .where('o.end_at', '<', sql<Date>`now() + interval '24 hours'`).execute();
+    for (const a of abx) {
+      for (const id of new Set([a.ordered_by, a.attending_doctor_id].filter((x): x is string => !!x))) {
+        await this.bell.notify(id, { kind: 'ipd_abx_ending', title: `ანტიბიოტიკი სრულდება 24 სთ-ში: ${a.inn} — გააგრძელეთ ან დაასრულეთ`, body: `${a.last_name} ${a.first_name} (${a.adm_no})`,
+          item: a.inn, entityId: a.id, link: `/inpatient/stay/${a.encounter_id}?tab=orders`, urgent: false });
+      }
+      await this.db.updateTable('med_orders').set({ end_notified_at: sql`now()` }).where('id', '=', a.id).execute();
+      await this.db.insertInto('med_order_events').values({ order_id: a.id, kind: 'end_reminder', data: '{}' }).execute();
+    }
+    const vh = s.verbal_confirm_hours ?? 24;
+    const verbal = await this.db.selectFrom('med_orders as o').innerJoin('inpatient_stays as st', 'st.encounter_id', 'o.encounter_id').innerJoin('patients as p', 'p.id', 'o.patient_id')
+      .leftJoin('med_generics as g', 'g.id', 'o.generic_id')
+      .select(['o.id', 'o.encounter_id', 'o.ordered_by', 'st.adm_no', 'p.first_name', 'p.last_name', sql<string>`coalesce(g.inn, o.drug_text, o.text)`.as('name')])
+      .where('o.is_verbal', '=', true).where('o.verbal_confirmed_at', 'is', null).where('o.verbal_notified_at', 'is', null).where('o.status', 'in', ['active', 'on_hold'])
+      .where(sql<boolean>`o.created_at < now() - make_interval(hours => ${vh})`).execute();
+    for (const v of verbal) {
+      await this.bell.notify(v.ordered_by, { kind: 'ipd_verbal_confirm', title: `ზეპირი დანიშნულება ${vh} სთ-ზე მეტია დაუდასტურებელია: ${v.name}`, body: `${v.last_name} ${v.first_name} (${v.adm_no})`,
+        item: v.name, entityId: v.id, link: `/inpatient/stay/${v.encounter_id}?tab=orders`, urgent: true });
+      await this.db.updateTable('med_orders').set({ verbal_notified_at: sql`now()` }).where('id', '=', v.id).execute();
+    }
+    return { orders_completed: done.length, abx_reminders: abx.length, verbal_reminders: verbal.length };
   }
 
   private async plannedSms(m: { enabled: boolean; settings: unknown } | undefined) {

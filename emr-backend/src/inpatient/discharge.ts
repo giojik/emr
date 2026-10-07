@@ -12,6 +12,7 @@ import type { DB } from '../database/db';
 import { InjectDb, type Database } from '../database/database.module';
 import { DISCHARGE_KA } from '../templates/template-context';
 import { EpicrisisModule, EpicrisisService } from './epicrisis';
+import { OrdersModule, OrdersService } from './orders';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 
 type Trx = Transaction<DB>;
@@ -69,7 +70,7 @@ export interface DischargeWarning { code: string; message: string }
 @Injectable()
 export class DischargeService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly ipd: InpatientService,
-              private readonly epicrisis: EpicrisisService) {}
+              private readonly epicrisis: EpicrisisService, private readonly orders: OrdersService) {}
 
   private async curDept(trx: Trx | Database, encounterId: string) {
     const a = await trx.selectFrom('bed_assignments').select(['id', 'department_id', 'bed_id', 'ended_at']).where('encounter_id', '=', encounterId)
@@ -209,6 +210,9 @@ export class DischargeService {
         }
         if (regular) await trx.updateTable('encounters').set({ status: 'discharged', end_time: sql`now()` }).where('id', '=', encounterId).execute();
         if (signDraft) await this.epicrisis.signInTrx(trx, encounterId, u, ctx);
+        // 0042: აქტიური / შეჩერებული დანიშნულებები წყდება
+        const stopped = await this.orders.stopAllForDischarge(trx, encounterId, `გაწერა (${DISCHARGE_KA[dto.type]})`, u);
+        if (stopped) await this.ipd.event(trx, { encounter_id: encounterId, kind: 'orders_stopped', data: { count: stopped } }, u);
 
         await this.ipd.event(trx, { encounter_id: encounterId, bed_id: cur.bed_id, kind: dto.type === 'death' ? 'death' : 'discharged',
           data: { type: dto.type, type_ka: DISCHARGE_KA[dto.type], bed: bedCode, overrides: warnings.map((w) => w.code), epicrisis_signed_now: signDraft } }, u);
@@ -306,7 +310,10 @@ export class DischargeService {
         await this.ipd.event(trx, { encounter_id: encounterId, bed_id: bedId, kind: 'discharge_cancelled', data: { was: st.discharge_type, reason: dto.reason.trim(), bed: bedCode, warnings } }, u);
         await this.audit.log(ctx, { action: 'INPATIENT_DISCHARGE_CANCEL', entityName: 'encounters', entityId: encounterId, newData: { reason: dto.reason, was: st.discharge_type, bed: bedCode } }, trx);
         return { encounter_id: encounterId, status: 'active', bed: bedCode,
-          notice: epi && epi.status !== 'draft' ? 'ეპიკრიზი ხელმოწერილია (გაწერის თარიღით) — საჭიროების შემთხვევაში გახსენით ხელახლა' : null };
+          notice: [epi && epi.status !== 'draft' ? 'ეპიკრიზი ხელმოწერილია (გაწერის თარიღით) — საჭიროების შემთხვევაში გახსენით ხელახლა' : null,
+            (await trx.selectFrom('med_order_events as e').innerJoin('med_orders as o', 'o.id', 'e.order_id').select('e.id').where('o.encounter_id', '=', encounterId)
+              .where('e.kind', '=', 'discharge_stop').limit(1).executeTakeFirst()) ? 'გაწერისას დანიშნულებები შეწყდა — საჭიროებისამებრ დანიშნეთ ხელახლა' : null]
+            .filter(Boolean).join(' · ') || null };
       });
     } catch (e) { mapPgError(e, { ux_inpatient_stays_patient_active: 'პაციენტს უკვე აქვს სხვა აქტიური ჰოსპიტალიზაცია', ux_bed_assignments_bed: 'საწოლი უკვე დაკავებულია' }); }
   }
@@ -411,5 +418,5 @@ export class DischargeController {
   @Patch('institutions/:id') @Roles('admin') editInst(@Param('id', ParseUUIDPipe) id: string, @Body() d: InstitutionDto, @Req() r: Request) { return this.s.saveInstitution(id, d, auditCtx(r)); }
 }
 
-@Module({ imports: [InpatientModule, EpicrisisModule], providers: [DischargeService], controllers: [DischargeController], exports: [DischargeService] })
+@Module({ imports: [InpatientModule, EpicrisisModule, OrdersModule], providers: [DischargeService], controllers: [DischargeController], exports: [DischargeService] })
 export class DischargeModule {}

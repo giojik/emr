@@ -25,6 +25,8 @@ export interface InpatientSettings {
   wristband: boolean; wristband_print: 'zpl' | 'pdf'; wristband_width_mm: number; wristband_length_mm: number; wristband_offset_mm: number;
   // 0041
   transfer_wait_hours: number; epicrisis_cosign: boolean; discharge_cancel_hours: number; leave_counts_bed_day: boolean; leave_max_hours: number; docs_pending_alert_hours: number;
+  med_verification: 'all' | 'high_risk' | 'off'; dose_rule: 'warn' | 'block'; interaction_rule: 'warn' | 'block'; antibiotic_default_days: number;
+  verbal_orders: boolean; verbal_confirm_hours: number; weight_max_age_days: number;
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
@@ -564,8 +566,9 @@ export class InpatientService {
         + (SELECT count(*) FROM stock_docs d WHERE d.encounter_id = ${encounterId})
         + (SELECT count(*) FROM cssd_packs c WHERE c.encounter_id = ${encounterId})
         + (SELECT count(*) FROM encounter_vitals v WHERE v.encounter_id = ${encounterId})
-        + (SELECT count(*) FROM prescriptions r WHERE r.encounter_id = ${encounterId}))::int AS n`.execute(trx);
-      if (used.rows[0].n > 0) throw new ConflictException({ code: 'STAY_IN_USE', message: 'ვიზიტზე უკვე არის ჩანაწერები (მომსახურება, შეკვეთები, ხარჯი, ვიტალები) — გაუქმება შეუძლებელია; გამოიყენეთ გაწერა' });
+        + (SELECT count(*) FROM prescriptions r WHERE r.encounter_id = ${encounterId})
+        + (SELECT count(*) FROM med_orders mo WHERE mo.encounter_id = ${encounterId}))::int AS n`.execute(trx);
+      if (used.rows[0].n > 0) throw new ConflictException({ code: 'STAY_IN_USE', message: 'ვიზიტზე უკვე არის ჩანაწერები (მომსახურება, შეკვეთები, დანიშნულებები, ხარჯი, ვიტალები) — გაუქმება შეუძლებელია; გამოიყენეთ გაწერა' });
       const cur = await trx.selectFrom('bed_assignments').selectAll().where('encounter_id', '=', encounterId).where('ended_at', 'is', null).forUpdate().executeTakeFirst();
       if (cur) {
         await trx.updateTable('bed_assignments').set({ ended_at: sql`now()`, ended_by: u.id, end_kind: 'cancel' }).where('id', '=', cur.id).execute();

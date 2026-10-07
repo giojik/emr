@@ -17,6 +17,7 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/printers', label: 'პრინტერები', roles: ['admin'] },
   { to: '/admin/templates', label: 'დოკუმენტების შაბლონები', roles: ['admin'] },
   { to: '/admin/institutions', label: 'სხვა კლინიკები', roles: ['admin'] },
+  { to: '/admin/frequencies', label: 'დანიშნულების სიხშირეები', roles: ['admin'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['admin', 'pharmacist'] },
   { to: '/admin/overrides', label: 'ალერგიის override-ები', roles: ['admin', 'pharmacist'] },
   { to: '/admin/audit', label: 'აუდიტი', roles: ['admin'] },

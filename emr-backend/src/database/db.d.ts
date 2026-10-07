@@ -1398,6 +1398,16 @@ export interface MedDosageForms {
   sort_order: Generated<number>;
 }
 
+export interface MedFrequencies {
+  code: string;
+  interval_hours: number | null;
+  is_active: Generated<boolean>;
+  name: string;
+  per_day: Numeric;
+  sort_order: Generated<number>;
+  times_of_day: string[] | null;
+}
+
 export interface MedGenericAllergens {
   generic_id: string;
   group_code: string;
@@ -1443,6 +1453,82 @@ export interface MedInteractions {
   severity: string;
   source: Generated<string>;
   source_ref: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MedOrderEvents {
+  at: Generated<Timestamp>;
+  data: Generated<Json>;
+  id: Generated<Int8>;
+  kind: string;
+  order_id: string;
+  user_id: string | null;
+}
+
+export interface MedOrders {
+  approval_note: string | null;
+  approval_status: Generated<string>;
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  category: Generated<string>;
+  checks: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  diluent: string | null;
+  dose: Numeric | null;
+  dose_per_kg: Numeric | null;
+  dose_unit: string | null;
+  drug_text: string | null;
+  duration_days: number | null;
+  duration_min: number | null;
+  encounter_id: string;
+  end_at: Timestamp | null;
+  end_notified_at: Timestamp | null;
+  entered_by: string;
+  frequency_code: string | null;
+  generic_id: string | null;
+  hold_reason: string | null;
+  id: Generated<string>;
+  instructions: string | null;
+  is_verbal: Generated<boolean>;
+  order_type: string | null;
+  ordered_by: string;
+  override_reason: string | null;
+  patient_id: string;
+  prn_max_per_day: number | null;
+  prn_min_interval_h: Numeric | null;
+  prn_reason: string | null;
+  rate_ml_h: Numeric | null;
+  replaces_id: string | null;
+  route_code: string | null;
+  set_id: string | null;
+  start_at: Generated<Timestamp>;
+  status: Generated<string>;
+  stock_request_id: string | null;
+  stop_reason: string | null;
+  stopped_at: Timestamp | null;
+  stopped_by: string | null;
+  supply_mode: string | null;
+  text: string | null;
+  updated_at: Generated<Timestamp>;
+  verbal_confirmed_at: Timestamp | null;
+  verbal_notified_at: Timestamp | null;
+  verified_at: Timestamp | null;
+  verified_by: string | null;
+  verify_note: string | null;
+  verify_status: Generated<string>;
+  volume_ml: Numeric | null;
+  weight_kg: Numeric | null;
+}
+
+export interface MedOrderSets {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  items: Json;
+  name: string;
+  owner_id: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -2256,9 +2342,13 @@ export interface DB {
   lab_specimens: LabSpecimens;
   label_printers: LabelPrinters;
   med_dosage_forms: MedDosageForms;
+  med_frequencies: MedFrequencies;
   med_generic_allergens: MedGenericAllergens;
   med_generics: MedGenerics;
   med_interactions: MedInteractions;
+  med_order_events: MedOrderEvents;
+  med_order_sets: MedOrderSets;
+  med_orders: MedOrders;
   med_routes: MedRoutes;
   micro_antibiotics: MicroAntibiotics;
   micro_ast: MicroAst;

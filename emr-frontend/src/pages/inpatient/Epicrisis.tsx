@@ -114,7 +114,7 @@ export default function EpicrisisPanel({ encounterId, diagnoses, encounterActive
 
           {fields.map((f) => (
             <Field key={f.key} label={f.label ?? f.key!} htmlFor={`ep-${f.key}`} required={f.required}>
-              <textarea id={`ep-${f.key}`} className="input" rows={f.key === 'course' || f.key === 'treatment' ? 5 : 3} readOnly={!edit} value={content[f.key!] ?? ''}
+              <textarea id={`ep-${f.key}`} className="textarea" rows={f.key === 'course' || f.key === 'treatment' ? 5 : 3} readOnly={!edit} value={content[f.key!] ?? ''}
                 onChange={(ev) => { setContent({ ...content, [f.key!]: ev.target.value }); setDirty(true); }} />
             </Field>))}
 

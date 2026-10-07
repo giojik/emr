@@ -30,7 +30,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
 ];
 
 const HOME: Record<Role, string> = {
-  doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/stock/generics',
+  doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/stock/verification',
   diagnostic: '/diagnostics/lab', lab_doctor: '/diagnostics/lab', lab_manager: '/admin/catalog', phlebotomist: '/collection',
   radiographer: '/diagnostics/radiology', radiologist: '/diagnostics/radiology', endoscopist: '/diagnostics/endoscopy', endoscopy_nurse: '/diagnostics/endoscopy',
   accountant: '/reports', viewer: '/reports', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',

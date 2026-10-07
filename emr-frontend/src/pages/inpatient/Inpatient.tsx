@@ -9,6 +9,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../c
 import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import IcdPicker from '../encounter/IcdPicker';
+import { DepartmentOrders } from './Orders';
 import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
 
 const ADMITTERS = ['admin', 'receptionist', 'doctor'] as const;
@@ -22,7 +23,7 @@ export default function Inpatient() {
   const m = mods.data?.find((x) => x.code === 'inpatient');
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
   const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
-    ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
+    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
   if (mods.isLoading) return <div className="content"><Loading /></div>;
@@ -35,7 +36,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'list' ? <Stays /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }
@@ -50,6 +51,13 @@ function useDepartment() {
       {deps.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
     </select>);
   return { id, picker, loading: census.isLoading, empty: !census.isLoading && !deps.length };
+}
+
+// ---------------------------------------------------------------- დანიშნულებები (0042): განყოფილების აქტიური დანიშნულებები
+function OrdersTab() {
+  const { id, picker, loading } = useDepartment();
+  if (loading) return <div className="content"><Loading /></div>;
+  return <div className="content"><div className="row">{picker}</div>{id && <DepartmentOrders departmentId={id} />}</div>;
 }
 
 // ---------------------------------------------------------------- დაფა
@@ -309,7 +317,7 @@ function Admit({ planned, onDone }: { planned?: Planned; onDone?: () => void } =
       <Field label="მიმღები დიაგნოზი (ICD-10)" htmlFor="icd" required>
         {icd ? <div className="row"><span className="mono" style={{ fontWeight: 600 }}>{icd.code}</span><span className="grow">{icd.title}</span><button className="btn sm" type="button" onClick={() => setIcd(null)}>შეცვლა</button></div>
           : <IcdPicker primary={false} onPick={setIcd} />}</Field>
-      <Field label="ჩივილები / მიზეზი" htmlFor="acc"><textarea id="acc" className="input" rows={2} value={f.chief_complaint} onChange={(e) => setF({ ...f, chief_complaint: e.target.value })} /></Field>
+      <Field label="ჩივილები / მიზეზი" htmlFor="acc"><textarea id="acc" className="textarea" rows={2} value={f.chief_complaint} onChange={(e) => setF({ ...f, chief_complaint: e.target.value })} /></Field>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
         <Field label="მდგომარეობა" htmlFor="asv"><select id="asv" className="select" value={f.severity} onChange={(e) => setF({ ...f, severity: e.target.value })}>
           <option value="">—</option>{Object.entries(SEVERITY_KA).map(([k, [, l]]) => <option key={k} value={k}>{l}</option>)}</select></Field>

@@ -220,6 +220,33 @@ export class StockTransfersService {
     await this.notifyMany(ids, { kind: 'stock_issue', title: `მოთხოვნა ${no} — გასაცემი`, body: toName, link: `/stock/requests?req=${id}`, entityId: id, urgent }, except);
   }
 
+  /**
+   * 0042: აფთიაქიდან პაციენტზე გაცემის მოთხოვნა — ფარმაცევტის ვერიფიკაციისას (დანიშნულებიდან).
+   * ვერიფიკაცია = დამტკიცება (კონტროლირებადზე — ჩვეულებრივი წესით, განყოფილების ხელმძღვანელი); შემდეგ — ჩვეულებრივი გაცემა / მიღება.
+   */
+  async createPatientDispense(trx: Trx, p: { toLocationId: string; itemId: string; qtyBase: number; patientId: string; urgent: boolean; notes: string }, u: AuthUser) {
+    const from = await trx.selectFrom('stock_locations').select(['id', 'name', 'is_active']).where('kind', '=', 'pharmacy').where('is_active', '=', true)
+      .orderBy('sort_order').limit(1).executeTakeFirst();
+    if (!from) throw new BadRequestException('აქტიური აფთიაქის ლოკაცია არ არის');
+    const to = await this.loc(p.toLocationId, trx);
+    const lines = await this.buildReqLines(trx, [{ item_id: p.itemId, qty: p.qtyBase, patient_id: p.patientId }]);
+    const it = await trx.selectFrom('stock_items as i').leftJoin('med_generics as g', 'g.id', 'i.generic_id').select(['g.controlled_class']).where('i.id', '=', p.itemId).executeTakeFirstOrThrow();
+    const needs = !!it.controlled_class;
+    const no = await this.nextNo(trx, 'RQ', await this.today(trx));
+    const r = await trx.insertInto('stock_requests').values({ req_no: no, from_location_id: from.id, to_location_id: to.id, urgent: p.urgent, notes: p.notes, created_by: u.id,
+      status: needs ? 'submitted' : 'approved', requires_approval: needs, submitted_at: sql`now()`, ...(!needs && { approved_by: u.id, approved_at: sql`now()` }) })
+      .returning('id').executeTakeFirstOrThrow();
+    await trx.insertInto('stock_request_lines').values(lines.map((l) => ({ ...l, request_id: r.id, ...(!needs && { qty_approved: l.qty_base }) }))).execute();
+    return { id: r.id, no, needs, to_name: to.name, to_department_id: to.department_id };
+  }
+  /** createPatientDispense-ის შემდეგ (ტრანზაქციის გარეთ): შეტყობინება გამცემებს ან დამმტკიცებლებს */
+  async notifyPatientDispense(r: { id: string; no: string; needs: boolean; to_name: string; to_department_id: string | null }, urgent: boolean, u: AuthUser) {
+    if (r.needs && r.to_department_id) {
+      const heads = await this.usersWith(['manager', ...STOCK_READ], this.db, r.to_department_id, true);
+      await this.notifyMany(heads, { kind: 'stock_approve', title: `მოთხოვნა ${r.no} — დასამტკიცებელი`, body: `${r.to_name} ← აფთიაქი`, link: `/stock/requests?req=${r.id}`, entityId: r.id, urgent }, u.id);
+    } else await this.notifyIssuers(r.id, r.no, 'pharmacy', r.to_name, urgent, u.id);
+  }
+
   async approve(id: string, lines: { id: string; qty_approved: number }[] | undefined, u: AuthUser, ctx: AuditContext) {
     const r0 = await this.db.transaction().execute(async (trx) => {
       const r = await this.request(id, trx);
