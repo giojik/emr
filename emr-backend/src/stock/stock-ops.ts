@@ -36,6 +36,7 @@ export class StockOpsService {
     if (err.constraint === 'stock_location_counting') throw new ConflictException(err.message ?? 'ლოკაციაზე მიმდინარეობს ინვენტარიზაცია');
     if (err.constraint === 'stock_balances_non_negative') throw new ConflictException('ნაშთი არასაკმარისია (ლოტის ნაშთი ამ ლოკაციაზე ნაკლებია)');
     if (err.constraint === 'ux_stock_counts_active') throw new ConflictException('ამ ლოკაციაზე ინვენტარიზაცია უკვე მიმდინარეობს');
+    if (err.constraint === 'invoice_finalized') throw new ConflictException('პაციენტის ინვოისი ფინანსურად დახურულია — ხარჯის ცვლილებისთვის ბილინგმა ჯერ უნდა გახსნას');
     if (err.constraint === 'chk_invoice_overpaid') throw new ConflictException('ინვოისი უკვე გადახდილია — ხაზის მოხსნამდე საჭიროა გადახდის კორექცია (სალარო)');
     throw e;
   }

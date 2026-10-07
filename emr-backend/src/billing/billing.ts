@@ -1,6 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException,
   Param, ParseUUIDPipe, Patch, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -22,6 +23,7 @@ export class BillingService {
       .select((eb) => [
         jsonArrayFrom(eb.selectFrom('invoice_line_items as l').selectAll('l').whereRef('l.invoice_id', '=', 'i.id')).as('lines'),
         jsonArrayFrom(eb.selectFrom('payments as p').selectAll('p').whereRef('p.invoice_id', '=', 'i.id').orderBy('p.paid_at')).as('payments'),
+        sql<boolean>`EXISTS (SELECT 1 FROM inpatient_stays s WHERE s.encounter_id = i.encounter_id)`.as('is_inpatient'),
       ])
       .where('i.encounter_id', '=', encounterId).executeTakeFirst();
     if (!inv) throw new NotFoundException('ინვოისი ვერ მოიძებნა');
@@ -34,8 +36,10 @@ export class BillingService {
     if (dto.method === 'card_terminal' && !dto.terminal_ref) throw new BadRequestException('ბარათით გადახდას სჭირდება terminal_ref');
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
       const inv = await trx.selectFrom('invoices as i').innerJoin('encounters as e', 'e.id', 'i.encounter_id')
-        .select(['i.id', 'e.status']).where('i.id', '=', invoiceId).forUpdate(['i']).executeTakeFirst();
+        .select(['i.id', 'e.status', 'e.type', 'i.finalized_at']).where('i.id', '=', invoiceId).forUpdate(['i']).executeTakeFirst();
       if (!inv) throw new NotFoundException('ინვოისი ვერ მოიძებნა');
+      // 0046: სტაციონარი — ფინანსურ დახურვამდე თანხა მიიღება ავანსად (ჰოსპიტალიზაციის გვერდი → ბილინგი)
+      if (inv.type === 'inpatient' && !inv.finalized_at) throw new ConflictException({ code: 'IPD_USE_DEPOSIT', message: 'სტაციონარი: ფინანსურ დახურვამდე თანხა მიიღება ავანსის სახით (ჰოსპიტალიზაცია → ბილინგი)' });
       if (inv.status === 'planned') throw new ConflictException('საწყისი გადახდისთვის გამოიყენეთ /encounters/:id/pay-initial');
       if (inv.status === 'cancelled') throw new ConflictException('ვიზიტი გაუქმებულია');
       const p = await this.encounters.insertPayment(trx, invoiceId, dto, user, ctx);

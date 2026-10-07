@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError, can } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import type { Doctor } from '../../api/types';
@@ -13,6 +13,7 @@ import EpicrisisPanel from './Epicrisis';
 import MarPanel from './Mar';
 import NursingPanel from './Nursing';
 import OrdersPanel from './Orders';
+import StayBillingPanel from './Billing';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
 import { chipOf, DISCHARGE_KA, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, TRANSPORT_KA, type Board, type InpatientSettings, type Printer } from './types';
 
@@ -69,6 +70,8 @@ export default function Stay() {
   const { id } = useParams(); const [sp] = useSearchParams(); const nav = useNavigate(); const qc = useQueryClient(); const toast = useToast();
   const q = useQuery({ queryKey: ['ipd-stay', id], queryFn: () => api<StayDetail>(`/inpatient/stays/${id}`) });
   const s = q.data;
+  const { hash } = useLocation();
+  useEffect(() => { if (s && hash === '#billing') setTimeout(() => document.getElementById('billing')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400); }, [s?.encounter_id, hash]);   // eslint-disable-line react-hooks/exhaustive-deps
   const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
   const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
   const [err, setErr] = useState<unknown>(null);
@@ -180,6 +183,7 @@ export default function Stay() {
         {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}
         {s.status !== 'cancelled' && <MarPanel encounterId={s.encounter_id} admNo={s.adm_no} />}
         {s.status !== 'cancelled' && <NursingPanel encounterId={s.encounter_id} />}
+        {s.status !== 'cancelled' && <StayBillingPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <EpicrisisPanel encounterId={s.encounter_id} diagnoses={s.diagnoses} encounterActive={active || (s.status === 'discharged' && !s.closed_at)} />}
         {((transfers.data ?? []).length > 0 || (leaves.data ?? []).length > 0) && <section className="card">
           <div className="card-head"><h2 style={{ margin: 0 }}>გადაყვანები და დროებითი გასვლები</h2></div>

@@ -43,6 +43,9 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       // 0045: ექიმის ჩანაწერები / კონსულტაციები / ფორმა 100
       admission_note_hours: (v) => int(v, 1, 72), progress_note_daily: bool, progress_reminder_time: hhmm, consult_billing: bool,
       form100_on_discharge: (v) => oneOf(v, ['off', 'warn']),
+      // 0046: ბილინგი
+      discharge_balance: (v) => oneOf(v, ['off', 'warn', 'block']), deposit_alert_amount: (v) => int(v, 0, 1_000_000),
+      billing_amounts_visible: (v) => oneOf(v, ['all', 'heads', 'billing_only']), staff_add_services: bool,
       consult_due_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && ['routine', 'urgent', 'emergency'].every((k) => typeof (v as Record<string, unknown>)[k] === 'number'
         && ((v as Record<string, number>)[k]) > 0 && ((v as Record<string, number>)[k]) <= 168) && Object.keys(v as object).length === 3,
       line_alert_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>

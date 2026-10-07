@@ -7,6 +7,7 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/roles', label: 'როლები', roles: ['admin'] },
   { to: '/admin/departments', label: 'განყოფილებები', roles: ['admin'] },
   { to: '/admin/tariffs', label: 'ტარიფები', roles: ['admin', 'billing'] },
+  { to: '/admin/billing', label: 'სტაციონარის ბილინგი', roles: ['admin', 'billing'] },
   { to: '/admin/catalog', label: 'კვლევების კატალოგი', roles: ['admin', 'lab_doctor', 'lab_manager', 'billing'] },
   { to: '/admin/devices', label: 'აპარატები', roles: ['admin', 'med_engineer'] },
   { to: '/admin/analyzers', label: 'ანალიზატორები', roles: ['admin'] },

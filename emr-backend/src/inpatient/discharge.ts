@@ -6,6 +6,7 @@ import { sql, type Transaction } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
+import { loadBilling } from './ipd-billing-calc';
 import { has, type AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import type { DB } from '../database/db';
@@ -93,9 +94,14 @@ export class DischargeService {
     const open = await ex.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id').select(['s.name', 'i.status', 'i.section'])
       .where('i.encounter_id', '=', encounterId).where('i.status', 'not in', ['validated', 'cancelled']).execute();
     if (open.length) out.push({ code: 'OPEN_ORDERS', message: `დაუსრულებელი შეკვეთები (${open.length}): ${open.slice(0, 5).map((o) => o.name).join(', ')}${open.length > 5 ? '…' : ''}` });
-    const inv = await ex.selectFrom('invoices').select(['invoice_number', 'paid_status', 'patient_share']).where('encounter_id', '=', encounterId)
-      .where('paid_status', '<>', 'paid').where('patient_share', '>', '0').execute();
-    if (inv.length) out.push({ code: 'BALANCE', message: `გადაუხდელი ინვოისი: ${inv.map((i) => i.invoice_number).join(', ')}` });
+    // 0046: პაციენტის წილი (გადამხდელების / ავანსის გათვალისწინებით); discharge_balance: warn — შეხსენება, block — დასაბუთებით, off
+    const bal = (await this.ipd.settings()).discharge_balance ?? 'warn';
+    if (bal !== 'off') {
+      const b = await loadBilling(ex, encounterId);
+      if (b && b.money.due > 0.009) {
+        out.push({ code: 'BALANCE', soft: bal === 'warn', message: `პაციენტის დავალიანება (შეფასებით): ${b.money.due.toFixed(2)} ₾ — ინვოისი ${b.invoice.invoice_number}${b.finalized ? '' : ' (ფინანსური დახურვა — ბილინგი)'}` });
+      }
+    }
     // MAR (0043): ბოლო 24 სთ-ის გამოტოვებული / ვადაგადაცილებული დოზები
     const win = (await this.ipd.settings()).mar_window_min ?? 60;
     const mar = await ex.selectFrom('mar_entries').select(sql<number>`count(*)::int`.as('n')).where('encounter_id', '=', encounterId).where('voided_at', 'is', null)
@@ -240,6 +246,7 @@ export class DischargeService {
         if (regular) await trx.updateTable('encounters').set({ status: 'discharged', end_time: sql`now()` }).where('id', '=', encounterId).execute();
         if (signDraft) await this.epicrisis.signInTrx(trx, encounterId, u, ctx);
         // 0042: აქტიური / შეჩერებული დანიშნულებები წყდება
+        await sql`SELECT ipd_sync_bed_days(${encounterId}::uuid, ${TZ}, ${s.leave_counts_bed_day !== false})`.execute(trx);   // 0046: საბოლოო საწოლდღეები
         const stopped = await this.orders.stopAllForDischarge(trx, encounterId, `გაწერა (${DISCHARGE_KA[dto.type]})`, u);
         if (stopped) await this.ipd.event(trx, { encounter_id: encounterId, kind: 'orders_stopped', data: { count: stopped } }, u);
 
@@ -312,6 +319,8 @@ export class DischargeService {
         const hours = (Date.now() - new Date(st.ended_at!).getTime()) / 3_600_000;
         if (hours > s.discharge_cancel_hours) throw new ConflictException(`გაწერის გაუქმების ვადა (${s.discharge_cancel_hours} სთ) ამოწურულია`);
         if (st.body_released_at) throw new ConflictException('გვამის გატანა დაფიქსირებულია — გაუქმება შეუძლებელია');
+        const fin = await trx.selectFrom('invoices').select('finalized_at').where('encounter_id', '=', encounterId).executeTakeFirst();
+        if (fin?.finalized_at) throw new ConflictException('ინვოისი ფინანსურად დახურულია — ჯერ ბილინგმა უნდა გახსნას');
         const active = await trx.selectFrom('inpatient_stays').select('encounter_id').where('patient_id', '=', st.patient_id).where('status', '=', 'active').executeTakeFirst();
         if (active) throw new ConflictException('პაციენტს უკვე აქვს სხვა აქტიური ჰოსპიტალიზაცია');
         const gender = (await trx.selectFrom('patients').select('gender').where('id', '=', st.patient_id).executeTakeFirstOrThrow()).gender;

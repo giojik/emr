@@ -39,6 +39,7 @@ import RolesPage from './pages/admin/Roles';
 import Reports from './pages/Reports';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/Tariffs';
+import BillingSetup from './pages/admin/BillingSetup';
 import Users from './pages/admin/Users';
 
 const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing'];
@@ -100,6 +101,7 @@ export default function App() {
           <Route path="users" element={<Guard roles={['admin', 'hr', 'manager']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
           <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
+          <Route path="billing" element={<Guard roles={['admin', 'billing']}><BillingSetup /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />

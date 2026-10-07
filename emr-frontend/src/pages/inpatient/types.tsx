@@ -12,6 +12,7 @@ export interface InpatientSettings {
   med_verifier?: 'pharmacist' | 'head_nurse' | 'both'; news2_enabled: boolean; news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number;
   fluid_day_start: string; shift_times: string[]; scale_reminders: boolean; line_alert_hours: Record<string, number>;
   admission_note_hours: number; progress_note_daily: boolean; progress_reminder_time: string; consult_due_hours: Record<string, number>; consult_billing: boolean; form100_on_discharge: 'off' | 'warn';
+  discharge_balance?: 'off' | 'warn' | 'block'; deposit_alert_amount?: number; billing_amounts_visible?: 'all' | 'heads' | 'billing_only'; staff_add_services?: boolean;
 }
 export interface BedType { code: string; name: string; is_active: boolean; sort_order: number }
 export interface Bed { id: string; ward_id: string; code: string; type_code: string; type_name: string; is_overflow: boolean; status: BedStatus; status_reason: string | null; status_at: string; is_active: boolean; sort_order: number }

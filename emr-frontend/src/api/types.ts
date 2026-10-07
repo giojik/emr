@@ -48,11 +48,12 @@ export interface Referral {
   id: string; type: 'lab' | 'imaging' | 'hospitalization' | 'specialist_consult'; status: 'requested' | 'in_progress' | 'completed' | 'cancelled';
   reason: string; result_text: string | null; created_at: string; completed_at: string | null;
 }
-export interface InvoiceLine { id: string; tariff_id: string | null; description: string; quantity: number; unit_price: string; original_price: string | null; discount_reason: string | null; line_total: string; referral_id: string | null }
+export interface InvoiceLine { id: string; tariff_id: string | null; description: string; quantity: number; unit_price: string; original_price: string | null; discount_reason: string | null; line_total: string; referral_id: string | null; category?: string; package_included?: boolean }
 export interface Payment { id: string; amount: string; method: string; terminal_ref: string | null; paid_at: string }
 export interface Invoice {
   id: string; invoice_number: string; total_amount: string; patient_share: string; insurance_share: string; state_share: string;
   paid_status: 'unpaid' | 'partially_paid' | 'paid'; lines: InvoiceLine[]; payments: Payment[]; paid_amount?: string; balance_due?: string;
+  is_inpatient?: boolean; finalized_at?: string | null; writeoff_amount?: string;
 }
 export interface EncounterDetail {
   id: string; status: EncounterStatus; visit_kind?: 'consultation' | 'lab'; external_referral?: string | null; start_time: string; end_time: string | null; attending_doctor_id: string | null;
@@ -107,7 +108,7 @@ export interface AuditRow {
 // ---------------------------------------------------------------- მისამართი, დოკუმენტები, თანხმობები
 export interface AddressUnit { code: string; name: string; type: 'city' | 'municipality' | 'district'; parent_code: string | null; region: string }
 export interface AddressFieldsValue { address_unit_code: string; address_district_code: string; address_village: string; address_line: string; address_country: string }
-export type DocType = 'id_card' | 'passport' | 'birth_certificate' | 'residence_permit' | 'consent_scan' | 'consent_signed' | 'other';
+export type DocType = 'id_card' | 'passport' | 'birth_certificate' | 'residence_permit' | 'consent_scan' | 'consent_signed' | 'guarantee_letter' | 'other';
 export interface PatientFile {
   id: string; doc_type: DocType; mime_type: string; size_bytes: number; original_name: string | null; note: string | null;
   is_active: boolean; created_at: string; uploaded_by_first: string | null; uploaded_by_last: string | null;

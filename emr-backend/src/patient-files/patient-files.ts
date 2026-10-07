@@ -14,7 +14,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { StorageService } from '../storage/storage.service';
 
-export const DOC_TYPES = ['id_card', 'passport', 'birth_certificate', 'residence_permit', 'consent_scan', 'consent_signed', 'other'] as const;
+export const DOC_TYPES = ['id_card', 'passport', 'birth_certificate', 'residence_permit', 'consent_scan', 'consent_signed', 'guarantee_letter', 'other'] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -89,7 +89,7 @@ const READ = ['admin', 'receptionist', 'doctor', 'nurse', 'billing'] as const;
 export class PatientFilesController {
   constructor(private readonly files: PatientFilesService) {}
 
-  @Post('patients/:id/files') @Roles(...FRONT, 'doctor', 'nurse')
+  @Post('patients/:id/files') @Roles(...FRONT, 'doctor', 'nurse', 'billing')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: MAX_BYTES, files: 1 } }))
   upload(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File | undefined, @Body() dto: UploadDto,
          @CurrentUser() u: AuthUser, @Req() req: Request) {

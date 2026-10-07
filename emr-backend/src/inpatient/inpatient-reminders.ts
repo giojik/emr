@@ -5,6 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { NotifyService } from '../notify/notify.service';
 import { NotificationsService } from '../notifications/notifications';
 import { ensureMarSlots } from './mar-schedule';
+import { loadBilling } from './ipd-billing-calc';
 
 const TZ = loadEnv().CLINIC_TZ;
 const SEND_FROM_HOUR = 10;
@@ -76,7 +77,8 @@ export class InpatientRemindersService {
     const mar = await this.mar(s).catch((e) => { this.log.error(`MAR: ${(e as Error).message}`); return { mar_missed: 0 }; });
     const nur = await this.nursing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`საექთნო: ${(e as Error).message}`); return { scales_due: 0, lines_alert: 0 }; });
     const notes = await this.notes(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`ჩანაწერები: ${(e as Error).message}`); return { notes_due: 0, consults_late: 0 }; });
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur, ...notes };
+    const bill = await this.billing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`ბილინგი: ${(e as Error).message}`); return { bed_days_synced: 0, deposit_alerts: 0 }; });
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur, ...notes, ...bill };
   }
 
   /**
@@ -280,5 +282,39 @@ export class InpatientRemindersService {
       }
     }
     return { notes_due: notes, consults_late: late.rows.length };
+  }
+
+  /**
+   * 0046: ბილინგი — აქტიური ჰოსპიტალიზაციების საწოლდღეები (შუაღამის აღრიცხვა; იდემპოტენტური);
+   * პაციენტის წილი (შეფასებით) ავანსს deposit_alert_amount-ზე მეტით აჭარბებს → ბილინგის თანამშრომლებს (დღეში ერთხელ).
+   */
+  async billing(s: Record<string, unknown>) {
+    const stays = await this.db.selectFrom('inpatient_stays as st').innerJoin('invoices as i', 'i.encounter_id', 'st.encounter_id')
+      .select(['st.encounter_id']).where('st.status', '=', 'active').where('i.finalized_at', 'is', null).execute();
+    for (const st of stays) await sql`SELECT ipd_sync_bed_days(${st.encounter_id}::uuid, ${TZ}, ${s.leave_counts_bed_day !== false})`.execute(this.db);
+    const limit = Number(s.deposit_alert_amount ?? 500);
+    let alerts = 0;
+    if (limit > 0 && stays.length) {
+      const today = (await sql<{ d: string }>`SELECT to_char(now() AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS d`.execute(this.db)).rows[0].d;
+      const users = (await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').distinct()
+        .where('u.is_active', '=', true).where(sql<boolean>`'billing' = ANY(c.capabilities)`).execute()).map((r) => r.id);
+      for (const st of stays) {
+        const b = await loadBilling(this.db, st.encounter_id);
+        if (!b) continue;
+        const over = b.money.patient - b.money.deposit_net - b.money.paid;
+        if (over <= limit) continue;
+        const sb = await this.db.selectFrom('stay_billing as sb').innerJoin('inpatient_stays as x', 'x.encounter_id', 'sb.encounter_id').innerJoin('patients as p', 'p.id', 'x.patient_id')
+          .select(['sb.alert_notified_on', 'x.adm_no', 'p.first_name', 'p.last_name', sql<string>`to_char(sb.alert_notified_on, 'YYYY-MM-DD')`.as('day')])
+          .where('sb.encounter_id', '=', st.encounter_id).executeTakeFirst();
+        if (!sb || sb.day === today) continue;
+        for (const id of users) {
+          await this.bell.notify(id, { kind: 'ipd_deposit_low', title: `ავანსი არასაკმარისია: დავალიანება ${over.toFixed(2)} ₾`, body: `${sb.last_name} ${sb.first_name} (${sb.adm_no})`,
+            item: sb.adm_no, entityId: st.encounter_id, link: `/inpatient/stay/${st.encounter_id}#billing` });
+        }
+        await this.db.updateTable('stay_billing').set({ alert_notified_on: today }).where('encounter_id', '=', st.encounter_id).execute();
+        alerts++;
+      }
+    }
+    return { bed_days_synced: stays.length, deposit_alerts: alerts };
   }
 }

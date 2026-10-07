@@ -7,7 +7,7 @@ import { ErrorBox, Field, Modal } from './ui';
 
 export const DOC_KA: Record<DocType, string> = {
   id_card: 'პირადობის მოწმობა', passport: 'პასპორტი', birth_certificate: 'დაბადების მოწმობა', residence_permit: 'ბინადრობის მოწმობა',
-  consent_scan: 'თანხმობა (სკანი)', consent_signed: 'თანხმობა (ელექტრონული)', other: 'სხვა',
+  consent_scan: 'თანხმობა (სკანი)', consent_signed: 'თანხმობა (ელექტრონული)', guarantee_letter: 'საგარანტიო წერილი', other: 'სხვა',
 };
 const MAX = 10 * 1024 * 1024;
 
@@ -65,7 +65,7 @@ export function UploadDialog({ patientId, onClose, docType: fixedType, onUploade
       {!fixedType && (
         <Field label="დოკუმენტის ტიპი" htmlFor="dt">
           <select id="dt" className="select" value={type} onChange={(e) => setType(e.target.value as DocType)}>
-            {(['id_card', 'passport', 'birth_certificate', 'residence_permit', 'other'] as DocType[]).map((t) => <option key={t} value={t}>{DOC_KA[t]}</option>)}
+            {(['id_card', 'passport', 'birth_certificate', 'residence_permit', 'guarantee_letter', 'other'] as DocType[]).map((t) => <option key={t} value={t}>{DOC_KA[t]}</option>)}
           </select>
         </Field>
       )}

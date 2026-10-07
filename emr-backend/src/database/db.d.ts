@@ -215,6 +215,14 @@ export interface BedAssignments {
   started_at: Generated<Timestamp>;
 }
 
+export interface BedDayTariffs {
+  bed_type_code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  id: Generated<string>;
+  tariff_id: string;
+}
+
 export interface Beds {
   code: string;
   created_at: Generated<Timestamp>;
@@ -235,6 +243,29 @@ export interface BedTypes {
   is_active: Generated<boolean>;
   name: string;
   sort_order: Generated<number>;
+}
+
+export interface BillingPackageItems {
+  category: string | null;
+  id: Generated<string>;
+  kind: string;
+  package_id: string;
+  tariff_id: string | null;
+}
+
+export interface BillingPackages {
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  extra_day_tariff_id: string | null;
+  id: Generated<string>;
+  included_days: number | null;
+  includes_bed: Generated<boolean>;
+  is_active: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  price: Numeric;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ClinicSettings {
@@ -460,6 +491,16 @@ export interface DocumentTemplateVersions {
   template_code: string;
   text_approved: Generated<boolean>;
   version: number;
+}
+
+export interface DrgGroups {
+  alos: Numeric | null;
+  code: string;
+  is_active: Generated<boolean>;
+  mdc: string | null;
+  relative_weight: Numeric;
+  title: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface DxDevices {
@@ -986,8 +1027,11 @@ export interface InpatientTransfers {
 }
 
 export interface InvoiceLineItems {
+  added_by: string | null;
   adjusted_by: string | null;
+  category: Generated<string>;
   consultation_id: string | null;
+  created_at: Generated<Timestamp>;
   description: string;
   discount_reason: string | null;
   dx_order_item_id: string | null;
@@ -995,8 +1039,10 @@ export interface InvoiceLineItems {
   invoice_id: string;
   line_total: Generated<Numeric | null>;
   original_price: Numeric | null;
+  package_included: Generated<boolean>;
   quantity: Generated<number>;
   referral_id: string | null;
+  service_date: string | null;
   stock_doc_line_id: string | null;
   tariff_id: string | null;
   unit_price: Numeric;
@@ -1005,13 +1051,17 @@ export interface InvoiceLineItems {
 export interface Invoices {
   created_at: Generated<Timestamp>;
   encounter_id: string;
+  finalized_at: Timestamp | null;
+  finalized_by: string | null;
   id: Generated<string>;
   insurance_share: Generated<Numeric>;
   invoice_number: string;
   paid_status: Generated<string>;
   patient_share: Numeric;
+  reopen_count: Generated<number>;
   state_share: Generated<Numeric>;
   total_amount: Numeric;
+  writeoff_amount: Generated<Numeric>;
 }
 
 export interface IpdReminders {
@@ -1909,6 +1959,29 @@ export interface Patients {
   updated_at: Generated<Timestamp>;
 }
 
+export interface Payers {
+  address: string | null;
+  code: string;
+  contract_no: string | null;
+  created_at: Generated<Timestamp>;
+  default_coverage_pct: Generated<Numeric>;
+  default_deductible: Generated<Numeric>;
+  default_limit: Numeric | null;
+  default_mode: Generated<string>;
+  drg_base_rate: Numeric | null;
+  email: string | null;
+  excluded_categories: Generated<string[]>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  notes: string | null;
+  phone: string | null;
+  tax_id: string | null;
+  updated_at: Generated<Timestamp>;
+  writeoff_excess: Generated<boolean>;
+}
+
 export interface Payments {
   amount: Numeric;
   id: Generated<string>;
@@ -2005,6 +2078,72 @@ export interface ServiceTariffs {
   id: Generated<string>;
   is_active: Generated<boolean>;
   title: string;
+}
+
+export interface StayBedDays {
+  bed_id: string | null;
+  bed_type_code: string;
+  day: string;
+  department_id: string;
+  encounter_id: string;
+  minimum: Generated<boolean>;
+  on_leave: Generated<boolean>;
+  package_included: Generated<boolean>;
+  tariff_id: string | null;
+}
+
+export interface StayBilling {
+  alert_notified_on: string | null;
+  bed_days_synced_at: Timestamp | null;
+  encounter_id: string;
+  package_id: string | null;
+  package_set_at: Timestamp | null;
+  package_set_by: string | null;
+}
+
+export interface StayDeposits {
+  amount: Numeric;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  encounter_id: string;
+  id: Generated<string>;
+  kind: string;
+  method: string;
+  note: string | null;
+  receipt_no: string;
+  terminal_ref: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface StayPayers {
+  cancel_reason: string | null;
+  coverage_pct: Numeric;
+  covered_amount: Numeric | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  deductible: Generated<Numeric>;
+  drg_base_rate: Numeric | null;
+  drg_code: string | null;
+  drg_weight: Numeric | null;
+  encounter_id: string;
+  excluded_categories: Generated<string[]>;
+  file_id: string | null;
+  fixed_amount: Numeric | null;
+  guarantee_date: string | null;
+  guarantee_no: string | null;
+  id: Generated<string>;
+  limit_amount: Numeric | null;
+  mode: string;
+  override_amount: Numeric | null;
+  override_reason: string | null;
+  payer_id: string;
+  policy_no: string | null;
+  seq: number;
+  status: Generated<string>;
+  valid_until: string | null;
+  writeoff_excess: Generated<boolean>;
 }
 
 export interface StockAlertRuns {
@@ -2472,8 +2611,11 @@ export interface DB {
   audit_logs: AuditLogs;
   auth_sessions: AuthSessions;
   bed_assignments: BedAssignments;
+  bed_day_tariffs: BedDayTariffs;
   bed_types: BedTypes;
   beds: Beds;
+  billing_package_items: BillingPackageItems;
+  billing_packages: BillingPackages;
   clinic_settings: ClinicSettings;
   consultations: Consultations;
   cssd_cycles: CssdCycles;
@@ -2490,6 +2632,7 @@ export interface DB {
   document_counters: DocumentCounters;
   document_template_versions: DocumentTemplateVersions;
   document_templates: DocumentTemplates;
+  drg_groups: DrgGroups;
   dx_devices: DxDevices;
   dx_images: DxImages;
   dx_item_files: DxItemFiles;
@@ -2584,6 +2727,7 @@ export interface DB {
   patient_consents: PatientConsents;
   patient_files: PatientFiles;
   patients: Patients;
+  payers: Payers;
   payments: Payments;
   prescriptions: Prescriptions;
   referral_type_tariffs: ReferralTypeTariffs;
@@ -2592,6 +2736,10 @@ export interface DB {
   scale_assessments: ScaleAssessments;
   scale_defs: ScaleDefs;
   service_tariffs: ServiceTariffs;
+  stay_bed_days: StayBedDays;
+  stay_billing: StayBilling;
+  stay_deposits: StayDeposits;
+  stay_payers: StayPayers;
   stock_alert_runs: StockAlertRuns;
   stock_balances: StockBalances;
   stock_categories: StockCategories;

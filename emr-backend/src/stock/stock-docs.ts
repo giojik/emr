@@ -311,6 +311,7 @@ export class StockDocsService {
     if (err.constraint === 'ux_stock_lots_key') throw new ConflictException('ლოტი ერთდროულად სხვა დოკუმენტით შეიქმნა — სცადეთ ხელახლა');
     if (err.constraint === 'ux_stock_docs_reversal') throw new ConflictException('დოკუმენტი უკვე შემობრუნებულია');
     if (err.constraint === 'stock_location_counting') throw new ConflictException((e as Error).message);
+    if (err.constraint === 'invoice_finalized') throw new ConflictException('პაციენტის ინვოისი ფინანსურად დახურულია — ხარჯის ცვლილებისთვის ბილინგმა ჯერ უნდა გახსნას');
     if (err.constraint === 'chk_invoice_overpaid') throw new ConflictException('ინვოისი უკვე გადახდილია — ხაზის მოხსნამდე საჭიროა გადახდის კორექცია (სალარო)');
     throw e;
   }

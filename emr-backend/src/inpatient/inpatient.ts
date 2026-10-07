@@ -38,6 +38,8 @@ export interface InpatientSettings {
   // 0045: ექიმის ჩანაწერები / კონსულტაციები / ფორმა 100
   admission_note_hours: number; progress_note_daily: boolean; progress_reminder_time: string; consult_due_hours: Record<'routine' | 'urgent' | 'emergency', number>;
   consult_billing: boolean; form100_on_discharge: 'off' | 'warn';
+  // 0046: ბილინგი
+  discharge_balance?: 'off' | 'warn' | 'block'; deposit_alert_amount?: number; billing_amounts_visible?: 'all' | 'heads' | 'billing_only'; staff_add_services?: boolean;
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;

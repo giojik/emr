@@ -9,6 +9,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../c
 import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import IcdPicker from '../encounter/IcdPicker';
+import { BillingWorklist } from './Billing';
 import { ConsultInbox } from './DoctorNotes';
 import { DepartmentMar } from './Mar';
 import { DepartmentHandover } from './Nursing';
@@ -26,7 +27,7 @@ export default function Inpatient() {
   const m = mods.data?.find((x) => x.code === 'inpatient');
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
   const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
-    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
+    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
   if (mods.isLoading) return <div className="content"><Loading /></div>;
@@ -39,7 +40,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox /></div> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }

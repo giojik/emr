@@ -16,6 +16,8 @@ export default function Cashier() {
     refetchInterval: 20_000,
   });
   const payable = (list.data ?? []).filter((e) => e.status === 'planned' || Number(e.patient_share ?? 0) - Number(e.paid_amount) > 0);
+  // 0046: სტაციონარი — ფინალიზებული, გადაუხდელი (ავანსი — ჰოსპიტალიზაციის გვერდზე)
+  const ipd = useQuery({ queryKey: ['ipd-billing-list', 'due'], queryFn: () => api<{ encounter_id: string; first_name: string; last_name: string; adm_no: string; money: { due: string } | null }[]>('/inpatient/billing/worklist', { query: { status: 'due' } }), refetchInterval: 60_000, retry: false });
 
   return (
     <>
@@ -25,6 +27,15 @@ export default function Cashier() {
           <ErrorBox error={list.error} />
           {list.isLoading && <Loading />}
           {list.data && payable.length === 0 && <div className="empty">გადასახდელი ინვოისი არ არის.</div>}
+          {(ipd.data ?? []).length > 0 && <div className="small muted" style={{ padding: '10px 18px 4px' }}>სტაციონარი — დავალიანება</div>}
+          {(ipd.data ?? []).map((r) => (
+            <button key={r.encounter_id} type="button" onClick={() => nav(`/cashier/${r.encounter_id}`)}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '12px 18px', border: 0, borderBottom: '1px solid var(--line-soft)', background: r.encounter_id === encounterId ? 'var(--accent-weak)' : 'transparent', textAlign: 'left', font: 'inherit', cursor: 'pointer', color: 'var(--ink)' }}>
+              <span className="stack" style={{ gap: 2 }}><strong>{r.first_name} {r.last_name}</strong><span className="small muted">სტაციონარი · {r.adm_no}</span></span>
+              <span className="mono" style={{ fontWeight: 600 }}>{Number(r.money?.due ?? 0).toFixed(2)}</span>
+            </button>))}
+          <Link to="/inpatient?tab=billing" className="small" style={{ display: 'block', padding: '10px 18px' }}>სტაციონარი: ავანსები, ბილინგი →</Link>
+          {payable.length > 0 && (ipd.data ?? []).length > 0 && <div className="small muted" style={{ padding: '10px 18px 4px' }}>ამბულატორია / დიაგნოსტიკა</div>}
           {payable.map((e) => {
             const due = Number(e.patient_share ?? 0) - Number(e.paid_amount);
             const on = e.id === encounterId;
@@ -78,6 +89,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
   if (enc.error || inv.error) return <div className="content"><ErrorBox error={enc.error ?? inv.error} /></div>;
   const e = enc.data!; const i = inv.data!;
   const canAdjust = can(user, 'admin') || can(user, 'billing');
+  const ipdOpen = !!i.is_inpatient && !i.finalized_at;
   const cardNeedsRef = method === 'card_terminal' && !ref.trim();
 
   return (
@@ -97,12 +109,12 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
             <tbody>
               {i.lines.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>{l.description}</strong>{l.discount_reason && <div className="small muted">ფასდაკლება: {l.discount_reason}</div>}</td>
+                  <td><strong>{l.description}</strong>{l.package_included && <span className="chip accent" style={{ marginLeft: 6 }}>პაკეტში</span>}{l.discount_reason && <div className="small muted">ფასდაკლება: {l.discount_reason}</div>}</td>
                   <td className="num muted">{l.original_price ?? '—'}</td>
                   <td className="num">{l.unit_price}</td>
                   <td className="num">{l.quantity}</td>
-                  <td className="num" style={{ fontWeight: 600 }}>{l.line_total}</td>
-                  <td style={{ textAlign: 'right' }}>{canAdjust && <button className="btn sm" type="button" onClick={() => setEditLine(l)}>ფასდაკლება</button>}</td>
+                  <td className="num" style={{ fontWeight: 600, ...(l.package_included && { textDecoration: 'line-through', color: 'var(--muted)' }) }}>{l.line_total}</td>
+                  <td style={{ textAlign: 'right' }}>{canAdjust && !i.finalized_at && <button className="btn sm" type="button" onClick={() => setEditLine(l)}>ფასდაკლება</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -126,12 +138,14 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
           <Line k="ჯამი" v={money(i.total_amount)} />
           <Line k="დაზღვევა" v={money(i.insurance_share)} muted />
           <Line k="სახელმწიფო" v={money(i.state_share)} muted />
+          {Number(i.writeoff_amount ?? 0) > 0 && <Line k="ჩამოწერა" v={money(i.writeoff_amount)} muted />}
           <Line k="გადახდილი" v={money(i.paid_amount)} muted />
           <div className="row" style={{ justifyContent: 'space-between', borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4 }}>
             <strong>გადასახდელი</strong><span className="mono" style={{ fontSize: 26, fontWeight: 600 }}>{money(due)}</span>
           </div>
         </div>
-        {(due > 0 || planned) && (<>
+        {ipdOpen && <div className="alert info">სტაციონარი: ფინანსურ დახურვამდე თანხა მიიღება ავანსად — <Link to={`/inpatient/stay/${encounterId}#billing`}>ჰოსპიტალიზაცია → ბილინგი</Link>.</div>}
+        {!ipdOpen && (due > 0 || planned) && (<>
           {due > 0 && <>
             <div className="field">
               <span className="label">გადახდის მეთოდი</span>
@@ -156,7 +170,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
           </button>
           {planned && <span className="hint" style={{ textAlign: 'center' }}>გადახდის გარეშე გააქტიურება — მხოლოდ ექიმი ან ადმინისტრატორი</span>}
         </>)}
-        {!planned && due <= 0 && <div className="alert ok">ინვოისი სრულად გადახდილია.</div>}
+        {!ipdOpen && !planned && due <= 0 && <div className="alert ok">ინვოისი სრულად გადახდილია.</div>}
       </form>
       {toast.node}
     </div>

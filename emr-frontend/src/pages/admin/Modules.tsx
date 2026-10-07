@@ -261,6 +261,16 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         <Field label="ფორმა 100 გაწერისას" htmlFor="ip-f1"><select id="ip-f1" className="select" value={v<string>('form100_on_discharge') ?? 'warn'} onChange={(e) => upd('form100_on_discharge', e.target.value)}>
           <option value="warn">გაფრთხილება, თუ არ არის გაცემული</option><option value="off">გამორთული</option></select></Field>
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>ბილინგი</h3>
+      <div style={grid}>
+        <Field label="დავალიანება გაწერისას" htmlFor="ip-db"><select id="ip-db" className="select" value={v<string>('discharge_balance') ?? 'warn'} onChange={(e) => upd('discharge_balance', e.target.value)}>
+          <option value="warn">შეხსენება (დასაბუთების გარეშე)</option><option value="block">დასაბუთებით</option><option value="off">გამორთული</option></select></Field>
+        {num('deposit_alert_amount', 'ავანსის გადაჭარბების შეხსენება (₾)', 0, 1000000, '0 — გამორთული; ბილინგს, დღეში ერთხელ')}
+        <Field label="თანხებს ხედავს (ექიმი / ექთანი)" htmlFor="ip-av"><select id="ip-av" className="select" value={v<string>('billing_amounts_visible') ?? 'heads'} onChange={(e) => upd('billing_amounts_visible', e.target.value)}>
+          <option value="heads">მხოლოდ განყოფილების ხელმძღვანელი</option><option value="all">ყველა</option><option value="billing_only">არავინ (მხოლოდ ბილინგი / სალარო)</option></select></Field>
+        {chk('staff_add_services', 'მომსახურებას ამატებს ექიმი / ექთანი', 'განყოფილების თანამშრომელი, ტარიფების ცნობარიდან')}
+      </div>
+      <span className="small">საწოლდღის ტარიფები, პაკეტები, გადამხდელები, DRG — <Link to="/admin/billing">ადმინისტრირება → სტაციონარის ბილინგი</Link>.</span>
       <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>
