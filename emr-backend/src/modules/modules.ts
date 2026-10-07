@@ -30,6 +30,9 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       // 0042: დანიშნულებები
       med_verification: (v) => oneOf(v, ['all', 'high_risk', 'off']), dose_rule: (v) => oneOf(v, ['warn', 'block']), interaction_rule: (v) => oneOf(v, ['warn', 'block']),
       antibiotic_default_days: (v) => int(v, 1, 60), verbal_orders: bool, verbal_confirm_hours: (v) => int(v, 1, 168), weight_max_age_days: (v) => int(v, 1, 90),
+      // 0043: MAR
+      mar_window_min: (v) => int(v, 15, 240), mar_missed_hours: (v) => int(v, 1, 24), mar_horizon_hours: (v) => int(v, 12, 96), mar_stock_deduct: bool,
+      mar_allow_no_stock: bool, mar_double_check: bool, mar_barcode: (v) => oneOf(v, ['off', 'optional', 'required']),
     },
     extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს' : null),
   },

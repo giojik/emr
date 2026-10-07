@@ -4,6 +4,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotifyService } from '../notify/notify.service';
 import { NotificationsService } from '../notifications/notifications';
+import { ensureMarSlots } from './mar-schedule';
 
 const TZ = loadEnv().CLINIC_TZ;
 const SEND_FROM_HOUR = 10;
@@ -72,7 +73,8 @@ export class InpatientRemindersService {
         body: `${d.last_name} ${d.first_name} (${d.adm_no})`, item: d.adm_no, entityId: d.encounter_id, link: `/inpatient/stay/${d.encounter_id}` });
     }
     const o = await this.orders(s);
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o };
+    const mar = await this.mar(s).catch((e) => { this.log.error(`MAR: ${(e as Error).message}`); return { mar_missed: 0 }; });
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar };
   }
 
   /**
@@ -137,5 +139,34 @@ export class InpatientRemindersService {
     }
     if (sent || skipped) this.log.log(`SMS შეხსენება: გაიგზავნა ${sent}, გამოტოვდა ${skipped}`);
     return { sent, skipped };
+  }
+
+  /**
+   * 0043 MAR: სლოტების გენერაცია (ყველა აქტიური ჰოსპიტალიზაცია) და გამოტოვებული დოზები:
+   *   due, scheduled_at < now − (ფანჯარა + mar_missed_hours) → missed; პაციენტზე ერთი შეტყობინება განყოფილების ექთნებს და მკურნალ ექიმს.
+   */
+  async mar(s: Record<string, number>) {
+    const win = s.mar_window_min ?? 60; const missedH = s.mar_missed_hours ?? 2;
+    await ensureMarSlots(this.db, TZ, { mar_window_min: win, mar_horizon_hours: s.mar_horizon_hours ?? 48 });
+    const rows = await sql<{ id: string; encounter_id: string }>`
+      UPDATE mar_entries SET status = 'missed', missed_notified_at = now()
+      WHERE status = 'due' AND voided_at IS NULL AND scheduled_at < now() - make_interval(mins => ${win}) - make_interval(hours => ${missedH})
+      RETURNING id, encounter_id`.execute(this.db);
+    const byEnc = new Map<string, number>();
+    for (const r of rows.rows) byEnc.set(r.encounter_id, (byEnc.get(r.encounter_id) ?? 0) + 1);
+    for (const [enc, n] of byEnc) {
+      const st = await this.db.selectFrom('inpatient_stays as st').innerJoin('encounters as e', 'e.id', 'st.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id')
+        .leftJoin('bed_assignments as a', (j) => j.onRef('a.encounter_id', '=', 'st.encounter_id').on('a.ended_at', 'is', null))
+        .select(['st.adm_no', 'e.attending_doctor_id', 'a.department_id', 'p.first_name', 'p.last_name']).where('st.encounter_id', '=', enc).executeTakeFirst();
+      if (!st) continue;
+      const to = new Set<string>(st.department_id ? await this.staff(st.department_id, ['nurse']) : []);
+      if (st.attending_doctor_id) to.add(st.attending_doctor_id);
+      for (const id of to) {
+        await this.bell.notify(id, { kind: 'ipd_mar_missed', title: `MAR: გამოტოვებული დოზა (${n})`, body: `${st.last_name} ${st.first_name} (${st.adm_no})`,
+          item: st.adm_no, entityId: enc, link: `/inpatient/stay/${enc}`, urgent: true });
+      }
+      await this.db.insertInto('inpatient_events').values({ encounter_id: enc, kind: 'mar_missed', data: JSON.stringify({ count: n }) }).execute();
+    }
+    return { mar_missed: rows.rows.length };
   }
 }

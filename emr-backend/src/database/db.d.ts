@@ -1391,6 +1391,44 @@ export interface LabSpecimens {
   status: Generated<string>;
 }
 
+export interface MarEntries {
+  created_at: Generated<Timestamp>;
+  documented_at: Timestamp | null;
+  documented_by: string | null;
+  dose_given: Numeric | null;
+  dose_unit: string | null;
+  double_check_by: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  infusion_action: string | null;
+  missed_notified_at: Timestamp | null;
+  no_stock: Generated<boolean>;
+  order_id: string;
+  override_reason: string | null;
+  patient_id: string;
+  postponed_to: Timestamp | null;
+  qty_base: Numeric | null;
+  rate_ml_h: Numeric | null;
+  reason: string | null;
+  recorded_at: Timestamp | null;
+  route_code: string | null;
+  scanned_med: Generated<boolean>;
+  scanned_patient: Generated<boolean>;
+  scheduled_at: Timestamp | null;
+  site: string | null;
+  source: Generated<string>;
+  status: Generated<string>;
+  stock_doc_id: string | null;
+  stock_item_id: string | null;
+  timing: string | null;
+  void_reason: string | null;
+  void_stock_doc_id: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  warnings: Generated<Json>;
+  witness_id: string | null;
+}
+
 export interface MedDosageForms {
   code: string;
   is_active: Generated<boolean>;
@@ -2341,6 +2379,7 @@ export interface DB {
   lab_results: LabResults;
   lab_specimens: LabSpecimens;
   label_printers: LabelPrinters;
+  mar_entries: MarEntries;
   med_dosage_forms: MedDosageForms;
   med_frequencies: MedFrequencies;
   med_generic_allergens: MedGenericAllergens;

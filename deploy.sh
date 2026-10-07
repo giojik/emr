@@ -9,6 +9,10 @@ DC="docker compose -f docker-compose.dev.yml -f docker-compose.app.yml"
 say() { printf '\n\033[1m▶ %s\033[0m\n' "$1"; }
 die() { printf '\033[31m✗ %s\033[0m\n' "$1"; exit 1; }
 
+# უსაფრთხოება: საიდუმლოებების ფაილი git-ში არ უნდა იყოს (.env, .env.bak, ...; .env.example — დასაშვებია)
+TRACKED=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -vE '\.env\.example$' || true)
+[ -z "$TRACKED" ] || die "git აკონტროლებს საიდუმლოებების ფაილ(ებ)ს: $TRACKED — git rm --cached <ფაილი> და .gitignore"
+
 if [ -n "${1:-}" ]; then
   say "patch: $1"
   [ -f "$1" ] || die "ფაილი ვერ მოიძებნა: $1"

@@ -92,7 +92,12 @@ export class DischargeService {
     const inv = await ex.selectFrom('invoices').select(['invoice_number', 'paid_status', 'patient_share']).where('encounter_id', '=', encounterId)
       .where('paid_status', '<>', 'paid').where('patient_share', '>', '0').execute();
     if (inv.length) out.push({ code: 'BALANCE', message: `გადაუხდელი ინვოისი: ${inv.map((i) => i.invoice_number).join(', ')}` });
-    // MAR (მედიკამენტების მიღების ფურცელი) — hook: ღია დანიშნულებები შემოწმდება, როცა მოდული დაემატება
+    // MAR (0043): ბოლო 24 სთ-ის გამოტოვებული / ვადაგადაცილებული დოზები
+    const win = (await this.ipd.settings()).mar_window_min ?? 60;
+    const mar = await ex.selectFrom('mar_entries').select(sql<number>`count(*)::int`.as('n')).where('encounter_id', '=', encounterId).where('voided_at', 'is', null)
+      .where((eb) => eb.or([eb('status', '=', 'missed'), eb.and([eb('status', '=', 'due'), eb('scheduled_at', '<', sql<Date>`now() - make_interval(mins => ${win})`)])]))
+      .where('scheduled_at', '>', sql<Date>`now() - interval '24 hours'`).executeTakeFirstOrThrow();
+    if (mar.n) out.push({ code: 'MAR_MISSED', message: `MAR: ბოლო 24 სთ-ში მიუცემელი / გამოტოვებული დოზა (${mar.n})` });
     return out;
   }
 

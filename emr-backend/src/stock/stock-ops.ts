@@ -92,7 +92,7 @@ export class StockOpsService {
         pending = controlled || (dto.writeoff_reason === 'lost' && rules.lost_requires_approval) || value > Number(st.writeoff_approval_threshold);
         await trx.updateTable('stock_docs').set({ total_net: String(r2(value)), ...(pending && { approval_status: 'pending' }) }).where('id', '=', id).execute();
         if (!pending) await this.postWriteoff(trx, id, u);
-        await this.audit.log(ctx, { action: 'CREATE_STOCK_WRITEOFF', entityName: 'stock_docs', entityId: id, newData: { ...dto, value: r2(value), pending } }, trx);
+        await this.audit.log(ctx, { action: 'CREATE_STOCK_WRITEOFF', entityName: 'stock_docs', entityId: id, newData: { ...dto, witness: dto.witness ? { username: dto.witness.username } : null, value: r2(value), pending } }, trx);
       });
     } catch (e) { this.mapErr(e); }
     if (pending) {
@@ -138,7 +138,9 @@ export class StockOpsService {
   }
 
   // ================================================================= ხარჯი პაციენტზე
-  async createConsumption(dto: { location_id: string; patient_id: string; encounter_id?: string | null; notes?: string | null; witness?: WitnessIn | null; lines: CnLineIn[] }, u: AuthUser, ctx: AuditContext) {
+  /** inTrx (0043, MAR): გამოიძახება იმავე ტრანზაქციაში, გატარების შემდეგ — მიცემის ჩანაწერი და ხარჯი ერთად ინახება ან ერთად უქმდება */
+  async createConsumption(dto: { location_id: string; patient_id: string; encounter_id?: string | null; notes?: string | null; witness?: WitnessIn | null; lines: CnLineIn[] }, u: AuthUser, ctx: AuditContext,
+                          inTrx?: (trx: Transaction<DB>, docId: string) => Promise<void>) {
     const loc = await this.t.loc(dto.location_id);
     await this.t.requireOperate(u, loc, 'ხარჯი');
     await this.counting(loc.id);
@@ -224,7 +226,8 @@ export class StockOpsService {
         }
         const no = await this.t.nextNo(trx, 'CN', today);
         await trx.updateTable('stock_docs').set({ status: 'posted', doc_no: no, posted_by: u.id, posted_at: sql`now()`, total_net: String(r2(cost)), total_vat: '0' }).where('id', '=', id).execute();
-        await this.audit.log(ctx, { action: 'STOCK_CONSUMPTION', entityName: 'stock_docs', entityId: id, newData: { ...dto, doc_no: no, cost: r2(cost), billed: r2(billed) } }, trx);
+        await this.audit.log(ctx, { action: 'STOCK_CONSUMPTION', entityName: 'stock_docs', entityId: id, newData: { ...dto, witness: dto.witness ? { username: dto.witness.username } : null, doc_no: no, cost: r2(cost), billed: r2(billed) } }, trx);
+        if (inTrx) await inTrx(trx, id);
       });
     } catch (e) { this.mapErr(e); }
     return { ...(await this.doc(id)), warnings };

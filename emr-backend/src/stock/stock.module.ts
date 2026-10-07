@@ -16,6 +16,6 @@ import { StockCatalogController, StockCatalogService } from './stock-catalog';
   imports: [NotificationsModule, AuthModule],
   controllers: [StockCatalogController, PharmacyCatalogController, StockDocsController, StockTransfersController, StockOpsController, StockControlController, StockControlledController, StockLabController],
   providers: [StockCatalogService, PharmacyCatalogService, StockDocsService, StockTransfersService, StockOpsService, StockControlService, StockAlertsService, StockControlledService, StockWitnessService, StockLabService],
-  exports: [StockCatalogService, PharmacyCatalogService, StockDocsService, StockTransfersService],
+  exports: [StockCatalogService, PharmacyCatalogService, StockDocsService, StockTransfersService, StockOpsService, StockWitnessService],
 })
 export class StockModule {}

@@ -219,6 +219,17 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         {num('verbal_confirm_hours', 'ზეპირის დადასტურების ვადა (სთ)', 1, 168)}
         {chk('verbal_orders', 'ზეპირი / სატელეფონო დანიშნულება', 'ექთანი შეიყვანს ექიმის სახელით, ექიმი ადასტურებს')}
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>მედიკამენტების მიღების ფურცელი (MAR)</h3>
+      <div style={grid}>
+        {num('mar_window_min', 'დროის ფანჯარა (± წთ)', 15, 240, 'ფანჯრის გარეთ — ადრე / დაგვიანებით, მიზეზით')}
+        {num('mar_missed_hours', 'გამოტოვებულად ჩათვლა (სთ)', 1, 24, 'ფანჯრის შემდეგ — შეტყობინება ექთნებს და მკურნალ ექიმს')}
+        {num('mar_horizon_hours', 'განრიგი წინასწარ (სთ)', 12, 96)}
+        <Field label="შტრიხკოდის სკანირება" htmlFor="ip-mb" hint="სამაჯური (ჰოსპ. №) + მედიკამენტის შეფუთვა (GS1)"><select id="ip-mb" className="select" value={v<string>('mar_barcode')} onChange={(e) => upd('mar_barcode', e.target.value)}>
+          <option value="optional">არასავალდებულო</option><option value="required">სავალდებულო</option><option value="off">გამორთული</option></select></Field>
+        {chk('mar_stock_deduct', 'მიცემისას მარაგის ჩამოწერა', 'განყოფილების ქვესაწყობიდან პაციენტზე (FEFO), ინვოისი — საწყობის პარამეტრით')}
+        {chk('mar_allow_no_stock', 'მიცემა ნაშთის გარეშე (მიზეზით)', 'გამორთულისას — ნაშთი სავალდებულოა')}
+        {chk('mar_double_check', 'მაღალი რისკი — მეორე ექთანი', 'high-alert მედიკამენტზე მეორე თანამშრომლის პაროლით დადასტურება')}
+      </div>
       <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
     </div>

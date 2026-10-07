@@ -27,6 +27,9 @@ export interface InpatientSettings {
   transfer_wait_hours: number; epicrisis_cosign: boolean; discharge_cancel_hours: number; leave_counts_bed_day: boolean; leave_max_hours: number; docs_pending_alert_hours: number;
   med_verification: 'all' | 'high_risk' | 'off'; dose_rule: 'warn' | 'block'; interaction_rule: 'warn' | 'block'; antibiotic_default_days: number;
   verbal_orders: boolean; verbal_confirm_hours: number; weight_max_age_days: number;
+  // 0043 MAR
+  mar_window_min: number; mar_missed_hours: number; mar_horizon_hours: number; mar_stock_deduct: boolean; mar_allow_no_stock: boolean;
+  mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;

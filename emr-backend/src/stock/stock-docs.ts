@@ -263,7 +263,7 @@ export class StockDocsService {
   }
 
   // ---------------------------------------------------------------- შემობრუნება (გატარებული მიღება → საპირისპირო მოძრაობები)
-  async reverse(id: string, reason: string, u: AuthUser, ctx: AuditContext) {
+  async reverse(id: string, reason: string, u: AuthUser, ctx: AuditContext, inTrx?: (trx: Transaction<DB>, reversalId: string) => Promise<void>) {
     let rid = '';
     try {
       await this.db.transaction().execute(async (trx) => {
@@ -299,6 +299,7 @@ export class StockDocsService {
         await trx.updateTable('stock_docs').set({ status: 'posted', doc_no: no, posted_by: u.id, posted_at: sql`now()` }).where('id', '=', rid).execute();
         await trx.updateTable('stock_docs').set({ reversed_by: rid }).where('id', '=', id).execute();
         await this.audit.log(ctx, { action: 'REVERSE_STOCK_DOC', entityName: 'stock_docs', entityId: id, newData: { reversal_id: rid, reversal_no: no, reason } }, trx);
+        if (inTrx) await inTrx(trx, rid);
       });
     } catch (e) { this.mapLedgerError(e); }
     return this.get(rid);

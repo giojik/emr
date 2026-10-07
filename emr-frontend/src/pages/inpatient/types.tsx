@@ -8,6 +8,7 @@ export interface InpatientSettings {
   wristband: boolean; wristband_print: 'zpl' | 'pdf'; wristband_width_mm: number; wristband_length_mm: number; wristband_offset_mm: number;
   transfer_wait_hours: number; epicrisis_cosign: boolean; discharge_cancel_hours: number; leave_counts_bed_day: boolean; leave_max_hours: number; docs_pending_alert_hours: number;
   med_verification: 'all' | 'high_risk' | 'off'; dose_rule: 'warn' | 'block'; interaction_rule: 'warn' | 'block'; antibiotic_default_days: number; verbal_orders: boolean; verbal_confirm_hours: number; weight_max_age_days: number;
+  mar_window_min: number; mar_missed_hours: number; mar_horizon_hours: number; mar_stock_deduct: boolean; mar_allow_no_stock: boolean; mar_double_check: boolean; mar_barcode: 'off' | 'optional' | 'required';
 }
 export interface BedType { code: string; name: string; is_active: boolean; sort_order: number }
 export interface Bed { id: string; ward_id: string; code: string; type_code: string; type_name: string; is_overflow: boolean; status: BedStatus; status_reason: string | null; status_at: string; is_active: boolean; sort_order: number }

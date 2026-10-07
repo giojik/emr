@@ -9,6 +9,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../c
 import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import IcdPicker from '../encounter/IcdPicker';
+import { DepartmentMar } from './Mar';
 import { DepartmentOrders } from './Orders';
 import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
 
@@ -23,7 +24,7 @@ export default function Inpatient() {
   const m = mods.data?.find((x) => x.code === 'inpatient');
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
   const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
-    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
+    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
   if (mods.isLoading) return <div className="content"><Loading /></div>;
@@ -36,7 +37,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }
@@ -51,6 +52,13 @@ function useDepartment() {
       {deps.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
     </select>);
   return { id, picker, loading: census.isLoading, empty: !census.isLoading && !deps.length };
+}
+
+// ---------------------------------------------------------------- MAR (0043): ექთნის ეკრანი
+function MarTab() {
+  const { id, picker, loading } = useDepartment();
+  if (loading) return <div className="content"><Loading /></div>;
+  return <div className="content"><div className="row">{picker}</div>{id && <DepartmentMar departmentId={id} />}</div>;
 }
 
 // ---------------------------------------------------------------- დანიშნულებები (0042): განყოფილების აქტიური დანიშნულებები
