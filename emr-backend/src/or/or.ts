@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe,
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe,
   Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min,
@@ -17,16 +17,15 @@ import { InjectDb, type Database } from '../database/database.module';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { OR_READ } from './or-admin';
+import { OrRosterService } from './or-roster';
+import { countGate, noteGate, OR_SETTINGS_0049, orEvent, packsUsed, assembleCard, type OrSettings } from './or-shared';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
 const TZ = loadEnv().CLINIC_TZ;
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : Number(value));
 
-export interface OrSettings {
-  or_scheduling: 'coordinator' | 'surgeon_self' | 'both'; anesthesia_team_by: 'anesthesia_head' | 'surgeon'; preop_readiness: 'warn' | 'block';
-  turnover_min: number; default_duration_min: number; self_booking_days: number; notify_requests: boolean;
-}
+export type { OrSettings };
 export const ANESTHESIA = ['general', 'spinal', 'epidural', 'combined', 'regional', 'sedation', 'local', 'none'] as const;
 export const ANESTHESIA_KA: Record<string, string> = { general: 'ზოგადი', spinal: 'სპინალური', epidural: 'ეპიდურული', combined: 'კომბინირებული (სპინ.-ეპიდ.)',
   regional: 'რეგიონული (ბლოკადა)', sedation: 'სედაცია', local: 'ადგილობრივი', none: 'ანესთეზიის გარეშე' };
@@ -42,6 +41,13 @@ const TIME_NEEDS: Record<TimeKind, TimeKind[]> = { in_room: [], anesthesia_start
   out_of_room: ['in_room'], pacu_in: ['out_of_room'], pacu_out: ['pacu_in'] };
 const WHO_KA: Record<string, string> = { sign_in: 'Sign in', time_out: 'Time out', sign_out: 'Sign out' };
 const ACTIVE = ['tentative', 'scheduled', 'in_progress'] as const;
+const NURSING_KA: Record<string, string> = { surgeon: 'საექთნო გუნდს აყალიბებს ოპერატორი ქირურგი / განყოფილების ხელმძღვანელი / admin',
+  or_head_nurse: 'საექთნო გუნდს აყალიბებს ბლოკის მთავარი ექთანი / admin', both: 'საექთნო გუნდს აყალიბებს ოპერატორი / განყოფილების ხელმძღვანელი ან ბლოკის მთავარი ექთანი' };
+/** როლის ჯგუფის მიხედვით — ვის შეუძლია (0049: საექთნო — nursing_team_by) */
+const grpRight = (p: { team_surgical: boolean; team_anesthesia: boolean; team_nursing: boolean }, grp: string) =>
+  grp === 'anesthesia' ? p.team_anesthesia : grp === 'nursing' ? p.team_nursing : p.team_surgical;
+/** ოქმის ხელმოწერის შემდეგ — მხოლოდ ახალი (არა შესწორება) ნიშნულები: ანესთეზიის დასრულება, ოთახიდან გასვლა, PACU */
+const AFTER_LOCK: string[] = ['anesthesia_end', 'out_of_room', 'pacu_in', 'pacu_out'];
 
 // ================================================================= DTO
 export class CaseProcDto {
@@ -116,6 +122,7 @@ export class TimeDto {
   @IsOptional() @IsIn(['ward', 'icu', 'pacu', 'other']) destination?: 'ward' | 'icu' | 'pacu' | 'other';
   @IsOptional() @IsString() @Length(3, 500) correction_reason?: string;
   @IsOptional() @IsString() @Length(3, 1000) readiness_override?: string;
+  @IsOptional() @IsString() @Length(3, 1000) count_override?: string;       // 0049: count_mode = warn — დათვლის გარეშე / შეუსაბამობით
 }
 export class ListQuery {
   @IsOptional() @IsUUID() encounter_id?: string;
@@ -145,9 +152,9 @@ interface Readiness { items: { id: string; label: string; source: string; applie
 @Injectable()
 export class OrService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService,
-              private readonly bell: NotificationsService) {}
+              private readonly bell: NotificationsService, private readonly roster: OrRosterService) {}
 
-  settings() { return this.modules.require<OrSettings>('or'); }
+  async settings(): Promise<OrSettings> { return { ...OR_SETTINGS_0049, ...(await this.modules.require<OrSettings>('or')) }; }
   private me(u: AuthUser, ex: Ex = this.db) { return ex.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
   private async isHeadOf(u: AuthUser, departmentId: string, ex: Ex = this.db) { const m = await this.me(u, ex); return !!m.is_section_head && m.department_id === departmentId; }
   private async nextNo(trx: Trx) {
@@ -156,12 +163,8 @@ export class OrService {
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` })).returning('last_value').executeTakeFirstOrThrow();
     return `OR${String(year).slice(2)}-${String(last_value).padStart(6, '0')}`;
   }
-  private async event(ex: Ex, c: { id: string; encounter_id: string | null; planned_id?: string | null }, kind: string, data: Record<string, unknown>, u: AuthUser | null, ipd?: string) {
-    await ex.insertInto('or_case_events').values({ case_id: c.id, kind, data: JSON.stringify(data), user_id: u?.id ?? null }).execute();
-    if (ipd && (c.encounter_id || c.planned_id)) {
-      await ex.insertInto('inpatient_events').values({ encounter_id: c.encounter_id, planned_id: c.encounter_id ? null : c.planned_id ?? null, kind: ipd,
-        data: JSON.stringify({ case_id: c.id, ...data }), user_id: u?.id ?? null }).execute();
-    }
+  private event(ex: Ex, c: { id: string; encounter_id: string | null; planned_id?: string | null }, kind: string, data: Record<string, unknown>, u: AuthUser | null, ipd?: string) {
+    return orEvent(ex, c, kind, data, u?.id ?? null, ipd);
   }
   private async userHas(userId: string, caps: string[], ex: Ex = this.db) {
     const r = await ex.selectFrom('users as x').select(['x.id', 'x.first_name', 'x.last_name', 'x.is_active', 'x.department_id',
@@ -192,9 +195,15 @@ export class OrService {
     const own = c.surgeon_id === u.id;
     const edit = admin || own || head;
     const coord = admin || has(u, 'or_schedule');
-    const inTeam = !!(await ex.selectFrom('or_case_team').select('id').where('case_id', '=', c.id).where('user_id', '=', u.id).where('removed_at', 'is', null).executeTakeFirst());
+    const myRoles = await ex.selectFrom('or_case_team as t').innerJoin('or_team_roles as r', 'r.code', 't.role_code').select(['r.grp'])
+      .where('t.case_id', '=', c.id).where('t.user_id', '=', u.id).where('t.removed_at', 'is', null).execute();
+    const inTeam = myRoles.length > 0;
+    const inGrp = (g: string) => myRoles.some((r) => r.grp === g);
     const anesthHead = has(u, 'anesthesiologist') && !!me.is_section_head;
+    const headNurse = has(u, 'or_nurse') && !!me.is_section_head;
     const open = !['completed', 'cancelled', 'in_progress'].includes(c.status);
+    const live = !['requested', 'tentative', 'cancelled'].includes(c.status);
+    const teamOk = c.status !== 'cancelled' && !c.locked_at;
     return {
       edit: edit && open,
       schedule: open && (coord || ((own || head) && (c.urgency === 'emergency' || s.or_scheduling !== 'coordinator'))),
@@ -202,10 +211,20 @@ export class OrService {
       cancel: open && (edit || coord),
       surgeon: open && (admin || head),
       team_surgical: c.status !== 'cancelled' && !c.locked_at && edit,
-      team_anesthesia: c.status !== 'cancelled' && !c.locked_at && (s.anesthesia_team_by === 'anesthesia_head' ? (admin || anesthHead) : edit),
+      team_anesthesia: teamOk && (s.anesthesia_team_by === 'anesthesia_head' ? (admin || anesthHead) : edit),
+      // 0049: საექთნო როლები — nursing_team_by (surgeon: ოპერატორი / ხელმძღვანელი; or_head_nurse: ბლოკის მთავარი ექთანი; both)
+      team_nursing: teamOk && (admin || (s.nursing_team_by !== 'or_head_nurse' && edit) || (s.nursing_team_by !== 'surgeon' && headNurse)),
       preop: c.status !== 'cancelled' && (admin || has(u, 'anesthesiologist')),
       readiness: c.status !== 'cancelled' && c.status !== 'completed' && (edit || has(u, 'or_nurse', 'anesthesiologist') || depNurse),
-      periop: !['requested', 'cancelled'].includes(c.status) && !c.locked_at && (admin || inTeam || own || has(u, 'or_nurse', 'anesthesiologist')),
+      periop: !['requested', 'cancelled'].includes(c.status) && (admin || inTeam || own || has(u, 'or_nurse', 'anesthesiologist')),
+      // 0049: ანესთეზიის რუკა — ანესთეზიოლოგი / ანესთეზიის ექთანი (გუნდში); ხელმოწერა — ანესთეზიოლოგი
+      anesthesia: live && (admin || has(u, 'anesthesiologist') || (has(u, 'or_nurse') && inGrp('anesthesia'))),
+      anesthesia_sign: live && (admin || has(u, 'anesthesiologist')),
+      // ოქმი — ქირურგიული გუნდი (შავი ვერსია), ხელმოწერა — ოპერატორი / განყოფილების ხელმძღვანელი / admin
+      note: live && (admin || own || head || (has(u, 'doctor') && inGrp('surgical'))),
+      note_sign: live && (admin || own || head),
+      // მასალები / იმპლანტები / დათვლა / CSSD — საოპერაციო ექთანი (+ გუნდის ექთანი, admin)
+      nursing_ops: live && (admin || has(u, 'or_nurse') || (has(u, 'nurse') && inTeam)),
     };
   }
 
@@ -218,7 +237,7 @@ export class OrService {
     return ex.selectFrom('or_case_team as t').innerJoin('users as x', 'x.id', 't.user_id').innerJoin('or_team_roles as r', 'r.code', 't.role_code')
       .leftJoin('users as ab', 'ab.id', 't.added_by')
       .select(['t.id', 't.role_code', 'r.name as role_name', 'r.grp', 't.user_id', sql<string>`x.last_name || ' ' || x.first_name`.as('name'), 't.added_at', 't.in_at', 't.out_at',
-        't.replaced_by', 't.removed_at', 't.remove_reason', sql<string>`ab.last_name || ' ' || ab.first_name`.as('added_by_name')])
+        't.replaced_by', 't.removed_at', 't.remove_reason', 't.auto', 't.removed_auto', sql<string>`ab.last_name || ' ' || ab.first_name`.as('added_by_name')])
       .where('t.case_id', '=', caseId).orderBy('r.sort_order').orderBy('t.added_at').execute();
   }
   private times(caseId: string, ex: Ex = this.db) {
@@ -296,7 +315,21 @@ export class OrService {
     if (!c.encounter_id && c.planned_id && head.planned_status === 'cancelled') warnings.push('გეგმიური ჰოსპიტალიზაცია გაუქმებულია — მოთხოვნა საჭიროებს გადახედვას');
     if (!c.encounter_id && ACTIVE.includes(c.status as never)) warnings.push('პაციენტი ჯერ არ არის ჰოსპიტალიზებული — ოპერაცია ჰოსპიტალიზაციამდე ვერ დაიწყება');
     if (c.encounter_id && head.stay_status !== 'active' && ACTIVE.includes(c.status as never)) warnings.push('ჰოსპიტალიზაცია დასრულებულია / გაუქმებულია');
-    return { ...c, ...head, procedures: procs, team, times, who, who_items: whoItems, preop, events, readiness, allergies, can: perms, settings: s, warnings };
+    // 0049: ქირურგის სასურველი ანესთეზიოლოგი — მინიშნება (თუ განსხვავდება გუნდისგან / ოთახის გუნდისგან)
+    const hints: string[] = [];
+    const anest = team.find((t) => t.role_code === 'anesthesiologist' && !t.removed_at && !t.out_at);
+    if (c.preferred_anesthesiologist_id && anest && anest.user_id !== c.preferred_anesthesiologist_id) {
+      hints.push(`ქირურგის სასურველი ანესთეზიოლოგი — ${head.preferred_anesthesiologist_name}; გუნდში: ${anest.name}${anest.auto ? ' (ოთახის გუნდიდან)' : ''}`);
+    }
+    const [anRec, note, counts] = await Promise.all([
+      this.db.selectFrom('or_anesthesia_records').select(['status']).where('case_id', '=', id).executeTakeFirst(),
+      this.db.selectFrom('or_op_notes').select(['status', 'version']).where('case_id', '=', id).where('superseded_at', 'is', null)
+        .orderBy(sql`CASE status WHEN 'draft' THEN 0 ELSE 1 END`).executeTakeFirst(),
+      this.db.selectFrom('or_case_items').select([sql<number>`count(*) FILTER (WHERE posted_at IS NULL)::int`.as('unposted'), sql<number>`count(*)::int`.as('total')])
+        .where('case_id', '=', id).executeTakeFirstOrThrow(),
+    ]);
+    const progress = { anesthesia: anRec?.status ?? null, note: note ? { status: note.status, version: note.version } : null, items_unposted: counts.unposted, items_total: counts.total };
+    return { ...c, ...head, procedures: procs, team, times, who, who_items: whoItems, preop, events, readiness, allergies, can: perms, settings: s, warnings, hints, progress };
   }
 
   async list(q: ListQuery, u: AuthUser) {
@@ -446,6 +479,7 @@ export class OrService {
         ...(dto.needs_icu !== undefined && { needs_icu: dto.needs_icu }), ...(dto.notes !== undefined && { notes: dto.notes?.trim() || null }),
       };
       await trx.updateTable('or_cases').set({ ...set, updated_by: u.id }).where('id', '=', c.id).execute();
+      if (dto.anesthesia_type !== undefined && dto.anesthesia_type !== c.anesthesia_type) await this.roster.syncCase(trx, c.id, u.id, s);
       const changed = [...Object.keys(set), ...(dto.procedures ? ['procedures'] : [])];
       await this.event(trx, c, 'updated', { fields: changed, reason: dto.reason ?? null }, u);
       await this.audit.log(ctx, { action: 'OR_UPDATE', entityName: 'or_cases', entityId: c.id, oldData: c, newData: dto }, trx);
@@ -522,6 +556,7 @@ export class OrService {
       if (kind === 'rescheduled' && !coord && !dto.reason?.trim()) throw new BadRequestException('გადატანის მიზეზი სავალდებულოა');
       await trx.updateTable('or_cases').set({ status, room_id: room.id, block_id: room.department_id, scheduled_start: start, scheduled_end: end, scheduled_by: u.id, scheduled_at: sql`now()`,
         schedule_warnings: warnings.length ? warnings : null, updated_by: u.id }).where('id', '=', c.id).execute();
+      await this.roster.syncCase(trx, c.id, u.id, s);                   // 0049: ოთახის დღის გუნდი → ოპერაციის გუნდი
       await this.event(trx, c, kind, { room: room.code, start: start.toISOString(), end: end.toISOString(), warnings, reason: dto.reason ?? null,
         ...(c.scheduled_start && { from: c.scheduled_start }) }, u, status === 'scheduled' ? 'or_scheduled' : undefined);
       await this.audit.log(ctx, { action: 'OR_SCHEDULE', entityName: 'or_cases', entityId: c.id, oldData: { status: c.status, room_id: c.room_id, start: c.scheduled_start },
@@ -549,6 +584,7 @@ export class OrService {
       if (!p.cancel) throw new ForbiddenException('გადადება — ქირურგი / განყოფილების ხელმძღვანელი / კოორდინატორი');
       await trx.updateTable('or_cases').set({ status: 'requested', room_id: null, block_id: null, scheduled_start: null, scheduled_end: null, scheduled_by: null, scheduled_at: null,
         schedule_warnings: null, postpone_count: sql`postpone_count + 1`, updated_by: u.id }).where('id', '=', c.id).execute();
+      await this.roster.syncCase(trx, c.id, u.id, s);                   // ოთახის ავტომატური გუნდი იხსნება
       await this.event(trx, c, 'unscheduled', { reason, from: c.scheduled_start }, u);
       await this.audit.log(ctx, { action: 'OR_POSTPONE', entityName: 'or_cases', entityId: c.id, oldData: { room_id: c.room_id, start: c.scheduled_start }, newData: { reason } }, trx);
     });
@@ -604,9 +640,10 @@ export class OrService {
         if (!role?.is_active) throw new BadRequestException('გუნდის როლი ვერ მოიძებნა');
         if (role.code === 'surgeon') throw new BadRequestException('ოპერატორი იცვლება „ოპერატორის შეცვლით“ (განყოფილების ხელმძღვანელი)');
         const p = await this.perms(u, c, s, trx);
-        if (!(role.grp === 'anesthesia' ? p.team_anesthesia : p.team_surgical)) {
+        if (!grpRight(p, role.grp)) {
           throw new ForbiddenException(c.locked_at ? 'ოქმი ხელმოწერილია — გუნდი დაბლოკილია' : role.grp === 'anesthesia' && s.anesthesia_team_by === 'anesthesia_head'
-            ? 'ანესთეზიის გუნდს ნიშნავს ანესთეზიოლოგიის ხელმძღვანელი' : 'გუნდს აყალიბებს ოპერატორი ქირურგი / განყოფილების ხელმძღვანელი / admin');
+            ? 'ანესთეზიის გუნდს ნიშნავს ანესთეზიოლოგიის ხელმძღვანელი' : role.grp === 'nursing' ? NURSING_KA[s.nursing_team_by]
+            : 'გუნდს აყალიბებს ოპერატორი ქირურგი / განყოფილების ხელმძღვანელი / admin');
         }
         const caps = role.capability === 'nurse' ? ['nurse', 'or_nurse'] : [role.capability];
         const x = await this.userHas(dto.user_id, caps, trx);
@@ -638,7 +675,7 @@ export class OrService {
         }
         await this.event(trx, c, 'team_added', { role: role.name, name: `${x.last_name} ${x.first_name}`, ...(started && { at: at.toISOString() }), replaced: !!replaced }, u);
         await this.audit.log(ctx, { action: 'OR_TEAM_ADD', entityName: 'or_case_team', entityId: row.id, newData: dto }, trx);
-        if (x.id !== u.id) await this.bell.notify(x.id, { kind: 'or_team', title: `${c.case_no}: ${role.name}`, link: `/or/case/${c.id}`, entityId: `${c.id}:${role.code}` }).catch(() => undefined);
+        if (x.id !== u.id) await this.bell.notify(x.id, { kind: 'or_team', title: `${c.case_no}: ${role.name}`, link: `/or/case/${c.id}`, entityId: c.id }).catch(() => undefined);
       });
     } catch (e) { mapPgError(e, { ux_or_team_member: 'ეს თანამშრომელი ამ როლში უკვე გუნდშია' }); }
     return this.detail(id, u);
@@ -654,7 +691,7 @@ export class OrService {
       if (t.role_code === 'surgeon') throw new BadRequestException('ოპერატორი იცვლება „ოპერატორის შეცვლით“');
       const c = await this.loadCase(t.case_id, trx, true);
       const p = await this.perms(u, c, s, trx);
-      if (!(t.grp === 'anesthesia' ? p.team_anesthesia : p.team_surgical)) throw new ForbiddenException('გუნდის შეცვლის უფლება არ გაქვთ');
+      if (!grpRight(p, t.grp)) throw new ForbiddenException(c.locked_at ? 'ოქმი ხელმოწერილია — გუნდი დაბლოკილია' : 'გუნდის შეცვლის უფლება არ გაქვთ');
       const started = ['in_progress', 'completed'].includes(c.status);
       if (started) {
         const at = dto.at ? new Date(dto.at) : new Date();
@@ -801,7 +838,7 @@ export class OrService {
     try {
       await this.db.transaction().execute(async (trx) => {
         const c = await this.loadCase(id, trx, true);
-        if (!(await this.perms(u, c, s, trx)).periop) throw new ForbiddenException(c.locked_at ? 'ოქმი ხელმოწერილია — ნიშნულები დაბლოკილია' : 'ნიშნულები — გუნდის წევრი / საოპერაციო ექთანი / ანესთეზიოლოგი');
+        if (!(await this.perms(u, c, s, trx)).periop) throw new ForbiddenException('ნიშნულები — გუნდის წევრი / საოპერაციო ექთანი / ანესთეზიოლოგი');
         const k = dto.kind;
         if (!['scheduled', 'in_progress', 'completed'].includes(c.status)) {
           throw new ConflictException(c.status === 'tentative' ? 'ჯავშანი დასადასტურებელია (კოორდინატორი)' : `ოპერაცია ${STATUS_KA[c.status].toLowerCase()}ა`);
@@ -810,6 +847,7 @@ export class OrService {
         if (at.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('დრო მომავალშია');
         const cur = await this.currentTimes(c.id, trx);
         const prev = cur.get(k);
+        if (c.locked_at && (prev || !AFTER_LOCK.includes(k))) throw new ForbiddenException('ოქმი ხელმოწერილია — ნიშნულები დაბლოკილია (შესწორება — ოქმის ახალი ვერსიით)');
         if (prev && !dto.correction_reason) throw new ConflictException({ code: 'TIME_EXISTS', message: `„${TIME_KA[k]}“ უკვე დაფიქსირებულია — შესწორებისთვის მიუთითეთ მიზეზი` });
         if (!prev && dto.correction_reason) throw new BadRequestException('შესასწორებელი ნიშნული არ არსებობს');
         for (const need of TIME_NEEDS[k]) if (!cur.has(need)) throw new ConflictException({ code: 'TIME_ORDER', message: `ჯერ — „${TIME_KA[need]}“` });
@@ -834,7 +872,10 @@ export class OrService {
         if (k === 'out_of_room') {
           const so = await trx.selectFrom('or_who_checks').select('id').where('case_id', '=', c.id).where('phase', '=', 'sign_out').where('voided_at', 'is', null).executeTakeFirst();
           if (!so) throw new ConflictException({ code: 'WHO_SIGN_OUT', message: 'WHO: Sign out-ის გარეშე ოპერაცია ვერ დასრულდება' });
+          if (!prev) await noteGate(trx, c.id, s.note_required ?? []);            // 0049: ოქმის სავალდებულო ველები (არაარჩევადი)
         }
+        // 0049: დათვლა — განაკვეთი ← დაწყებისას, ნაკერი ← დახურვამდე, გასვლა ← ბოლოს (count_mode)
+        const countOv = prev ? null : await countGate(trx, c.id, k, s.count_mode, dto.count_override);
         let override: string | null = null;
         if (k === 'in_room' && !prev) {
           if (!c.encounter_id || !(await this.stayActive(c.encounter_id, trx))) throw new ConflictException({ code: 'NOT_ADMITTED', message: 'ოპერაცია მხოლოდ აქტიურ ჰოსპიტალიზაციაზე (დღის სტაციონარიც)' });
@@ -859,6 +900,13 @@ export class OrService {
           await trx.updateTable('or_case_team').set({ in_at: at }).where('case_id', '=', c.id).where('removed_at', 'is', null).where('in_at', 'is', null).execute();
         }
         if (override) await this.event(trx, c, 'readiness_override', { reason: override }, u);
+        if (countOv) await this.event(trx, c, 'count_override', { phase: countOv.phase, what: countOv.what, reason: countOv.reason }, u);
+        if (k === 'out_of_room' && !prev) {
+          // 0049: დასრულება — CSSD შეფუთვები → used პაციენტზე; preference card-ის ავტომატური შეკრება (ექთანი ადასტურებს → ჩამოწერა)
+          const used = await packsUsed(trx, c, u.id);
+          if (used.length) await this.event(trx, c, 'packs_used', { packs: used }, u);
+          await assembleCard(trx, c, s.preference_cards, u.id);
+        }
         await this.event(trx, c, prev ? 'time_corrected' : 'time', { kind: k, at: at.toISOString(), ...(prev && { from: prev.at.toISOString(), reason: dto.correction_reason }),
           ...(dto.destination && { destination: dto.destination }) }, u,
           !prev && k === 'in_room' ? 'or_started' : !prev && k === 'out_of_room' ? 'or_completed' : undefined);
@@ -873,7 +921,6 @@ export class OrService {
 
   // ================================================================= დაფა / ჩემი ოპერაციები / თანამშრომლები
   async board(q: BoardQuery) {
-    await this.settings();
     const date = q.date ?? (await sql<{ d: string }>`SELECT (now() AT TIME ZONE ${TZ})::date::text AS d`.execute(this.db)).rows[0].d;
     const days = q.days ?? 1;
     const rooms = await this.db.selectFrom('or_rooms as r').innerJoin('departments as d', 'd.id', 'r.department_id')
@@ -893,7 +940,10 @@ export class OrService {
       ready.set(c.id, { ready: r.ready, missing: r.missing.length });
     }
     const withR = <T extends { id: string }>(x: T) => ({ ...x, readiness: ready.get(x.id) ?? null });
-    return { date, days, rooms, cases: cases.map(withR), queue: queue.map(withR), now: new Date().toISOString() };
+    // 0049: ოთახის დღის გუნდი (დღის ხედი)
+    const s = await this.settings();
+    const teams = days === 1 && s.room_teams ? await this.roster.dayTeams(date, rooms.map((r) => r.id)) : new Map();
+    return { date, days, rooms: rooms.map((r) => ({ ...r, team: teams.get(r.id) ?? [] })), room_teams: s.room_teams, cases: cases.map(withR), queue: queue.map(withR), now: new Date().toISOString() };
   }
 
   async my(u: AuthUser, from?: string, to?: string) {
@@ -948,9 +998,9 @@ export class OrController {
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() d: CancelDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.cancel(id, d, u, auditCtx(r)); }
   @Post('cases/:id/surgeon') @HttpCode(200) @Roles(...DOC)
   surgeon(@Param('id', ParseUUIDPipe) id: string, @Body() d: SurgeonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.changeSurgeon(id, d, u, auditCtx(r)); }
-  @Post('cases/:id/team') @Roles('admin', 'doctor', 'anesthesiologist')
+  @Post('cases/:id/team') @Roles('admin', 'doctor', 'anesthesiologist', 'or_nurse')
   addTeam(@Param('id', ParseUUIDPipe) id: string, @Body() d: TeamDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.addTeam(id, d, u, auditCtx(r)); }
-  @Post('team/:tid/remove') @HttpCode(200) @Roles('admin', 'doctor', 'anesthesiologist')
+  @Post('team/:tid/remove') @HttpCode(200) @Roles('admin', 'doctor', 'anesthesiologist', 'or_nurse')
   rmTeam(@Param('tid', ParseUUIDPipe) tid: string, @Body() d: TeamRemoveDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.removeTeam(tid, d, u, auditCtx(r)); }
   @Put('cases/:id/preop') @Roles('admin', 'anesthesiologist')
   preop(@Param('id', ParseUUIDPipe) id: string, @Body() d: PreopDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.savePreop(id, d, u, auditCtx(r)); }
@@ -968,5 +1018,3 @@ export class OrController {
   time(@Param('id', ParseUUIDPipe) id: string, @Body() d: TimeDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.recordTime(id, d, u, auditCtx(r)); }
 }
 
-@Module({ providers: [OrService], controllers: [OrController], exports: [OrService] })
-export class OrModule {}

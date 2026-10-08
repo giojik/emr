@@ -145,7 +145,7 @@ export class EndoscopyController {
   pathResult(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File | undefined, @Body() dto: ResultDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.endo.resultPathology(id, { result_text: dto.result_text, file: file?.buffer }, u, auditCtx(req));
   }
-  @Post('pathology/:id/review') @HttpCode(200) @Roles('admin', 'endoscopist')
+  @Post('pathology/:id/review') @HttpCode(200) @Roles('admin', 'endoscopist', 'doctor')
   pathReview(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.endo.reviewPathology(id, u, auditCtx(req)); }
   @Get('pathology/:id/file') @Roles(...STAFF, 'receptionist', 'doctor')
   async pathFile(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) { return stream(res, await this.endo.pathResultFile(id)); }
@@ -160,11 +160,12 @@ export class EndoscopyController {
   @Get('pathology/:id/requisition') @Roles(...STAFF)
   async requisition(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
     const r = await this.endo.pathRequest(id);
-    const d = await this.rad.reportDetail(r.order_item_id);
+    // 0049: ოპერაციის მიმართვა — ენდოსკოპიის დასკვნის გარეშე (ექიმი — ოპერატორი ქირურგი)
+    const d = r.order_item_id ? await this.rad.reportDetail(r.order_item_id) : null;
     return pdf(res, await renderRequisition({
       clinic: await this.settings.get(), patient: { name: `${r.first_name} ${r.last_name}`, birth_date: r.birth_date, gender: r.gender, id_number: r.personal_number },
-      request_no: r.request_no, external_lab: r.external_lab, clinical_info: r.clinical_info ?? d.clinical_note, procedure: r.service_name,
-      performed_at: r.performed_at ? String(r.performed_at) : null, endoscopist: d.report?.author_name ?? null, impression: d.report?.impression ?? null,
+      request_no: r.request_no, external_lab: r.external_lab, clinical_info: r.clinical_info ?? d?.clinical_note ?? null, procedure: r.service_name,
+      performed_at: r.performed_at ? String(r.performed_at) : null, endoscopist: d ? d.report?.author_name ?? null : r.ordered_by_name, ...(!d && { doctor_label: 'ქირურგი' }), impression: d?.report?.impression ?? null,
       specimens: r.specimens.map((s) => ({ jar_no: s.jar_no, site: s.site, pieces: s.pieces, description: s.description, fixative: s.fixative })),
     }));
   }

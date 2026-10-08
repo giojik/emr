@@ -6,12 +6,15 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, genderShort, hhmm, localISO, todayISO } from '../../lib/format';
 import { CancelDialog, invalOr, ReasonPrompt, RequestDialog, ScheduleDialog } from './Dialogs';
+import { AnesthesiaTab, MaterialsTab, NoteTab } from './IntraOp';
 import { ANESTHESIA_KA, CASE_ST, chip, DEST_KA, dt, EVENT_KA, GRP_KA, hm, PHASE_KA, RISK_KA, SIDE_KA, TIME_KA, TIME_KINDS, URGENCY, useOrModule, useOrSetup, WHO_KA,
   type CaseDetail, type CaseRow, type Preop, type TeamMember, type TimeKind } from './types';
 
-const TABS: [string, string][] = [['overview', 'მიმოხილვა'], ['team', 'გუნდი'], ['preop', 'წინასაოპერაციო'], ['who', 'WHO ჩეკლისტი'], ['times', 'ნიშნულები'], ['history', 'ისტორია']];
+const TABS: [string, string][] = [['overview', 'მიმოხილვა'], ['team', 'გუნდი'], ['preop', 'წინასაოპერაციო'], ['who', 'WHO ჩეკლისტი'], ['times', 'ნიშნულები'],
+  ['anesthesia', 'ანესთეზია'], ['materials', 'მასალები / დათვლა'], ['note', 'ოქმი'], ['history', 'ისტორია']];
+const GRP_RIGHT = (c: CaseDetail, g: string) => (g === 'anesthesia' ? c.can.team_anesthesia : g === 'nursing' ? c.can.team_nursing : c.can.team_surgical);
 
-/** ოპერაციის ბარათი (0048) */
+/** ოპერაციის ბარათი (0048 + 0049: ანესთეზიის რუკა, მასალები / დათვლა / CSSD, ოქმი) */
 export default function CaseCard() {
   const { id } = useParams(); const nav = useNavigate(); const [sp, setSp] = useSearchParams();
   const q = useQuery({ queryKey: ['or-case', id], queryFn: () => api<CaseDetail>(`/or/cases/${id}`), refetchInterval: 30_000 });
@@ -25,6 +28,9 @@ export default function CaseCard() {
     preop: c.readiness.ready ? <span className="chip ok" style={{ height: 18 }}>✓</span> : <span className="chip warn" style={{ height: 18 }}>{c.readiness.missing.length}</span>,
     who: <span className="chip" style={{ height: 18 }}>{['sign_in', 'time_out', 'sign_out'].filter(whoDone).length}/3</span>,
     team: <span className="chip" style={{ height: 18 }}>{c.team.filter((t) => !t.removed_at && !t.out_at).length}</span>,
+    anesthesia: c.progress.anesthesia === 'signed' ? <span className="chip ok" style={{ height: 18 }}>✓</span> : c.progress.anesthesia ? <span className="chip warn" style={{ height: 18 }}>…</span> : null,
+    note: c.progress.note?.status === 'signed' ? <span className="chip ok" style={{ height: 18 }}>v{c.progress.note.version}</span> : c.progress.note ? <span className="chip warn" style={{ height: 18 }}>შავი</span> : null,
+    materials: c.progress.items_unposted ? <span className="chip warn" style={{ height: 18 }}>{c.progress.items_unposted}</span> : c.progress.items_total ? <span className="chip ok" style={{ height: 18 }}>✓</span> : null,
   };
   return (
     <>
@@ -48,8 +54,10 @@ export default function CaseCard() {
         {c.allergies.length > 0 && <div className="alert danger">ალერგია: {c.allergies.map((a) => a.substance).join(', ')}</div>}
         {c.warnings.map((w) => <div key={w} className="alert warn">{w}</div>)}
         {c.status === 'cancelled' && <div className="alert warn">გაუქმებულია {dt(c.cancelled_at)}: {c.cancel_reason_name}{c.cancel_note ? ` — ${c.cancel_note}` : ''}</div>}
-        {c.locked_at && <div className="alert info">ოქმი ხელმოწერილია — გუნდი და ნიშნულები დაბლოკილია.</div>}
+        {c.locked_at && <div className="alert info">ოქმი ხელმოწერილია — გუნდი და ნიშნულები დაბლოკილია (დასაშვებია მხოლოდ: ანესთეზიის დასრულება, ოთახიდან გასვლა, PACU).</div>}
+        {c.hints.map((h) => <div key={h} className="alert info small">{h}</div>)}
         {tab === 'team' ? <TeamTab c={c} /> : tab === 'preop' ? <PreopTab c={c} /> : tab === 'who' ? <WhoTab c={c} /> : tab === 'times' ? <TimesTab c={c} cur={curTimes} />
+          : tab === 'anesthesia' ? <AnesthesiaTab c={c} /> : tab === 'materials' ? <MaterialsTab c={c} /> : tab === 'note' ? <NoteTab c={c} />
           : tab === 'history' ? <History c={c} /> : <Overview c={c} />}
       </div>
     </>
@@ -141,11 +149,13 @@ function TeamTab({ c }: { c: CaseDetail }) {
   const started = ['in_progress', 'completed'].includes(c.status);
   const active = c.team.filter((t) => !t.removed_at && !t.out_at);
   const past = c.team.filter((t) => t.removed_at || t.out_at);
-  const canGrp = (g: string) => (g === 'anesthesia' ? c.can.team_anesthesia : c.can.team_surgical);
+  const canGrp = (g: string) => GRP_RIGHT(c, g);
   void qc;
   return (
     <div className="stack">
-      <span className="hint">გუნდს აყალიბებს ოპერატორი ქირურგი, განყოფილების ხელმძღვანელი ან admin. ანესთეზიის ნაწილს — {mod.settings.anesthesia_team_by === 'anesthesia_head' ? 'ანესთეზიოლოგიის ხელმძღვანელი (ქირურგი — სასურველს მიუთითებს მოთხოვნაში)' : 'ქირურგი / განყოფილების ხელმძღვანელი'}.
+      <span className="hint">გუნდს აყალიბებს ოპერატორი ქირურგი, განყოფილების ხელმძღვანელი ან admin. ანესთეზიის ნაწილს — {mod.settings.anesthesia_team_by === 'anesthesia_head' ? 'ანესთეზიოლოგიის ხელმძღვანელი (ქირურგი — სასურველს მიუთითებს მოთხოვნაში)' : 'ქირურგი / განყოფილების ხელმძღვანელი'};
+        საექთნოს — {{ surgeon: 'ქირურგი / განყოფილების ხელმძღვანელი', or_head_nurse: 'ბლოკის მთავარი ექთანი', both: 'ქირურგი / ხელმძღვანელი ან ბლოკის მთავარი ექთანი' }[mod.settings.nursing_team_by]}.
+        {mod.settings.room_teams ? ' ოთახის დღის გუნდი ემატება ავტომატურად (ხელით დამატებულს / მოხსნილს არ ეხება).' : ''}
         {started ? ' ოპერაცია დაწყებულია — ცვლილება აღირიცხება დროით (შემოვიდა / გავიდა / ვინ შეცვალა).' : ''}</span>
       {(['surgical', 'anesthesia', 'nursing'] as const).map((g) => {
         const roles = (setup.data?.team_roles ?? []).filter((r) => r.grp === g);
@@ -155,7 +165,7 @@ function TeamTab({ c }: { c: CaseDetail }) {
               {canGrp(g) && roles.some((r) => r.code !== 'surgeon') && <button className="btn sm" type="button" onClick={() => setAdd({ role: roles.find((r) => r.code !== 'surgeon')?.code })}>+ დამატება</button>}</div>
             <table className="table"><tbody>
               {active.filter((t) => t.grp === g).map((t) => (
-                <tr key={t.id}><td style={{ width: 220 }} className="muted">{t.role_name}</td><td><strong>{t.name}</strong></td>
+                <tr key={t.id}><td style={{ width: 220 }} className="muted">{t.role_name}</td><td><strong>{t.name}</strong>{t.auto && <span className="chip info" style={{ marginLeft: 6 }} title="ოთახის დღის გუნდიდან">ოთახის გუნდი</span>}</td>
                   <td className="small muted">{t.in_at ? `შემოვიდა ${hhmm(t.in_at)}` : `დაამატა ${t.added_by_name ?? ''}`}</td>
                   <td><div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
                     {canGrp(g) && t.role_code !== 'surgeon' && <><button className="btn sm" type="button" onClick={() => setAdd({ role: t.role_code, replaces: t })}>შეცვლა</button>
@@ -176,7 +186,7 @@ function TeamTab({ c }: { c: CaseDetail }) {
 
 function TeamDialog({ c, role: r0, replaces, started, onClose }: { c: CaseDetail; role?: string; replaces?: TeamMember; started: boolean; onClose: () => void }) {
   const qc = useQueryClient(); const setup = useOrSetup();
-  const roles = (setup.data?.team_roles ?? []).filter((r) => r.code !== 'surgeon' && (r.grp === 'anesthesia' ? c.can.team_anesthesia : c.can.team_surgical));
+  const roles = (setup.data?.team_roles ?? []).filter((r) => r.code !== 'surgeon' && GRP_RIGHT(c, r.grp));
   const [role, setRole] = useState(r0 ?? roles[0]?.code ?? '');
   const def = roles.find((r) => r.code === role);
   const [userId, setUserId] = useState(''); const [at, setAt] = useState(hhmm(new Date().toISOString()));
@@ -379,7 +389,9 @@ function TimesTab({ c, cur }: { c: CaseDetail; cur: CaseDetail['times'] }) {
             <tr key={k}>
               <td><strong>{TIME_KA[k]}</strong>{t?.destination && <span className="chip" style={{ marginLeft: 6 }}>→ {DEST_KA[t.destination]}</span>}
                 {k === 'incision' && !c.who.some((w) => w.phase === 'time_out' && !w.voided_at) && <div className="small" style={{ color: 'var(--danger)' }}>საჭიროა Time out</div>}
-                {k === 'out_of_room' && !c.who.some((w) => w.phase === 'sign_out' && !w.voided_at) && <div className="small" style={{ color: 'var(--danger)' }}>საჭიროა Sign out</div>}</td>
+                {k === 'out_of_room' && !c.who.some((w) => w.phase === 'sign_out' && !w.voided_at) && <div className="small" style={{ color: 'var(--danger)' }}>საჭიროა Sign out</div>}
+                {k === 'out_of_room' && !t && c.settings.note_required.length > 0 && c.progress.note?.status !== 'signed' && <div className="small muted">ოქმის სავალდებულო ველები — „ოქმი“</div>}
+                {!t && c.settings.count_mode !== 'off' && ['incision', 'closure', 'out_of_room'].includes(k) && <div className="small muted">დათვლა — „მასალები / დათვლა“</div>}</td>
               <td className="mono">{t ? <>{dateGe(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tbilisi' }).format(new Date(t.at)))} <strong>{hhmm(t.at)}</strong></> : '—'}
                 {t?.correction_reason && <div className="small muted" style={{ fontFamily: 'var(--font)' }}>შესწორდა: {t.correction_reason}</div>}</td>
               <td className="small">{t?.by_name ?? ''}</td>
@@ -400,15 +412,20 @@ function TimesTab({ c, cur }: { c: CaseDetail; cur: CaseDetail['times'] }) {
 function TimeDialog({ c, kind, correct, onClose }: { c: CaseDetail; kind: TimeKind; correct: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [f, setF] = useState({ date: todayISO(), time: hhmm(new Date().toISOString()), destination: kind === 'out_of_room' ? (c.needs_icu ? 'icu' : 'pacu') : kind === 'pacu_out' ? 'ward' : '',
-    correction_reason: '', readiness_override: '' });
+    correction_reason: '', readiness_override: '', count_override: '' });
   const [needOverride, setNeedOverride] = useState<string[] | null>(null);
+  const [needCount, setNeedCount] = useState<string | null>(null);
   const m = useMutation({
     mutationFn: () => api(`/or/cases/${c.id}/times`, { body: { kind, at: localISO(f.date, f.time), ...(f.destination && { destination: f.destination }),
-      ...(correct && { correction_reason: f.correction_reason.trim() }), ...(f.readiness_override.trim() && { readiness_override: f.readiness_override.trim() }) } }),
+      ...(correct && { correction_reason: f.correction_reason.trim() }), ...(f.readiness_override.trim() && { readiness_override: f.readiness_override.trim() }),
+      ...(f.count_override.trim() && { count_override: f.count_override.trim() }) } }),
     onSuccess: () => { invalOr(qc); onClose(); },
-    onError: (e) => { if (e instanceof ApiError && e.code === 'PREOP_OVERRIDE_REQUIRED') setNeedOverride((e.body?.missing as string[]) ?? []); },
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === 'PREOP_OVERRIDE_REQUIRED') setNeedOverride((e.body?.missing as string[]) ?? []);
+      if (e instanceof ApiError && e.code === 'COUNT_OVERRIDE_REQUIRED') setNeedCount(e.message);
+    },
   });
-  const ok = !!f.time && (!correct || f.correction_reason.trim().length >= 3) && (!needOverride || f.readiness_override.trim().length >= 3);
+  const ok = !!f.time && (!correct || f.correction_reason.trim().length >= 3) && (!needOverride || f.readiness_override.trim().length >= 3) && (!needCount || f.count_override.trim().length >= 3);
   return (
     <Modal title={`${correct ? 'შესწორება' : 'დაფიქსირება'} — ${TIME_KA[kind]}`} onClose={onClose}
       footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button><button className="btn primary" type="button" disabled={!ok || m.isPending} onClick={() => m.mutate()}>შენახვა</button></>}>
@@ -421,7 +438,9 @@ function TimeDialog({ c, kind, correct, onClose }: { c: CaseDetail; kind: TimeKi
       {correct && <Field label="შესწორების მიზეზი" htmlFor="tk-cr" required><input id="tk-cr" className="input" value={f.correction_reason} onChange={(e) => setF({ ...f, correction_reason: e.target.value })} /></Field>}
       {needOverride && <div className="alert warn"><div className="stack" style={{ gap: 4 }}><strong>წინასაოპერაციო მზადყოფნა არასრულია:</strong>{needOverride.map((x) => <span key={x}>• {x}</span>)}</div></div>}
       {needOverride && <Field label="დასაბუთება (ოპერაცია მზადყოფნის გარეშე)" htmlFor="tk-ov" required><textarea id="tk-ov" className="textarea" rows={2} value={f.readiness_override} onChange={(e) => setF({ ...f, readiness_override: e.target.value })} /></Field>}
-      {!(m.error instanceof ApiError && m.error.code === 'PREOP_OVERRIDE_REQUIRED') && <ErrorBox error={m.error} />}
+      {needCount && <div className="alert warn">{needCount}</div>}
+      {needCount && <Field label="ახსნა (დათვლის გარეშე / შეუსაბამობით)" htmlFor="tk-co" required><textarea id="tk-co" className="textarea" rows={2} value={f.count_override} onChange={(e) => setF({ ...f, count_override: e.target.value })} /></Field>}
+      {!(m.error instanceof ApiError && ['PREOP_OVERRIDE_REQUIRED', 'COUNT_OVERRIDE_REQUIRED'].includes(m.error.code ?? '')) && <ErrorBox error={m.error} />}
     </Modal>
   );
 }

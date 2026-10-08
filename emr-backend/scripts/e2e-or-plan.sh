@@ -45,7 +45,7 @@ ORIG_OR=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="or")|.settings')
 [ -n "$ORIG_OR" ] && [ "$ORIG_OR" != "null" ] || die "მოდული „or“ ვერ მოიძებნა (migration 0048?)"
 ORIG_IPD=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')
 ormod() { api PUT /modules/or "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}"; }
-ormod '{"or_scheduling":"coordinator","anesthesia_team_by":"anesthesia_head","preop_readiness":"warn","turnover_min":30,"default_duration_min":60,"self_booking_days":30,"notify_requests":true}' >/dev/null
+ormod '{"or_scheduling":"coordinator","anesthesia_team_by":"anesthesia_head","preop_readiness":"warn","turnover_min":30,"default_duration_min":60,"self_booking_days":30,"notify_requests":true,"nursing_team_by":"both","room_teams":true,"count_mode":"off","note_required":[]}' >/dev/null
 api PUT /modules/inpatient "$ADM" -d '{"settings":{"bed_assign_mode":"direct"},"reason":"ტესტ-E2E"}' >/dev/null
 api PUT /settings/clinic "$ADM" -d '{"consent_methods":["paper","electronic"]}' >/dev/null
 DBK=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E საოპერაციო ბლოკი $S\",\"code\":\"E2EORB$S\",\"type\":\"or\"}" | jq -r '.id // empty')

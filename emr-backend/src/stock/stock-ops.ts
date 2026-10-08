@@ -141,9 +141,10 @@ export class StockOpsService {
   // ================================================================= ხარჯი პაციენტზე
   /** inTrx (0043, MAR): გამოიძახება იმავე ტრანზაქციაში, გატარების შემდეგ — მიცემის ჩანაწერი და ხარჯი ერთად ინახება ან ერთად უქმდება */
   async createConsumption(dto: { location_id: string; patient_id: string; encounter_id?: string | null; notes?: string | null; witness?: WitnessIn | null; lines: CnLineIn[] }, u: AuthUser, ctx: AuditContext,
-                          inTrx?: (trx: Transaction<DB>, docId: string) => Promise<void>) {
+                          inTrx?: (trx: Transaction<DB>, docId: string) => Promise<void>, opts?: { authorized?: boolean }) {
     const loc = await this.t.loc(dto.location_id);
-    await this.t.requireOperate(u, loc, 'ხარჯი');
+    // opts.authorized (0049, საოპერაციო): უფლება უკვე შემოწმებულია გამომძახებელ მოდულში (ბლოკის ლოკაცია — ოპერაციის გუნდი / საოპერაციო ექთანი)
+    if (opts?.authorized) { if (!loc.is_active) throw new BadRequestException(`ლოკაცია „${loc.name}“ გათიშულია`); } else await this.t.requireOperate(u, loc, 'ხარჯი');
     await this.counting(loc.id);
     // ნარკოტიკული / ფსიქოტროპული: მიღებული დოზა სავალდებულო, ნარჩენი — სურვილით; ჯამი = რაოდენობა × აქტ. ნივთიერება ერთეულში; მოწმე სავალდებულო
     const gens = await this.db.selectFrom('stock_items as i').innerJoin('med_generics as g', 'g.id', 'i.generic_id')

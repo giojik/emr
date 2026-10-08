@@ -9,9 +9,13 @@ export const OR_READ: Role[] = ['admin', 'doctor', 'nurse', 'or_schedule', 'anes
 export interface OrSettings {
   or_scheduling: 'coordinator' | 'surgeon_self' | 'both'; anesthesia_team_by: 'anesthesia_head' | 'surgeon'; preop_readiness: 'warn' | 'block';
   turnover_min: number; default_duration_min: number; self_booking_days: number; notify_requests: boolean;
+  // 0049
+  nursing_team_by: 'surgeon' | 'or_head_nurse' | 'both'; room_teams: boolean; anesthesia_meds: 'direct' | 'orders' | 'both';
+  preference_cards: 'off' | 'procedure' | 'procedure_surgeon'; count_mode: 'off' | 'warn' | 'block'; note_required: string[];
 }
 export const OR_DEFAULT: OrSettings = { or_scheduling: 'coordinator', anesthesia_team_by: 'anesthesia_head', preop_readiness: 'warn', turnover_min: 30, default_duration_min: 60,
-  self_booking_days: 30, notify_requests: true };
+  self_booking_days: 30, notify_requests: true, nursing_team_by: 'both', room_teams: true, anesthesia_meds: 'direct', preference_cards: 'procedure_surgeon', count_mode: 'block',
+  note_required: ['postop_dx', 'procedures', 'description', 'complications', 'blood_loss'] };
 export const useOrModule = () => {
   const q = useModules();
   const m = q.data?.find((x) => x.code === 'or');
@@ -40,7 +44,22 @@ export const SOURCE_KA: Record<string, string> = { manual: 'ხელით', co
 export const EVENT_KA: Record<string, string> = { requested: 'მოთხოვნა', updated: 'შეიცვალა', tentative: 'წინასწარი ჯავშანი', scheduled: 'დაიგეგმა', confirmed: 'დადასტურდა', rescheduled: 'გადატანა',
   unscheduled: 'გადაიდო', cancelled: 'გაუქმდა', surgeon_changed: 'ოპერატორი შეიცვალა', team_added: 'გუნდი: დაემატა', team_removed: 'გუნდი: მოიხსნა', team_out: 'გუნდი: გავიდა',
   preop_signed: 'გასინჯვა ხელმოწერილია', preop_voided: 'გასინჯვა გაუქმდა', readiness: 'მზადყოფნა', readiness_override: 'მზადყოფნა — დასაბუთებით', who: 'WHO', who_voided: 'WHO — გაუქმდა',
-  time: 'ნიშნული', time_corrected: 'ნიშნული შესწორდა', encounter_linked: 'ჰოსპიტალიზაცია მიება' };
+  time: 'ნიშნული', time_corrected: 'ნიშნული შესწორდა', encounter_linked: 'ჰოსპიტალიზაცია მიება',
+  // 0049
+  team_auto: 'ოთახის გუნდი (ავტომატურად)', anesthesia_signed: 'ანესთეზიის რუკა ხელმოწერილია', anesthesia_med: 'ანესთეზია: მედიკამენტი', note_signed: 'ოქმი ხელმოწერილია',
+  note_amend: 'ოქმის შესწორება', items_posted: 'მასალები ჩამოიწერა', count: 'დათვლა', count_override: 'დათვლა — ახსნით', pack_added: 'CSSD ნაკრები', pack_removed: 'CSSD ნაკრები მოიხსნა',
+  packs_used: 'CSSD ნაკრები → გამოყენებული', pathology: 'ბიოფსია → პათოლოგია' };
+export const NOTE_FIELDS_KA: Record<string, string> = { preop_dx: 'წინასაოპერაციო დიაგნოზი', postop_dx: 'პოსტოპერაციული დიაგნოზი', procedures: 'ჩატარებული პროცედურ(ებ)ი',
+  description: 'ოპერაციის აღწერა', findings: 'აღმოჩენები', complications: 'გართულებები (ან „არ ყოფილა“)', blood_loss: 'სისხლის დაკარგვა' };
+export const AIRWAY_KA: Record<string, string> = { none: 'სპონტანური (მოწყობილობის გარეშე)', nasal: 'ცხვირის კანულა', mask: 'სახის ნიღაბი', lma: 'ლარინგეალური ნიღაბი (LMA)', ett: 'ენდოტრაქეული მილი (ETT)',
+  trach: 'ტრაქეოსტომა', other: 'სხვა' };
+export const FLUID_KA: Record<string, string> = { iv: 'ინფუზია (კრისტალოიდი / კოლოიდი)', blood: 'სისხლი / კომპონენტები', other_in: 'სხვა (მიღება)', urine: 'შარდი', blood_loss: 'სისხლის დაკარგვა',
+  drain: 'დრენაჟი', other_out: 'სხვა (გამოყოფა)' };
+export const COUNT_PHASE_KA: Record<string, string> = { initial: 'დაწყებისას', pre_closure: 'დახურვამდე', final: 'ბოლოს' };
+export const LINE_KA: Record<string, string> = { drain: 'დრენაჟი', urinary: 'შარდის კათეტერი', ng_tube: 'ნაზოგასტრული ზონდი', cvc: 'ცენტრალური ვენა', arterial: 'არტერიული ხაზი', pvc: 'პერიფერიული ვენა',
+  picc: 'PICC', trach: 'ტრაქეოსტომა', other: 'სხვა' };
+export const PACK_ST: Record<string, [string, string]> = { sterile: ['ok', 'სტერილური'], issued: ['info', 'გაცემული'], used: ['', 'გამოყენებული'], packed: ['warn', 'შეფუთული'],
+  quarantine: ['warn', 'ქარანტინი'], failed: ['danger', 'ჩავარდა'], expired: ['danger', 'ვადაგასული'], recalled: ['danger', 'გაწვეული'], reprocess: ['warn', 'ხელახალი დამუშავება'] };
 
 export interface Room { id: string; department_id: string; block_name: string; code: string; name: string; work_start: string; work_end: string; work_days: number[]; specialties: string[];
   emergency_only: boolean; notes: string | null; is_active: boolean; sort_order: number }
@@ -67,7 +86,8 @@ export interface CaseRow {
   who_done: string[]; readiness?: { ready: boolean; missing: number } | null; my_roles?: string[];
 }
 export interface TeamMember { id: string; role_code: string; role_name: string; grp: string; user_id: string; name: string; added_at: string; in_at: string | null; out_at: string | null;
-  replaced_by: string | null; removed_at: string | null; remove_reason: string | null; added_by_name: string | null }
+  replaced_by: string | null; removed_at: string | null; remove_reason: string | null; added_by_name: string | null; auto: boolean; removed_auto: boolean }
+export interface DayMember { user_id: string; name: string; role_code: string; role_name: string; grp: string; source: 'room' | 'day'; override_id: string | null }
 export interface CaseTime { id: string; kind: TimeKind; at: string; destination: string | null; created_at: string; correction_reason: string | null; superseded_by: string | null; by_name: string }
 export interface WhoCheck { id: string; phase: string; answers: { item_id: string; label: string; answer: string }[]; note: string | null; done_at: string; voided_at: string | null;
   void_reason: string | null; by_name: string }
@@ -88,10 +108,12 @@ export interface CaseDetail extends Omit<CaseRow, 'procedures' | 'readiness'> {
     laterality: boolean; default_duration_min: number }[];
   team: TeamMember[]; times: CaseTime[]; who: WhoCheck[]; who_items: { id: string; phase: string; label: string }[]; preop: Preop[];
   events: { id: string; kind: string; data: Record<string, unknown>; at: string; user_name: string | null }[];
-  readiness: Readiness; allergies: { substance: string; severity: string; allergy_type: string }[]; warnings: string[]; settings: OrSettings;
-  can: { edit: boolean; schedule: boolean; confirm: boolean; cancel: boolean; surgeon: boolean; team_surgical: boolean; team_anesthesia: boolean; preop: boolean; readiness: boolean; periop: boolean };
+  readiness: Readiness; allergies: { substance: string; severity: string; allergy_type: string }[]; warnings: string[]; hints: string[]; settings: OrSettings;
+  progress: { anesthesia: string | null; note: { status: string; version: number } | null; items_unposted: number; items_total: number };
+  can: { edit: boolean; schedule: boolean; confirm: boolean; cancel: boolean; surgeon: boolean; team_surgical: boolean; team_anesthesia: boolean; team_nursing: boolean; preop: boolean;
+    readiness: boolean; periop: boolean; anesthesia: boolean; anesthesia_sign: boolean; note: boolean; note_sign: boolean; nursing_ops: boolean };
 }
-export interface Board { date: string; days: number; rooms: (Room & { block_name: string })[]; cases: CaseRow[]; queue: CaseRow[]; now: string }
+export interface Board { date: string; days: number; rooms: (Room & { block_name: string; team: DayMember[] })[]; room_teams: boolean; cases: CaseRow[]; queue: CaseRow[]; now: string }
 
 export const chip = (m: Record<string, [string, string]>, k: string | null | undefined) => (k ? <span className={`chip ${m[k]?.[0] ?? ''}`}>{m[k]?.[1] ?? k}</span> : null);
 export const dt = (iso: string | null | undefined) => (iso ? `${tsDate(iso)} ${hhmm(iso)}` : '—');

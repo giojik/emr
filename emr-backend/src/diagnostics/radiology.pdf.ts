@@ -151,7 +151,7 @@ export async function renderJarLabels(labels: JarLabel[]): Promise<Buffer> {
 
 export interface RequisitionData {
   clinic: Clinic; patient: Patient; request_no: string; external_lab: string | null; clinical_info: string | null; procedure: string; performed_at: string | null;
-  endoscopist: string | null; impression: string | null; specimens: { jar_no: number; site: string; pieces: number; description: string | null; fixative: string }[];
+  endoscopist: string | null; impression: string | null; doctor_label?: string; specimens: { jar_no: number; site: string; pieces: number; description: string | null; fixative: string }[];
 }
 /** მიმართვა ჰისტოლოგიურ კვლევაზე (გარე ლაბორატორია) — A4 */
 export async function renderRequisition(p: RequisitionData): Promise<Buffer> {
@@ -171,7 +171,7 @@ export async function renderRequisition(p: RequisitionData): Promise<Buffer> {
   row('ლაბორატორია', p.external_lab);
   row('პაციენტი', `${p.patient.name} · დაბ. ${d(p.patient.birth_date)} · ${sex(p.patient.gender)} · პ/ნ ${p.patient.id_number ?? '—'}`);
   row('პროცედურა', [p.procedure, p.performed_at && dt(p.performed_at)].filter(Boolean).join(' · '));
-  row('ენდოსკოპისტი', p.endoscopist);
+  row(p.doctor_label ?? 'ენდოსკოპისტი', p.endoscopist);
   row('კლინიკური მონაცემი', p.clinical_info);
   row('ენდოსკოპიური დასკვნა', p.impression);
   doc.moveDown(0.6);

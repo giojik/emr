@@ -363,7 +363,28 @@ function OrSettingsCard({ s, set }: { s: Record<string, unknown>; set: (v: Recor
         {num('self_booking_days', 'ქირურგის ჯავშანი — მაქს. დღით ადრე', 1, 365)}
       </div>
       <label className="row"><input type="checkbox" checked={!!v<boolean>('notify_requests')} onChange={(e) => upd('notify_requests', e.target.checked)} /> ახალი მოთხოვნა — შეტყობინება კოორდინატორებს (გადაუდებელი — სასწრაფო)</label>
-      <span className="small">ოთახები, პროცედურების კატალოგი, ჩეკლისტები — <Link to="/admin/or">ადმინისტრირება → საოპერაციო</Link>. WHO Time out „განაკვეთამდე“ და Sign out „დასრულებამდე“ — სავალდებულოა (არაარჩევადი).</span>
+      <h3 style={{ margin: '6px 0 0' }}>ოპერაციის მსვლელობა</h3>
+      <div style={grid}>
+        {radio('nursing_team_by', 'საექთნო გუნდს ნიშნავს', [['surgeon', 'ქირურგი / განყოფილების ხელმძღვანელი', ''],
+          ['or_head_nurse', 'ბლოკის მთავარი ექთანი', 'საოპერაციო ექთანი + განყოფილების ხელმძღვანელი'], ['both', 'ორივე', '']])}
+        {radio('anesthesia_meds', 'ანესთეზიის მედიკამენტები', [['direct', 'პირდაპირ ჟურნალში', 'ჩამოწერა ბლოკის საწყობიდან'],
+          ['orders', 'დანიშნულებით', 'CPOE → ვერიფიკაცია → MAR'], ['both', 'ორივე', '']])}
+        {radio('preference_cards', 'Preference card', [['off', 'გამორთული', ''], ['procedure', 'პროცედურაზე', 'ერთი ბარათი პროცედურას'],
+          ['procedure_surgeon', 'პროცედურა + ქირურგი', 'ქირურგის ბარათი, თუ არ აქვს — ზოგადი']])}
+        {radio('count_mode', 'დათვლა (საფენები / ნემსები / ინსტრუმენტები)', [['off', 'გამორთული', ''], ['warn', 'გაფრთხილება', 'შეუსაბამობა — ახსნით'],
+          ['block', 'ბლოკი', 'ახსნა + ხელახლა დათვლა / რენტგენი']])}
+        <div className="stack" style={{ gap: 6 }}><span className="label">ოქმის სავალდებულო ველები</span>
+          {([['preop_dx', 'წინასაოპ. დიაგნოზი'], ['postop_dx', 'პოსტოპ. დიაგნოზი'], ['procedures', 'პროცედურები'], ['description', 'აღწერა'],
+            ['findings', 'აღმოჩენები'], ['complications', 'გართულებები'], ['blood_loss', 'სისხლის დაკარგვა']] as const).map(([k, l]) => {
+            const cur = v<string[]>('note_required') ?? [];
+            return <label key={k} className="row"><input type="checkbox" checked={cur.includes(k)}
+              onChange={(e) => upd('note_required', e.target.checked ? [...cur, k] : cur.filter((x) => x !== k))} /> {l}</label>; })}
+          <span className="small muted">შეუვსებელი — ოქმი ვერ მოიწერება, ოპერაცია ვერ დასრულდება</span></div>
+        <div className="stack" style={{ gap: 6 }}><span className="label">ოთახის გუნდი</span>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('room_teams')} onChange={(e) => upd('room_teams', e.target.checked)} /> დაგეგმვისას ოთახის დღის გუნდი ემატება ოპერაციას ავტომატურად</label>
+          <span className="small muted">მუდმივი გუნდი + დღის ცვლილებები — „საოპერაციო → ოთახის გუნდი“</span></div>
+      </div>
+      <span className="small">ოთახები, პროცედურების კატალოგი, ჩეკლისტები — <Link to="/admin/or">ადმინისტრირება → საოპერაციო</Link>; ოქმის შაბლონები, preference card-ები — <Link to="/or?tab=library">საოპერაციო → შაბლონები / ბარათები</Link>. WHO Time out „განაკვეთამდე“ და Sign out „დასრულებამდე“, არასტერილური ნაკრების ბლოკი, ნარკოტიკულზე მოწმე — სავალდებულოა (არაარჩევადი).</span>
     </div>
   );
 }

@@ -84,6 +84,11 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       or_scheduling: (v) => oneOf(v, ['coordinator', 'surgeon_self', 'both']), anesthesia_team_by: (v) => oneOf(v, ['anesthesia_head', 'surgeon']),
       preop_readiness: (v) => oneOf(v, ['warn', 'block']), turnover_min: (v) => int(v, 0, 180), default_duration_min: (v) => int(v, 5, 1440),
       self_booking_days: (v) => int(v, 1, 365), notify_requests: bool,
+      // 0049: ოპერაციის მსვლელობა
+      nursing_team_by: (v) => oneOf(v, ['surgeon', 'or_head_nurse', 'both']), room_teams: bool, anesthesia_meds: (v) => oneOf(v, ['direct', 'orders', 'both']),
+      preference_cards: (v) => oneOf(v, ['off', 'procedure', 'procedure_surgeon']), count_mode: (v) => oneOf(v, ['off', 'warn', 'block']),
+      note_required: (v) => Array.isArray(v) && v.length <= 7 && new Set(v).size === v.length
+        && v.every((x) => ['preop_dx', 'postop_dx', 'procedures', 'description', 'findings', 'complications', 'blood_loss'].includes(x as string)),
     },
   },
   cssd: {

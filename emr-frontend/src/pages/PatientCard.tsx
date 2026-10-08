@@ -13,6 +13,7 @@ import ConsentsPanel from '../components/ConsentsPanel';
 import { CumulativeModal } from './lab/Cumulative';
 import DocumentsPanel from '../components/DocumentsPanel';
 import { OrderDialog } from './encounter/DiagnosticsPanel';
+import { ImplantsPanel } from './or/Library';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, dateGe, initials, money, tsDate } from '../lib/format';
 
@@ -62,6 +63,7 @@ export default function PatientCard() {
           <div style={{ gridColumn: '1 / -1' }}><Info k="მისამართი" v={x.address ?? '—'} /></div>
         </section>
 
+        {!mgrOnly && <ImplantsPanel patientId={x.id} />}
         {!mgrOnly && <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />}
         {!mgrOnly && <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />}
 

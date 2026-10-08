@@ -10,7 +10,7 @@ import { MarModule } from './inpatient/mar';
 import { NursingModule } from './inpatient/nursing';
 import { IcuModule } from './inpatient/icu';
 import { OrAdminModule } from './or/or-admin';
-import { OrModule } from './or/or';
+import { OrModule } from './or/or.module';
 import { NotesModule } from './inpatient/notes';
 import { IpdBillingModule } from './inpatient/ipd-billing';
 import { BillingConfigModule } from './billing/billing-config';

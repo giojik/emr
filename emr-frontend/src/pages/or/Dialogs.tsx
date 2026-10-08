@@ -10,7 +10,7 @@ import IcdPicker from '../encounter/IcdPicker';
 import { ANESTHESIA_KA, CASE_ST, chip, hm, SIDE_KA, URGENCY, useOrSetup, type Board, type CaseDetail, type Procedure } from './types';
 
 export const invalOr = (qc: QueryClient) => {
-  for (const k of ['or-board', 'or-case', 'or-my', 'or-cases', 'or-queue']) void qc.invalidateQueries({ queryKey: [k] });
+  for (const k of ['or-board', 'or-case', 'or-my', 'or-cases', 'or-queue', 'or-anest', 'or-note', 'or-mat', 'or-roster', 'or-implants']) void qc.invalidateQueries({ queryKey: [k] });
 };
 
 // ================================================================= მოთხოვნა (ახალი / რედაქტირება)
@@ -55,10 +55,19 @@ export function RequestDialog({ encounterId, plannedId, patient: initPatient, ed
     },
     onSuccess: (c) => { invalOr(qc); void qc.invalidateQueries({ queryKey: ['ipd-stay'] }); onDone?.(c.id); onClose(); },
   });
-  const valid = (edit || src) && (edit || isDoctor || !!f.surgeon_id) && procs.length > 0 && procs.every((p) => !p.laterality || p.side !== 'na');
+  // რა აკლია (ღილაკის გვერდით ჩანს — რატომ არ აქტიურდება)
+  const missing = [
+    !edit && !patient && !encounterId && !plannedId && 'პაციენტი',
+    !edit && !src && (patient || encounterId || plannedId) && 'ჰოსპიტალიზაცია / გეგმიური რიგი',
+    !procs.length && 'პროცედურა (აირჩიეთ სიიდან)',
+    procs.some((p) => p.laterality && p.side === 'na') && 'პროცედურის მხარე',
+    !edit && !isDoctor && !f.surgeon_id && 'ოპერატორი ქირურგი',
+  ].filter(Boolean) as string[];
+  const valid = missing.length === 0;
   return (
     <Modal title={edit ? `მოთხოვნის შეცვლა — ${edit.case_no}` : 'ოპერაციის მოთხოვნა'} onClose={onClose} width={860}
-      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button>
+      footer={<>{!valid && <span className="small grow" style={{ color: 'var(--warn-ink)' }}>შესავსებია: {missing.join(', ')}</span>}
+        <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
         <button className="btn primary" type="button" disabled={!valid || save.isPending} onClick={() => save.mutate()}>{edit ? 'შენახვა' : 'მოთხოვნის გაგზავნა'}</button></>}>
       {!edit && !encounterId && !plannedId && (
         <div className="stack" style={{ gap: 8 }}>
@@ -119,6 +128,10 @@ export function RequestDialog({ encounterId, plannedId, patient: initPatient, ed
 function ProcPicker({ procs, setProcs }: { procs: ProcLine[]; setProcs: (p: ProcLine[]) => void }) {
   const [q, setQ] = useState(''); const dq = useDebounced(q.trim(), 200);
   const r = useQuery({ queryKey: ['or-procs', dq], queryFn: () => api<Procedure[]>('/or/procedures', { query: { q: dq } }), enabled: dq.length >= 2 });
+  const [idx, setIdx] = useState(0);
+  const items = dq.length >= 2 ? (r.data ?? []).slice(0, 12) : [];
+  const none = dq.length >= 2 && !r.isFetching && r.isSuccess && !r.data.length;
+  const pending = q.trim().length > 0 && !none;
   const add = (p: Procedure) => {
     if (procs.some((x) => x.procedure_id === p.id)) return;
     setProcs([...procs, { procedure_id: p.id, code: p.code, name: p.name, laterality: p.laterality, side: 'na', is_primary: procs.length === 0, duration: p.default_duration_min }]);
@@ -138,11 +151,19 @@ function ProcPicker({ procs, setProcs }: { procs: ProcLine[]; setProcs: (p: Proc
           <td style={{ width: 40 }}><button className="icon-btn" type="button" aria-label="წაშლა" onClick={() => { const n = procs.filter((_, j) => j !== i); if (p.is_primary && n[0]) n[0] = { ...n[0], is_primary: true }; setProcs(n); }}>✕</button></td>
         </tr>))}</tbody></table>}
       <div style={{ position: 'relative' }}>
-        <input className="input" aria-label="პროცედურის ძებნა" placeholder="პროცედურის ძებნა: დასახელება, კოდი, NCSP" value={q} onChange={(e) => setQ(e.target.value)} />
-        {dq.length >= 2 && (r.data?.length ?? 0) > 0 && (
+        <input className="input" aria-label="პროცედურის ძებნა" placeholder="პროცედურის ძებნა: დასახელება, კოდი, NCSP — აირჩიეთ სიიდან" value={q}
+          onChange={(e) => { setQ(e.target.value); setIdx(0); }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, items.length - 1)); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
+            if (e.key === 'Enter' && items[idx]) { e.preventDefault(); add(items[idx]); setIdx(0); }
+          }} />
+        {none && <div className="alert warn small" style={{ marginTop: 6 }}>„{dq}“ — აქტიურ კატალოგში ვერ მოიძებნა. პროცედურას ამატებს admin: ადმინისტრირება → საოპერაციო → პროცედურების კატალოგი (ან CSV იმპორტი).</div>}
+        {pending && !items.length && !procs.length && dq.length < 2 && <span className="hint">მინიმუმ 2 სიმბოლო</span>}
+        {items.length > 0 && (
           <ul className="listbox" role="listbox" aria-label="პროცედურები" style={{ position: 'absolute', left: 0, right: 0, zIndex: 20 }}>
-            {r.data!.slice(0, 12).map((p) => (
-              <li key={p.id} role="option" aria-selected={false} onMouseDown={(e) => { e.preventDefault(); add(p); }}>
+            {items.map((p, i) => (
+              <li key={p.id} role="option" aria-selected={i === idx} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); add(p); setIdx(0); }}>
                 <span className="mono" style={{ width: 110, fontWeight: 600, color: 'var(--accent)', flexShrink: 0 }}>{p.code}</span>
                 <span style={{ fontSize: 13 }} className="grow">{p.name}{p.ncsp_code && <span className="muted"> · NCSP {p.ncsp_code}</span>}</span>
                 <span className="small muted">{p.specialty_name ?? ''} · {p.default_duration_min} წთ{p.laterality ? ' · მხარე' : ''}</span>

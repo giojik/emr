@@ -318,6 +318,11 @@ export class EndoscopyService {
   }
 
   async reviewPathology(requestId: string, user: AuthUser, ctx: AuditContext) {
+    if (!has(user, 'admin', 'endoscopist')) {
+      // 0049: ოპერაციის ბიოფსია — პასუხს ეცნობა ოპერატორი ქირურგი
+      const oc = await this.db.selectFrom('path_requests as r').innerJoin('or_cases as c', 'c.id', 'r.or_case_id').select('c.surgeon_id').where('r.id', '=', requestId).executeTakeFirst();
+      if (oc?.surgeon_id !== user.id) throw new ForbiddenException('პასუხის გაცნობა — ენდოსკოპისტი / ოპერატორი ქირურგი');
+    }
     const r = await this.db.updateTable('path_requests').set({ reviewed_by: user.id, reviewed_at: sql`now()` })
       .where('id', '=', requestId).where('status', '=', 'resulted').where('reviewed_at', 'is', null).returning('id').executeTakeFirst();
     if (!r) throw new ConflictException('პასუხი არ არის ან უკვე გაცნობილია');
@@ -333,11 +338,14 @@ export class EndoscopyService {
   }
 
   pathRequest(id: string, executor: Database | Trx = this.db) {
-    return executor.selectFrom('path_requests as r').innerJoin('patients as p', 'p.id', 'r.patient_id').innerJoin('dx_order_items as i', 'i.id', 'r.order_item_id')
-      .innerJoin('dx_services as s', 's.id', 'i.service_id').leftJoin('users as sb', 'sb.id', 'r.sent_by').leftJoin('users as rv', 'rv.id', 'r.reviewed_by')
-      .leftJoin('users as ob', 'ob.id', 'i.ordered_by').leftJoin('encounters as e', 'e.id', 'i.encounter_id')
-      .selectAll('r').select(['p.first_name', 'p.last_name', 'p.birth_date', 'p.gender', 'p.personal_number', 's.name as service_name', 'i.accession_number', 'i.performed_at',
-        'i.encounter_id', 'e.external_referral', sql<string | null>`sb.first_name || ' ' || sb.last_name`.as('sent_by_name'),
+    // 0049: მიმართვა ენდოსკოპიიდან (dx_order_items) ან ოპერაციიდან (or_cases)
+    return executor.selectFrom('path_requests as r').innerJoin('patients as p', 'p.id', 'r.patient_id').leftJoin('dx_order_items as i', 'i.id', 'r.order_item_id')
+      .leftJoin('dx_services as s', 's.id', 'i.service_id').leftJoin('users as sb', 'sb.id', 'r.sent_by').leftJoin('users as rv', 'rv.id', 'r.reviewed_by')
+      .leftJoin('or_cases as oc', 'oc.id', 'r.or_case_id')
+      .leftJoin('users as ob', (j) => j.on(sql<boolean>`ob.id = coalesce(i.ordered_by, oc.surgeon_id)`)).leftJoin('encounters as e', (j) => j.on(sql<boolean>`e.id = coalesce(i.encounter_id, oc.encounter_id)`))
+      .selectAll('r').select(['p.first_name', 'p.last_name', 'p.birth_date', 'p.gender', 'p.personal_number', sql<string>`coalesce(s.name, 'ოპერაცია ' || oc.case_no)`.as('service_name'), 'i.accession_number',
+        sql<string | null>`coalesce(i.performed_at, (SELECT t.at FROM or_case_times t WHERE t.case_id = oc.id AND t.kind = 'incision' AND t.superseded_by IS NULL))`.as('performed_at'),
+        sql<string | null>`coalesce(i.encounter_id, oc.encounter_id)`.as('encounter_id'), 'e.external_referral', sql<string | null>`sb.first_name || ' ' || sb.last_name`.as('sent_by_name'),
         sql<string | null>`rv.first_name || ' ' || rv.last_name`.as('reviewed_by_name'), sql<string | null>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),
         sql<number | null>`CASE WHEN r.status = 'sent' THEN (now()::date - r.sent_at::date) END`.as('days_waiting'),
         (eb) => jsonArrayFrom(eb.selectFrom('path_specimens as ps').selectAll('ps').whereRef('ps.request_id', '=', 'r.id').orderBy('ps.jar_no')).as('specimens')])
@@ -346,10 +354,11 @@ export class EndoscopyService {
 
   /** სია: draft (გასაგზავნი) | sent (პასუხს ელოდება; overdue — N დღეზე მეტი) | resulted (unreviewed — გასაცნობი) */
   async pathList(q: { tab: 'draft' | 'sent' | 'resulted'; overdueDays?: number; unreviewed?: boolean; search?: string }) {
-    let query = this.db.selectFrom('path_requests as r').innerJoin('patients as p', 'p.id', 'r.patient_id').innerJoin('dx_order_items as i', 'i.id', 'r.order_item_id')
-      .innerJoin('dx_services as s', 's.id', 'i.service_id')
-      .select(['r.id', 'r.order_item_id', 'r.request_no', 'r.status', 'r.external_lab', 'r.sent_at', 'r.result_received_at', 'r.reviewed_at', 'r.created_at',
-        'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'p.gender', 's.name as service_name', 'i.performed_at',
+    let query = this.db.selectFrom('path_requests as r').innerJoin('patients as p', 'p.id', 'r.patient_id').leftJoin('dx_order_items as i', 'i.id', 'r.order_item_id')
+      .leftJoin('dx_services as s', 's.id', 'i.service_id').leftJoin('or_cases as oc', 'oc.id', 'r.or_case_id')
+      .select(['r.id', 'r.order_item_id', 'r.or_case_id', 'r.request_no', 'r.status', 'r.external_lab', 'r.sent_at', 'r.result_received_at', 'r.reviewed_at', 'r.created_at',
+        'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'p.gender', sql<string>`coalesce(s.name, 'ოპერაცია ' || oc.case_no)`.as('service_name'),
+        sql<string | null>`coalesce(i.performed_at, (SELECT t.at FROM or_case_times t WHERE t.case_id = oc.id AND t.kind = 'incision' AND t.superseded_by IS NULL))`.as('performed_at'),
         sql<number>`(SELECT count(*)::int FROM path_specimens ps WHERE ps.request_id = r.id)`.as('jars'),
         sql<number | null>`CASE WHEN r.status = 'sent' THEN (now()::date - r.sent_at::date) END`.as('days_waiting')])
       .where('r.status', '=', q.tab);

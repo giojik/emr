@@ -16,7 +16,7 @@ import { StockTransfersService } from './stock-transfers';
 
 const TZ = loadEnv().CLINIC_TZ;
 /** მოწმე / ცვლის ჩაბარება: სამედიცინო ან საწყობის თანამშრომელი */
-const WITNESS_CAPS = ['nurse', 'doctor', 'pharmacist', 'admin', 'stock_manager', 'storekeeper', 'endoscopy_nurse', 'lab_doctor'];
+const WITNESS_CAPS = ['nurse', 'doctor', 'pharmacist', 'admin', 'stock_manager', 'storekeeper', 'endoscopy_nurse', 'lab_doctor', 'anesthesiologist', 'or_nurse'];
 /** მოწმის / ცარიელი ამპულის კლასები — კლინიკის პარამეტრი (0038, system_modules.stock); ცარიელი სია → '-' (არცერთი) */
 export const cls = (x: string[]) => (x.length ? x : ['-']);
 /** ცარიელების მიღება აფთიაქში */

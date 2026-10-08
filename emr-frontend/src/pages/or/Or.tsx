@@ -6,6 +6,8 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Loading } from '../../components/ui';
 import { dateGe, dayTitle, hhmm, shiftDay, todayISO } from '../../lib/format';
 import { RequestDialog, ScheduleDialog } from './Dialogs';
+import Library from './Library';
+import Roster, { DayDialog, useRoster } from './Roster';
 import { ANESTHESIA_KA, CASE_ST, caseLink, chip, hm, PHASE_KA, URGENCY, useOrModule, useOrSetup, type Board, type CaseRow } from './types';
 
 /** საოპერაციო ბლოკი (0048): დაფა (დღე / კვირა), რიგი, ჩემი ოპერაციები */
@@ -13,7 +15,8 @@ export default function Or() {
   const { user } = useAuth(); const mod = useOrModule();
   const [sp] = useSearchParams();
   const tab = sp.get('tab') ?? (can(user, 'or_schedule', 'admin') ? 'board' : can(user, 'doctor', 'anesthesiologist') ? 'my' : 'board');
-  const tabs: [string, string][] = [['board', 'ბლოკის დაფა'], ['queue', 'რიგი / მოთხოვნები'], ['my', 'ჩემი ოპერაციები']];
+  const tabs: [string, string][] = [['board', 'ბლოკის დაფა'], ['queue', 'რიგი / მოთხოვნები'], ['my', 'ჩემი ოპერაციები'], ['roster', 'ოთახის გუნდი']];
+  if (can(user, 'admin', 'doctor', 'or_nurse')) tabs.push(['library', 'შაბლონები / ბარათები']);
   if (mod.loading) return <div className="content"><Loading /></div>;
   return (
     <>
@@ -25,7 +28,7 @@ export default function Or() {
         </nav>
       </header>
       {!mod.enabled ? <div className="content"><div className="card empty">მოდული „საოპერაციო ბლოკი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'queue' ? <Queue /> : tab === 'my' ? <Mine /> : <BoardView />}
+        : tab === 'queue' ? <Queue /> : tab === 'my' ? <Mine /> : tab === 'roster' ? <Roster /> : tab === 'library' ? <Library /> : <BoardView />}
     </>
   );
 }
@@ -116,6 +119,10 @@ function DayGrid({ b }: { b: Board }) {
   const today = b.date === todayISO();
   const nowMin = localMin(new Date(now).toISOString());
   const hours = []; for (let m = from; m <= to; m += 60) hours.push(m);
+  // ოთახის დღის გუნდი (0049): სათაურთან; მმართველს — ერთი დაწკაპებით „დღეს სხვა ოთახში / არ არის“
+  const roster = useRoster(b.date, b.room_teams && b.date >= todayISO());
+  const [move, setMove] = useState<{ user_id: string } | null>(null);
+  const canMove = (grp: string) => !!roster.data && (grp === 'anesthesia' ? roster.data.can.anesthesia : roster.data.can.nursing);
   const pos = (c: CaseRow) => {
     const s = Math.max(0, (new Date(c.scheduled_start!).getTime() - dayStart) / 60000);
     const e = Math.min(24 * 60, (new Date(c.scheduled_end!).getTime() - dayStart) / 60000);
@@ -129,6 +136,15 @@ function DayGrid({ b }: { b: Board }) {
           <div key={r.id} style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', borderLeft: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 3 }}>
             <strong>{r.code}</strong> <span className="small muted">{r.name}</span>
             <div className="small muted">{hm(r.work_start)}–{hm(r.work_end)}{r.emergency_only ? ' · გადაუდებელი' : ''}</div>
+            {b.room_teams && r.team.length > 0 && <div className="row" style={{ gap: 3, flexWrap: 'wrap', marginTop: 4 }} aria-label={`დღის გუნდი — ${r.code}`}>
+              {r.team.map((m) => {
+                const label = <>{m.name.split(' ')[0]} <span className="muted">· {m.role_name}</span></>;
+                const st = { height: 20, fontSize: 11, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', lineHeight: '20px' } as const;
+                return canMove(m.grp)
+                  ? <button key={`${m.user_id}${m.role_code}`} type="button" className={`chip ${m.source === 'day' ? 'info' : ''}`} style={{ ...st, cursor: 'pointer', border: 0 }}
+                      title={`${m.name} — სხვა ოთახში დღეს / დღეს არ არის`} onClick={() => setMove({ user_id: m.user_id })}>{label}</button>
+                  : <span key={`${m.user_id}${m.role_code}`} className={`chip ${m.source === 'day' ? 'info' : ''}`} style={st} title={m.name}>{label}</span>; })}
+            </div>}
           </div>))}
         <div style={{ position: 'relative', height }}>
           {hours.map((m) => <span key={m} className="small muted mono" style={{ position: 'absolute', top: Math.max(2, (m - from) * PX - 8), right: 8 }}>{String(m / 60).padStart(2, '0')}:00</span>)}
@@ -169,6 +185,7 @@ function DayGrid({ b }: { b: Board }) {
             </div>);
         })}
       </div>
+      {move && roster.data && <DayDialog r={roster.data} init={move} onClose={() => setMove(null)} />}
     </div>
   );
 }

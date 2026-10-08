@@ -755,6 +755,7 @@ export interface EncounterVitals {
   notes: string | null;
   o2_flow: Numeric | null;
   o2_supplement: boolean | null;
+  or_case_id: string | null;
   pain: number | null;
   pupil_l: Numeric | null;
   pupil_l_react: string | null;
@@ -905,6 +906,7 @@ export interface FluidEntries {
   id: Generated<string>;
   mar_entry_id: string | null;
   note: string | null;
+  or_case_id: string | null;
   order_id: string | null;
   patient_id: string;
   recorded_at: Timestamp;
@@ -1720,6 +1722,7 @@ export interface LinesDrains {
   inserted_by: string | null;
   inserted_where: string | null;
   kind: string;
+  or_case_id: string | null;
   patient_id: string;
   removal_reason: string | null;
   removed_at: Timestamp | null;
@@ -2034,6 +2037,48 @@ export interface NursingNotes {
   voided_by: string | null;
 }
 
+export interface OrAnesthesiaMeds {
+  case_id: string;
+  controlled: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  dose: Numeric;
+  dose_unit: string | null;
+  dose_wasted: Numeric | null;
+  given_at: Timestamp;
+  id: Generated<string>;
+  item_id: string;
+  name: string;
+  note: string | null;
+  qty_base: Numeric;
+  recorded_by: string;
+  route_code: string | null;
+  stock_doc_id: string | null;
+  witness_id: string | null;
+}
+
+export interface OrAnesthesiaRecords {
+  airway_device: string | null;
+  airway_notes: string | null;
+  anesthesia_type: string;
+  case_id: string;
+  complications: string | null;
+  cormack_lehane: number | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  difficult_airway: Generated<boolean>;
+  ett_size: Numeric | null;
+  id: Generated<string>;
+  intubation_attempts: number | null;
+  notes: string | null;
+  patient_id: string;
+  position: string | null;
+  signed_at: Timestamp | null;
+  signed_by: string | null;
+  status: Generated<string>;
+  technique_notes: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface OrCancelReasons {
   code: string;
   is_active: Generated<boolean>;
@@ -2048,6 +2093,35 @@ export interface OrCaseEvents {
   id: Generated<Int8>;
   kind: string;
   user_id: string | null;
+}
+
+export interface OrCaseItems {
+  added_at: Generated<Timestamp>;
+  added_by: string;
+  case_id: string;
+  id: Generated<string>;
+  implant_site: string | null;
+  is_implant: Generated<boolean>;
+  item_id: string;
+  lot_id: string | null;
+  note: string | null;
+  posted_at: Timestamp | null;
+  posted_by: string | null;
+  qty: Numeric;
+  source: Generated<string>;
+  stock_doc_id: string | null;
+}
+
+export interface OrCasePacks {
+  added_at: Generated<Timestamp>;
+  added_by: string;
+  case_id: string;
+  id: Generated<string>;
+  pack_id: string;
+  remove_reason: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  used_at: Timestamp | null;
 }
 
 export interface OrCaseProcedures {
@@ -2117,12 +2191,14 @@ export interface OrCases {
 export interface OrCaseTeam {
   added_at: Generated<Timestamp>;
   added_by: string;
+  auto: Generated<boolean>;
   case_id: string;
   id: Generated<string>;
   in_at: Timestamp | null;
   out_at: Timestamp | null;
   remove_reason: string | null;
   removed_at: Timestamp | null;
+  removed_auto: Generated<boolean>;
   removed_by: string | null;
   replaced_by: string | null;
   role_code: string;
@@ -2139,6 +2215,85 @@ export interface OrCaseTimes {
   kind: string;
   recorded_by: string;
   superseded_by: string | null;
+}
+
+export interface OrCounts {
+  case_id: string;
+  correct: boolean;
+  done_at: Generated<Timestamp>;
+  done_by: string;
+  explanation: string | null;
+  id: Generated<string>;
+  lines: Json;
+  phase: string;
+  second_by: string | null;
+  xray: Generated<boolean>;
+}
+
+export interface OrNoteTemplates {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  description: string | null;
+  findings: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  owner_id: string | null;
+  procedure_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OrOpNotes {
+  amend_reason: string | null;
+  amends_id: string | null;
+  author_id: string;
+  blood_loss_ml: number | null;
+  case_id: string;
+  complications: string | null;
+  complications_none: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  drains: Generated<Json>;
+  findings: string | null;
+  id: Generated<string>;
+  implants: Generated<Json>;
+  path_clinical_info: string | null;
+  path_lab: string | null;
+  patient_id: string;
+  postop_icd10_code: string | null;
+  postop_icd10_title: string | null;
+  preop_icd10_code: string | null;
+  preop_icd10_title: string | null;
+  procedures: Generated<Json>;
+  root_id: string | null;
+  signed_at: Timestamp | null;
+  signed_by: string | null;
+  specimens: Generated<Json>;
+  status: Generated<string>;
+  superseded_at: Timestamp | null;
+  template_id: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface OrPreferenceCardItems {
+  card_id: string;
+  id: Generated<string>;
+  item_id: string;
+  note: string | null;
+  qty: Numeric;
+  sort_order: Generated<number>;
+}
+
+export interface OrPreferenceCards {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  notes: string | null;
+  procedure_id: string;
+  surgeon_id: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
 }
 
 export interface OrPreopAssessments {
@@ -2211,6 +2366,30 @@ export interface OrRooms {
   work_start: Generated<string>;
 }
 
+export interface OrRoomStaff {
+  added_at: Generated<Timestamp>;
+  added_by: string;
+  id: Generated<string>;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  role_code: string;
+  room_id: string;
+  user_id: string;
+}
+
+export interface OrRoomStaffDays {
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  day: string;
+  id: Generated<string>;
+  note: string | null;
+  role_code: string | null;
+  room_id: string | null;
+  user_id: string;
+}
+
 export interface OrSpecialties {
   code: string;
   is_active: Generated<boolean>;
@@ -2257,7 +2436,8 @@ export interface PathRequests {
   created_by: string;
   external_lab: string | null;
   id: Generated<string>;
-  order_item_id: string;
+  or_case_id: string | null;
+  order_item_id: string | null;
   patient_id: string;
   request_no: string;
   result_entered_by: string | null;
@@ -2339,6 +2519,26 @@ export interface PatientFiles {
   sha256: string;
   size_bytes: number;
   uploaded_by: string | null;
+}
+
+export interface PatientImplants {
+  case_id: string | null;
+  created_at: Generated<Timestamp>;
+  encounter_id: string | null;
+  expires_on: string | null;
+  id: Generated<string>;
+  implanted_at: Timestamp;
+  item_id: string | null;
+  lot_no: string;
+  manufacturer: string | null;
+  name: string;
+  patient_id: string;
+  recorded_by: string;
+  removed_at: Timestamp | null;
+  removed_reason: string | null;
+  serial_no: string;
+  site: string | null;
+  stock_doc_line_id: string | null;
 }
 
 export interface Patients {
@@ -3146,16 +3346,27 @@ export interface DB {
   micro_reports: MicroReports;
   note_templates: NoteTemplates;
   nursing_notes: NursingNotes;
+  or_anesthesia_meds: OrAnesthesiaMeds;
+  or_anesthesia_records: OrAnesthesiaRecords;
   or_cancel_reasons: OrCancelReasons;
   or_case_events: OrCaseEvents;
+  or_case_items: OrCaseItems;
+  or_case_packs: OrCasePacks;
   or_case_procedures: OrCaseProcedures;
   or_case_readiness: OrCaseReadiness;
   or_case_team: OrCaseTeam;
   or_case_times: OrCaseTimes;
   or_cases: OrCases;
+  or_counts: OrCounts;
+  or_note_templates: OrNoteTemplates;
+  or_op_notes: OrOpNotes;
+  or_preference_card_items: OrPreferenceCardItems;
+  or_preference_cards: OrPreferenceCards;
   or_preop_assessments: OrPreopAssessments;
   or_procedures: OrProcedures;
   or_readiness_items: OrReadinessItems;
+  or_room_staff: OrRoomStaff;
+  or_room_staff_days: OrRoomStaffDays;
   or_rooms: OrRooms;
   or_specialties: OrSpecialties;
   or_team_roles: OrTeamRoles;
@@ -3167,6 +3378,7 @@ export interface DB {
   patient_chronic_conditions: PatientChronicConditions;
   patient_consents: PatientConsents;
   patient_files: PatientFiles;
+  patient_implants: PatientImplants;
   patients: Patients;
   payers: Payers;
   payments: Payments;
