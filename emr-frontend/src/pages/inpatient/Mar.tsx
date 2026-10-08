@@ -5,6 +5,7 @@ import { api, ApiError } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dayTitle, hhmm, localISO, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { TaskDialog } from './Nursing';
+import { doseToMlH, UNIT_KA as RATE_KA } from './Icu';
 
 // ================================================================= ტიპები (0043 MAR)
 type MStatus = 'due' | 'given' | 'partial' | 'held' | 'refused' | 'not_given' | 'missed' | 'cancelled';
@@ -24,6 +25,9 @@ export interface MarOrder {
   verify_status: string; approval_status: string; prn_reason: string | null; prn_max_per_day: number | null; prn_min_interval_h: string | null; rate_ml_h: string | null;
   instructions: string | null; high_alert: boolean | null; controlled_class: string | null; generic_id: string | null; title: string;
   last_given_at: string | null; infusion_state: InfAction | null;
+  // 0047: ტიტრაცია
+  titratable?: boolean; dose_rate?: string | null; dose_rate_unit?: string | null; conc_amount?: string | null; conc_unit?: string | null; conc_volume_ml?: string | null;
+  titrate_min?: string | null; titrate_max?: string | null; titrate_goal?: string | null; weight_kg?: string | null; current_dose_rate?: string | null; current_rate_ml_h?: string | null;
   nursing_task?: 'vitals' | 'fluid' | 'scale' | null; task_scale_code?: string | null;
 }
 interface Common { window_min: number; can_document: boolean; barcode: 'off' | 'optional' | 'required'; double_check: boolean }
@@ -153,6 +157,9 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone, onTask }: { ord
   const [site, setSite] = useState(''); const [reason, setReason] = useState(''); const [postpone, setPostpone] = useState('');
   const [action, setAction] = useState<InfAction>(o.infusion_state && o.infusion_state !== 'stop' ? 'bag' : 'start');
   const [rate, setRate] = useState(o.rate_ml_h ? n(o.rate_ml_h) : '');
+  const titr = inf && !!o.dose_rate_unit && !!o.conc_amount;
+  const [doseRate, setDoseRate] = useState(o.current_dose_rate ? n(o.current_dose_rate) : o.dose_rate ? n(o.dose_rate) : '');
+  const titrMl = titr && doseRate ? doseToMlH(Number(doseRate), o.dose_rate_unit!, { amount: Number(o.conc_amount), unit: o.conc_unit ?? '', volume_ml: Number(o.conc_volume_ml) }, o.weight_kg ? Number(o.weight_kg) : null) : null;
   const [item, setItem] = useState(''); const [qty, setQty] = useState('');
   const [scanP, setScanP] = useState(''); const [scanM, setScanM] = useState('');
   const [dc, setDc] = useState({ username: '', password: '' }); const [wit, setWit] = useState({ username: '', password: '' });
@@ -171,7 +178,7 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone, onTask }: { ord
       if (site.trim()) b.site = site.trim();
       if (reason.trim()) b.reason = reason.trim();
       if (outcome === 'held' && postpone) b.postponed_to = new Date(localISO(postpone < at ? shiftDay(today, 1) : today, postpone)).toISOString();
-      if (inf) { b.infusion_action = action; if (rate) b.rate_ml_h = Number(rate); }
+      if (inf) { b.infusion_action = action; if (titr) { if ((action === 'start' || action === 'rate' || action === 'bag') && doseRate) b.dose_rate = Number(doseRate); } else if (rate) b.rate_ml_h = Number(rate); }
       if (stockNeeded && item) b.item_id = item;
       if (stockNeeded && qty) b.qty_base = Number(qty);
       if (showScan && scanP.trim()) b.scanned_patient = scanP.trim();
@@ -192,7 +199,7 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone, onTask }: { ord
   const st = stock.data;
   const ready = (given || reason.trim().length >= 2) && (outcome !== 'partial' || (!!dose && reason.trim().length >= 2)) && (!given || !med || inf || !!dose)
     && (!needDc || (dc.username && dc.password)) && (!needWit || (wit.username && wit.password)) && (!checks || ovr.trim().length >= 5)
-    && (ctx.barcode !== 'required' || !showScan || !given || (scanP.trim() && scanM.trim())) && (!inf || action !== 'rate' || !!rate);
+    && (ctx.barcode !== 'required' || !showScan || !given || (scanP.trim() && scanM.trim())) && (!inf || action !== 'rate' || (titr ? !!doseRate && reason.trim().length >= 2 : !!rate));
   const sched = entry?.scheduled_at;
   return (
     <Modal title={`${o.title}${sched ? ` — ${hhmm(sched)}` : ''}`} onClose={onClose} width={680}
@@ -215,10 +222,14 @@ function DocumentDialog({ order: o, entry, ctx, onClose, onDone, onTask }: { ord
           <Field label="დრო" htmlFor="mar-at" hint={sched ? `დაგეგმილი ${hhmm(sched)}, ±${ctx.window_min} წთ` : undefined}>
             <input id="mar-at" className="input" type="time" value={at} onChange={(e) => { setAt(e.target.value); setChecks(null); }} /></Field>
           {med && !inf && given && <Field label={`დოზა (${unit(o.dose_unit)})`} htmlFor="mar-d" required><input id="mar-d" className="input mono" type="number" min={0} step="any" value={dose} onChange={(e) => setDose(e.target.value)} /></Field>}
-          {inf && (action === 'start' || action === 'rate') && <Field label="სიჩქარე (მლ/სთ)" htmlFor="mar-r" required={action === 'rate'}><input id="mar-r" className="input mono" type="number" min={0.1} step="any" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>}
+          {inf && !titr && (action === 'start' || action === 'rate') && <Field label="სიჩქარე (მლ/სთ)" htmlFor="mar-r" required={action === 'rate'}><input id="mar-r" className="input mono" type="number" min={0.1} step="any" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>}
+          {titr && (action === 'start' || action === 'rate') && <Field label={`დოზა (${RATE_KA[o.dose_rate_unit!] ?? o.dose_rate_unit})`} htmlFor="mar-dr" required={action === 'rate'}
+            hint={`${titrMl !== null ? `≈ ${titrMl} მლ/სთ` : ''}${o.titrate_min || o.titrate_max ? ` · დიაპაზონი ${n(o.titrate_min) || '…'}–${n(o.titrate_max) || '…'}` : ''}${o.titrate_goal ? ` · ${o.titrate_goal}` : ''}`}>
+            <input id="mar-dr" className="input mono" type="number" min={0} step="any" value={doseRate} onChange={(e) => { setDoseRate(e.target.value); setChecks(null); }} /></Field>}
           {med && given && <Field label="ადგილი" htmlFor="mar-s"><input id="mar-s" className="input" value={site} onChange={(e) => setSite(e.target.value)} placeholder={o.route_code === 'IM' || o.route_code === 'SC' ? 'მაგ. მარცხენა მხარი' : ''} /></Field>}
           {outcome === 'held' && <Field label="გადადება (დრო)" htmlFor="mar-p" hint="ახალი სლოტი; ცარიელი — გარეშე"><input id="mar-p" className="input" type="time" value={postpone} onChange={(e) => setPostpone(e.target.value)} /></Field>}
         </div>
+        {titr && action === 'rate' && <Field label="ცვლილების მიზეზი" htmlFor="mar-tr" required><input id="mar-tr" className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="მაგ. MAP 58" /></Field>}
         {(!given || outcome === 'partial') && <Field label="მიზეზი" htmlFor="mar-re" required>
           <textarea id="mar-re" className="textarea" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={outcome === 'refused' ? 'რა თქვა პაციენტმა' : 'მაგ. NPO, გამოკვლევაზეა, წნევა დაბალია'} /></Field>}
 

@@ -18,6 +18,7 @@ import { StockOpsService } from '../stock/stock-ops';
 import { StockModule } from '../stock/stock.module';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { ensureMarSlots } from './mar-schedule';
+import { doseRateToMlH, mlHToDoseRate, type ConcUnit, type DoseRateUnit } from './icu-calc';
 
 type Trx = Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -44,6 +45,8 @@ export class MarDocumentDto {
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
   @IsOptional() @IsIn(INFUSION) infusion_action?: (typeof INFUSION)[number];
   @IsOptional() @IsNumber() @Min(0.1) @Max(2_000) rate_ml_h?: number;
+  // 0047: ტიტრაცია — დოზის სიჩქარე დანიშნულების ერთეულში (მლ/სთ ითვლება ავტომატურად)
+  @IsOptional() @IsNumber() @Min(0) @Max(100_000) dose_rate?: number;
 }
 export class MarVoidDto { @IsString() @Length(3, 1000) reason: string }
 
@@ -136,6 +139,34 @@ export class MarService {
       if (p <= now || p > now + 24 * 3_600_000) throw new BadRequestException('გადადება: მომავალი 24 სთ-ის ფარგლებში');
     }
     if (infusion && !dto.infusion_action) throw new BadRequestException('ინფუზია: მიუთითეთ მოქმედება');
+    // 0047: ტიტრაცია (დოზის სიჩქარე ⇄ მლ/სთ)
+    let rate: number | null = infusion ? (dto.rate_ml_h ?? null) : null;
+    let doseRate: number | null = null;
+    const titr = infusion && !!o.dose_rate_unit && !!o.conc_amount && !!o.conc_unit && !!o.conc_volume_ml;
+    const flowing = infusion && ['start', 'rate', 'bag'].includes(dto.infusion_action ?? '');
+    if (!titr && dto.dose_rate !== undefined) throw new BadRequestException('დოზის სიჩქარე — მხოლოდ ტიტრაციის დანიშნულებაზე');
+    if (titr && flowing) {
+      const conc = { amount: Number(o.conc_amount), unit: o.conc_unit as ConcUnit, volume_ml: Number(o.conc_volume_ml) };
+      const unit = o.dose_rate_unit as DoseRateUnit;
+      let w = o.weight_kg ? Number(o.weight_kg) : null;
+      if (!w && unit.includes('/kg/')) {
+        const ep = await this.db.selectFrom('icu_episodes').select('admission_weight_kg').where('encounter_id', '=', o.encounter_id).where('ended_at', 'is', null).executeTakeFirst();
+        w = ep?.admission_weight_kg ? Number(ep.admission_weight_kg) : null;
+      }
+      try {
+        if (dto.dose_rate !== undefined) { doseRate = dto.dose_rate; rate = dto.dose_rate > 0 ? doseRateToMlH(dto.dose_rate, unit, conc, w) : null; }
+        else if (dto.rate_ml_h !== undefined) { rate = dto.rate_ml_h; doseRate = mlHToDoseRate(dto.rate_ml_h, unit, conc, w); }
+        else if (dto.infusion_action === 'start') { doseRate = Number(o.dose_rate); rate = Number(o.rate_ml_h); }
+      } catch (e) { throw new BadRequestException((e as Error).message); }
+      if (dto.infusion_action === 'rate' && doseRate === null) throw new BadRequestException('სიჩქარის ცვლილება: მიუთითეთ ახალი დოზა ან მლ/სთ');
+      if (rate !== null && (rate < 0.1 || rate > 2_000)) throw new BadRequestException(`სიჩქარე (${rate} მლ/სთ) დასაშვებ ზღვრებს სცდება`);
+      if (dto.infusion_action === 'rate' && doseRate === 0) throw new BadRequestException('დოზა 0 — გამოიყენეთ „შეჩერება“');
+    }
+    if (titr && dto.infusion_action === 'rate') {
+      const icu = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
+      const need = !icu?.enabled || (icu.settings as Record<string, unknown>)?.titration_reason !== false;
+      if (need && (dto.reason?.trim().length ?? 0) < 2) throw new BadRequestException({ code: 'MAR_TITRATION_REASON', message: 'ტიტრაცია: მიუთითეთ ცვლილების მიზეზი (მაგ. MAP 58)' });
+    }
     if (o.nursing_task && given) throw new BadRequestException({ code: 'MAR_TASK_FORM', message: 'შეავსეთ შესაბამისი ფორმა (ვიტალები / ბალანსი / შკალა) — დავალება ავტომატურად შესრულდება' });
 
     const checks: MarCheck[] = [];
@@ -192,6 +223,10 @@ export class MarService {
           }
         }
       }
+      // 0047: ტიტრაციის დიაპაზონი
+      if (titr && doseRate !== null && ((o.titrate_min !== null && doseRate < Number(o.titrate_min)) || (o.titrate_max !== null && doseRate > Number(o.titrate_max)))) {
+        checks.push({ code: 'titration_range', message: `დოზა ${doseRate} ${o.dose_rate_unit} დანიშნულ დიაპაზონს გარეთაა (${o.titrate_min !== null ? Number(o.titrate_min) : '…'}–${o.titrate_max !== null ? Number(o.titrate_max) : '…'})` });
+      }
       // დროის ფანჯარა (სლოტი)
       if (slot?.scheduled_at) {
         const diff = (at.getTime() - new Date(slot.scheduled_at).getTime()) / 60_000;
@@ -234,7 +269,8 @@ export class MarService {
       status: dto.outcome, documented_at: at, documented_by: u.id, recorded_at: new Date(),
       dose_given: given && dose !== null ? String(dose) : null, dose_unit: given ? o.dose_unit : null, route_code: given ? (dto.route_code ?? o.route_code) : null,
       site: dto.site?.trim() || null, timing, reason: dto.reason?.trim() || null, postponed_to: dto.postponed_to ? new Date(dto.postponed_to) : null,
-      rate_ml_h: infusion ? String(dto.rate_ml_h ?? o.rate_ml_h) : null, no_stock: noStock, double_check_by: dbl?.id ?? null,
+      rate_ml_h: infusion ? (rate !== null ? String(rate) : flowing || !titr ? String(dto.rate_ml_h ?? o.rate_ml_h) : null) : null, dose_rate: doseRate !== null ? String(doseRate) : null,
+      no_stock: noStock, double_check_by: dbl?.id ?? null,
       scanned_patient: scannedPatient, scanned_med: scannedMed, override_reason: checks.length ? dto.override_reason!.trim() : null, warnings: JSON.stringify(checks),
     };
     let entryId = slot?.id ?? '';
@@ -253,7 +289,8 @@ export class MarService {
           VALUES (${o.id}, ${o.encounter_id}, ${o.patient_id}, ${new Date(dto.postponed_to)}, 'postponed', 'due')
           ON CONFLICT (order_id, scheduled_at) WHERE voided_at IS NULL AND scheduled_at IS NOT NULL DO NOTHING`.execute(trx);
       }
-      await trx.insertInto('med_order_events').values({ order_id: o.id, kind: 'administered', data: JSON.stringify({ entry_id: entryId, outcome: dto.outcome, dose, action: dto.infusion_action ?? null }), user_id: u.id }).execute();
+      await trx.insertInto('med_order_events').values({ order_id: o.id, kind: 'administered', data: JSON.stringify({ entry_id: entryId, outcome: dto.outcome, dose, action: dto.infusion_action ?? null,
+        ...(infusion && { rate_ml_h: rate, dose_rate: doseRate, reason: dto.reason?.trim() || null }) }), user_id: u.id }).execute();
       // ერთჯერადი — მიცემისას სრულდება
       if (given && o.order_type === 'once') {
         await trx.updateTable('med_orders').set({ status: 'completed', stopped_at: sql`now()` }).where('id', '=', o.id).where('status', '=', 'active').execute();
@@ -323,6 +360,9 @@ export class MarService {
       .select(['o.id', 'o.encounter_id', 'o.category', 'o.order_type', 'o.dose', 'o.dose_unit', 'o.route_code', 'o.status', 'o.verify_status', 'o.approval_status', 'o.prn_reason',
         'o.prn_max_per_day', 'o.prn_min_interval_h', 'o.rate_ml_h', 'o.instructions', 'o.start_at', 'o.end_at', 'g.high_alert', 'g.controlled_class', 'r.name as route_name',
         'fq.name as frequency_name', 'o.generic_id', 'o.nursing_task', 'o.task_scale_code',
+        'o.titratable', 'o.dose_rate', 'o.dose_rate_unit', 'o.conc_amount', 'o.conc_unit', 'o.conc_volume_ml', 'o.titrate_min', 'o.titrate_max', 'o.titrate_goal', 'o.weight_kg',
+        sql<string | null>`(SELECT m.dose_rate FROM mar_entries m WHERE m.order_id = o.id AND m.source = 'infusion' AND m.voided_at IS NULL ORDER BY m.documented_at DESC LIMIT 1)`.as('current_dose_rate'),
+        sql<string | null>`(SELECT m.rate_ml_h FROM mar_entries m WHERE m.order_id = o.id AND m.source = 'infusion' AND m.voided_at IS NULL ORDER BY m.documented_at DESC LIMIT 1)`.as('current_rate_ml_h'),
         sql<string>`CASE WHEN o.category = 'medication' THEN coalesce(g.inn || coalesce(' ' || g.strength, '') || coalesce(', ' || f.name, ''), o.drug_text) ELSE o.text END`.as('title'),
         sql<string | null>`(SELECT max(m.documented_at) FROM mar_entries m WHERE m.order_id = o.id AND m.status IN ('given', 'partial') AND m.voided_at IS NULL)`.as('last_given_at'),
         sql<string | null>`(SELECT m.infusion_action FROM mar_entries m WHERE m.order_id = o.id AND m.source = 'infusion' AND m.voided_at IS NULL ORDER BY m.documented_at DESC LIMIT 1)`.as('infusion_state')]);

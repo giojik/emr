@@ -14,9 +14,9 @@ import type { DB } from '../database/db';
 type Ex = Kysely<DB> | Transaction<DB>;
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-export const LINE_CATEGORIES = ['bed', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
+export const LINE_CATEGORIES = ['bed', 'ventilation', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
 export const CATEGORY_KA: Record<string, string> = {
-  bed: 'საწოლდღე', service: 'მომსახურება', consult: 'კონსულტაცია', lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია',
+  bed: 'საწოლდღე', ventilation: 'ხელოვნური ვენტილაცია', service: 'მომსახურება', consult: 'კონსულტაცია', lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია',
   medication: 'მედიკამენტები', supply: 'სამედიცინო მასალა', implant: 'იმპლანტები', package: 'პაკეტი', other: 'სხვა',
 };
 export const PAYER_KIND_KA: Record<string, string> = { insurance: 'დაზღვევა', state: 'სახელმწიფო პროგრამა', other: 'სხვა' };

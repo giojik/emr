@@ -14,6 +14,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import type { DB } from '../database/db';
 import { InjectDb, type Database } from '../database/database.module';
+import { compatible, CONC_UNITS, DOSE_RATE_UNITS, doseRateToMlH, type ConcUnit, type DoseRateUnit } from './icu-calc';
 import { NotificationsService } from '../notifications/notifications';
 import { PharmacyCatalogService } from '../stock/pharmacy-catalog';
 import { StockModule } from '../stock/stock.module';
@@ -57,6 +58,16 @@ export class OrderDto {
   // 0044: მოვლის დანიშნულების ტიპი — MAR-ში ჩაწერა ხსნის შესაბამის ფორმას
   @IsOptional() @IsIn(['vitals', 'fluid', 'scale', 'other']) nursing_task?: 'vitals' | 'fluid' | 'scale' | 'other';
   @IsOptional() @IsString() @Length(2, 20) task_scale_code?: string;
+  // 0047: ვაზოაქტიური ინფუზია / ტიტრაცია — დოზის სიჩქარე + კონცენტრაცია → მლ/სთ ავტომატურად
+  @IsOptional() @IsBoolean() titratable?: boolean;
+  @IsOptional() @IsNumber() @Min(0.0001) @Max(100_000) dose_rate?: number;
+  @IsOptional() @IsIn(DOSE_RATE_UNITS) dose_rate_unit?: DoseRateUnit;
+  @IsOptional() @IsNumber() @Min(0.0001) @Max(1_000_000) conc_amount?: number;
+  @IsOptional() @IsIn(CONC_UNITS) conc_unit?: ConcUnit;
+  @IsOptional() @IsNumber() @Min(1) @Max(5_000) conc_volume_ml?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(100_000) titrate_min?: number;
+  @IsOptional() @IsNumber() @Min(0.0001) @Max(100_000) titrate_max?: number;
+  @IsOptional() @IsString() @MaxLength(300) titrate_goal?: string;
   // შემოწმებების დადასტურება
   @IsOptional() @IsBoolean() ack?: boolean;
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
@@ -205,18 +216,41 @@ export class OrdersService {
       freq = await this.frequency(dto.frequency_code, ex);
     }
     if (dto.order_type === 'prn' && !dto.prn_reason?.trim()) throw new BadRequestException('PRN: მიუთითეთ ჩვენება (მაგ. ტკივილი > 5)');
-    if (dto.order_type === 'continuous' && !dto.rate_ml_h) throw new BadRequestException('უწყვეტი ინფუზია: სიჩქარე (მლ/სთ) სავალდებულოა');
+    if (dto.order_type === 'continuous' && !dto.rate_ml_h && !dto.dose_rate) throw new BadRequestException('უწყვეტი ინფუზია: სიჩქარე (მლ/სთ ან დოზა) სავალდებულოა');
+    const titr = dto.dose_rate !== undefined || dto.titratable || dto.dose_rate_unit || dto.conc_amount;
+    if (titr) {
+      if (dto.order_type !== 'continuous') throw new BadRequestException('დოზის სიჩქარე / ტიტრაცია — მხოლოდ უწყვეტ ინფუზიაზე');
+      if (!dto.dose_rate || !dto.dose_rate_unit || !dto.conc_amount || !dto.conc_unit || !dto.conc_volume_ml) {
+        throw new BadRequestException('ტიტრაცია: მიუთითეთ დოზა, ერთეული და კონცენტრაცია (რაოდენობა / მოცულობა)');
+      }
+      if (!compatible(dto.dose_rate_unit, dto.conc_unit)) throw new BadRequestException('დოზის და კონცენტრაციის ერთეულები შეუთავსებელია (მასა / ერთეული)');
+      if (dto.titrate_min !== undefined && dto.titrate_max !== undefined && dto.titrate_min > dto.titrate_max) throw new BadRequestException('ტიტრაცია: მინიმუმი მაქსიმუმზე მეტია');
+      if ((dto.titrate_min !== undefined && dto.dose_rate < dto.titrate_min) || (dto.titrate_max !== undefined && dto.dose_rate > dto.titrate_max)) {
+        throw new BadRequestException('საწყისი დოზა ტიტრაციის დიაპაზონს გარეთაა');
+      }
+    }
 
     // --- წონა
     const child = st.age_days < ADULT_DAYS;
     let weight: number | null = dto.weight_kg ?? null;
-    if (!weight && (child || dto.dose_per_kg)) {
+    const rateKg = !!dto.dose_rate_unit?.includes('/kg/') && !!dto.dose_rate;
+    if (!weight && rateKg) {
+      const ep = await ex.selectFrom('icu_episodes').select('admission_weight_kg').where('encounter_id', '=', st.encounter_id).where('ended_at', 'is', null).executeTakeFirst();
+      if (ep?.admission_weight_kg) weight = Number(ep.admission_weight_kg);
+    }
+    if (!weight && (child || dto.dose_per_kg || rateKg)) {
       const w = await this.latestWeight(st.patient_id, ex);
       if (w) {
         weight = Number(w.weight_kg);
         const days = (Date.now() - new Date(w.recorded_at).getTime()) / 86_400_000;
         if (days > s.weight_max_age_days) checks.push({ code: 'weight_old', level: 'warn', message: `წონა (${weight} კგ) ${Math.floor(days)} დღის წინ აიწონა — განაახლეთ` });
       }
+    }
+    if (!weight && rateKg) throw new UnprocessableEntityException({ code: 'WEIGHT_REQUIRED', message: 'დოზა წონაზე (მკგ/კგ/წთ და სხვ.) — მიუთითეთ წონა' });
+    let rateMlH: number | null = dto.rate_ml_h ?? null;
+    if (titr) {
+      rateMlH = doseRateToMlH(dto.dose_rate!, dto.dose_rate_unit!, { amount: dto.conc_amount!, unit: dto.conc_unit!, volume_ml: dto.conc_volume_ml! }, weight);
+      if (rateMlH < 0.1 || rateMlH > 2_000) throw new BadRequestException(`გამოთვლილი სიჩქარე (${rateMlH} მლ/სთ) დასაშვებ ზღვრებს სცდება — შეამოწმეთ კონცენტრაცია`);
     }
     if (!weight && (dto.dose_per_kg || (child && g))) {
       throw new UnprocessableEntityException({ code: 'WEIGHT_REQUIRED', message: child ? 'ბავშვის დანიშნულებას წონა სჭირდება (ვიტალები ან ველი „წონა“)' : 'მგ/კგ დოზას წონა სჭირდება' });
@@ -285,10 +319,14 @@ export class OrdersService {
     return {
       values: {
         ...base, generic_id: g?.id ?? null, drug_text: g ? null : dto.drug_text!.trim(), order_type: dto.order_type, dose, dose_unit: dto.dose_unit ?? null,
-        dose_per_kg: dto.dose_per_kg ?? null, weight_kg: dto.dose_per_kg || child ? weight : null, route_code: dto.route_code, frequency_code: freq?.code ?? null,
+        dose_per_kg: dto.dose_per_kg ?? null, weight_kg: dto.dose_per_kg || child || rateKg ? weight : null, route_code: dto.route_code, frequency_code: freq?.code ?? null,
         prn_reason: dto.order_type === 'prn' ? dto.prn_reason!.trim() : null, prn_max_per_day: dto.order_type === 'prn' ? dto.prn_max_per_day ?? null : null,
         prn_min_interval_h: dto.order_type === 'prn' ? dto.prn_min_interval_h ?? null : null,
-        diluent: dto.diluent?.trim() || null, volume_ml: dto.volume_ml ?? null, rate_ml_h: dto.rate_ml_h ?? null, duration_min: dto.duration_min ?? null,
+        diluent: dto.diluent?.trim() || null, volume_ml: dto.volume_ml ?? null, rate_ml_h: rateMlH, duration_min: dto.duration_min ?? null,
+        titratable: titr ? !!dto.titratable : false, dose_rate: titr ? String(dto.dose_rate) : null, dose_rate_unit: titr ? dto.dose_rate_unit! : null,
+        conc_amount: titr ? String(dto.conc_amount) : null, conc_unit: titr ? dto.conc_unit! : null, conc_volume_ml: titr ? String(dto.conc_volume_ml) : null,
+        titrate_min: titr && dto.titrate_min !== undefined ? String(dto.titrate_min) : null, titrate_max: titr && dto.titrate_max !== undefined ? String(dto.titrate_max) : null,
+        titrate_goal: titr ? dto.titrate_goal?.trim() || null : null,
         supply_mode: supply,
       },
       checks, generic: g, verify, approval,

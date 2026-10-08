@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
 import { useModules, type SystemModule } from '../../lib/modules';
+import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
 export default function Modules() {
@@ -40,6 +41,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
+      {m.code === 'icu' && <IcuSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -273,6 +275,62 @@ function InpatientSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
       <span className="small">საწოლდღის ტარიფები, პაკეტები, გადამხდელები, DRG — <Link to="/admin/billing">ადმინისტრირება → სტაციონარის ბილინგი</Link>.</span>
       <span className="small">სიხშირეები (საათები) — <Link to="/admin/frequencies">ადმინისტრირება → სიხშირეები</Link>.</span>
       <span className="small">საწოლფონდი — <Link to="/admin/beds">ადმინისტრირება → საწოლფონდი</Link>; პრინტერები — <Link to="/admin/printers">პრინტერები</Link>; ეპიკრიზის, თანხმობების და ხელწერილის ტექსტები — <Link to="/admin/templates">დოკუმენტების შაბლონები</Link>; სხვა კლინიკები — <Link to="/admin/institutions">ცნობარი</Link>.</span>
+    </div>
+  );
+}
+
+/** რეანიმაცია / ინტენსიური (0047) */
+const LAB_KEYS: [string, string][] = [['platelets', 'თრომბოციტები'], ['wbc', 'ლეიკოციტები'], ['hct', 'ჰემატოკრიტი'], ['bilirubin', 'ბილირუბინი'], ['creatinine', 'კრეატინინი'], ['sodium', 'ნატრიუმი'],
+  ['potassium', 'კალიუმი'], ['ph', 'pH (ABG)'], ['pao2', 'pO₂ (ABG)'], ['paco2', 'pCO₂ (ABG)'], ['hco3', 'HCO₃⁻'], ['be', 'BE'], ['lactate', 'ლაქტატი'], ['sao2', 'SO₂'], ['fio2', 'FiO₂']];
+const VASO: [string, string][] = [['norepinephrine', 'ნორეპინეფრინი'], ['epinephrine', 'ეპინეფრინი'], ['dopamine', 'დოფამინი'], ['dobutamine', 'დობუტამინი'], ['vasopressin', 'ვაზოპრესინი']];
+function IcuSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const tariffs = useQuery({ queryKey: ['tariffs', 'all'], queryFn: () => api<{ id: string; code: string; title: string; base_price: string; is_active: boolean }[]>('/tariffs') });
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const num = (k: string, label: string, min: number, max: number, hint?: string) => <Field label={label} htmlFor={`icu-${k}`} hint={hint}>
+    <input id={`icu-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? ''} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
+  const time = (k: string, label: string, hint?: string) => <Field label={label} htmlFor={`icu-${k}`} hint={hint}><input id={`icu-${k}`} className="input" type="time" value={v<string>(k) ?? ''} onChange={(e) => upd(k, e.target.value)} /></Field>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 } as const;
+  const feats = v<IcuFeature[]>('intensive_features') ?? [];
+  const lab = v<Record<string, string>>('lab_map') ?? {}; const vaso = v<Record<string, string[]>>('vasoactive') ?? {};
+  return (
+    <div className="stack">
+      <div style={grid}>
+        <Field label="მონიტორინგის ფურცლის ინტერვალი" htmlFor="icu-mi" hint="განყოფილებაზე შეიძლება საკუთარი; პაციენტზე — დროებით (ექიმი)"><select id="icu-mi" className="select" value={v<number>('monitor_interval_min')} onChange={(e) => upd('monitor_interval_min', Number(e.target.value))}>
+          <option value={15}>15 წთ</option><option value={30}>30 წთ</option><option value={60}>60 წთ</option></select></Field>
+        {num('fast_interval_max_hours', 'ხშირი რეჟიმი პაციენტზე — მაქს. (სთ)', 1, 72)}
+        {num('monitor_gap_hours', 'შეხსენება: ფურცელი შეუვსებელია (სთ)', 1, 24, 'განყოფილების ექთნებს')}
+        {time('bundle_reminder_time', 'bundle-ის შეხსენება (დრო)', 'VAP / CLABSI — დღეს არ შემოწმებულა')}{time('sofa_reminder_time', 'SOFA-ს შეხსენება (დრო)', 'ექიმებს — დღეს არ დადასტურებულა')}
+        {num('readmit_hours', 'ხელახლა შემოსვლა (სთ)', 1, 720, 'სტატისტიკა')}
+      </div>
+      <div style={grid}>
+        {chk('infusion_to_balance', 'ინფუზიების მოცულობა → ბალანსი', 'უწყვეტი ინფუზია — საათობრივად, ავტომატურად')}
+        {chk('titration_reason', 'ტიტრაციისას მიზეზი სავალდებულოა', 'MAR: სიჩქარის ცვლილება')}
+        {chk('news2_alerts', 'NEWS2 შეტყობინებები რეანიმაციაშიც', 'ნაგულისხმევად გამორთული — მუდმივი მონიტორინგი')}
+      </div>
+      <div className="stack" style={{ gap: 6 }}>
+        <span className="label">ინტენსიური პალატის ფუნქციები (ნაგულისხმევი; რეანიმაციაში — ყველა)</span>
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>{ALL_FEATURES.map((f) => <label key={f} className="row small"><input type="checkbox" checked={feats.includes(f)}
+          onChange={(e) => upd('intensive_features', e.target.checked ? [...feats, f] : feats.filter((x) => x !== f))} /> {FEATURE_KA[f]}</label>)}</div>
+      </div>
+      <div style={grid}>
+        {chk('vent_billing', 'ვენტილაციის დღის ბილინგი', 'ინვაზიური, შუაღამის წესით; ტარიფის გარეშე — ფინალიზაცია იბლოკება')}
+        <Field label="ვენტილაციის დღის ტარიფი" htmlFor="icu-vt"><select id="icu-vt" className="select" value={v<string | null>('vent_day_tariff_id') ?? ''} onChange={(e) => upd('vent_day_tariff_id', e.target.value || null)}>
+          <option value="">— არ არის —</option>{(tariffs.data ?? []).filter((t) => t.is_active || t.id === v<string | null>('vent_day_tariff_id')).map((t) => <option key={t.id} value={t.id}>{t.code} — {t.title} ({Number(t.base_price).toFixed(2)} ₾)</option>)}</select></Field>
+      </div>
+      <details><summary className="label">SOFA / APACHE: ლაბ. ანალიტები (სერვისის კოდი:ანალიტის კოდი) და ვაზოპრესორების სახელები</summary>
+        <div style={{ ...grid, gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', marginTop: 10 }}>
+          {LAB_KEYS.map(([k, l]) => <Field key={k} label={l} htmlFor={`icu-lab-${k}`}><input id={`icu-lab-${k}`} className="input mono" value={lab[k] ?? ''} placeholder="LAB_X:CODE"
+            onChange={(e) => upd('lab_map', { ...lab, [k]: e.target.value.trim() })} /></Field>)}
+        </div>
+        <div style={{ ...grid, gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', marginTop: 10 }}>
+          {VASO.map(([k, l]) => <Field key={k} label={l} htmlFor={`icu-va-${k}`} hint="მძიმით — INN / სავაჭრო"><input id={`icu-va-${k}`} className="input" defaultValue={(vaso[k] ?? []).join(', ')}
+            onBlur={(e) => upd('vasoactive', { ...vaso, [k]: e.target.value.split(',').map((x) => x.trim()).filter((x) => x.length >= 3) })} /></Field>)}
+        </div>
+      </details>
+      <span className="small">bundle-ის პუნქტები და APACHE II-ის კატეგორიები — <Link to="/admin/icu">ადმინისტრირება → რეანიმაცია</Link>.</span>
     </div>
   );
 }

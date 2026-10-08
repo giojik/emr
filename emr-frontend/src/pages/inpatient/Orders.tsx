@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { localISO, todayISO, tsDate } from '../../lib/format';
 import Verification from '../stock/Verification';
+import { DOSE_RATE_UNITS, doseToMlH, UNIT_KA as RATE_KA } from './Icu';
 
 // ---------------------------------------------------------------- ტიპები
 export interface OrderCheck { code: string; level: 'info' | 'warn' | 'reason' | 'block'; message: string; severe?: boolean }
@@ -22,6 +23,9 @@ export interface Order {
   approval_status: 'not_required' | 'pending' | 'approved' | 'rejected'; approval_note: string | null; approved_by_name: string | null;
   supply_mode: 'ward' | 'pharmacy' | null; req_no: string | null; request_status: string | null; stock_request_id: string | null;
   title: string; inn: string | null; strength: string | null; high_alert: boolean | null; controlled_class: string | null; reserve_antibiotic: boolean | null; created_at: string;
+  // 0047: ტიტრაცია
+  titratable?: boolean; dose_rate?: string | null; dose_rate_unit?: string | null; conc_amount?: string | null; conc_unit?: string | null; conc_volume_ml?: string | null;
+  titrate_min?: string | null; titrate_max?: string | null; titrate_goal?: string | null;
   // განყოფილების / ვერიფიკაციის სიებში
   adm_no?: string; first_name?: string; last_name?: string; bed_code?: string | null; department_name?: string | null; allergies?: number;
 }
@@ -40,6 +44,7 @@ export type OrderBody = {
   category: Category; generic_id?: string; drug_text?: string; order_type?: OType; dose?: number; dose_unit?: string; dose_per_kg?: number; weight_kg?: number;
   route_code?: string; frequency_code?: string; prn_reason?: string; prn_max_per_day?: number; prn_min_interval_h?: number; diluent?: string; volume_ml?: number;
   rate_ml_h?: number; duration_min?: number; text?: string; instructions?: string; start_at?: string; duration_days?: number; supply_mode?: 'ward' | 'pharmacy';
+  titratable?: boolean; dose_rate?: number; dose_rate_unit?: string; conc_amount?: number; conc_unit?: string; conc_volume_ml?: number; titrate_min?: number; titrate_max?: number; titrate_goal?: string;
   verbal_doctor_id?: string; set_id?: string; nursing_task?: 'vitals' | 'fluid' | 'scale' | 'other'; task_scale_code?: string; ack?: boolean; override_reason?: string; confirm_severe?: boolean; reason?: string;
 };
 
@@ -59,6 +64,7 @@ export function orderSummary(o: Order) {
   const dose = o.dose ? `${fmt(o.dose)} ${u}${o.dose_per_kg ? ` (${fmt(o.dose_per_kg)} ${u}/კგ × ${fmt(o.weight_kg)} კგ)` : ''}` : null;
   const how = o.order_type === 'scheduled' ? o.frequency_name : o.order_type === 'once' ? 'ერთჯერადად'
     : o.order_type === 'prn' ? `საჭიროებისამებრ: ${o.prn_reason}${o.prn_max_per_day ? ` (მაქს. ${o.prn_max_per_day}/დღე)` : ''}${o.prn_min_interval_h ? `, ინტერვალი ≥ ${fmt(o.prn_min_interval_h)} სთ` : ''}`
+    : o.dose_rate ? `${fmt(o.dose_rate)} ${RATE_KA[o.dose_rate_unit ?? ''] ?? o.dose_rate_unit} (≈ ${fmt(o.rate_ml_h)} მლ/სთ; ${fmt(o.conc_amount)} ${RATE_KA[o.conc_unit ?? ''] ?? ''}/${fmt(o.conc_volume_ml)} მლ${o.weight_kg ? `, ${fmt(o.weight_kg)} კგ` : ''})${o.titratable ? ` · ტიტრაცია ${fmt(o.titrate_min) || '…'}–${fmt(o.titrate_max) || '…'}${o.titrate_goal ? `, ${o.titrate_goal}` : ''}` : ''}`
     : `${fmt(o.rate_ml_h)} მლ/სთ`;
   const inf = [o.diluent, o.volume_ml ? `${fmt(o.volume_ml)} მლ` : null, o.duration_min ? `${o.duration_min} წთ` : null].filter(Boolean).join(', ');
   return [dose, o.route_name ?? o.route_code, how, inf || null, o.duration_days ? `${o.duration_days} დღე` : o.order_type === 'once' ? null : 'გაუქმებამდე'].filter(Boolean).join(' · ');
@@ -170,6 +176,8 @@ function fromOrder(o: Order): Partial<OrderBody> {
     frequency_code: o.frequency_code ?? undefined, prn_reason: o.prn_reason ?? undefined, prn_max_per_day: o.prn_max_per_day ?? undefined, prn_min_interval_h: n(o.prn_min_interval_h),
     diluent: o.diluent ?? undefined, volume_ml: n(o.volume_ml), rate_ml_h: n(o.rate_ml_h), duration_min: o.duration_min ?? undefined, text: o.text ?? undefined,
     instructions: o.instructions ?? undefined, duration_days: o.duration_days ?? undefined, supply_mode: o.supply_mode ?? undefined,
+    ...(o.dose_rate && { titratable: !!o.titratable, dose_rate: n(o.dose_rate), dose_rate_unit: o.dose_rate_unit ?? undefined, conc_amount: n(o.conc_amount ?? null), conc_unit: o.conc_unit ?? undefined,
+      conc_volume_ml: n(o.conc_volume_ml ?? null), titrate_min: n(o.titrate_min ?? null), titrate_max: n(o.titrate_max ?? null), titrate_goal: o.titrate_goal ?? undefined, rate_ml_h: undefined }),
   };
 }
 
@@ -196,6 +204,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
   const scales = useQuery({ queryKey: ['nursing-scales'], queryFn: () => api<{ code: string; name: string }[]>('/inpatient/nursing/scales'), staleTime: 300_000 });
   const [free, setFree] = useState(!!initial?.drug_text);
   const [perKg, setPerKg] = useState(!!initial?.dose_per_kg);
+  const [titr, setTitr] = useState(!!initial?.dose_rate);   // 0047: დოზა სიჩქარით (ვაზოპრესორი / ტიტრაცია)
   const [gen, setGen] = useState<GenericRow | null>(null);
   const [search, setSearch] = useState('');
   const ds = useDebounced(search.trim(), 250);
@@ -230,6 +239,8 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
     if (b.order_type !== 'scheduled') delete b.frequency_code;
     if (b.order_type !== 'prn') { delete b.prn_reason; delete b.prn_max_per_day; delete b.prn_min_interval_h; }
     if (b.order_type === 'continuous') { delete b.dose; delete b.dose_per_kg; } else delete b.rate_ml_h;
+    if (b.order_type === 'continuous' && titr) delete b.rate_ml_h;
+    else { delete b.titratable; delete b.dose_rate; delete b.dose_rate_unit; delete b.conc_amount; delete b.conc_unit; delete b.conc_volume_ml; delete b.titrate_min; delete b.titrate_max; delete b.titrate_goal; }
     if (mode !== 'verbal') delete b.verbal_doctor_id;
     for (const k of Object.keys(b) as (keyof OrderBody)[]) if (b[k] === '' || b[k] === undefined || (typeof b[k] === 'number' && Number.isNaN(b[k]))) delete b[k];
     return b;
@@ -243,7 +254,10 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
     onError: (e) => { if (e instanceof ApiError && e.code === 'ORDER_CHECKS') setChecks({ checks: e.body?.checks as OrderCheck[], requires: e.body?.requires as { ack: boolean; reason: boolean; severe: boolean } }); },
   });
   const checksOk = !checks || ((!checks.requires.ack || ack || ovr.trim().length >= 5) && (!checks.requires.reason || ovr.trim().length >= 5) && (!checks.requires.severe || severe));
-  const doseOk = f.order_type === 'continuous' ? !!f.rate_ml_h : !!(perKg ? f.dose_per_kg : f.dose) && !!f.dose_unit;
+  const rateKg = titr && !!f.dose_rate_unit?.includes('/kg/');
+  const calcMl = titr && f.dose_rate && f.dose_rate_unit && f.conc_amount && f.conc_unit && f.conc_volume_ml
+    ? doseToMlH(f.dose_rate, f.dose_rate_unit, { amount: f.conc_amount, unit: f.conc_unit, volume_ml: f.conc_volume_ml }, f.weight_kg ?? ctx.weight?.kg ?? null) : null;
+  const doseOk = f.order_type === 'continuous' ? (titr ? !!(f.dose_rate && f.dose_rate_unit && f.conc_amount && f.conc_unit && f.conc_volume_ml) : !!f.rate_ml_h) : !!(perKg ? f.dose_per_kg : f.dose) && !!f.dose_unit;
   const typeOk = f.order_type === 'scheduled' ? !!f.frequency_code : f.order_type === 'prn' ? (f.prn_reason?.trim().length ?? 0) >= 2 : true;
   const ready = (med ? ((free ? (f.drug_text?.trim().length ?? 0) >= 2 : !!gen) && !!f.route_code && !!f.order_type && doseOk && typeOk)
     : (f.text?.trim().length ?? 0) >= 2 && (f.category !== 'nursing' || f.nursing_task !== 'scale' || !!f.task_scale_code))
@@ -308,16 +322,35 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
               <Field label="ერთეული" htmlFor="od-u" required><select id="od-u" className="select" value={f.dose_unit ?? ''} disabled={!!gen?.dose_unit} onChange={(e) => set('dose_unit', e.target.value)}>
                 <option value="">—</option>{Object.entries(UNIT_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
             </>}
-            {f.order_type === 'continuous' && <Field label="სიჩქარე (მლ/სთ)" htmlFor="od-rt" required>
+            {f.order_type === 'continuous' && !titr && <Field label="სიჩქარე (მლ/სთ)" htmlFor="od-rt" required>
               <input id="od-rt" className="input mono" type="number" min={0} step="any" value={f.rate_ml_h ?? ''} onChange={(e) => set('rate_ml_h', e.target.value ? Number(e.target.value) : undefined)} /></Field>}
+            {f.order_type === 'continuous' && titr && <>
+              <Field label="დოზა" htmlFor="od-dr" required><input id="od-dr" className="input mono" type="number" min={0} step="any" value={f.dose_rate ?? ''} onChange={(e) => set('dose_rate', e.target.value ? Number(e.target.value) : undefined)} /></Field>
+              <Field label="ერთეული" htmlFor="od-dru" required><select id="od-dru" className="select" value={f.dose_rate_unit ?? ''} onChange={(e) => set('dose_rate_unit', e.target.value || undefined)}>
+                <option value="">—</option>{DOSE_RATE_UNITS.map((u) => <option key={u} value={u}>{RATE_KA[u]}</option>)}</select></Field>
+            </>}
             <Field label="გზა" htmlFor="od-r" required><select id="od-r" className="select" value={f.route_code ?? ''} onChange={(e) => set('route_code', e.target.value)}>
               <option value="">—</option>{routes.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}</select></Field>
             {f.order_type === 'scheduled' && <Field label="სიხშირე" htmlFor="od-f" required><select id="od-f" className="select" value={f.frequency_code ?? ''} onChange={(e) => set('frequency_code', e.target.value)}>
               <option value="">—</option>{freqs.data?.map((x) => <option key={x.code} value={x.code}>{x.name}{x.times_of_day ? ` (${x.times_of_day.join(', ')})` : ''}</option>)}</select></Field>}
           </div>
+          {f.order_type === 'continuous' && <label className="row small"><input type="checkbox" checked={titr} onChange={(e) => { setTitr(e.target.checked); setChecks(null);
+            if (e.target.checked) setF((x) => ({ ...x, dose_rate_unit: x.dose_rate_unit ?? 'mcg/kg/min', conc_unit: x.conc_unit ?? 'mg', titratable: x.titratable ?? true })); }} />
+            დოზა სიჩქარით — ვაზოპრესორი / ტიტრაცია (მლ/სთ ითვლება ავტომატურად)</label>}
+          {f.order_type === 'continuous' && titr && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+            <Field label="კონცენტრაცია: რაოდენობა" htmlFor="od-ca" required><input id="od-ca" className="input mono" type="number" min={0} step="any" value={f.conc_amount ?? ''} onChange={(e) => set('conc_amount', e.target.value ? Number(e.target.value) : undefined)} placeholder="4" /></Field>
+            <Field label="ერთეული" htmlFor="od-cu" required><select id="od-cu" className="select" value={f.conc_unit ?? ''} onChange={(e) => set('conc_unit', e.target.value || undefined)}>
+              <option value="mg">მგ</option><option value="mcg">მკგ</option><option value="units">ერთ.</option></select></Field>
+            <Field label="მოცულობა (მლ)" htmlFor="od-cv" required><input id="od-cv" className="input mono" type="number" min={1} step="any" value={f.conc_volume_ml ?? ''} onChange={(e) => set('conc_volume_ml', e.target.value ? Number(e.target.value) : undefined)} placeholder="50" /></Field>
+            <Field label="სიჩქარე" htmlFor="od-cml"><input id="od-cml" className="input mono" disabled value={calcMl !== null ? `${calcMl} მლ/სთ` : rateKg && !f.weight_kg && !ctx.weight ? 'წონა?' : '—'} /></Field>
+            <Field label="ტიტრაცია: მინ." htmlFor="od-tmn"><input id="od-tmn" className="input mono" type="number" min={0} step="any" value={f.titrate_min ?? ''} onChange={(e) => set('titrate_min', e.target.value ? Number(e.target.value) : undefined)} /></Field>
+            <Field label="მაქს." htmlFor="od-tmx"><input id="od-tmx" className="input mono" type="number" min={0} step="any" value={f.titrate_max ?? ''} onChange={(e) => set('titrate_max', e.target.value ? Number(e.target.value) : undefined)} /></Field>
+            <Field label="მიზანი" htmlFor="od-tg"><input id="od-tg" className="input" value={f.titrate_goal ?? ''} onChange={(e) => set('titrate_goal', e.target.value)} placeholder="MAP ≥ 65" /></Field>
+            <Field label="ექთანი ტიტრავს" htmlFor="od-tt"><label className="row" style={{ height: 40 }}><input id="od-tt" type="checkbox" checked={!!f.titratable} onChange={(e) => set('titratable', e.target.checked)} /> დიაპაზონში</label></Field>
+          </div>}
           {f.order_type !== 'continuous' && <label className="row small"><input type="checkbox" checked={perKg} onChange={(e) => { setPerKg(e.target.checked); setChecks(null); }} />
             დოზა წონაზე (მგ/კგ){perKg && ctx.weight && <span className="muted"> — {fmt(ctx.weight.kg)} კგ → {f.dose_per_kg ? fmt(f.dose_per_kg * ctx.weight.kg) : '…'} {UNIT_KA[f.dose_unit ?? ''] ?? ''}</span>}</label>}
-          {(perKg || child) && <Field label={`წონა (კგ)${ctx.weight ? ` — ბოლო: ${fmt(ctx.weight.kg)} (${tsDate(ctx.weight.at)})` : ''}`} htmlFor="od-w" hint={child ? 'ბავშვის დანიშნულებას წონა სჭირდება' : undefined}>
+          {(perKg || child || rateKg) && <Field label={`წონა (კგ)${ctx.weight ? ` — ბოლო: ${fmt(ctx.weight.kg)} (${tsDate(ctx.weight.at)})` : ''}`} htmlFor="od-w" hint={child ? 'ბავშვის დანიშნულებას წონა სჭირდება' : undefined}>
             <input id="od-w" className="input mono" style={{ maxWidth: 160 }} type="number" min={0.2} max={400} step="any" value={f.weight_kg ?? ''} placeholder={ctx.weight ? fmt(ctx.weight.kg) : ''}
               onChange={(e) => set('weight_kg', e.target.value ? Number(e.target.value) : undefined)} /></Field>}
           {f.order_type === 'prn' && <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>

@@ -6,6 +6,7 @@ import { NotifyService } from '../notify/notify.service';
 import { NotificationsService } from '../notifications/notifications';
 import { ensureMarSlots } from './mar-schedule';
 import { loadBilling } from './ipd-billing-calc';
+import { icuFeatures, syncInfusionVolumes, type IcuSettings } from './icu';
 
 const TZ = loadEnv().CLINIC_TZ;
 const SEND_FROM_HOUR = 10;
@@ -77,8 +78,9 @@ export class InpatientRemindersService {
     const mar = await this.mar(s).catch((e) => { this.log.error(`MAR: ${(e as Error).message}`); return { mar_missed: 0 }; });
     const nur = await this.nursing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`საექთნო: ${(e as Error).message}`); return { scales_due: 0, lines_alert: 0 }; });
     const notes = await this.notes(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`ჩანაწერები: ${(e as Error).message}`); return { notes_due: 0, consults_late: 0 }; });
+    const icu = await this.icu().catch((e) => { this.log.error(`რეანიმაცია: ${(e as Error).message}`); return { infusion_hours: 0, sheet_gaps: 0, bundles_due: 0, sofa_due: 0 }; });
     const bill = await this.billing(s as unknown as Record<string, unknown>).catch((e) => { this.log.error(`ბილინგი: ${(e as Error).message}`); return { bed_days_synced: 0, deposit_alerts: 0 }; });
-    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur, ...notes, ...bill };
+    return { transfers: tr.length, leaves: lv.length, docs: docs.length, ...o, ...mar, ...nur, ...notes, ...bill, ...icu };
   }
 
   /**
@@ -257,7 +259,7 @@ export class InpatientRemindersService {
         FROM inpatient_stays st JOIN encounters e ON e.id = st.encounter_id JOIN patients p ON p.id = st.patient_id
         WHERE st.status = 'active' AND (now() AT TIME ZONE ${TZ})::time >= ${time}::time
           AND (st.admitted_at AT TIME ZONE ${TZ})::date < (now() AT TIME ZONE ${TZ})::date - 1
-          AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'progress' AND n.status = 'signed'
+          AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind IN ('progress', 'icu_daily') AND n.status = 'signed'
             AND n.note_date = (now() AT TIME ZONE ${TZ})::date - 1)`.execute(this.db);
       for (const r of prog.rows) {
         if (!r.attending_doctor_id) continue;
@@ -316,5 +318,70 @@ export class InpatientRemindersService {
       }
     }
     return { bed_days_synced: stays.length, deposit_alerts: alerts };
+  }
+
+  /**
+   * 0047: რეანიმაცია / ინტენსიური (მოდული „icu“):
+   *   უწყვეტი ინფუზიის საათობრივი მოცულობა → სითხის ბალანსი (infusion_to_balance);
+   *   ფურცელი monitor_gap_hours-ზე მეტხანს შეუვსებელია → განყოფილების ექთნებს (თითო ხარვეზზე ერთხელ);
+   *   bundle (VAP / CLABSI) bundle_reminder_time-ის შემდეგ დღეს არ შემოწმებულა → ექთნებს (დღეში ერთხელ);
+   *   SOFA sofa_reminder_time-ის შემდეგ დღეს არ დადასტურებულა (ეპიზოდი > 12 სთ) → მკურნალ ექიმს და განყოფილების ექიმებს.
+   */
+  async icu() {
+    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
+    const res = { infusion_hours: 0, sheet_gaps: 0, bundles_due: 0, sofa_due: 0 };
+    if (!m?.enabled) return res;
+    const s = m.settings as unknown as IcuSettings;
+    const eps = await this.db.selectFrom('icu_episodes as e').innerJoin('inpatient_stays as st', 'st.encounter_id', 'e.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id')
+      .innerJoin('departments as d', 'd.id', 'e.department_id').innerJoin('encounters as en', 'en.id', 'e.encounter_id')
+      .select(['e.id', 'e.encounter_id', 'e.department_id', 'e.started_at', 'd.care_level', 'd.icu_features', 'st.adm_no', 'p.first_name', 'p.last_name', 'en.attending_doctor_id',
+        sql<string | null>`(SELECT max(v.recorded_at) FROM encounter_vitals v WHERE v.encounter_id = e.encounter_id AND v.icu_sheet AND v.voided_at IS NULL)`.as('last_sheet'),
+        sql<string | null>`(SELECT v.id FROM encounter_vitals v WHERE v.encounter_id = e.encounter_id AND v.icu_sheet AND v.voided_at IS NULL ORDER BY v.recorded_at DESC LIMIT 1)`.as('last_sheet_id')])
+      .where('e.ended_at', 'is', null).where('st.status', '=', 'active').execute();
+    if (!eps.length) return res;
+    const now = (await sql<{ d: string; t: string }>`SELECT to_char(now() AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS d, to_char(now() AT TIME ZONE ${TZ}, 'HH24:MI') AS t`.execute(this.db)).rows[0];
+    const once = async (encounterId: string, kind: string, ref: string) => (await sql`INSERT INTO ipd_reminders (encounter_id, kind, ref) VALUES (${encounterId}, ${kind}, ${ref})
+      ON CONFLICT DO NOTHING RETURNING encounter_id`.execute(this.db)).rows.length > 0;
+    for (const e of eps) {
+      const f = icuFeatures(s, e.care_level, e.icu_features);
+      const who = `${e.last_name} ${e.first_name} (${e.adm_no})`;
+      if (s.infusion_to_balance !== false) res.infusion_hours += await syncInfusionVolumes(this.db, e.encounter_id).catch(() => 0);
+      if (f.includes('sheet')) {
+        const last = new Date(e.last_sheet ?? e.started_at).getTime();
+        const gapH = (Date.now() - last) / 3_600_000;
+        if (gapH > (s.monitor_gap_hours ?? 2) && await once(e.encounter_id, 'icu_gap', e.last_sheet_id ?? e.id)) {
+          for (const id of await this.staff(e.department_id, ['nurse'])) {
+            await this.bell.notify(id, { kind: 'icu_sheet_gap', title: `მონიტორინგის ფურცელი ${Math.floor(gapH)} სთ-ზე მეტია შეუვსებელია`, body: who, item: e.adm_no, entityId: e.encounter_id,
+              link: `/inpatient/stay/${e.encounter_id}#icu`, urgent: true });
+          }
+          res.sheet_gaps++;
+        }
+      }
+      if (f.includes('bundles') && now.t >= (s.bundle_reminder_time ?? '11:00')) {
+        const vap = await this.db.selectFrom('icu_ventilation').select('id').where('encounter_id', '=', e.encounter_id).where('kind', '=', 'invasive').where('ended_at', 'is', null).where('voided_at', 'is', null).executeTakeFirst();
+        const cl = await this.db.selectFrom('lines_drains').select('id').where('encounter_id', '=', e.encounter_id).where('kind', 'in', ['cvc', 'picc']).where('removed_at', 'is', null).where('voided_at', 'is', null).executeTakeFirst();
+        const done = (await this.db.selectFrom('icu_bundle_checks').select('bundle').where('encounter_id', '=', e.encounter_id).where('voided_at', 'is', null).where('check_date', '=', now.d).execute()).map((x) => x.bundle);
+        const due = [vap && !done.includes('vap') ? 'VAP' : null, cl && !done.includes('clabsi') ? 'CLABSI' : null].filter(Boolean);
+        if (due.length && await once(e.encounter_id, 'icu_bundle', `${due.join('+')}:${now.d}`)) {
+          for (const id of await this.staff(e.department_id, ['nurse'])) {
+            await this.bell.notify(id, { kind: 'icu_bundle_due', title: `bundle-ის შემოწმება: ${due.join(', ')}`, body: who, item: e.adm_no, entityId: e.encounter_id, link: `/inpatient/stay/${e.encounter_id}#icu` });
+          }
+          res.bundles_due++;
+        }
+      }
+      if (f.includes('sofa') && now.t >= (s.sofa_reminder_time ?? '12:00') && Date.now() - new Date(e.started_at).getTime() > 12 * 3_600_000) {
+        const has = await this.db.selectFrom('icu_scores').select('id').where('encounter_id', '=', e.encounter_id).where('kind', '=', 'sofa').where('voided_at', 'is', null)
+          .where('score_date', '=', now.d).executeTakeFirst();
+        if (!has && await once(e.encounter_id, 'icu_sofa', now.d)) {
+          const to = new Set<string>(await this.staff(e.department_id, ['doctor']));
+          if (e.attending_doctor_id) to.add(e.attending_doctor_id);
+          for (const id of to) {
+            await this.bell.notify(id, { kind: 'icu_sofa_due', title: 'SOFA — დღეს არ დადასტურებულა', body: who, item: e.adm_no, entityId: e.encounter_id, link: `/inpatient/stay/${e.encounter_id}#icu` });
+          }
+          res.sofa_due++;
+        }
+      }
+    }
+    return res;
   }
 }

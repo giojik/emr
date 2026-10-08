@@ -12,6 +12,7 @@ import IcdPicker from '../encounter/IcdPicker';
 import { BillingWorklist } from './Billing';
 import { ConsultInbox } from './DoctorNotes';
 import { DepartmentMar } from './Mar';
+import { IcuBoardTab } from './Icu';
 import { DepartmentHandover } from './Nursing';
 import { DepartmentOrders } from './Orders';
 import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
@@ -26,7 +27,8 @@ export default function Inpatient() {
   const [sp] = useSearchParams();
   const m = mods.data?.find((x) => x.code === 'inpatient');
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
-  const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
+  const icuOn = !!mods.data?.find((x) => x.code === 'icu')?.enabled;
+  const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['icu', 'რეანიმაცია', icuOn && can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
     ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
@@ -40,7 +42,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'icu' ? <IcuBoardTab /> : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }

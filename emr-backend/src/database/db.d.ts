@@ -428,10 +428,13 @@ export interface CssdTemplates {
 }
 
 export interface Departments {
+  care_level: Generated<string>;
   code: string;
   created_at: Generated<Timestamp>;
+  icu_features: string[] | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  monitor_interval_min: number | null;
   name: string;
   type: string;
   updated_at: Generated<Timestamp>;
@@ -728,12 +731,22 @@ export interface EncounterVitals {
   bmi: Generated<Numeric | null>;
   consciousness: string | null;
   created_at: Generated<Timestamp>;
+  cvp: number | null;
   diastolic_bp: number | null;
   encounter_id: string;
+  etco2: number | null;
+  gcs_e: number | null;
+  gcs_intubated: Generated<boolean>;
+  gcs_m: number | null;
+  gcs_total: number | null;
+  gcs_v: number | null;
   glucose: Numeric | null;
   heart_rate: number | null;
   height_cm: Numeric | null;
+  icu_sheet: Generated<boolean>;
   id: Generated<string>;
+  map_invasive: Generated<boolean>;
+  map_mmhg: number | null;
   mar_entry_id: string | null;
   news2: number | null;
   news2_level: string | null;
@@ -742,8 +755,14 @@ export interface EncounterVitals {
   o2_flow: Numeric | null;
   o2_supplement: boolean | null;
   pain: number | null;
+  pupil_l: Numeric | null;
+  pupil_l_react: string | null;
+  pupil_r: Numeric | null;
+  pupil_r_react: string | null;
+  rass: number | null;
   recorded_at: Generated<Timestamp>;
   respiratory_rate: number | null;
+  source: Generated<string>;
   spo2: number | null;
   spo2_scale: Generated<number>;
   systolic_bp: number | null;
@@ -876,6 +895,7 @@ export interface ExternalInstitutions {
 }
 
 export interface FluidEntries {
+  auto_hour: Timestamp | null;
   category: string;
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -887,6 +907,7 @@ export interface FluidEntries {
   order_id: string | null;
   patient_id: string;
   recorded_at: Timestamp;
+  vitals_id: string | null;
   void_reason: string | null;
   voided_at: Timestamp | null;
   voided_by: string | null;
@@ -926,6 +947,167 @@ export interface Icd10Codes {
   is_dagger: Generated<boolean>;
   needs_review: Generated<boolean>;
   title: string;
+}
+
+export interface IcuAbg {
+  be: Numeric | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  encounter_id: string;
+  fio2: number | null;
+  glucose: Numeric | null;
+  hco3: Numeric | null;
+  id: Generated<string>;
+  k: Numeric | null;
+  lactate: Numeric | null;
+  na: Numeric | null;
+  note: string | null;
+  patient_id: string;
+  pco2: Numeric | null;
+  ph: Numeric | null;
+  po2: Numeric | null;
+  sample: Generated<string>;
+  sampled_at: Timestamp;
+  sao2: Numeric | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface IcuApacheCategories {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  operative: boolean;
+  sort_order: Generated<number>;
+  weight: Numeric;
+}
+
+export interface IcuBundleChecks {
+  answers: Json;
+  bundle: string;
+  check_date: string;
+  checked_at: Generated<Timestamp>;
+  checked_by: string;
+  compliant: boolean;
+  encounter_id: string;
+  id: Generated<string>;
+  note: string | null;
+  patient_id: string;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface IcuBundleItems {
+  bundle: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  label: string;
+  sort_order: Generated<number>;
+}
+
+export interface IcuEpisodes {
+  admission_weight_kg: Numeric | null;
+  assignment_id: Int8 | null;
+  care_level: string;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  encounter_id: string;
+  ended_at: Timestamp | null;
+  exit_condition: string | null;
+  exit_department_id: string | null;
+  exit_kind: string | null;
+  exit_note: string | null;
+  from_department_id: string | null;
+  id: Generated<string>;
+  monitor_interval_by: string | null;
+  monitor_interval_from: Timestamp | null;
+  monitor_interval_min: number | null;
+  monitor_interval_until: Timestamp | null;
+  origin: string;
+  patient_id: string;
+  readmission: Generated<boolean>;
+  reason: string | null;
+  started_at: Timestamp;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
+export interface IcuScores {
+  apache_category: string | null;
+  components: Json;
+  confirmed_at: Generated<Timestamp>;
+  confirmed_by: string;
+  emergency_surgery: boolean | null;
+  encounter_id: string;
+  episode_id: string;
+  id: Generated<string>;
+  kind: string;
+  missing: Generated<string[]>;
+  note: string | null;
+  patient_id: string;
+  predicted_mortality: Numeric | null;
+  score_date: string;
+  total: number;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  window_from: Timestamp;
+  window_to: Timestamp;
+}
+
+export interface IcuVentilation {
+  airway: string;
+  attempts: number | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  difficult: Generated<boolean>;
+  encounter_id: string;
+  end_note: string | null;
+  end_reason: string | null;
+  ended_at: Timestamp | null;
+  ended_by: string | null;
+  episode_id: string | null;
+  ett_depth_cm: Numeric | null;
+  ett_size: Numeric | null;
+  id: Generated<string>;
+  kind: string;
+  notes: string | null;
+  patient_id: string;
+  performed_by: string | null;
+  performed_where: string | null;
+  started_at: Timestamp;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface IcuVentSettings {
+  created_at: Generated<Timestamp>;
+  encounter_id: string;
+  epap: Numeric | null;
+  fio2: number | null;
+  flow_lpm: number | null;
+  id: Generated<string>;
+  ipap: Numeric | null;
+  mode: string;
+  mv_l: Numeric | null;
+  note: string | null;
+  peep: Numeric | null;
+  ppeak: number | null;
+  pplat: number | null;
+  ps: Numeric | null;
+  rate_set: number | null;
+  rate_total: number | null;
+  recorded_at: Timestamp;
+  recorded_by: string;
+  ventilation_id: string;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  vt_ml: number | null;
 }
 
 export interface InpatientEvents {
@@ -1553,6 +1735,7 @@ export interface MarEntries {
   documented_at: Timestamp | null;
   documented_by: string | null;
   dose_given: Numeric | null;
+  dose_rate: Numeric | null;
   dose_unit: string | null;
   double_check_by: string | null;
   encounter_id: string;
@@ -1667,10 +1850,15 @@ export interface MedOrders {
   approved_by: string | null;
   category: Generated<string>;
   checks: Generated<Json>;
+  conc_amount: Numeric | null;
+  conc_unit: string | null;
+  conc_volume_ml: Numeric | null;
   created_at: Generated<Timestamp>;
   diluent: string | null;
   dose: Numeric | null;
   dose_per_kg: Numeric | null;
+  dose_rate: Numeric | null;
+  dose_rate_unit: string | null;
   dose_unit: string | null;
   drug_text: string | null;
   duration_days: number | null;
@@ -1706,6 +1894,10 @@ export interface MedOrders {
   supply_mode: string | null;
   task_scale_code: string | null;
   text: string | null;
+  titratable: Generated<boolean>;
+  titrate_goal: string | null;
+  titrate_max: Numeric | null;
+  titrate_min: Numeric | null;
   updated_at: Generated<Timestamp>;
   verbal_confirmed_at: Timestamp | null;
   verbal_notified_at: Timestamp | null;
@@ -2144,6 +2336,14 @@ export interface StayPayers {
   status: Generated<string>;
   valid_until: string | null;
   writeoff_excess: Generated<boolean>;
+}
+
+export interface StayVentDays {
+  day: string;
+  encounter_id: string;
+  minimum: Generated<boolean>;
+  package_included: Generated<boolean>;
+  tariff_id: string | null;
 }
 
 export interface StockAlertRuns {
@@ -2656,6 +2856,14 @@ export interface DB {
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;
   icd10_codes: Icd10Codes;
+  icu_abg: IcuAbg;
+  icu_apache_categories: IcuApacheCategories;
+  icu_bundle_checks: IcuBundleChecks;
+  icu_bundle_items: IcuBundleItems;
+  icu_episodes: IcuEpisodes;
+  icu_scores: IcuScores;
+  icu_vent_settings: IcuVentSettings;
+  icu_ventilation: IcuVentilation;
   inpatient_events: InpatientEvents;
   inpatient_leaves: InpatientLeaves;
   inpatient_planned: InpatientPlanned;
@@ -2740,6 +2948,7 @@ export interface DB {
   stay_billing: StayBilling;
   stay_deposits: StayDeposits;
   stay_payers: StayPayers;
+  stay_vent_days: StayVentDays;
   stock_alert_runs: StockAlertRuns;
   stock_balances: StockBalances;
   stock_categories: StockCategories;

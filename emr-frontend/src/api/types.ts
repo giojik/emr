@@ -2,7 +2,8 @@
 export type Gender = 'male' | 'female' | 'other';
 export type Severity = 'mild' | 'moderate' | 'severe';
 
-export interface Department { id: string; name: string; code: string; type: string; is_active: boolean; active_users?: string }
+export interface Department { id: string; name: string; code: string; type: string; is_active: boolean; active_users?: string;
+  care_level?: 'ward' | 'intensive' | 'icu'; icu_features?: string[] | null; monitor_interval_min?: number | null }
 export interface Doctor {
   id: string; first_name: string; last_name: string; specialty: string | null;
   department_id: string | null; department_name: string | null; consultation_price: string | null;

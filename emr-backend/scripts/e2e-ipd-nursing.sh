@@ -109,7 +109,7 @@ else ok "07:30 — შემოწმება გამოტოვებულ
 
 step "4. შკალები"
 SC=$(api GET /inpatient/nursing/scales "$NA")
-chk "შკალები: morse, braden, gcs; სავალდებულო — morse, braden" "$(echo "$SC" | jq -r '[.[].code]|join(",")'):$(echo "$SC" | jq -r '[.[]|select(.required)|.code]|join(",")')" "morse,braden,gcs:morse,braden"
+chk "შკალები: morse, braden, gcs (+ 0047: rass, cam_icu); სავალდებულო — morse, braden" "$(echo "$SC" | jq -r '[.[].code]|join(",")'):$(echo "$SC" | jq -r '[.[]|select(.required)|.code]|join(",")')" "morse,braden,gcs,rass,cam_icu:morse,braden"
 chk "ჩაუტარებელი Morse — scales_due (არა ვადაგადაცილებული, 24 სთ-ში)" "$(api GET "$N" "$NA" | jq -r '.scales_due[]|select(.code=="morse")|"\(.overdue):\(.last_at)"')" "false:null"
 A="/inpatient/stays/$E1/scales"
 chk "პუნქტი აკლია — 400; არასწორი ვარიანტი — 400; უცნობი შკალა — 400" \

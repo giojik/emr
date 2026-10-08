@@ -19,7 +19,9 @@ import { InpatientModule, InpatientService } from './inpatient';
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
 const TZ = loadEnv().CLINIC_TZ;
-const KINDS = ['admission', 'progress', 'rounds', 'consult'] as const;
+const KINDS = ['admission', 'progress', 'rounds', 'consult', 'icu_daily', 'icu_out'] as const;
+/** დღიურად ითვლება (0047: ICU დღიურიც) */
+export const DAILY_KINDS = ['progress', 'icu_daily'];
 type Kind = (typeof KINDS)[number];
 const MAX = 20_000;
 
@@ -36,8 +38,19 @@ export const NOTE_FIELDS: Record<Kind, { key: string; label: string; required?: 
   ],
   rounds: [{ key: 'findings', label: 'შემოვლის დასკვნა', required: true }, { key: 'recommendations', label: 'რეკომენდაციები' }],
   consult: [{ key: 'assessment', label: 'შეფასება / დასკვნა', required: true }, { key: 'recommendations', label: 'რეკომენდაციები', required: true }],
+  // 0047: რეანიმაცია — დღიური სისტემების მიხედვით (A–F) და გაყვანის შეჯამება მიმღები განყოფილებისთვის
+  icu_daily: [
+    { key: 'a_airway', label: 'A — სასუნთქი გზები' }, { key: 'b_breathing', label: 'B — სუნთქვა / ვენტილაცია' },
+    { key: 'c_circulation', label: 'C — ცირკულაცია / ჰემოდინამიკა' }, { key: 'd_disability', label: 'D — ნევროლოგია / სედაცია' },
+    { key: 'e_exposure', label: 'E — კანი, ხაზები, ინფექცია, ტემპერატურა' }, { key: 'f_fluids', label: 'F — სითხეები, თირკმელი, ელექტროლიტები, კვება' },
+    { key: 'assessment', label: 'შეფასება', required: true }, { key: 'plan', label: 'გეგმა' },
+  ],
+  icu_out: [
+    { key: 'course', label: 'მიმდინარეობა რეანიმაციაში', required: true }, { key: 'procedures', label: 'ჩატარებული (ვენტილაცია, ხაზები, ინფუზიები)' },
+    { key: 'condition', label: 'მდგომარეობა გადაყვანისას', required: true }, { key: 'recommendations', label: 'რეკომენდაციები მიმღებ განყოფილებას', required: true },
+  ],
 };
-export const KIND_KA: Record<Kind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია' };
+export const KIND_KA: Record<Kind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანის შეჯამება' };
 const URGENCY_KA: Record<string, string> = { routine: 'გეგმიური', urgent: 'სასწრაფო', emergency: 'გადაუდებელი' };
 
 // ================================================================= DTO
@@ -255,6 +268,16 @@ export class NotesService {
         body: `${res.st.last_name} ${res.st.first_name} (${res.st.adm_no})`, item: res.st.adm_no, entityId: res.n.encounter_id,
         link: `/inpatient/stay/${res.n.encounter_id}#notes`, urgent: res.consult.urgency !== 'routine' }, u.id);
     }
+    // 0047: რეანიმაციიდან გაყვანის შეჯამება → მკურნალ ექიმს და მიმღები განყოფილების ექიმებს
+    if (res.n.kind === 'icu_out' && !res.n.amends_id) {
+      const ep = await this.db.selectFrom('icu_episodes').select(['exit_department_id']).where('encounter_id', '=', res.n.encounter_id).orderBy('started_at', 'desc').limit(1).executeTakeFirst();
+      const tr = await this.db.selectFrom('inpatient_transfers').select('to_department_id').where('encounter_id', '=', res.n.encounter_id).where('status', '=', 'requested').executeTakeFirst();
+      const deps = [ep?.exit_department_id, tr?.to_department_id, res.st.department_id].filter((x): x is string => !!x && x !== res.n.department_id);
+      const docs = deps.length ? (await this.db.selectFrom('users as x').innerJoin('user_capabilities as c', 'c.user_id', 'x.id').select('x.id').distinct()
+        .where('x.is_active', '=', true).where('x.department_id', 'in', deps).where(sql<boolean>`'doctor' = ANY(c.capabilities)`).execute()).map((r) => r.id) : [];
+      await this.notifyIds([res.st.attending_doctor_id, ...docs], { kind: 'icu_out_note', title: 'რეანიმაციიდან გაყვანის შეჯამება', body: `${res.st.last_name} ${res.st.first_name} (${res.st.adm_no})`,
+        item: res.st.adm_no, entityId: res.n.encounter_id, link: `/inpatient/stay/${res.n.encounter_id}#notes` }, u.id);
+    }
     return { ...(await this.get(id))!, billed: res.billed, warning: res.warning };
   }
 
@@ -294,7 +317,7 @@ export class NotesService {
     const today = await this.today();
     const current = notes.filter((n) => n.status === 'signed' && !n.superseded_at);
     const admission = current.find((n) => n.kind === 'admission') ?? null;
-    const progressDays = new Set(current.filter((n) => n.kind === 'progress').map((n) => n.day));
+    const progressDays = new Set(current.filter((n) => DAILY_KINDS.includes(n.kind)).map((n) => n.day));
     const missing: string[] = [];
     if (s.progress_note_daily !== false) {
       // ჰოსპიტალიზაციის მეორე დღიდან (პირველ დღეს — მიმღები გასინჯვა) გუშინდელამდე (ან გაწერის დღემდე ჩათვლით)
@@ -347,11 +370,13 @@ export class NotesService {
   /** ეპიკრიზისთვის: დაავადების მიმდინარეობა — დღიურების შეფასებები (A) თარიღებით + კონსულტაციების დასკვნები */
   async course(encounterId: string) {
     const rows = await this.base().where('n.encounter_id', '=', encounterId).where('n.status', '=', 'signed').where('n.superseded_at', 'is', null)
-      .where('n.kind', 'in', ['progress', 'rounds', 'consult']).orderBy('n.note_date').orderBy('n.created_at').execute();
+      .where('n.kind', 'in', ['progress', 'icu_daily', 'rounds', 'consult', 'icu_out']).orderBy('n.note_date').orderBy('n.created_at').execute();
     const dd = (d: string) => d.split('-').reverse().join('/');
     const lines = rows.map((n) => {
       const c = n.content as Record<string, string>;
       if (n.kind === 'progress') return `${dd(n.day)}: ${(c.a ?? '').trim()}`;
+      if (n.kind === 'icu_daily') return `${dd(n.day)} (რეანიმაცია): ${(c.assessment ?? '').trim()}`;
+      if (n.kind === 'icu_out') return `${dd(n.day)} (რეანიმაციიდან გაყვანა): ${(c.course ?? '').trim()}${c.recommendations ? ` რეკომენდაცია: ${c.recommendations.trim()}` : ''}`;
       if (n.kind === 'rounds') return `${dd(n.day)} (შემოვლა): ${(c.findings ?? '').trim()}`;
       return `${dd(n.day)} (კონსულტაცია — ${n.department_name ?? n.author_specialty ?? n.author_name}): ${(c.assessment ?? '').trim()}${c.recommendations ? ` რეკომენდაცია: ${c.recommendations.trim()}` : ''}`;
     }).filter((l) => !l.endsWith(': '));
@@ -496,7 +521,7 @@ export class NotesService {
     const st = await this.stay(encounterId, ex);
     const rows = await ex.selectFrom('doctor_notes').select(['kind', sql<string>`to_char(note_date, 'YYYY-MM-DD')`.as('day')]).where('encounter_id', '=', encounterId)
       .where('status', '=', 'signed').where('superseded_at', 'is', null).execute();
-    const days = new Set(rows.filter((r) => r.kind === 'progress').map((r) => r.day));
+    const days = new Set(rows.filter((r) => DAILY_KINDS.includes(r.kind)).map((r) => r.day));
     const miss: string[] = [];
     const today = await this.today(ex);
     if (s.progress_note_daily !== false) for (let d = addDay(st.admitted_day, 1); d < today; d = addDay(d, 1)) if (!days.has(d)) miss.push(d);

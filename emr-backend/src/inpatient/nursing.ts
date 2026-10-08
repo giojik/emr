@@ -174,7 +174,11 @@ export class NursingService {
       await this.audit.log(ctx, { action: 'IPD_VITALS', entityName: 'encounter_vitals', entityId: v.id, newData: { ...dto, news2: n } }, trx);
       // შეტყობინება: დონე ≥ low_red (ერთ პარამეტრზე 3) / ქულა ≥ news2_alert — თუ წინაზე მაღალია ან წინა 4 სთ-ზე ძველია
       const alert = n && (n.score >= s.news2_alert || n.level === 'low_red' || n.level === 'medium' || n.level === 'high');
-      const escalated = alert && (!prev || NEWS2_RANK[n!.level] > NEWS2_RANK[prev.news2_level as News2Level] || Date.now() - new Date(prev.recorded_at).getTime() > 4 * 3_600_000);
+      // 0047: რეანიმაციაში / ინტენსიურში NEWS2-ის შეტყობინება — icu.news2_alerts (ნაგულისხმევად გამორთული; მუდმივი მონიტორინგი)
+      const icuDep = st.department_id ? await trx.selectFrom('departments').select('care_level').where('id', '=', st.department_id).executeTakeFirst() : null;
+      const icuMod = icuDep && icuDep.care_level !== 'ward' ? await trx.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst() : null;
+      const muted = !!icuMod?.enabled && (icuMod.settings as Record<string, unknown>)?.news2_alerts !== true;
+      const escalated = !muted && alert && (!prev || NEWS2_RANK[n!.level] > NEWS2_RANK[prev.news2_level as News2Level] || Date.now() - new Date(prev.recorded_at).getTime() > 4 * 3_600_000);
       if (escalated) await this.ipd.event(trx, { encounter_id: encounterId, kind: 'news2_alert', data: { score: n!.score, level: n!.level, vitals_id: v.id } }, u);
       return { v, st, n: escalated ? n : null };
     });
@@ -216,6 +220,11 @@ export class NursingService {
       }
       if (!has(u, 'admin') && Date.now() - new Date(row.created_at).getTime() > 24 * 3_600_000) throw new ConflictException('24 სთ-ზე ძველი ჩანაწერი — მიმართეთ admin-ს');
       await sql`UPDATE ${sql.table(table)} SET voided_at = now(), voided_by = ${u.id}, void_reason = ${reason.trim()} WHERE id = ${id}`.execute(trx);
+      // 0047: ICU ფურცლის ჩანაწერს მიბმული შარდი (fluid_entries.vitals_id) უქმდება იმავე დროს
+      if (kind === 'vitals') {
+        await trx.updateTable('fluid_entries').set({ voided_at: sql`now()`, voided_by: u.id, void_reason: `ფურცლის ჩანაწერი გაუქმდა: ${reason.trim()}` })
+          .where('vitals_id', '=', id).where('voided_at', 'is', null).execute();
+      }
       // MAR-ის დავალება თავიდან იხსნება (ჩანაწერი უქმდება, სლოტი — ახალი due)
       if (row.mar_entry_id) {
         const m = await trx.selectFrom('mar_entries').selectAll().where('id', '=', row.mar_entry_id).executeTakeFirst();

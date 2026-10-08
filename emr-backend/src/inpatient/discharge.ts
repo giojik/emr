@@ -113,7 +113,7 @@ export class DischargeService {
     const nm = await sql<{ adm: boolean; days: string[] }>`SELECT
         NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'admission' AND n.status = 'signed' AND n.superseded_at IS NULL) AS adm,
         ARRAY(SELECT to_char(d, 'DD/MM') FROM generate_series((st.admitted_at AT TIME ZONE ${TZ})::date + 1, (now() AT TIME ZONE ${TZ})::date - 1, interval '1 day') d
-          WHERE ${s45.progress_note_daily !== false} AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind = 'progress'
+          WHERE ${s45.progress_note_daily !== false} AND NOT EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = st.encounter_id AND n.kind IN ('progress', 'icu_daily')
             AND n.status = 'signed' AND n.superseded_at IS NULL AND n.note_date = d::date) ORDER BY d) AS days
       FROM inpatient_stays st WHERE st.encounter_id = ${encounterId}`.execute(ex);
     const n0 = nm.rows[0];

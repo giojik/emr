@@ -29,6 +29,7 @@ import Cssd from './pages/cssd/Cssd';
 import Inpatient from './pages/inpatient/Inpatient';
 import Stay from './pages/inpatient/Stay';
 import Beds from './pages/admin/Beds';
+import { IcuSetup } from './pages/inpatient/Icu';
 import Printers from './pages/admin/Printers';
 import DocumentTemplates from './pages/admin/DocumentTemplates';
 import Institutions from './pages/admin/Institutions';
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
+          <Route path="icu" element={<Guard roles={['admin']}><IcuSetup /></Guard>} />
           <Route path="printers" element={<Guard roles={['admin']}><Printers /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
           <Route path="analyzers" element={<Guard roles={['admin']}><Analyzers /></Guard>} />

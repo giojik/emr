@@ -18,6 +18,8 @@ const int = (v: unknown, a: number, b: number) => Number.isInteger(v) && (v as n
 const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes(v);
 const hhmm = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
+const ICU_FEATURES = ['sheet', 'ventilation', 'infusions', 'sofa', 'apache', 'abg', 'bundles', 'icu_note', 'board'];
+const LAB_KEYS = ['platelets', 'wbc', 'hct', 'bilirubin', 'creatinine', 'sodium', 'potassium', 'ph', 'pao2', 'paco2', 'hco3', 'be', 'lactate', 'sao2', 'fio2'];
 const classes = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => ['narcotic', 'psychotropic', 'precursor', 'potent'].includes(x as string)) && new Set(v).size === v.length;
 const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>; extra?: Validator }> = {
   inpatient: {
@@ -54,6 +56,27 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
     extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს'
       : (s.news2_urgent as number) < (s.news2_alert as number) ? 'NEWS2: სასწრაფო ზღვარი შეტყობინების ზღვარზე ნაკლები ვერ იქნება'
       : (s.glucose_high as number) <= (s.glucose_low as number) ? 'გლუკოზა: ზედა ზღვარი ქვედაზე მეტი უნდა იყოს' : null),
+  },
+  // 0047: რეანიმაცია / ინტენსიური
+  icu: {
+    keys: {
+      monitor_interval_min: (v) => [15, 30, 60].includes(v as number), fast_interval_max_hours: (v) => int(v, 1, 72), monitor_gap_hours: (v) => int(v, 1, 24),
+      intensive_features: (v) => Array.isArray(v) && v.every((x) => ICU_FEATURES.includes(x as string)) && new Set(v).size === v.length,
+      news2_alerts: bool, infusion_to_balance: bool, titration_reason: bool, bundle_reminder_time: hhmm, sofa_reminder_time: hhmm, readmit_hours: (v) => int(v, 1, 720),
+      vent_billing: bool, vent_day_tariff_id: (v) => v === null || (typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)),
+      vasoactive: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>
+        ['norepinephrine', 'epinephrine', 'dopamine', 'dobutamine', 'vasopressin'].includes(k) && Array.isArray(x) && x.length <= 20 && x.every((y) => typeof y === 'string' && y.trim().length >= 3)),
+      lab_map: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>
+        LAB_KEYS.includes(k) && typeof x === 'string' && (x === '' || /^[A-Za-z0-9_.-]{1,50}:[A-Za-z0-9_.-]{1,30}$/.test(x))),
+    },
+    extra: async (s, db) => {
+      const id = s.vent_day_tariff_id as string | null;
+      if (id) {
+        const t = await db.selectFrom('service_tariffs').select('is_active').where('id', '=', id).executeTakeFirst();
+        if (!t?.is_active) return 'ვენტილაციის დღის ტარიფი ვერ მოიძებნა ან გათიშულია';
+      }
+      return null;
+    },
   },
   cssd: {
     keys: {

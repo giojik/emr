@@ -6,9 +6,10 @@ import type { Department, Doctor } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { hhmm, todayISO, tsDate } from '../../lib/format';
+import { useIcu } from './Icu';
 
 // ================================================================= ტიპები (0045)
-export type NoteKind = 'admission' | 'progress' | 'rounds' | 'consult';
+export type NoteKind = 'admission' | 'progress' | 'rounds' | 'consult' | 'icu_daily' | 'icu_out';
 export interface DoctorNote {
   id: string; encounter_id: string; kind: NoteKind; day: string; consultation_id: string | null; content: Record<string, string>; participants: string[]; participant_names: string[];
   status: 'draft' | 'signed'; version: number; root_id: string | null; amends_id: string | null; amend_reason: string | null; superseded_at: string | null;
@@ -29,7 +30,7 @@ interface NotesResp {
 }
 interface Template { id: string; kind: NoteKind; name: string; content: Record<string, string>; department_id: string | null; department_name: string | null; owner_id: string | null }
 
-export const KIND_KA: Record<NoteKind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია' };
+export const KIND_KA: Record<NoteKind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანა' };
 const URG: Record<string, [string, string]> = { routine: ['', 'გეგმიური'], urgent: ['warn', 'სასწრაფო'], emergency: ['danger', 'გადაუდებელი'] };
 const CST: Record<string, [string, string]> = { requested: ['info', 'მოლოდინში'], answered: ['ok', 'პასუხი მზადაა'], cancelled: ['', 'გაუქმდა'] };
 const dd = (d: string) => d.split('-').reverse().join('/');
@@ -49,6 +50,8 @@ export default function DoctorNotesPanel({ encounterId }: { encounterId: string 
   const [ed, setEd] = useState<null | { note?: DoctorNote; kind: NoteKind; date?: string; consultationId?: string }>(null);
   const [amend, setAmend] = useState<DoctorNote | null>(null); const [hist, setHist] = useState<DoctorNote | null>(null);
   const [consult, setConsult] = useState(false); const [old, setOld] = useState(false); const [filter, setFilter] = useState<NoteKind | ''>('');
+  const icu = useIcu(encounterId);   // 0047: ICU დღიური / გაყვანის შეჯამება — ღია ეპიზოდზე, ფუნქცია „icu_note“
+  const icuNotes = !!icu.data?.episode && icu.data.features.includes('icu_note');
   const cancel = useMutation({ mutationFn: (a: { id: string; reason: string }) => api(`/inpatient/consultations/${a.id}/cancel`, { body: { reason: a.reason } }), onSuccess: () => { toast.show('კონსულტაცია გაუქმდა'); inval(); } });
   if (q.isLoading) return <section className="card card-pad" id="notes"><Loading /></section>;
   if (!q.data) return <section className="card card-pad" id="notes"><ErrorBox error={q.error} /></section>;
@@ -68,7 +71,9 @@ export default function DoctorNotesPanel({ encounterId }: { encounterId: string 
         {d.can.write && <>
           {!d.admission.note_id && <button className="btn sm" type="button" onClick={() => setEd({ kind: 'admission' })}>+ მიმღები გასინჯვა</button>}
           <button className="btn sm" type="button" onClick={() => setEd({ kind: 'rounds' })}>+ შემოვლა</button>
-          <button className="btn sm primary" type="button" onClick={() => setEd({ kind: 'progress' })}>+ დღიური</button></>}
+          {icuNotes && <button className="btn sm" type="button" onClick={() => setEd({ kind: 'icu_out' })}>+ გაყვანის შეჯამება</button>}
+          {icuNotes ? <button className="btn sm primary" type="button" onClick={() => setEd({ kind: 'icu_daily' })}>+ ICU დღიური (A–F)</button>
+            : <button className="btn sm primary" type="button" onClick={() => setEd({ kind: 'progress' })}>+ დღიური</button>}</>}
       </div>
       <div className="card-pad stack" style={{ gap: 10 }}>
         <ErrorBox error={cancel.error} />
@@ -149,10 +154,22 @@ export function NoteEditor({ encounterId, kind, note, date, consultationId, fiel
   const discard = useMutation({ mutationFn: () => api(`/inpatient/notes/${id}`, { method: 'DELETE' }), onSuccess: () => { onDone('შავი ვერსია წაიშალა'); inval(); onClose(); } });
   const ins = useMutation({ mutationFn: () => api<{ text: string }>(`/inpatient/stays/${encounterId}/notes/insert`),
     onSuccess: (r) => { const k = INSERT_INTO[kind]!; setC((x) => ({ ...x, [k]: [x[k]?.trim(), r.text].filter(Boolean).join('\n') })); setDirty(true); } });
+  // 0047: ICU — „ჩასმა“ სისტემების მიხედვით (ვენტილაცია, ვაზოპრესორები, ბალანსი, SOFA); გაყვანის შეჯამებაში — ჩატარებული
+  const insIcu = useMutation({ mutationFn: () => api<Record<string, string>>(`/inpatient/stays/${encounterId}/icu/insert`),
+    onSuccess: (r) => {
+      setC((x) => {
+        const out = { ...x };
+        const put = (k: string, v: string) => { if (v?.trim()) out[k] = [out[k]?.trim(), v.trim()].filter(Boolean).join('\n'); };
+        if (kind === 'icu_daily') for (const [k, v] of Object.entries(r)) put(k, v);
+        else put('procedures', [r.b_breathing, r.c_circulation, r.e_exposure, r.assessment].filter(Boolean).join('\n'));
+        return out;
+      });
+      setDirty(true);
+    } });
   const saveTpl = useMutation({ mutationFn: () => api('/inpatient/note-templates', { body: { kind, name: tplName!.trim(), content: c } }),
     onSuccess: () => { setTplName(null); void tpls.refetch(); } });
   const missing = fields.filter((f) => f.required && !(c[f.key] ?? '').trim());
-  const err = sign.error instanceof ApiError && sign.error.code === 'NOTE_REQUIRED' ? null : sign.error ?? sv.error ?? discard.error ?? ins.error ?? saveTpl.error;
+  const err = sign.error instanceof ApiError && sign.error.code === 'NOTE_REQUIRED' ? null : sign.error ?? sv.error ?? discard.error ?? ins.error ?? insIcu.error ?? saveTpl.error;
   const close = () => { if (dirty && !window.confirm('შენახვის გარეშე დახურვა?')) return; onClose(); };
   return (
     <Modal title={`${KIND_KA[kind]}${note?.amends_id ? ` — შესწორება (ვ.${note.version})` : ''}`} onClose={close} width={820}
@@ -170,6 +187,7 @@ export function NoteEditor({ encounterId, kind, note, date, consultationId, fiel
           <Field label="შაბლონი" htmlFor="ne-t"><select id="ne-t" className="select" value="" onChange={(e) => { const t = tpls.data?.find((x) => x.id === e.target.value); if (t) { setC((x) => ({ ...x, ...Object.fromEntries(Object.entries(t.content).filter(([, v]) => v)) })); setDirty(true); } }}>
             <option value="">— აირჩიეთ —</option>{tpls.data?.map((t) => <option key={t.id} value={t.id}>{t.name}{t.department_name ? ` (${t.department_name})` : ''}</option>)}</select></Field>
           {INSERT_INTO[kind] && <button className="btn sm" type="button" disabled={ins.isPending} onClick={() => ins.mutate()} title="ბოლო ვიტალები, NEWS2, ბალანსი, ბოლო 24 სთ-ის კვლევები, აქტიური მკურნალობა">ჩასმა: ვიტალები / კვლევები / მკურნალობა</button>}
+          {(kind === 'icu_daily' || kind === 'icu_out') && <button className="btn sm" type="button" disabled={insIcu.isPending} onClick={() => insIcu.mutate()} title="ვენტილაცია, ABG, ჰემოდინამიკა, ვაზოპრესორები, GCS / RASS, ხაზები, ბალანსი, SOFA">ჩასმა: ICU მონაცემები</button>}
           <span className="grow" />
           {tplName === null ? <button className="btn sm" type="button" onClick={() => setTplName('')}>შაბლონად შენახვა</button>
             : <div className="row" style={{ gap: 6 }}><input className="input" style={{ maxWidth: 200 }} aria-label="შაბლონის სახელი" placeholder="სახელი" value={tplName} onChange={(e) => setTplName(e.target.value)} />

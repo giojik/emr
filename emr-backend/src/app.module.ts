@@ -8,6 +8,7 @@ import { DischargeModule } from './inpatient/discharge';
 import { OrdersModule } from './inpatient/orders';
 import { MarModule } from './inpatient/mar';
 import { NursingModule } from './inpatient/nursing';
+import { IcuModule } from './inpatient/icu';
 import { NotesModule } from './inpatient/notes';
 import { IpdBillingModule } from './inpatient/ipd-billing';
 import { BillingConfigModule } from './billing/billing-config';
@@ -39,7 +40,7 @@ import { ManagementReportsModule } from './reports/management';
 import { StockModule } from './stock/stock.module';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
+  imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, IcuModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
     StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule],
   controllers: [HealthController],

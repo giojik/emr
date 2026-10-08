@@ -12,6 +12,7 @@ import DoctorNotesPanel from './DoctorNotes';
 import EpicrisisPanel from './Epicrisis';
 import MarPanel from './Mar';
 import NursingPanel from './Nursing';
+import IcuPanel from './Icu';
 import OrdersPanel from './Orders';
 import StayBillingPanel from './Billing';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
@@ -38,7 +39,9 @@ const EV_KA: Record<string, string> = { admitted: 'ჰოსპიტალი�
   transfer_requested: 'გადაყვანის მოთხოვნა', transfer_accepted: 'გადაყვანა', transfer_rejected: 'გადაყვანა უარყოფილია', transfer_cancelled: 'გადაყვანის მოთხოვნა გაუქმდა', transfer_overdue: 'გადაყვანა — პასუხი აგვიანებს',
   leave_started: 'დროებითი გასვლა', leave_returned: 'დაბრუნდა', leave_overdue: 'გასვლიდან არ დაბრუნებულა', discharged: 'გაწერა', discharge_cancelled: 'გაწერა გაუქმდა', death: 'გარდაცვალება',
   body_released: 'გვამის გატანა', closed: 'შემთხვევა დაიხურა', epicrisis_created: 'ეპიკრიზი შეიქმნა', epicrisis_signed: 'ეპიკრიზი ხელმოწერილია', epicrisis_cosigned: 'ეპიკრიზი თანახელმოწერილია',
-  epicrisis_reopened: 'ეპიკრიზი ხელახლა გაიხსნა' };
+  epicrisis_reopened: 'ეპიკრიზი ხელახლა გაიხსნა',
+  icu_in: 'რეანიმაცია / ინტენსიური — შემოსვლა', icu_out: 'რეანიმაცია / ინტენსიური — გასვლა', icu_interval: 'ფურცლის ინტერვალი', vent_started: 'ვენტილაცია დაიწყო', vent_ended: 'ვენტილაცია დასრულდა',
+  icu_score: 'SOFA / APACHE II' };
 const END_KA: Record<string, string> = { bed_change: 'საწოლის შეცვლა', transfer: 'გადაყვანა', discharge: 'გაწერა', cancel: 'გაუქმება' };
 const TR_KA: Record<string, string> = { requested: 'მოლოდინში', accepted: 'მიღებულია', rejected: 'უარყოფილია', cancelled: 'გაუქმებულია' };
 const DX_KA: Record<string, string> = { admission: 'მიმღები', primary: 'ძირითადი', secondary: 'თანმხლები', complication: 'გართულება' };
@@ -61,6 +64,11 @@ function evText(k: string, d: Record<string, unknown>) {
     case 'discharged': case 'death': return `${DISCHARGE_KA[x(d.type)] ?? ''}${d.bed ? ` · საწოლი ${d.bed}` : ''}${d.epicrisis_signed_now ? ' · ეპიკრიზი ხელმოწერილია' : ''}`;
     case 'epicrisis_signed': case 'epicrisis_cosigned': return d.number ? `№ ${x(d.number)}` : 'თანახელმოწერას ელოდება';
     case 'leave_returned': return d.late ? 'დაგვიანებით' : '';
+    case 'icu_out': return [d.exit === 'transfer' ? 'გადაყვანა' : d.exit === 'discharge' ? 'გაწერა' : d.exit === 'cancel' ? 'გაუქმება' : '', d.condition === 'died' ? 'გარდაიცვალა' : ''].filter(Boolean).join(' · ');
+    case 'icu_interval': return d.interval_min ? `ყოველ ${x(d.interval_min)} წთ, ${x(d.hours)} სთ${d.reason ? ` · ${x(d.reason)}` : ''}` : 'ნაგულისხმევი';
+    case 'vent_started': return `${d.kind === 'invasive' ? 'ინვაზიური' : d.kind === 'niv' ? 'NIV' : 'HFNC'}${d.ett ? ` · ETT №${x(d.ett)}` : ''}`;
+    case 'vent_ended': return x(d.reason);
+    case 'icu_score': return `${d.kind === 'sofa' ? 'SOFA' : 'APACHE II'} ${x(d.total)}`;
     default: return '';
   }
 }
@@ -71,7 +79,7 @@ export default function Stay() {
   const q = useQuery({ queryKey: ['ipd-stay', id], queryFn: () => api<StayDetail>(`/inpatient/stays/${id}`) });
   const s = q.data;
   const { hash } = useLocation();
-  useEffect(() => { if (s && hash === '#billing') setTimeout(() => document.getElementById('billing')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400); }, [s?.encounter_id, hash]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (s && (hash === '#billing' || hash === '#icu' || hash === '#notes')) setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400); }, [s?.encounter_id, hash]);   // eslint-disable-line react-hooks/exhaustive-deps
   const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
   const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
   const [err, setErr] = useState<unknown>(null);
@@ -179,6 +187,7 @@ export default function Stay() {
             </div>
           </section>}
         </div>
+        {s.status !== 'cancelled' && <IcuPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <DoctorNotesPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}
         {s.status !== 'cancelled' && <MarPanel encounterId={s.encounter_id} admNo={s.adm_no} />}
