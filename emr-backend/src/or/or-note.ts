@@ -10,7 +10,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { OR_READ } from './or-admin';
 import { OrService } from './or';
-import { NOTE_FIELDS, noteMissing, orEvent, type Ex, type Trx } from './or-shared';
+import { NOTE_FIELDS, noteMissing, orEvent, syncCaseBilling, type Ex, type Trx } from './or-shared';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? value === '' ? null : value : Number(value));
 const LINE_KINDS = ['drain', 'urinary', 'ng_tube', 'cvc', 'arterial', 'pvc', 'picc', 'trach', 'other'] as const;
@@ -196,6 +196,7 @@ export class OrNoteService {
       await trx.updateTable('or_op_notes').set({ status: 'signed', signed_by: u.id, signed_at: sql`now()`, drains: JSON.stringify(drains), implants: JSON.stringify(implants) }).where('id', '=', d.id).execute();
       await trx.updateTable('or_cases').set({ locked_at: sql`coalesce(locked_at, now())`, updated_by: u.id }).where('id', '=', c.id).execute();
       await orEvent(trx, c, 'note_signed', { ...events, implants: implants.length }, u.id, 'or_note_signed');
+      if (c.status === 'completed') await syncCaseBilling(trx, c.id);                      // 0050: ბილინგი — ოქმის (ფაქტობრივი) პროცედურებით
       await this.audit.log(ctx, { action: 'OR_NOTE_SIGN', entityName: 'or_op_notes', entityId: d.id, newData: events }, trx);
     });
     return this.view(id, u);

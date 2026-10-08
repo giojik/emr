@@ -3,22 +3,23 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
+import { AnesthesiaTariffs } from './Postop';
 import { APPLIES_KA, GRP_KA, hm, SOURCE_KA, useOrSetup, WHO_KA, type Procedure, type Ref, type Room, type Setup, type TeamRole } from './types';
 
 const DOW = ['ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ', 'კვი'];
-type View = 'rooms' | 'procedures' | 'refs' | 'checklists';
+type View = 'rooms' | 'procedures' | 'refs' | 'checklists' | 'billing';
 
 /** ადმინისტრირება → საოპერაციო (0048): ბლოკი, ოთახები, პროცედურების კატალოგი, ცნობარები, ჩეკლისტები */
 export default function OrSetup() {
   const q = useOrSetup(true); const [view, setView] = useState<View>('rooms');
-  const V: [View, string][] = [['rooms', 'ბლოკი და ოთახები'], ['procedures', 'პროცედურების კატალოგი'], ['refs', 'ცნობარები'], ['checklists', 'მზადყოფნა / WHO']];
+  const V: [View, string][] = [['rooms', 'ბლოკი და ოთახები'], ['procedures', 'პროცედურების კატალოგი'], ['refs', 'ცნობარები'], ['checklists', 'მზადყოფნა / WHO'], ['billing', 'ანესთეზიის ტარიფები']];
   return (
     <div className="content">
       <span className="hint">საოპერაციო ბლოკი — განყოფილება ტიპით „საოპერაციო ბლოკი“ (<Link to="/admin/departments">განყოფილებები</Link>). პარამეტრები (ვინ გეგმავს, ანესთეზიის გუნდი, მზადყოფნის სიმკაცრე) — <Link to="/admin/modules">მოდულები</Link>.</span>
       <div className="seg" role="group" aria-label="განყოფილება" style={{ width: 'max-content', flexWrap: 'wrap' }}>
         {V.map(([k, l]) => <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)}>{l}</button>)}</div>
       <ErrorBox error={q.error} />
-      {q.isLoading || !q.data ? <Loading /> : view === 'rooms' ? <Rooms s={q.data} /> : view === 'procedures' ? <Procedures s={q.data} /> : view === 'refs' ? <Refs s={q.data} /> : <Checklists s={q.data} />}
+      {q.isLoading || !q.data ? <Loading /> : view === 'rooms' ? <Rooms s={q.data} /> : view === 'procedures' ? <Procedures s={q.data} /> : view === 'refs' ? <Refs s={q.data} /> : view === 'billing' ? <AnesthesiaTariffs /> : <Checklists s={q.data} />}
     </div>
   );
 }

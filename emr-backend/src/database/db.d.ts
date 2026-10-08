@@ -756,6 +756,7 @@ export interface EncounterVitals {
   o2_flow: Numeric | null;
   o2_supplement: boolean | null;
   or_case_id: string | null;
+  or_phase: string | null;
   pain: number | null;
   pupil_l: Numeric | null;
   pupil_l_react: string | null;
@@ -907,6 +908,7 @@ export interface FluidEntries {
   mar_entry_id: string | null;
   note: string | null;
   or_case_id: string | null;
+  or_phase: string | null;
   order_id: string | null;
   patient_id: string;
   recorded_at: Timestamp;
@@ -1223,6 +1225,7 @@ export interface InvoiceLineItems {
   id: Generated<string>;
   invoice_id: string;
   line_total: Generated<Numeric | null>;
+  or_case_id: string | null;
   original_price: Numeric | null;
   package_included: Generated<boolean>;
   quantity: Generated<number>;
@@ -2079,11 +2082,29 @@ export interface OrAnesthesiaRecords {
   updated_at: Generated<Timestamp>;
 }
 
+export interface OrAnesthesiaTariffs {
+  anesthesia_type: string;
+  mode: string;
+  tariff_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface OrCancelReasons {
   code: string;
   is_active: Generated<boolean>;
   name: string;
   sort_order: Generated<number>;
+}
+
+export interface OrCaseBilling {
+  anesthesia_min: number | null;
+  anesthesia_type: string | null;
+  anesthesia_units: number | null;
+  case_id: string;
+  encounter_id: string;
+  missing: Generated<string[]>;
+  synced_at: Generated<Timestamp>;
 }
 
 export interface OrCaseEvents {
@@ -2274,6 +2295,47 @@ export interface OrOpNotes {
   template_id: string | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface OrPacu {
+  bay: string | null;
+  case_id: string;
+  complications: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  discharge_aldrete: number | null;
+  discharge_destination: string | null;
+  discharge_note: string | null;
+  discharge_score_id: string | null;
+  discharged_at: Timestamp | null;
+  discharged_by: string | null;
+  encounter_id: string;
+  notes: string | null;
+  nurse_id: string | null;
+  patient_id: string;
+  to_department_id: string | null;
+  transfer_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OrPacuScores {
+  activity: number;
+  case_id: string;
+  circulation: number;
+  consciousness: number;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  note: string | null;
+  oxygenation: number;
+  pain: number | null;
+  ponv: Generated<boolean>;
+  recorded_at: Timestamp;
+  recorded_by: string;
+  respiration: number;
+  total: Generated<number | null>;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
 }
 
 export interface OrPreferenceCardItems {
@@ -3348,7 +3410,9 @@ export interface DB {
   nursing_notes: NursingNotes;
   or_anesthesia_meds: OrAnesthesiaMeds;
   or_anesthesia_records: OrAnesthesiaRecords;
+  or_anesthesia_tariffs: OrAnesthesiaTariffs;
   or_cancel_reasons: OrCancelReasons;
+  or_case_billing: OrCaseBilling;
   or_case_events: OrCaseEvents;
   or_case_items: OrCaseItems;
   or_case_packs: OrCasePacks;
@@ -3360,6 +3424,8 @@ export interface DB {
   or_counts: OrCounts;
   or_note_templates: OrNoteTemplates;
   or_op_notes: OrOpNotes;
+  or_pacu: OrPacu;
+  or_pacu_scores: OrPacuScores;
   or_preference_card_items: OrPreferenceCardItems;
   or_preference_cards: OrPreferenceCards;
   or_preop_assessments: OrPreopAssessments;

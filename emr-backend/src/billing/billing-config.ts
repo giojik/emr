@@ -19,8 +19,8 @@ import type { DB } from '../database/db';
 const W = ['admin', 'billing'] as const;
 const R = ['admin', 'billing', 'receptionist', 'manager', 'doctor', 'nurse'] as const;
 const money = ({ value }: { value: unknown }) => (typeof value === 'string' && value.trim() !== '' ? Number(value) : value === '' ? null : value);
-export const PKG_CATEGORIES = ['service', 'ventilation', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant'] as const;
-const EXCL_CATEGORIES = ['bed', 'ventilation', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
+export const PKG_CATEGORIES = ['service', 'ventilation', 'surgery', 'anesthesia', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant'] as const;
+const EXCL_CATEGORIES = ['bed', 'ventilation', 'surgery', 'anesthesia', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
 const nz = (s?: string | null) => (s?.trim() ? s.trim() : null);
 
 // ---------------------------------------------------------------- DTO

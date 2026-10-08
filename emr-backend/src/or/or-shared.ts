@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { loadEnv } from '../config/env';
 import type { DB } from '../database/db';
@@ -15,11 +15,17 @@ export interface OrSettings {
   // 0049
   nursing_team_by: 'surgeon' | 'or_head_nurse' | 'both'; room_teams: boolean; anesthesia_meds: 'direct' | 'orders' | 'both';
   preference_cards: 'off' | 'procedure' | 'procedure_surgeon'; count_mode: 'off' | 'warn' | 'block'; note_required: string[];
+  // 0050
+  pacu_aldrete_min: number; multi_procedure_billing: 'all' | 'primary_plus_pct'; multi_procedure_pct: number; anesthesia_billing: 'fixed' | 'hourly' | 'off';
+  anesthesia_round_min: 15 | 30 | 60; first_case_tolerance_min: number;
 }
 export const OR_SETTINGS_0049: Pick<OrSettings, 'nursing_team_by' | 'room_teams' | 'anesthesia_meds' | 'preference_cards' | 'count_mode' | 'note_required'> = {
   nursing_team_by: 'both', room_teams: true, anesthesia_meds: 'direct', preference_cards: 'procedure_surgeon', count_mode: 'block',
   note_required: ['postop_dx', 'procedures', 'description', 'complications', 'blood_loss'],
 };
+export const OR_SETTINGS_0050: Pick<OrSettings, 'pacu_aldrete_min' | 'multi_procedure_billing' | 'multi_procedure_pct' | 'anesthesia_billing' | 'anesthesia_round_min'
+  | 'first_case_tolerance_min'> = { pacu_aldrete_min: 9, multi_procedure_billing: 'all', multi_procedure_pct: 50, anesthesia_billing: 'fixed', anesthesia_round_min: 15,
+  first_case_tolerance_min: 15 };
 /** ოქმის ველები, რომლებიც შეიძლება სავალდებულო იყოს (ადმინისტრირება → მოდულები) */
 export const NOTE_FIELDS: Record<string, string> = { preop_dx: 'წინასაოპერაციო დიაგნოზი', postop_dx: 'პოსტოპერაციული დიაგნოზი', procedures: 'ჩატარებული პროცედურ(ებ)ი',
   description: 'ოპერაციის აღწერა', findings: 'აღმოჩენები', complications: 'გართულებები (ან „არ ყოფილა“)', blood_loss: 'სისხლის დაკარგვა' };
@@ -160,4 +166,36 @@ export function lotsAt(ex: Ex, locationId: string, itemId: string) {
     .select(['lt.id as lot_id', 'lt.lot_no', 'lt.serial_no', 'lt.expires_on', 'b.qty']).where('b.item_id', '=', itemId).where('b.location_id', '=', locationId).where('b.qty', '>', '0')
     .where('lt.status', '=', 'active').where((eb) => eb.or([eb('lt.expires_on', 'is', null), eb('lt.expires_on', '>=', sql<string>`(now() AT TIME ZONE ${TZ})::date`)]))
     .orderBy(sql`lt.expires_on NULLS LAST`).orderBy('lt.created_at').execute();
+}
+
+// ================================================================= PACU (0050)
+export const PACU_GRID_MIN = 15;                                     // ვიტალები — ყოველ 15 წთ
+/** ბოლო (გაუქმებელი) Aldrete შეფასება */
+export function lastAldrete(ex: Ex, caseId: string) {
+  return ex.selectFrom('or_pacu_scores').select(['id', 'recorded_at', 'total', 'pain', 'ponv']).where('case_id', '=', caseId).where('voided_at', 'is', null)
+    .orderBy('recorded_at', 'desc').orderBy('created_at', 'desc').executeTakeFirst();
+}
+/**
+ * PACU-დან გამოწერა („PACU — გასვლა“): განყოფილებაში / სხვაგან — ბოლო Aldrete ≥ pacu_aldrete_min (ICU — ზღვრის გარეშე, მონიტორინგი გრძელდება);
+ * ეპიზოდი იხურება (DB trigger ამოწმებს ზღვარსაც). დაბრუნება — ეპიზოდის მონაცემები ისტორიისთვის.
+ */
+export async function pacuDischarge(ex: Ex, c: { id: string }, dest: 'ward' | 'icu' | 'other', at: Date, userId: string, min: number, extra: { note?: string | null; to_department_id?: string | null }) {
+  const ep = await ex.selectFrom('or_pacu').selectAll().where('case_id', '=', c.id).forUpdate().executeTakeFirst();
+  if (!ep) throw new ConflictException({ code: 'PACU_NOT_STARTED', message: 'PACU ეპიზოდი არ არის („PACU — შემოსვლა“)' });
+  if (ep.discharged_at) throw new ConflictException('PACU-დან უკვე გამოწერილია');
+  const sc = await lastAldrete(ex, c.id);
+  if (dest !== 'icu') {
+    if (!sc) throw new ConflictException({ code: 'ALDRETE_REQUIRED', message: 'გამოწერისთვის საჭიროა Aldrete შეფასება' });
+    if ((sc.total ?? 0) < min) throw new ConflictException({ code: 'ALDRETE_LOW', message: `Aldrete ${sc.total} < ${min} — განყოფილებაში გამოწერა შეუძლებელია (ICU — ზღვრის გარეშე)`, total: sc.total, min });
+    if (new Date(sc.recorded_at).getTime() > at.getTime() + 5 * 60_000) throw new BadRequestException('გამოწერის დრო ბოლო შეფასებამდეა');
+  }
+  await ex.updateTable('or_pacu').set({ discharge_destination: dest, discharge_score_id: sc?.id ?? null, discharge_aldrete: sc?.total ?? null, discharge_note: extra.note?.trim() || null,
+    to_department_id: extra.to_department_id ?? null, discharged_by: userId, discharged_at: at }).where('case_id', '=', c.id).execute();
+  return { aldrete: sc?.total ?? null, pain: sc?.pain ?? null };
+}
+
+// ================================================================= ბილინგი (0050)
+/** ოპერაციის ხაზები ინვოისში (surgery / anesthesia) — იდემპოტენტური; ფინალიზებულს არ ეხება */
+export async function syncCaseBilling(ex: Ex, caseId: string) {
+  return (await sql<{ n: number }>`SELECT or_sync_case_billing(${caseId}::uuid, ${TZ}) AS n`.execute(ex)).rows[0]?.n ?? 0;
 }

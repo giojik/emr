@@ -7,16 +7,19 @@ import { ErrorBox, Loading } from '../../components/ui';
 import { dateGe, dayTitle, hhmm, shiftDay, todayISO } from '../../lib/format';
 import { RequestDialog, ScheduleDialog } from './Dialogs';
 import Library from './Library';
+import { OrStats, PacuBoard } from './Postop';
 import Roster, { DayDialog, useRoster } from './Roster';
 import { ANESTHESIA_KA, CASE_ST, caseLink, chip, hm, PHASE_KA, URGENCY, useOrModule, useOrSetup, type Board, type CaseRow } from './types';
 
-/** საოპერაციო ბლოკი (0048): დაფა (დღე / კვირა), რიგი, ჩემი ოპერაციები */
+/** საოპერაციო ბლოკი (0048): დაფა (დღე / კვირა), რიგი, ჩემი ოპერაციები; 0050: PACU, სტატისტიკა */
 export default function Or() {
   const { user } = useAuth(); const mod = useOrModule();
   const [sp] = useSearchParams();
   const tab = sp.get('tab') ?? (can(user, 'or_schedule', 'admin') ? 'board' : can(user, 'doctor', 'anesthesiologist') ? 'my' : 'board');
   const tabs: [string, string][] = [['board', 'ბლოკის დაფა'], ['queue', 'რიგი / მოთხოვნები'], ['my', 'ჩემი ოპერაციები'], ['roster', 'ოთახის გუნდი']];
+  tabs.splice(2, 0, ['pacu', 'PACU']);
   if (can(user, 'admin', 'doctor', 'or_nurse')) tabs.push(['library', 'შაბლონები / ბარათები']);
+  if (can(user, 'admin', 'manager', 'or_schedule', 'viewer')) tabs.push(['stats', 'სტატისტიკა']);
   if (mod.loading) return <div className="content"><Loading /></div>;
   return (
     <>
@@ -28,7 +31,8 @@ export default function Or() {
         </nav>
       </header>
       {!mod.enabled ? <div className="content"><div className="card empty">მოდული „საოპერაციო ბლოკი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'queue' ? <Queue /> : tab === 'my' ? <Mine /> : tab === 'roster' ? <Roster /> : tab === 'library' ? <Library /> : <BoardView />}
+        : tab === 'queue' ? <Queue /> : tab === 'my' ? <Mine /> : tab === 'roster' ? <Roster /> : tab === 'library' ? <Library /> : tab === 'pacu' ? <PacuBoard />
+          : tab === 'stats' ? <OrStats /> : <BoardView />}
     </>
   );
 }

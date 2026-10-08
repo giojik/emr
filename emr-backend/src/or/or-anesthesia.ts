@@ -13,7 +13,7 @@ import { StockWitnessService, WitnessDto } from '../stock/stock-controlled';
 import { StockOpsService } from '../stock/stock-ops';
 import { OR_READ } from './or-admin';
 import { ANESTHESIA, OrService } from './or';
-import { orEvent, stockAt, type Ex } from './or-shared';
+import { orEvent, stockAt, syncCaseBilling, type Ex } from './or-shared';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : Number(value));
 const nul = ({ value }: { value: unknown }) => (value === '' ? null : value);
@@ -112,10 +112,10 @@ export class OrAnesthesiaService {
       this.db.selectFrom('encounter_vitals as v').leftJoin('users as x', 'x.id', 'v.taken_by')
         .select(['v.id', 'v.recorded_at', 'v.systolic_bp', 'v.diastolic_bp', 'v.map_mmhg', 'v.heart_rate', 'v.spo2', 'v.etco2', 'v.respiratory_rate', 'v.temperature', 'v.notes',
           'v.voided_at', 'v.void_reason', sql<string | null>`x.last_name || ' ' || x.first_name`.as('by_name')])
-        .where('v.or_case_id', '=', id).orderBy('v.recorded_at').execute(),
+        .where('v.or_case_id', '=', id).where('v.or_phase', '=', 'intraop').orderBy('v.recorded_at').execute(),
       this.db.selectFrom('fluid_entries as f').leftJoin('users as x', 'x.id', 'f.created_by')
         .select(['f.id', 'f.direction', 'f.category', 'f.volume_ml', 'f.recorded_at', 'f.note', 'f.voided_at', 'f.void_reason', sql<string>`x.last_name || ' ' || x.first_name`.as('by_name')])
-        .where('f.or_case_id', '=', id).orderBy('f.recorded_at').execute(),
+        .where('f.or_case_id', '=', id).where('f.or_phase', '=', 'intraop').orderBy('f.recorded_at').execute(),
       this.db.selectFrom('or_anesthesia_meds as m').innerJoin('users as x', 'x.id', 'm.recorded_by').leftJoin('users as w', 'w.id', 'm.witness_id').leftJoin('stock_docs as d', 'd.id', 'm.stock_doc_id')
         .leftJoin('med_routes as rt', 'rt.code', 'm.route_code')
         .select(['m.id', 'm.given_at', 'm.item_id', 'm.name', 'm.dose', 'm.dose_unit', 'm.route_code', 'rt.name as route_name', 'm.qty_base', 'm.dose_wasted', 'm.controlled', 'm.note', 'd.doc_no',
@@ -154,6 +154,7 @@ export class OrAnesthesiaService {
       if (dev !== 'ett') Object.assign(v, { ett_size: null, intubation_attempts: null });
       if (r) await trx.updateTable('or_anesthesia_records').set(v).where('id', '=', r.id).execute();
       else await trx.insertInto('or_anesthesia_records').values({ anesthesia_type: c.anesthesia_type, ...v, case_id: c.id, patient_id: c.patient_id, created_by: u.id }).execute();
+      if (c.status === 'completed' && dto.anesthesia_type !== undefined) await syncCaseBilling(trx, c.id);   // 0050: ანესთეზიის ტარიფი — ფაქტობრივი ტიპით
       await this.audit.log(ctx, { action: 'OR_ANESTHESIA_SAVE', entityName: 'or_anesthesia_records', entityId: c.id, newData: dto }, trx);
     });
     return this.view(id, u);
@@ -168,7 +169,7 @@ export class OrAnesthesiaService {
       if (r.anesthesia_type === 'general' && !r.airway_device) miss.push('სასუნთქი გზები (ზოგადი ანესთეზია)');
       const w = await this.window(c.id, trx);
       if (w.anesthesia_start && !w.anesthesia_end) miss.push('ნიშნული „ანესთეზიის დასრულება“');
-      const nv = await trx.selectFrom('encounter_vitals').select(sql<number>`count(*)::int`.as('n')).where('or_case_id', '=', c.id).where('voided_at', 'is', null).executeTakeFirstOrThrow();
+      const nv = await trx.selectFrom('encounter_vitals').select(sql<number>`count(*)::int`.as('n')).where('or_case_id', '=', c.id).where('or_phase', '=', 'intraop').where('voided_at', 'is', null).executeTakeFirstOrThrow();
       if (!['local', 'none'].includes(r.anesthesia_type) && !nv.n) miss.push('ვიტალები (მინიმუმ ერთი ჩანაწერი)');
       if (miss.length) throw new BadRequestException({ code: 'ANESTHESIA_INCOMPLETE', message: `ხელმოწერისთვის აკლია: ${miss.join('; ')}`, missing: miss });
       await trx.updateTable('or_anesthesia_records').set({ status: 'signed', signed_by: u.id, signed_at: sql`now()` }).where('id', '=', r.id).execute();
@@ -193,7 +194,7 @@ export class OrAnesthesiaService {
         if (at.getTime() < w.start.getTime() - 30 * 60_000) throw new BadRequestException('დრო ოპერაციის დაწყებამდე (> 30 წთ) — ანესთეზიის რუკის გარეთაა');
         if (at.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('დრო მომავალშია');
         if (w.end && at.getTime() > w.end.getTime() + 30 * 60_000) throw new BadRequestException('დრო ოთახიდან გასვლის შემდეგ (> 30 წთ) — PACU-ს ჩანაწერია');
-        const r = await trx.insertInto('encounter_vitals').values({ encounter_id: c.encounter_id!, or_case_id: c.id, recorded_at: at, taken_by: u.id, source: 'manual',
+        const r = await trx.insertInto('encounter_vitals').values({ encounter_id: c.encounter_id!, or_case_id: c.id, or_phase: 'intraop', recorded_at: at, taken_by: u.id, source: 'manual',
           systolic_bp: dto.systolic_bp ?? null, diastolic_bp: dto.diastolic_bp ?? null, map_mmhg: dto.map_mmhg ?? (dto.systolic_bp && dto.diastolic_bp ? Math.round((dto.systolic_bp + 2 * dto.diastolic_bp) / 3) : null),
           heart_rate: dto.heart_rate ?? null, spo2: dto.spo2 ?? null, etco2: dto.etco2 ?? null, respiratory_rate: dto.respiratory_rate ?? null,
           temperature: dto.temperature === undefined ? null : String(dto.temperature), notes: dto.notes?.trim() || null }).returning('id').executeTakeFirstOrThrow();
@@ -204,8 +205,8 @@ export class OrAnesthesiaService {
   }
 
   async voidVitals(vid: string, reason: string, u: AuthUser, ctx: AuditContext) {
-    const v = await this.db.selectFrom('encounter_vitals').select(['id', 'or_case_id', 'voided_at']).where('id', '=', vid).executeTakeFirst();
-    if (!v?.or_case_id || v.voided_at) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
+    const v = await this.db.selectFrom('encounter_vitals').select(['id', 'or_case_id', 'or_phase', 'voided_at']).where('id', '=', vid).executeTakeFirst();
+    if (!v?.or_case_id || v.voided_at || v.or_phase !== 'intraop') throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
     await this.db.transaction().execute(async (trx) => {
       await this.writable(v.or_case_id!, u, trx);
       await trx.updateTable('encounter_vitals').set({ voided_at: sql`now()`, voided_by: u.id, void_reason: reason }).where('id', '=', vid).execute();
@@ -222,7 +223,7 @@ export class OrAnesthesiaService {
       if (at.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('დრო მომავალშია');
       const w = await this.window(c.id, trx);
       if (w.start && at.getTime() < w.start.getTime() - 30 * 60_000) throw new BadRequestException('დრო ოპერაციის დაწყებამდეა');
-      const r = await trx.insertInto('fluid_entries').values({ encounter_id: c.encounter_id!, patient_id: c.patient_id, or_case_id: c.id, direction: (FLUID_IN as readonly string[]).includes(dto.category) ? 'in' : 'out',
+      const r = await trx.insertInto('fluid_entries').values({ encounter_id: c.encounter_id!, patient_id: c.patient_id, or_case_id: c.id, or_phase: 'intraop', direction: (FLUID_IN as readonly string[]).includes(dto.category) ? 'in' : 'out',
         category: dto.category, volume_ml: String(dto.volume_ml), recorded_at: at, note: dto.note?.trim() || null, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'OR_ANESTHESIA_FLUID', entityName: 'fluid_entries', entityId: r.id, newData: dto }, trx);
     });
@@ -230,8 +231,8 @@ export class OrAnesthesiaService {
   }
 
   async voidFluid(fid: string, reason: string, u: AuthUser, ctx: AuditContext) {
-    const f = await this.db.selectFrom('fluid_entries').select(['id', 'or_case_id', 'voided_at']).where('id', '=', fid).executeTakeFirst();
-    if (!f?.or_case_id || f.voided_at) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
+    const f = await this.db.selectFrom('fluid_entries').select(['id', 'or_case_id', 'or_phase', 'voided_at']).where('id', '=', fid).executeTakeFirst();
+    if (!f?.or_case_id || f.voided_at || f.or_phase !== 'intraop') throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
     await this.db.transaction().execute(async (trx) => {
       await this.writable(f.or_case_id!, u, trx);
       await trx.updateTable('fluid_entries').set({ voided_at: sql`now()`, voided_by: u.id, void_reason: reason }).where('id', '=', fid).execute();

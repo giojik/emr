@@ -89,6 +89,9 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       preference_cards: (v) => oneOf(v, ['off', 'procedure', 'procedure_surgeon']), count_mode: (v) => oneOf(v, ['off', 'warn', 'block']),
       note_required: (v) => Array.isArray(v) && v.length <= 7 && new Set(v).size === v.length
         && v.every((x) => ['preop_dx', 'postop_dx', 'procedures', 'description', 'findings', 'complications', 'blood_loss'].includes(x as string)),
+      // 0050: PACU, ბილინგი, სტატისტიკა
+      pacu_aldrete_min: (v) => int(v, 1, 10), multi_procedure_billing: (v) => oneOf(v, ['all', 'primary_plus_pct']), multi_procedure_pct: (v) => int(v, 0, 100),
+      anesthesia_billing: (v) => oneOf(v, ['fixed', 'hourly', 'off']), anesthesia_round_min: (v) => [15, 30, 60].includes(v as number), first_case_tolerance_min: (v) => int(v, 0, 120),
     },
   },
   cssd: {

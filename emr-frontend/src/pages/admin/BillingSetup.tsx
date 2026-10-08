@@ -8,10 +8,10 @@ import { money } from '../../lib/format';
 
 /** ადმინისტრირება → სტაციონარის ბილინგი (0046): საწოლდღის ტარიფები, პაკეტები, გადამხდელები, DRG */
 export const CAT_KA: Record<string, string> = {
-  bed: 'საწოლდღე', service: 'მომსახურება', consult: 'კონსულტაცია', lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია',
+  bed: 'საწოლდღე', ventilation: 'ხელოვნური ვენტილაცია', surgery: 'ოპერაცია', anesthesia: 'ანესთეზია', service: 'მომსახურება', consult: 'კონსულტაცია', lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია',
   medication: 'მედიკამენტები', supply: 'სამედიცინო მასალა', implant: 'იმპლანტები', package: 'პაკეტი', other: 'სხვა',
 };
-const PKG_CATS = ['service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant'];
+const PKG_CATS = ['service', 'ventilation', 'surgery', 'anesthesia', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant'];
 export const PAYER_KIND_KA: Record<string, string> = { insurance: 'სადაზღვევო კომპანია', state: 'სახელმწიფო პროგრამა', other: 'სხვა' };
 export const MODE_KA: Record<string, string> = { percent: 'პროცენტი (+ ლიმიტი, ფრანშიზა)', fixed: 'ფიქსირებული თანხა', drg: 'DRG (წონა × განაკვეთი)' };
 

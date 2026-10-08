@@ -18,7 +18,7 @@ import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { OR_READ } from './or-admin';
 import { OrRosterService } from './or-roster';
-import { countGate, noteGate, OR_SETTINGS_0049, orEvent, packsUsed, assembleCard, type OrSettings } from './or-shared';
+import { countGate, noteGate, OR_SETTINGS_0049, OR_SETTINGS_0050, orEvent, packsUsed, assembleCard, pacuDischarge, syncCaseBilling, type OrSettings } from './or-shared';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -123,6 +123,8 @@ export class TimeDto {
   @IsOptional() @IsString() @Length(3, 500) correction_reason?: string;
   @IsOptional() @IsString() @Length(3, 1000) readiness_override?: string;
   @IsOptional() @IsString() @Length(3, 1000) count_override?: string;       // 0049: count_mode = warn — დათვლის გარეშე / შეუსაბამობით
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;                 // 0050: PACU-დან გამოწერის შენიშვნა
+  @IsOptional() @IsUUID() to_department_id?: string;                         // 0050: PACU → სხვა განყოფილება / ICU (გადაყვანის მოთხოვნა — PACU სერვისი)
 }
 export class ListQuery {
   @IsOptional() @IsUUID() encounter_id?: string;
@@ -154,7 +156,7 @@ export class OrService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService,
               private readonly bell: NotificationsService, private readonly roster: OrRosterService) {}
 
-  async settings(): Promise<OrSettings> { return { ...OR_SETTINGS_0049, ...(await this.modules.require<OrSettings>('or')) }; }
+  async settings(): Promise<OrSettings> { return { ...OR_SETTINGS_0049, ...OR_SETTINGS_0050, ...(await this.modules.require<OrSettings>('or')) }; }
   private me(u: AuthUser, ex: Ex = this.db) { return ex.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
   private async isHeadOf(u: AuthUser, departmentId: string, ex: Ex = this.db) { const m = await this.me(u, ex); return !!m.is_section_head && m.department_id === departmentId; }
   private async nextNo(trx: Trx) {
@@ -225,6 +227,9 @@ export class OrService {
       note_sign: live && (admin || own || head),
       // მასალები / იმპლანტები / დათვლა / CSSD — საოპერაციო ექთანი (+ გუნდის ექთანი, admin)
       nursing_ops: live && (admin || has(u, 'or_nurse') || (has(u, 'nurse') && inTeam)),
+      // 0050: PACU — საოპერაციო ექთანი / ანესთეზიოლოგი / გუნდის ექთანი (დასრულებულ ოპერაციაზე); ბილინგის ნახვა — ბილინგი / მენეჯერი / რეგისტრატურა / admin
+      pacu: c.status === 'completed' && (admin || has(u, 'or_nurse', 'anesthesiologist') || (has(u, 'nurse') && inTeam)),
+      billing: admin || has(u, 'billing', 'manager', 'receptionist'),
     };
   }
 
@@ -321,14 +326,18 @@ export class OrService {
     if (c.preferred_anesthesiologist_id && anest && anest.user_id !== c.preferred_anesthesiologist_id) {
       hints.push(`ქირურგის სასურველი ანესთეზიოლოგი — ${head.preferred_anesthesiologist_name}; გუნდში: ${anest.name}${anest.auto ? ' (ოთახის გუნდიდან)' : ''}`);
     }
-    const [anRec, note, counts] = await Promise.all([
+    const [anRec, note, counts, pacu] = await Promise.all([
       this.db.selectFrom('or_anesthesia_records').select(['status']).where('case_id', '=', id).executeTakeFirst(),
       this.db.selectFrom('or_op_notes').select(['status', 'version']).where('case_id', '=', id).where('superseded_at', 'is', null)
         .orderBy(sql`CASE status WHEN 'draft' THEN 0 ELSE 1 END`).executeTakeFirst(),
       this.db.selectFrom('or_case_items').select([sql<number>`count(*) FILTER (WHERE posted_at IS NULL)::int`.as('unposted'), sql<number>`count(*)::int`.as('total')])
         .where('case_id', '=', id).executeTakeFirstOrThrow(),
+      this.db.selectFrom('or_pacu as p').select(['p.discharged_at', 'p.discharge_destination',
+        sql<number | null>`(SELECT s.total FROM or_pacu_scores s WHERE s.case_id = p.case_id AND s.voided_at IS NULL ORDER BY s.recorded_at DESC LIMIT 1)`.as('aldrete')])
+        .where('p.case_id', '=', id).executeTakeFirst(),
     ]);
-    const progress = { anesthesia: anRec?.status ?? null, note: note ? { status: note.status, version: note.version } : null, items_unposted: counts.unposted, items_total: counts.total };
+    const progress = { anesthesia: anRec?.status ?? null, note: note ? { status: note.status, version: note.version } : null, items_unposted: counts.unposted, items_total: counts.total,
+      pacu: pacu ? { discharged: !!pacu.discharged_at, destination: pacu.discharge_destination, aldrete: pacu.aldrete } : null };
     return { ...c, ...head, procedures: procs, team, times, who, who_items: whoItems, preop, events, readiness, allergies, can: perms, settings: s, warnings, hints, progress };
   }
 
@@ -874,6 +883,12 @@ export class OrService {
           if (!so) throw new ConflictException({ code: 'WHO_SIGN_OUT', message: 'WHO: Sign out-ის გარეშე ოპერაცია ვერ დასრულდება' });
           if (!prev) await noteGate(trx, c.id, s.note_required ?? []);            // 0049: ოქმის სავალდებულო ველები (არაარჩევადი)
         }
+        // 0050: PACU — შემოსვლა მხოლოდ დასრულებულზე („PACU“ მიმართულებით); გასვლა = გამოწერა (Aldrete ≥ ზღვარი, ICU — ზღვრის გარეშე)
+        if (k === 'pacu_out' && !prev && dto.destination === 'pacu') throw new BadRequestException('PACU-დან — განყოფილება / ICU / სხვა');
+        if (k === 'pacu_out' && prev) {
+          const ep = await trx.selectFrom('or_pacu').select(['discharge_destination']).where('case_id', '=', c.id).executeTakeFirst();
+          if (dto.destination && ep?.discharge_destination && dto.destination !== ep.discharge_destination) throw new BadRequestException('გამოწერის მიმართულება შესწორებით არ იცვლება');
+        }
         // 0049: დათვლა — განაკვეთი ← დაწყებისას, ნაკერი ← დახურვამდე, გასვლა ← ბოლოს (count_mode)
         const countOv = prev ? null : await countGate(trx, c.id, k, s.count_mode, dto.count_override);
         let override: string | null = null;
@@ -888,7 +903,10 @@ export class OrService {
         }
         const newId = randomUUID();
         if (prev) await trx.updateTable('or_case_times').set({ superseded_by: newId }).where('id', '=', prev.id).execute();
-        await trx.insertInto('or_case_times').values({ id: newId, case_id: c.id, kind: k, at, destination: ['out_of_room', 'pacu_out'].includes(k) ? dto.destination ?? null : null,
+        const prevDest = prev && ['out_of_room', 'pacu_out'].includes(k)
+          ? (await trx.selectFrom('or_case_times').select('destination').where('id', '=', prev.id).executeTakeFirst())?.destination ?? null : null;
+        const dest = !['out_of_room', 'pacu_out'].includes(k) ? null : dto.destination ?? prevDest ?? (k === 'pacu_out' ? 'ward' : null);
+        await trx.insertInto('or_case_times').values({ id: newId, case_id: c.id, kind: k, at, destination: dest,
           recorded_by: u.id, correction_reason: dto.correction_reason ?? null }).execute();
         const set: Record<string, unknown> = { updated_by: u.id };
         if (k === 'in_room' && c.status === 'scheduled') set.status = 'in_progress';
@@ -898,6 +916,14 @@ export class OrService {
         if (k === 'in_room' && !prev) {
           // დაწყების მომენტში გუნდის წევრები — შემოსვლის დრო
           await trx.updateTable('or_case_team').set({ in_at: at }).where('case_id', '=', c.id).where('removed_at', 'is', null).where('in_at', 'is', null).execute();
+        }
+        if (k === 'pacu_in' && !prev) {
+          await trx.insertInto('or_pacu').values({ case_id: c.id, patient_id: c.patient_id, encounter_id: c.encounter_id!, created_by: u.id }).onConflict((oc) => oc.column('case_id').doNothing()).execute();
+        }
+        if (k === 'pacu_out' && !prev) {
+          const pd = (dest ?? 'ward') as 'ward' | 'icu' | 'other';
+          const r = await pacuDischarge(trx, c, pd, at, u.id, s.pacu_aldrete_min, { note: dto.note, to_department_id: dto.to_department_id });
+          await this.event(trx, c, 'pacu_discharged', { destination: pd, aldrete: r.aldrete, pain: r.pain, at: at.toISOString(), note: dto.note ?? null }, u, 'or_pacu_discharged');
         }
         if (override) await this.event(trx, c, 'readiness_override', { reason: override }, u);
         if (countOv) await this.event(trx, c, 'count_override', { phase: countOv.phase, what: countOv.what, reason: countOv.reason }, u);
@@ -910,11 +936,13 @@ export class OrService {
         await this.event(trx, c, prev ? 'time_corrected' : 'time', { kind: k, at: at.toISOString(), ...(prev && { from: prev.at.toISOString(), reason: dto.correction_reason }),
           ...(dto.destination && { destination: dto.destination }) }, u,
           !prev && k === 'in_room' ? 'or_started' : !prev && k === 'out_of_room' ? 'or_completed' : undefined);
+        // 0050: ბილინგი — დასრულებისას / დასრულებულის ნიშნულის შესწორებისას (ანესთეზიის ხანგრძლივობა, თარიღი)
+        if ((k === 'out_of_room' && !prev) || (c.status === 'completed' && prev && ['in_room', 'anesthesia_start', 'anesthesia_end'].includes(k))) await syncCaseBilling(trx, c.id);
         await this.audit.log(ctx, { action: prev ? 'OR_TIME_CORRECT' : 'OR_TIME', entityName: 'or_case_times', entityId: newId, newData: dto }, trx);
       });
     } catch (e) {
       mapPgError(e, { ux_or_case_time: 'ნიშნული უკვე დაფიქსირებულია', or_who_time_out: 'WHO: Time out-ის გარეშე განაკვეთი ვერ დაფიქსირდება',
-        or_who_sign_out: 'WHO: Sign out-ის გარეშე ოპერაცია ვერ დასრულდება' });
+        or_who_sign_out: 'WHO: Sign out-ის გარეშე ოპერაცია ვერ დასრულდება', or_pacu_aldrete: 'PACU: Aldrete ზღვარზე ნაკლებია — გამოწერა შეუძლებელია' });
     }
     return this.detail(id, u);
   }

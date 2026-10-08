@@ -12,10 +12,14 @@ export interface OrSettings {
   // 0049
   nursing_team_by: 'surgeon' | 'or_head_nurse' | 'both'; room_teams: boolean; anesthesia_meds: 'direct' | 'orders' | 'both';
   preference_cards: 'off' | 'procedure' | 'procedure_surgeon'; count_mode: 'off' | 'warn' | 'block'; note_required: string[];
+  // 0050
+  pacu_aldrete_min: number; multi_procedure_billing: 'all' | 'primary_plus_pct'; multi_procedure_pct: number; anesthesia_billing: 'fixed' | 'hourly' | 'off';
+  anesthesia_round_min: 15 | 30 | 60; first_case_tolerance_min: number;
 }
 export const OR_DEFAULT: OrSettings = { or_scheduling: 'coordinator', anesthesia_team_by: 'anesthesia_head', preop_readiness: 'warn', turnover_min: 30, default_duration_min: 60,
   self_booking_days: 30, notify_requests: true, nursing_team_by: 'both', room_teams: true, anesthesia_meds: 'direct', preference_cards: 'procedure_surgeon', count_mode: 'block',
-  note_required: ['postop_dx', 'procedures', 'description', 'complications', 'blood_loss'] };
+  note_required: ['postop_dx', 'procedures', 'description', 'complications', 'blood_loss'], pacu_aldrete_min: 9, multi_procedure_billing: 'all', multi_procedure_pct: 50,
+  anesthesia_billing: 'fixed', anesthesia_round_min: 15, first_case_tolerance_min: 15 };
 export const useOrModule = () => {
   const q = useModules();
   const m = q.data?.find((x) => x.code === 'or');
@@ -48,7 +52,9 @@ export const EVENT_KA: Record<string, string> = { requested: 'მოთხოვ
   // 0049
   team_auto: 'ოთახის გუნდი (ავტომატურად)', anesthesia_signed: 'ანესთეზიის რუკა ხელმოწერილია', anesthesia_med: 'ანესთეზია: მედიკამენტი', note_signed: 'ოქმი ხელმოწერილია',
   note_amend: 'ოქმის შესწორება', items_posted: 'მასალები ჩამოიწერა', count: 'დათვლა', count_override: 'დათვლა — ახსნით', pack_added: 'CSSD ნაკრები', pack_removed: 'CSSD ნაკრები მოიხსნა',
-  packs_used: 'CSSD ნაკრები → გამოყენებული', pathology: 'ბიოფსია → პათოლოგია' };
+  packs_used: 'CSSD ნაკრები → გამოყენებული', pathology: 'ბიოფსია → პათოლოგია',
+  // 0050
+  pacu_updated: 'PACU — ცვლილება', pacu_score: 'Aldrete', pacu_score_voided: 'Aldrete — გაუქმდა', pacu_discharged: 'PACU-დან გამოწერა', billing_synced: 'ბილინგი' };
 export const NOTE_FIELDS_KA: Record<string, string> = { preop_dx: 'წინასაოპერაციო დიაგნოზი', postop_dx: 'პოსტოპერაციული დიაგნოზი', procedures: 'ჩატარებული პროცედურ(ებ)ი',
   description: 'ოპერაციის აღწერა', findings: 'აღმოჩენები', complications: 'გართულებები (ან „არ ყოფილა“)', blood_loss: 'სისხლის დაკარგვა' };
 export const AIRWAY_KA: Record<string, string> = { none: 'სპონტანური (მოწყობილობის გარეშე)', nasal: 'ცხვირის კანულა', mask: 'სახის ნიღაბი', lma: 'ლარინგეალური ნიღაბი (LMA)', ett: 'ენდოტრაქეული მილი (ETT)',
@@ -109,9 +115,10 @@ export interface CaseDetail extends Omit<CaseRow, 'procedures' | 'readiness'> {
   team: TeamMember[]; times: CaseTime[]; who: WhoCheck[]; who_items: { id: string; phase: string; label: string }[]; preop: Preop[];
   events: { id: string; kind: string; data: Record<string, unknown>; at: string; user_name: string | null }[];
   readiness: Readiness; allergies: { substance: string; severity: string; allergy_type: string }[]; warnings: string[]; hints: string[]; settings: OrSettings;
-  progress: { anesthesia: string | null; note: { status: string; version: number } | null; items_unposted: number; items_total: number };
+  progress: { anesthesia: string | null; note: { status: string; version: number } | null; items_unposted: number; items_total: number;
+    pacu: { discharged: boolean; destination: string | null; aldrete: number | null } | null };
   can: { edit: boolean; schedule: boolean; confirm: boolean; cancel: boolean; surgeon: boolean; team_surgical: boolean; team_anesthesia: boolean; team_nursing: boolean; preop: boolean;
-    readiness: boolean; periop: boolean; anesthesia: boolean; anesthesia_sign: boolean; note: boolean; note_sign: boolean; nursing_ops: boolean };
+    readiness: boolean; periop: boolean; anesthesia: boolean; anesthesia_sign: boolean; note: boolean; note_sign: boolean; nursing_ops: boolean; pacu: boolean; billing: boolean };
 }
 export interface Board { date: string; days: number; rooms: (Room & { block_name: string; team: DayMember[] })[]; room_teams: boolean; cases: CaseRow[]; queue: CaseRow[]; now: string }
 

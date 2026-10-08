@@ -22,7 +22,7 @@ type Ex = Database | Trx;
 const TZ = loadEnv().CLINIC_TZ;
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const money = ({ value }: { value: unknown }) => (typeof value === 'string' && value.trim() !== '' ? Number(value) : value === '' ? null : value);
-const EXCL = ['bed', 'ventilation', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
+const EXCL = ['bed', 'ventilation', 'surgery', 'anesthesia', 'service', 'consult', 'lab', 'radiology', 'endoscopy', 'medication', 'supply', 'implant', 'package', 'other'] as const;
 const METHOD_KA: Record<string, string> = { cash: 'ნაღდი', card_terminal: 'ბარათი', bank_transfer: 'გადარიცხვა', deposit: 'ავანსიდან' };
 const BILLING = ['admin', 'billing'] as const;
 const FRONT = ['admin', 'billing', 'receptionist'] as const;
@@ -132,7 +132,7 @@ export class IpdBillingService {
     const lines = await this.db.selectFrom('invoice_line_items as l').leftJoin('users as a', 'a.id', 'l.added_by')
       .select(['l.id', 'l.category', 'l.description', 'l.quantity', 'l.unit_price', 'l.original_price', 'l.line_total', 'l.package_included', 'l.discount_reason', 'l.created_at',
         sql<string | null>`to_char(l.service_date, 'YYYY-MM-DD')`.as('service_date'), 'l.added_by', sql<string | null>`a.first_name || ' ' || a.last_name`.as('added_by_name')])
-      .where('l.invoice_id', '=', b.invoice.id).orderBy(sql`array_position(ARRAY['package','bed','ventilation','consult','service','lab','radiology','endoscopy','medication','supply','implant','other']::varchar[], l.category)`)
+      .where('l.invoice_id', '=', b.invoice.id).orderBy(sql`array_position(ARRAY['package','bed','ventilation','surgery','anesthesia','consult','service','lab','radiology','endoscopy','medication','supply','implant','other']::varchar[], l.category)`)
       .orderBy('l.created_at').execute();
     const payers = await this.db.selectFrom('stay_payers as sp').innerJoin('payers as p', 'p.id', 'sp.payer_id').leftJoin('drg_groups as g', 'g.code', 'sp.drg_code')
       .leftJoin('users as c', 'c.id', 'sp.created_by')
@@ -416,6 +416,13 @@ export class IpdBillingService {
           const vm = await trx.selectFrom('stay_vent_days').select(sql<number>`count(*)::int`.as('n')).where('encounter_id', '=', encounterId).where('tariff_id', 'is', null)
             .where('package_included', '=', false).executeTakeFirstOrThrow();
           if (vm.n) throw new ConflictException({ code: 'VENT_TARIFF_MISSING', message: `ხელოვნური ვენტილაციის დღე (${vm.n}) ტარიფის გარეშეა — მოდულები → რეანიმაცია → ვენტილაციის დღის ტარიფი` });
+        }
+        // 0050: ოპერაცია / ანესთეზია ტარიფის გარეშე (or_sync_case_billing — syncBedDays-ში)
+        const om = await trx.selectFrom('or_case_billing as b').innerJoin('or_cases as c', 'c.id', 'b.case_id').select(['c.case_no', 'b.missing'])
+          .where('b.encounter_id', '=', encounterId).where(sql<boolean>`cardinality(b.missing) > 0`).execute();
+        if (om.length) {
+          throw new ConflictException({ code: 'OR_TARIFF_MISSING', message: `ოპერაცია ტარიფის გარეშე — ${om.map((x) => `${x.case_no}: ${x.missing.join('; ')}`).join(' | ')} (საოპერაციო → კატალოგი / ანესთეზიის ტარიფები)`,
+            missing: om });
         }
         const b = (await loadBilling(trx, encounterId))!;
         for (const p of b.calc.payers) await trx.updateTable('stay_payers').set({ covered_amount: p.amount.toFixed(2) }).where('id', '=', p.id).execute();

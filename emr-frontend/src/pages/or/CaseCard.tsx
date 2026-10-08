@@ -7,14 +7,15 @@ import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, genderShort, hhmm, localISO, todayISO } from '../../lib/format';
 import { CancelDialog, invalOr, ReasonPrompt, RequestDialog, ScheduleDialog } from './Dialogs';
 import { AnesthesiaTab, MaterialsTab, NoteTab } from './IntraOp';
+import { BillingTab, PacuTab } from './Postop';
 import { ANESTHESIA_KA, CASE_ST, chip, DEST_KA, dt, EVENT_KA, GRP_KA, hm, PHASE_KA, RISK_KA, SIDE_KA, TIME_KA, TIME_KINDS, URGENCY, useOrModule, useOrSetup, WHO_KA,
   type CaseDetail, type CaseRow, type Preop, type TeamMember, type TimeKind } from './types';
 
 const TABS: [string, string][] = [['overview', 'მიმოხილვა'], ['team', 'გუნდი'], ['preop', 'წინასაოპერაციო'], ['who', 'WHO ჩეკლისტი'], ['times', 'ნიშნულები'],
-  ['anesthesia', 'ანესთეზია'], ['materials', 'მასალები / დათვლა'], ['note', 'ოქმი'], ['history', 'ისტორია']];
+  ['anesthesia', 'ანესთეზია'], ['materials', 'მასალები / დათვლა'], ['note', 'ოქმი'], ['pacu', 'PACU'], ['billing', 'ბილინგი'], ['history', 'ისტორია']];
 const GRP_RIGHT = (c: CaseDetail, g: string) => (g === 'anesthesia' ? c.can.team_anesthesia : g === 'nursing' ? c.can.team_nursing : c.can.team_surgical);
 
-/** ოპერაციის ბარათი (0048 + 0049: ანესთეზიის რუკა, მასალები / დათვლა / CSSD, ოქმი) */
+/** ოპერაციის ბარათი (0048 + 0049: ანესთეზიის რუკა, მასალები / დათვლა / CSSD, ოქმი + 0050: PACU, ბილინგი) */
 export default function CaseCard() {
   const { id } = useParams(); const nav = useNavigate(); const [sp, setSp] = useSearchParams();
   const q = useQuery({ queryKey: ['or-case', id], queryFn: () => api<CaseDetail>(`/or/cases/${id}`), refetchInterval: 30_000 });
@@ -30,6 +31,8 @@ export default function CaseCard() {
     team: <span className="chip" style={{ height: 18 }}>{c.team.filter((t) => !t.removed_at && !t.out_at).length}</span>,
     anesthesia: c.progress.anesthesia === 'signed' ? <span className="chip ok" style={{ height: 18 }}>✓</span> : c.progress.anesthesia ? <span className="chip warn" style={{ height: 18 }}>…</span> : null,
     note: c.progress.note?.status === 'signed' ? <span className="chip ok" style={{ height: 18 }}>v{c.progress.note.version}</span> : c.progress.note ? <span className="chip warn" style={{ height: 18 }}>შავი</span> : null,
+    pacu: c.progress.pacu ? (c.progress.pacu.discharged ? <span className="chip ok" style={{ height: 18 }}>✓</span>
+      : <span className="chip accent" style={{ height: 18 }}>{c.progress.pacu.aldrete ?? '…'}</span>) : null,
     materials: c.progress.items_unposted ? <span className="chip warn" style={{ height: 18 }}>{c.progress.items_unposted}</span> : c.progress.items_total ? <span className="chip ok" style={{ height: 18 }}>✓</span> : null,
   };
   return (
@@ -58,6 +61,7 @@ export default function CaseCard() {
         {c.hints.map((h) => <div key={h} className="alert info small">{h}</div>)}
         {tab === 'team' ? <TeamTab c={c} /> : tab === 'preop' ? <PreopTab c={c} /> : tab === 'who' ? <WhoTab c={c} /> : tab === 'times' ? <TimesTab c={c} cur={curTimes} />
           : tab === 'anesthesia' ? <AnesthesiaTab c={c} /> : tab === 'materials' ? <MaterialsTab c={c} /> : tab === 'note' ? <NoteTab c={c} />
+          : tab === 'pacu' ? <PacuTab c={c} /> : tab === 'billing' ? <BillingTab c={c} />
           : tab === 'history' ? <History c={c} /> : <Overview c={c} />}
       </div>
     </>
@@ -391,7 +395,8 @@ function TimesTab({ c, cur }: { c: CaseDetail; cur: CaseDetail['times'] }) {
                 {k === 'incision' && !c.who.some((w) => w.phase === 'time_out' && !w.voided_at) && <div className="small" style={{ color: 'var(--danger)' }}>საჭიროა Time out</div>}
                 {k === 'out_of_room' && !c.who.some((w) => w.phase === 'sign_out' && !w.voided_at) && <div className="small" style={{ color: 'var(--danger)' }}>საჭიროა Sign out</div>}
                 {k === 'out_of_room' && !t && c.settings.note_required.length > 0 && c.progress.note?.status !== 'signed' && <div className="small muted">ოქმის სავალდებულო ველები — „ოქმი“</div>}
-                {!t && c.settings.count_mode !== 'off' && ['incision', 'closure', 'out_of_room'].includes(k) && <div className="small muted">დათვლა — „მასალები / დათვლა“</div>}</td>
+                {!t && c.settings.count_mode !== 'off' && ['incision', 'closure', 'out_of_room'].includes(k) && <div className="small muted">დათვლა — „მასალები / დათვლა“</div>}
+                {!t && k === 'pacu_out' && <div className="small muted">გამოწერა — Aldrete ≥ {c.settings.pacu_aldrete_min} (ICU — ზღვრის გარეშე); „PACU“ ჩანართი</div>}</td>
               <td className="mono">{t ? <>{dateGe(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tbilisi' }).format(new Date(t.at)))} <strong>{hhmm(t.at)}</strong></> : '—'}
                 {t?.correction_reason && <div className="small muted" style={{ fontFamily: 'var(--font)' }}>შესწორდა: {t.correction_reason}</div>}</td>
               <td className="small">{t?.by_name ?? ''}</td>
@@ -461,6 +466,9 @@ function evText(k: string, d: Record<string, unknown>) {
     case 'time_corrected': return `${TIME_KA[x(d.kind) as TimeKind] ?? x(d.kind)}: ${hhmm(x(d.from))} → ${hhmm(x(d.at))} · ${x(d.reason)}`;
     case 'updated': return (d.fields as string[] | undefined)?.length ? `ველები: ${(d.fields as string[]).length}${d.reason ? ` · ${x(d.reason)}` : ''}` : '';
     case 'requested': return URGENCY[x(d.urgency)]?.[1] ?? '';
+    case 'pacu_score': return `${x(d.total)} / 10${d.pain != null ? ` · ტკივილი ${x(d.pain)}` : ''}${d.ponv ? ' · PONV' : ''}`;
+    case 'pacu_score_voided': return `${x(d.total)} · ${x(d.reason)}`;
+    case 'pacu_discharged': return `→ ${DEST_KA[x(d.destination)] ?? x(d.destination)} · Aldrete ${x(d.aldrete)}${d.note ? ` · ${x(d.note)}` : ''}`;
     default: return '';
   }
 }

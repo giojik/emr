@@ -54,13 +54,14 @@ export class TransfersService {
     return query.execute();
   }
 
-  async request(encounterId: string, dto: TransferRequestDto, u: AuthUser, ctx: AuditContext) {
+  /** opts.authorized — უფლება უკვე შემოწმებულია გამომძახებელ მოდულში (0050: PACU-დან გამოწერა — საოპერაციო ექთანი / ანესთეზიოლოგი) */
+  async request(encounterId: string, dto: TransferRequestDto, u: AuthUser, ctx: AuditContext, opts: { authorized?: boolean; source?: string } = {}) {
     try {
       const out = await this.db.transaction().execute(async (trx) => {
         const st = await this.ipd.lockStay(trx, encounterId);
         const cur = await trx.selectFrom('bed_assignments').selectAll().where('encounter_id', '=', encounterId).where('ended_at', 'is', null).forUpdate().executeTakeFirstOrThrow();
         const e = await trx.selectFrom('encounters').select(['attending_doctor_id']).where('id', '=', encounterId).executeTakeFirstOrThrow();
-        if (!(await this.ipd.isStaff(u, cur.department_id, trx)) && e.attending_doctor_id !== u.id) {
+        if (!opts.authorized && !(await this.ipd.isStaff(u, cur.department_id, trx)) && e.attending_doctor_id !== u.id) {
           throw new ForbiddenException('გადაყვანას ითხოვს განყოფილების თანამშრომელი ან მკურნალი ექიმი');
         }
         const leave = await trx.selectFrom('inpatient_leaves').select('id').where('encounter_id', '=', encounterId).where('returned_at', 'is', null).executeTakeFirst();
@@ -70,7 +71,8 @@ export class TransfersService {
         const from = await trx.selectFrom('departments').select('name').where('id', '=', cur.department_id).executeTakeFirstOrThrow();
         const t = await trx.insertInto('inpatient_transfers').values({ encounter_id: encounterId, from_assignment_id: cur.id, from_department_id: cur.department_id,
           to_department_id: to.id, reason: dto.reason.trim(), requested_by: u.id }).returning('id').executeTakeFirstOrThrow();
-        await this.ipd.event(trx, { encounter_id: encounterId, kind: 'transfer_requested', data: { transfer_id: t.id, from: from.name, to: to.name, reason: dto.reason.trim() } }, u);
+        await this.ipd.event(trx, { encounter_id: encounterId, kind: 'transfer_requested', data: { transfer_id: t.id, from: from.name, to: to.name, reason: dto.reason.trim(),
+          ...(opts.source && { source: opts.source }) } }, u);
         await this.audit.log(ctx, { action: 'INPATIENT_TRANSFER_REQUEST', entityName: 'inpatient_transfers', entityId: t.id, newData: { encounter_id: encounterId, ...dto } }, trx);
         const p = await trx.selectFrom('patients').select(['first_name', 'last_name']).where('id', '=', st.patient_id).executeTakeFirstOrThrow();
         return { id: t.id, to, from: from.name, patient: `${p.last_name} ${p.first_name}`, adm_no: st.adm_no };

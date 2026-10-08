@@ -10,7 +10,7 @@ import IcdPicker from '../encounter/IcdPicker';
 import { ANESTHESIA_KA, CASE_ST, chip, hm, SIDE_KA, URGENCY, useOrSetup, type Board, type CaseDetail, type Procedure } from './types';
 
 export const invalOr = (qc: QueryClient) => {
-  for (const k of ['or-board', 'or-case', 'or-my', 'or-cases', 'or-queue', 'or-anest', 'or-note', 'or-mat', 'or-roster', 'or-implants']) void qc.invalidateQueries({ queryKey: [k] });
+  for (const k of ['or-board', 'or-case', 'or-my', 'or-cases', 'or-queue', 'or-anest', 'or-note', 'or-mat', 'or-roster', 'or-implants', 'or-pacu', 'or-pacu-board', 'or-billing']) void qc.invalidateQueries({ queryKey: [k] });
 };
 
 // ================================================================= მოთხოვნა (ახალი / რედაქტირება)

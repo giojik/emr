@@ -384,6 +384,25 @@ function OrSettingsCard({ s, set }: { s: Record<string, unknown>; set: (v: Recor
           <label className="row"><input type="checkbox" checked={!!v<boolean>('room_teams')} onChange={(e) => upd('room_teams', e.target.checked)} /> დაგეგმვისას ოთახის დღის გუნდი ემატება ოპერაციას ავტომატურად</label>
           <span className="small muted">მუდმივი გუნდი + დღის ცვლილებები — „საოპერაციო → ოთახის გუნდი“</span></div>
       </div>
+      <h3 style={{ margin: '6px 0 0' }}>PACU, ბილინგი, სტატისტიკა</h3>
+      <div style={grid}>
+        <div className="stack" style={{ gap: 6 }}>
+          {num('pacu_aldrete_min', 'PACU — გამოწერის Aldrete ზღვარი (0–10)', 1, 10, 'განყოფილებაში / სხვაგან — ბოლო შეფასება ≥ ზღვარი; ICU-ში — ზღვრის გარეშე')}
+          {num('first_case_tolerance_min', 'პირველი ოპერაცია — დასაშვები დაგვიანება (წთ)', 0, 120, 'სტატისტიკა: „დროული დაწყება“')}
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          {radio('multi_procedure_billing', 'რამდენიმე პროცედურა', [['all', 'ყველა — სრული ტარიფით', ''],
+            ['primary_plus_pct', 'ძირითადი + %', 'ძირითადი — სრული, დანარჩენი — მითითებული %']])}
+          {v<string>('multi_procedure_billing') === 'primary_plus_pct' && num('multi_procedure_pct', 'დამატებითი პროცედურა — % ტარიფიდან', 0, 100)}
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          {radio('anesthesia_billing', 'ანესთეზიის ბილინგი', [['fixed', 'ფიქსირებული (ტიპზე)', 'ერთი ტარიფი ანესთეზიის ტიპზე'],
+            ['hourly', 'საათობრივი', 'დაწყება → დასრულება, დამრგვალება ზემოთ'], ['off', 'არ ერიცხება', '']])}
+          {v<string>('anesthesia_billing') === 'hourly' && <Field label="დამრგვალება (წთ)" htmlFor="or-arm"><select id="or-arm" className="select" value={v<number>('anesthesia_round_min') ?? 15}
+            onChange={(e) => upd('anesthesia_round_min', Number(e.target.value))}>{[15, 30, 60].map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>}
+        </div>
+      </div>
+      <span className="small muted">ტარიფები: პროცედურები — კატალოგში, ანესთეზია — <Link to="/admin/or">ადმინისტრირება → საოპერაციო → ანესთეზიის ტარიფები</Link>. ტარიფის გარეშე ოპერაცია ბლოკავს სტაციონარის ფინანსურ დახურვას. მასალები / იმპლანტები / მედიკამენტები — კატეგორიის წესით; ოთახის დრო და ქირურგის ჰონორარი — არ ერიცხება.</span>
       <span className="small">ოთახები, პროცედურების კატალოგი, ჩეკლისტები — <Link to="/admin/or">ადმინისტრირება → საოპერაციო</Link>; ოქმის შაბლონები, preference card-ები — <Link to="/or?tab=library">საოპერაციო → შაბლონები / ბარათები</Link>. WHO Time out „განაკვეთამდე“ და Sign out „დასრულებამდე“, არასტერილური ნაკრების ბლოკი, ნარკოტიკულზე მოწმე — სავალდებულოა (არაარჩევადი).</span>
     </div>
   );
