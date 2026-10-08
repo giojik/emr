@@ -29,6 +29,7 @@ export const ROLE_KA: Record<string, string> = {
   billing: 'მოლარე', pharmacist: 'ფარმაცევტი', diagnostic: 'ლაბორანტი', lab_doctor: 'ლაბორატორიის ექიმი / ხელმძღვანელი', lab_manager: 'ლაბორატორიის მენეჯერი', phlebotomist: 'ფლებოტომისტი',
   radiographer: 'რენტგენ-ტექნიკოსი', radiologist: 'რადიოლოგი', endoscopist: 'ენდოსკოპისტი', endoscopy_nurse: 'ენდოსკოპიის ექთანი',
   storekeeper: 'მესაწყობე', stock_manager: 'საწყობის მენეჯერი',
+  or_schedule: 'საოპერაციოს კოორდინატორი', anesthesiologist: 'ანესთეზიოლოგი', or_nurse: 'საოპერაციო ექთანი',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };

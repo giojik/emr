@@ -15,6 +15,8 @@ import { DepartmentMar } from './Mar';
 import { IcuBoardTab } from './Icu';
 import { DepartmentHandover } from './Nursing';
 import { DepartmentOrders } from './Orders';
+import { RequestDialog } from '../or/Dialogs';
+import { useOrModule } from '../or/types';
 import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
 
 const ADMITTERS = ['admin', 'receptionist', 'doctor'] as const;
@@ -365,6 +367,7 @@ function PlannedQueue() {
   const [add, setAdd] = useState(false); const [reserve, setReserve] = useState<Planned | null>(null); const [admit, setAdmit] = useState<Planned | null>(null); const [cancel, setCancel] = useState<Planned | null>(null);
   const release = useMutation({ mutationFn: (id: string) => api(`/inpatient/planned/${id}/release`, { body: {} }), onSuccess: () => { toast.show('დაჯავშნა მოხსნილია'); inval(qc); } });
   const rb = useQuery({ queryKey: ['ipd-board', reserve?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: reserve!.department_id } }), enabled: !!reserve });
+  const orOn = useOrModule().enabled; const [orReq, setOrReq] = useState<Planned | null>(null); const nav = useNavigate();
   return (
     <div className="content">
       {toast.node}
@@ -391,6 +394,7 @@ function PlannedQueue() {
               <td className="row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 {!p.bed_id && <button className="btn sm" type="button" onClick={() => setReserve(p)}>დაჯავშნა</button>}
                 {p.bed_id && <button className="btn sm" type="button" onClick={() => release.mutate(p.id)}>მოხსნა</button>}
+                {orOn && can(user, 'doctor', 'admin') && <button className="btn sm" type="button" onClick={() => setOrReq(p)}>ოპერაცია</button>}
                 {can(user, ...ADMITTERS) && <button className="btn sm primary" type="button" onClick={() => setAdmit(p)}>მიღება</button>}
                 {can(user, ...ADMITTERS) && <button className="btn sm" type="button" onClick={() => setCancel(p)}>გაუქმება</button>}
               </td>
@@ -398,6 +402,7 @@ function PlannedQueue() {
             {!q.data?.length && <tr><td colSpan={7} className="empty">რიგი ცარიელია</td></tr>}</tbody>
         </table></div>)}
       {add && <PlannedDialog onClose={() => setAdd(false)} />}
+      {orReq && <RequestDialog plannedId={orReq.id} patient={{ id: orReq.patient_id, name: `${orReq.last_name} ${orReq.first_name}` }} onClose={() => setOrReq(null)} onDone={(id) => nav(`/or/case/${id}`)} />}
       {reserve && rb.data && <AssignDialog plannedId={reserve.id} title={`${reserve.last_name} ${reserve.first_name}`} board={rb.data} onClose={() => setReserve(null)} />}
       {admit && <Admit planned={admit} onDone={() => setAdmit(null)} />}
       {cancel && <ReasonDialog title={`გაუქმება — ${cancel.plan_no}`} path={`/inpatient/planned/${cancel.id}/cancel`} onClose={() => setCancel(null)} />}

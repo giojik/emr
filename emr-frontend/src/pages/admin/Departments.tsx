@@ -6,7 +6,7 @@ import { ErrorBox, Field, Loading, Modal } from '../../components/ui';
 import { useModules } from '../../lib/modules';
 import { ALL_FEATURES, FEATURE_KA, LEVEL_KA, type IcuFeature } from '../inpatient/Icu';
 
-const TYPES: Record<string, string> = { outpatient: 'ამბულატორიული', inpatient: 'სტაციონარული', diagnostic: 'დიაგნოსტიკური', administrative: 'ადმინისტრაციული' };
+const TYPES: Record<string, string> = { outpatient: 'ამბულატორიული', inpatient: 'სტაციონარული', diagnostic: 'დიაგნოსტიკური', administrative: 'ადმინისტრაციული', or: 'საოპერაციო ბლოკი' };
 
 export default function Departments() {
   const q = useQuery({ queryKey: ['departments', 'all'], queryFn: () => api<Department[]>('/departments', { query: { include_inactive: true } }) });

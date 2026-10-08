@@ -28,6 +28,10 @@ import Assets from './pages/assets/Assets';
 import Cssd from './pages/cssd/Cssd';
 import Inpatient from './pages/inpatient/Inpatient';
 import Stay from './pages/inpatient/Stay';
+import Or from './pages/or/Or';
+import CaseCard from './pages/or/CaseCard';
+import OrSetup from './pages/or/OrSetup';
+import { OR_READ } from './pages/or/types';
 import Beds from './pages/admin/Beds';
 import { IcuSetup } from './pages/inpatient/Icu';
 import Printers from './pages/admin/Printers';
@@ -94,6 +98,8 @@ export default function App() {
         <Route path="/cssd" element={<Cssd />} />
         <Route path="/inpatient" element={<Guard roles={IPD_READ}><Inpatient /></Guard>} />
         <Route path="/inpatient/stay/:id" element={<Guard roles={IPD_READ}><Stay /></Guard>} />
+        <Route path="/or" element={<Guard roles={OR_READ}><Or /></Guard>} />
+        <Route path="/or/case/:id" element={<Guard roles={OR_READ}><CaseCard /></Guard>} />
         <Route path="/stock" element={<Navigate to="/stock/balances" replace />} />
         <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
@@ -107,6 +113,7 @@ export default function App() {
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
           <Route path="icu" element={<Guard roles={['admin']}><IcuSetup /></Guard>} />
+          <Route path="or" element={<Guard roles={['admin']}><OrSetup /></Guard>} />
           <Route path="printers" element={<Guard roles={['admin']}><Printers /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />
           <Route path="analyzers" element={<Guard roles={['admin']}><Analyzers /></Guard>} />

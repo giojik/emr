@@ -78,6 +78,14 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       return null;
     },
   },
+  // 0048: საოპერაციო ბლოკი (დაგეგმვა)
+  or: {
+    keys: {
+      or_scheduling: (v) => oneOf(v, ['coordinator', 'surgeon_self', 'both']), anesthesia_team_by: (v) => oneOf(v, ['anesthesia_head', 'surgeon']),
+      preop_readiness: (v) => oneOf(v, ['warn', 'block']), turnover_min: (v) => int(v, 0, 180), default_duration_min: (v) => int(v, 5, 1440),
+      self_booking_days: (v) => int(v, 1, 365), notify_requests: bool,
+    },
+  },
   cssd: {
     keys: {
       instrument_tracking: bool, cycle_entry: (v) => oneOf(v, ['manual']), wash_record: bool, bd_required: bool, bi_frequency: (v) => oneOf(v, ['each', 'daily', 'weekly', 'off']),

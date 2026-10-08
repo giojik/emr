@@ -2,7 +2,7 @@ import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, Length, M
 
 export const CARE_LEVELS = ['ward', 'intensive', 'icu'] as const;
 export const ICU_FEATURES = ['sheet', 'ventilation', 'infusions', 'sofa', 'apache', 'abg', 'bundles', 'icu_note', 'board'] as const;
-export const DEPARTMENT_TYPES = ['inpatient', 'outpatient', 'diagnostic', 'administrative'] as const;
+export const DEPARTMENT_TYPES = ['inpatient', 'outpatient', 'diagnostic', 'administrative', 'or'] as const;   // or — საოპერაციო ბლოკი (0048)
 export type DepartmentType = (typeof DEPARTMENT_TYPES)[number];
 
 export class CreateDepartmentDto {

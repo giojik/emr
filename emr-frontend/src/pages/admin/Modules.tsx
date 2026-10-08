@@ -42,6 +42,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
       {m.code === 'icu' && <IcuSettings s={s} set={setS} />}
+      {m.code === 'or' && <OrSettingsCard s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -331,6 +332,38 @@ function IcuSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
         </div>
       </details>
       <span className="small">bundle-ის პუნქტები და APACHE II-ის კატეგორიები — <Link to="/admin/icu">ადმინისტრირება → რეანიმაცია</Link>.</span>
+    </div>
+  );
+}
+
+// 0048: საოპერაციო ბლოკი — კლინიკის არჩევანი
+function OrSettingsCard({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 } as const;
+  const radio = (k: string, label: string, opts: [string, string, string][]) => (
+    <div className="stack" style={{ gap: 6 }}><span className="label">{label}</span>
+      {opts.map(([val, l, hint]) => <label key={val} className="row" style={{ alignItems: 'flex-start' }}><input type="radio" name={`or-${k}`} checked={v<string>(k) === val} onChange={() => upd(k, val)} />
+        <span>{l}<div className="small muted">{hint}</div></span></label>)}</div>);
+  const num = (k: string, label: string, min: number, max: number, hint?: string) => <Field label={label} htmlFor={`or-${k}`} hint={hint}>
+    <input id={`or-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? ''} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
+  return (
+    <div className="stack">
+      <div style={grid}>
+        {radio('or_scheduling', 'ვინ გეგმავს', [['coordinator', 'კოორდინატორი', 'ოთახს / დროს ანიჭებს კოორდინატორი; ქირურგი — მოთხოვნა'],
+          ['surgeon_self', 'ქირურგი — თავისუფალ სლოტზე', 'დაშვებულ ოთახებში (სპეციალობა, საათები, გადაფარვა — მკაცრად)'],
+          ['both', 'ორივე', 'ქირურგი — წინასწარი ჯავშანი („დასადასტურებელი“), კოორდინატორი ადასტურებს / გადაიტანს']])}
+        {radio('anesthesia_team_by', 'ანესთეზიის გუნდს ნიშნავს', [['anesthesia_head', 'ანესთეზიოლოგიის ხელმძღვანელი', 'ქირურგი — სასურველ ანესთეზიოლოგს მიუთითებს'],
+          ['surgeon', 'ქირურგი / განყოფილების ხელმძღვანელი', '']])}
+        {radio('preop_readiness', 'წინასაოპერაციო მზადყოფნა', [['warn', 'გაფრთხილება', 'არასრულზე — ოპერაცია დაიწყება დასაბუთებით'], ['block', 'ბლოკი', 'არასრულზე ოპერაცია ვერ დაიწყება']])}
+      </div>
+      <div style={grid}>
+        {num('turnover_min', 'მომზადების დრო ოპერაციებს შორის (წთ)', 0, 180, 'ოთახის გადაფარვის შემოწმებისას')}
+        {num('default_duration_min', 'ნაგულისხმევი ხანგრძლივობა (წთ)', 5, 1440, 'თუ პროცედურას არ აქვს')}
+        {num('self_booking_days', 'ქირურგის ჯავშანი — მაქს. დღით ადრე', 1, 365)}
+      </div>
+      <label className="row"><input type="checkbox" checked={!!v<boolean>('notify_requests')} onChange={(e) => upd('notify_requests', e.target.checked)} /> ახალი მოთხოვნა — შეტყობინება კოორდინატორებს (გადაუდებელი — სასწრაფო)</label>
+      <span className="small">ოთახები, პროცედურების კატალოგი, ჩეკლისტები — <Link to="/admin/or">ადმინისტრირება → საოპერაციო</Link>. WHO Time out „განაკვეთამდე“ და Sign out „დასრულებამდე“ — სავალდებულოა (არაარჩევადი).</span>
     </div>
   );
 }

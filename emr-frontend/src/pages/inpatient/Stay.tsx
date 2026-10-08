@@ -13,6 +13,7 @@ import EpicrisisPanel from './Epicrisis';
 import MarPanel from './Mar';
 import NursingPanel from './Nursing';
 import IcuPanel from './Icu';
+import { OrStayPanel } from '../or/CaseCard';
 import OrdersPanel from './Orders';
 import StayBillingPanel from './Billing';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
@@ -41,7 +42,8 @@ const EV_KA: Record<string, string> = { admitted: 'ჰოსპიტალი�
   body_released: 'გვამის გატანა', closed: 'შემთხვევა დაიხურა', epicrisis_created: 'ეპიკრიზი შეიქმნა', epicrisis_signed: 'ეპიკრიზი ხელმოწერილია', epicrisis_cosigned: 'ეპიკრიზი თანახელმოწერილია',
   epicrisis_reopened: 'ეპიკრიზი ხელახლა გაიხსნა',
   icu_in: 'რეანიმაცია / ინტენსიური — შემოსვლა', icu_out: 'რეანიმაცია / ინტენსიური — გასვლა', icu_interval: 'ფურცლის ინტერვალი', vent_started: 'ვენტილაცია დაიწყო', vent_ended: 'ვენტილაცია დასრულდა',
-  icu_score: 'SOFA / APACHE II' };
+  icu_score: 'SOFA / APACHE II',
+  or_requested: 'ოპერაციის მოთხოვნა', or_scheduled: 'ოპერაცია დაიგეგმა', or_cancelled: 'ოპერაცია გაუქმდა', or_started: 'ოპერაცია დაიწყო', or_completed: 'ოპერაცია დასრულდა' };
 const END_KA: Record<string, string> = { bed_change: 'საწოლის შეცვლა', transfer: 'გადაყვანა', discharge: 'გაწერა', cancel: 'გაუქმება' };
 const TR_KA: Record<string, string> = { requested: 'მოლოდინში', accepted: 'მიღებულია', rejected: 'უარყოფილია', cancelled: 'გაუქმებულია' };
 const DX_KA: Record<string, string> = { admission: 'მიმღები', primary: 'ძირითადი', secondary: 'თანმხლები', complication: 'გართულება' };
@@ -69,6 +71,8 @@ function evText(k: string, d: Record<string, unknown>) {
     case 'vent_started': return `${d.kind === 'invasive' ? 'ინვაზიური' : d.kind === 'niv' ? 'NIV' : 'HFNC'}${d.ett ? ` · ETT №${x(d.ett)}` : ''}`;
     case 'vent_ended': return x(d.reason);
     case 'icu_score': return `${d.kind === 'sofa' ? 'SOFA' : 'APACHE II'} ${x(d.total)}`;
+    case 'or_scheduled': return d.room ? `ოთახი ${x(d.room)}${d.start ? ` · ${tsDate(x(d.start))}` : ''}` : '';
+    case 'or_cancelled': return x(d.reason);
     default: return '';
   }
 }
@@ -187,6 +191,7 @@ export default function Stay() {
             </div>
           </section>}
         </div>
+        {s.status !== 'cancelled' && <OrStayPanel encounterId={s.encounter_id} patientId={s.patient_id} active={active} />}
         {s.status !== 'cancelled' && <IcuPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <DoctorNotesPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}

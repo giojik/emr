@@ -436,6 +436,7 @@ export interface Departments {
   is_active: Generated<boolean>;
   monitor_interval_min: number | null;
   name: string;
+  or_stock_location_id: string | null;
   type: string;
   updated_at: Generated<Timestamp>;
 }
@@ -2033,6 +2034,223 @@ export interface NursingNotes {
   voided_by: string | null;
 }
 
+export interface OrCancelReasons {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface OrCaseEvents {
+  at: Generated<Timestamp>;
+  case_id: string;
+  data: Generated<Json>;
+  id: Generated<Int8>;
+  kind: string;
+  user_id: string | null;
+}
+
+export interface OrCaseProcedures {
+  case_id: string;
+  id: Generated<string>;
+  is_primary: Generated<boolean>;
+  note: string | null;
+  procedure_id: string;
+  side: Generated<string>;
+  sort_order: Generated<number>;
+}
+
+export interface OrCaseReadiness {
+  answer: string;
+  case_id: string;
+  checked_at: Generated<Timestamp>;
+  checked_by: string;
+  item_id: string;
+  note: string | null;
+}
+
+export interface OrCases {
+  anesthesia_type: string;
+  block_id: string | null;
+  blood_note: string | null;
+  cancel_note: string | null;
+  cancel_reason_code: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  case_no: string;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  duration_min: number;
+  encounter_id: string | null;
+  icd10_code: string | null;
+  icd10_title: string | null;
+  id: Generated<string>;
+  locked_at: Timestamp | null;
+  needs_blood: Generated<boolean>;
+  needs_equipment: string | null;
+  needs_icu: Generated<boolean>;
+  needs_implant: Generated<boolean>;
+  notes: string | null;
+  patient_id: string;
+  planned_id: string | null;
+  postpone_count: Generated<number>;
+  preferred_anesthesiologist_id: string | null;
+  preferred_date: string | null;
+  preferred_time: string | null;
+  readiness_override: string | null;
+  readiness_override_by: string | null;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  room_id: string | null;
+  schedule_warnings: string[] | null;
+  scheduled_at: Timestamp | null;
+  scheduled_by: string | null;
+  scheduled_end: Timestamp | null;
+  scheduled_start: Timestamp | null;
+  status: Generated<string>;
+  surgeon_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  urgency: Generated<string>;
+}
+
+export interface OrCaseTeam {
+  added_at: Generated<Timestamp>;
+  added_by: string;
+  case_id: string;
+  id: Generated<string>;
+  in_at: Timestamp | null;
+  out_at: Timestamp | null;
+  remove_reason: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  replaced_by: string | null;
+  role_code: string;
+  user_id: string;
+}
+
+export interface OrCaseTimes {
+  at: Timestamp;
+  case_id: string;
+  correction_reason: string | null;
+  created_at: Generated<Timestamp>;
+  destination: string | null;
+  id: Generated<string>;
+  kind: string;
+  recorded_by: string;
+  superseded_by: string | null;
+}
+
+export interface OrPreopAssessments {
+  airway_notes: string | null;
+  allergies: Generated<Json>;
+  asa_class: number | null;
+  asa_emergency: Generated<boolean>;
+  case_id: string;
+  comorbidities: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  fasting_liquids_at: Timestamp | null;
+  fasting_solids_at: Timestamp | null;
+  height_cm: Numeric | null;
+  id: Generated<string>;
+  mallampati: number | null;
+  patient_id: string;
+  plan_notes: string | null;
+  planned_anesthesia: string | null;
+  risk_notes: string | null;
+  risks: Generated<string[]>;
+  signed_at: Timestamp | null;
+  signed_by: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  weight_kg: Numeric | null;
+}
+
+export interface OrProcedures {
+  code: string;
+  created_at: Generated<Timestamp>;
+  default_duration_min: Generated<number>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  laterality: Generated<boolean>;
+  name: string;
+  ncsp_code: string | null;
+  specialty_code: string | null;
+  tariff_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OrReadinessItems {
+  applies: Generated<string>;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  label: string;
+  sort_order: Generated<number>;
+  source: Generated<string>;
+}
+
+export interface OrRooms {
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  emergency_only: Generated<boolean>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  sort_order: Generated<number>;
+  specialties: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+  work_days: Generated<number[]>;
+  work_end: Generated<string>;
+  work_start: Generated<string>;
+}
+
+export interface OrSpecialties {
+  code: string;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface OrTeamRoles {
+  capability: string;
+  code: string;
+  grp: string;
+  is_active: Generated<boolean>;
+  is_system: Generated<boolean>;
+  multiple: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface OrWhoChecks {
+  answers: Json;
+  case_id: string;
+  done_at: Generated<Timestamp>;
+  done_by: string;
+  id: Generated<string>;
+  note: string | null;
+  phase: string;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface OrWhoItems {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  label: string;
+  phase: string;
+  sort_order: Generated<number>;
+}
+
 export interface PathRequests {
   clinical_info: string | null;
   created_at: Generated<Timestamp>;
@@ -2928,6 +3146,21 @@ export interface DB {
   micro_reports: MicroReports;
   note_templates: NoteTemplates;
   nursing_notes: NursingNotes;
+  or_cancel_reasons: OrCancelReasons;
+  or_case_events: OrCaseEvents;
+  or_case_procedures: OrCaseProcedures;
+  or_case_readiness: OrCaseReadiness;
+  or_case_team: OrCaseTeam;
+  or_case_times: OrCaseTimes;
+  or_cases: OrCases;
+  or_preop_assessments: OrPreopAssessments;
+  or_procedures: OrProcedures;
+  or_readiness_items: OrReadinessItems;
+  or_rooms: OrRooms;
+  or_specialties: OrSpecialties;
+  or_team_roles: OrTeamRoles;
+  or_who_checks: OrWhoChecks;
+  or_who_items: OrWhoItems;
   path_requests: PathRequests;
   path_specimens: PathSpecimens;
   patient_allergies: PatientAllergies;
