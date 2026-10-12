@@ -16,6 +16,7 @@ type Validator = (s: Record<string, unknown>, db: Database) => Promise<string | 
 const bool = (v: unknown) => typeof v === 'boolean';
 const int = (v: unknown, a: number, b: number) => Number.isInteger(v) && (v as number) >= a && (v as number) <= b;
 const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes(v);
+const UUID = /^[0-9a-f-]{36}$/i;
 const hhmm = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 const ICU_FEATURES = ['sheet', 'ventilation', 'infusions', 'sofa', 'apache', 'abg', 'bundles', 'icu_note', 'board'];
@@ -115,6 +116,34 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       // 0052: ინვოისი / გადახდა / ხარჯი
       invoice_match: (v) => oneOf(v, ['off', 'rc', 'three_way']), match_tolerance: (v) => typeof v === 'number' && v >= 0 && v <= 10_000,
       expense_recognition: (v) => oneOf(v, ['on_invoice', 'on_payment']), ap_due_alert: bool, ap_due_days: (v) => int(v, 0, 60),
+    },
+  },
+  // 0053: ფინანსები
+  finance: {
+    keys: {
+      dept_consumption_basis: (v) => oneOf(v, ['consumption', 'issue']), revenue_basis: (v) => oneOf(v, ['service_date', 'finalized']),
+      revenue_dept_basis: (v) => oneOf(v, ['performing', 'ordering']),
+      dx_performing_dept: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 3
+        && ['lab', 'radiology', 'endoscopy'].every((k) => { const x = (v as Record<string, unknown>)[k]; return x === null || (typeof x === 'string' && UUID.test(x)); }),
+      opd_payer_required: bool, claim_overdue_alert: bool,
+      overhead_allocation: (v) => oneOf(v, ['none', 'revenue', 'bed_days', 'manual']),
+      overhead_manual: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length <= 200
+        && Object.entries(v as Record<string, unknown>).every(([k, x]) => UUID.test(k) && typeof x === 'number' && x >= 0 && x <= 100),
+      period_lock: (v) => oneOf(v, ['on', 'off']), dept_finance_visible: (v) => oneOf(v, ['heads', 'off']),
+    },
+    extra: async (s, db) => {
+      const dx = Object.values((s.dx_performing_dept ?? {}) as Record<string, string | null>).filter((x): x is string => !!x);
+      const man = (s.overhead_manual ?? {}) as Record<string, number>;
+      const ids = [...new Set([...dx, ...Object.keys(man)])];
+      const deps = ids.length ? await db.selectFrom('departments').select(['id', 'type', 'is_active']).where('id', 'in', ids).execute() : [];
+      if (dx.some((id) => !deps.find((d) => d.id === id && d.is_active))) return 'დიაგნოსტიკის შემსრულებელი განყოფილება ვერ მოიძებნა ან გათიშულია';
+      if (Object.keys(man).some((id) => !deps.find((d) => d.id === id))) return 'განაწილება (manual): განყოფილება ვერ მოიძებნა';
+      if (Object.keys(man).some((id) => deps.find((d) => d.id === id)?.type === 'administrative')) return 'განაწილება (manual): ადმინისტრაციული განყოფილება საერთო ხარჯს არ იღებს';
+      if (s.overhead_allocation === 'manual') {
+        const sum = Object.values(man).reduce((a, x) => a + x, 0);
+        if (Math.abs(sum - 100) > 0.01) return `განაწილება (manual): პროცენტების ჯამი უნდა იყოს 100 (ახლა ${Math.round(sum * 100) / 100})`;
+      }
+      return null;
     },
   },
   asset_register: {

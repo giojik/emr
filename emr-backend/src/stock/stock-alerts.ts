@@ -5,6 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { stockRules } from './stock-rules';
 import { procRules } from '../procurement/procurement-rules';
+import { finRules } from '../finance/finance-rules';
 
 const TZ = loadEnv().CLINIC_TZ;
 
@@ -203,6 +204,26 @@ export class StockAlertsService {
     return { invoices: open.length, sent };
   }
 
+  /** 0053: გადამხდელის ქლეიმი — ანაზღაურების ვადა გავიდა; ბუღალტერს, თითო ქლეიმზე ერთხელ (overdue_notified) */
+  async claimDue(today: string) {
+    const rows = await this.db.selectFrom('fin_claims as c').innerJoin('payers as p', 'p.id', 'c.payer_id')
+      .select(['c.id', 'c.claim_no', 'c.due_date', 'p.name as payer_name', sql<string>`c.total_claimed - c.total_paid - c.total_resolved`.as('outstanding')])
+      .where('c.status', 'in', ['sent', 'partial']).where('c.due_date', '<', today).where('c.overdue_notified', '=', false).execute();
+    if (!rows.length) return { claims: 0, sent: 0 };
+    const staff = (await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').where('u.is_active', '=', true)
+      .where(sql<boolean>`c.capabilities && ARRAY['accountant']::varchar[]`).execute()).map((x) => x.id);
+    let sent = 0;
+    for (const r of rows) {
+      for (const id of new Set(staff)) {
+        await this.notifications.notify(id, { kind: 'claim_due', title: `ქლეიმის ვადა გავიდა: ${r.payer_name} — ${r.claim_no}`,
+          body: `ვადა ${r.due_date}; დაუფარავი ${Number(r.outstanding).toFixed(2)} ₾`, urgent: true, entityId: r.id, link: `/finance/claims?id=${r.id}` });
+        sent++;
+      }
+      await this.db.updateTable('fin_claims').set({ overdue_notified: true }).where('id', '=', r.id).execute();
+    }
+    return { claims: rows.length, sent };
+  }
+
   /** worker: ყოველ 5 წუთში; `alert_hour`-ის შემდეგ — დღეში ერთხელ */
   async tick(force = false) {
     const { d, h } = await this.now();
@@ -211,16 +232,18 @@ export class StockAlertsService {
     const out: Record<string, unknown> = {};
     const rules = await stockRules(this.db);
     const proc = await procRules(this.db);
-    for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue', 'ap_due'] as const) {
+    const fin = await finRules(this.db);
+    for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue', 'ap_due', 'claim_due'] as const) {
       if (kind === 'po_overdue') { if (proc.po_mode === 'off' || !proc.po_overdue_alert) continue; }   // 0051: შესყიდვების პარამეტრი
       else if (kind === 'ap_due') { if (!proc.enabled || !proc.ap_due_alert) continue; }                // 0052
+      else if (kind === 'claim_due') { if (!fin.enabled || !fin.claim_overdue_alert) continue; }        // 0053
       else if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                // შემადგენლობა — კლინიკის პარამეტრი (0038)
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა
       }
       const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : kind === 'lab' ? await this.labOnboard()
-        : kind === 'po_overdue' ? await this.poOverdue(d) : kind === 'ap_due' ? await this.apDue(d, proc.ap_due_days) : await this.cssdExpiry();
+        : kind === 'po_overdue' ? await this.poOverdue(d) : kind === 'ap_due' ? await this.apDue(d, proc.ap_due_days) : kind === 'claim_due' ? await this.claimDue(d) : await this.cssdExpiry();
       out[kind] = stats;
       await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d, stats: JSON.stringify(stats) })
         .onConflict((oc) => oc.columns(['kind', 'run_date']).doUpdateSet({ stats: JSON.stringify(stats), created_at: sql`now()` })).execute();

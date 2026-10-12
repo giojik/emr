@@ -55,6 +55,8 @@ export interface Invoice {
   id: string; invoice_number: string; total_amount: string; patient_share: string; insurance_share: string; state_share: string;
   paid_status: 'unpaid' | 'partially_paid' | 'paid'; lines: InvoiceLine[]; payments: Payment[]; paid_amount?: string; balance_due?: string;
   is_inpatient?: boolean; finalized_at?: string | null; writeoff_amount?: string;
+  /** 0053: ამბულატორიის გადამხდელი */
+  insurance_payer_id?: string | null; state_payer_id?: string | null; insurance_payer_name?: string | null; state_payer_name?: string | null; claim_nos?: string | null;
 }
 export interface EncounterDetail {
   id: string; status: EncounterStatus; visit_kind?: 'consultation' | 'lab'; external_referral?: string | null; start_time: string; end_time: string | null; attending_doctor_id: string | null;

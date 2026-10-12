@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { can, api } from '../api/client';
 import type { EncounterDetail, EncounterListItem, Invoice, InvoiceLine } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { ErrorBox, Field, Loading, StatusChip, useToast } from '../components/ui';
+import { ErrorBox, Field, Loading, Modal, StatusChip, useToast } from '../components/ui';
 import { hhmm, money, todayISO, tsDate } from '../lib/format';
 
 export default function Cashier() {
@@ -69,6 +69,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
   const [amount, setAmount] = useState('');
   const [ref, setRef] = useState('');
   const [editLine, setEditLine] = useState<InvoiceLine | null>(null);
+  const [payersOpen, setPayersOpen] = useState(false);
   const due = inv.data ? Number(inv.data.balance_due ?? 0) : 0;
   useEffect(() => { if (inv.data) setAmount(Math.max(0, Number(inv.data.balance_due ?? 0)).toFixed(2)); }, [inv.data]);
 
@@ -137,7 +138,12 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
         <div className="stack" style={{ gap: 6 }}>
           <Line k="ჯამი" v={money(i.total_amount)} />
           <Line k="დაზღვევა" v={money(i.insurance_share)} muted />
+          {i.insurance_payer_name && <span className="small muted" style={{ marginTop: -4 }}>{i.insurance_payer_name}</span>}
           <Line k="სახელმწიფო" v={money(i.state_share)} muted />
+          {i.state_payer_name && <span className="small muted" style={{ marginTop: -4 }}>{i.state_payer_name}</span>}
+          {!i.is_inpatient && can(user, 'admin', 'billing', 'receptionist') && (i.claim_nos
+            ? <span className="small muted">ქლეიმში: {i.claim_nos} — გადამხდელი აღარ იცვლება</span>
+            : <button className="btn sm" type="button" style={{ alignSelf: 'flex-start' }} onClick={() => setPayersOpen(true)}>დაზღვევა / სახელმწიფო</button>)}
           {Number(i.writeoff_amount ?? 0) > 0 && <Line k="ჩამოწერა" v={money(i.writeoff_amount)} muted />}
           <Line k="გადახდილი" v={money(i.paid_amount)} muted />
           <div className="row" style={{ justifyContent: 'space-between', borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4 }}>
@@ -172,8 +178,44 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
         </>)}
         {!ipdOpen && !planned && due <= 0 && <div className="alert ok">ინვოისი სრულად გადახდილია.</div>}
       </form>
+      {payersOpen && <PayersDialog invoice={i} onClose={() => setPayersOpen(false)} onDone={() => { setPayersOpen(false); toast.show('გადამხდელი შენახულია'); refresh(); }} />}
       {toast.node}
     </div>
+  );
+}
+
+interface PayerOpt { id: string; code: string; name: string; kind: 'insurance' | 'state' | 'other' }
+/** 0053: ამბულატორიის ინვოისის გადამხდელი და წილი (ხელით) — ქლეიმისა და შემოსავლის რეპორტისთვის */
+function PayersDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose: () => void; onDone: () => void }) {
+  const payers = useQuery({ queryKey: ['payers', false], queryFn: () => api<PayerOpt[]>('/billing/payers') });
+  const [f, setF] = useState({ insurance_payer_id: invoice.insurance_payer_id ?? '', insurance_share: Number(invoice.insurance_share).toFixed(2),
+    state_payer_id: invoice.state_payer_id ?? '', state_share: Number(invoice.state_share).toFixed(2) });
+  const m = useMutation({
+    mutationFn: () => api(`/invoices/${invoice.id}/payers`, { method: 'PUT', body: { insurance_payer_id: f.insurance_payer_id || null, insurance_share: Number(f.insurance_share || 0),
+      state_payer_id: f.state_payer_id || null, state_share: Number(f.state_share || 0) } }),
+    onSuccess: onDone,
+  });
+  const patient = Number(invoice.total_amount) - Number(f.insurance_share || 0) - Number(f.state_share || 0);
+  const ins = (payers.data ?? []).filter((p) => p.kind !== 'state'); const st = (payers.data ?? []).filter((p) => p.kind === 'state');
+  return (
+    <Modal title={`გადამხდელები — ${invoice.invoice_number}`} onClose={onClose} width={600}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending || patient < -0.001} onClick={() => m.mutate()}>შენახვა</button></>}>
+      <div className="stack">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12 }}>
+          <Field label="დაზღვევა" htmlFor="ip-i"><select id="ip-i" className="select" value={f.insurance_payer_id} onChange={(e) => setF({ ...f, insurance_payer_id: e.target.value })}>
+            <option value="">— არ არის —</option>{ins.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="წილი (₾)" htmlFor="ip-is"><input id="ip-is" className="input mono" inputMode="decimal" value={f.insurance_share} onChange={(e) => setF({ ...f, insurance_share: e.target.value })} /></Field>
+          <Field label="სახელმწიფო პროგრამა" htmlFor="ip-s"><select id="ip-s" className="select" value={f.state_payer_id} onChange={(e) => setF({ ...f, state_payer_id: e.target.value })}>
+            <option value="">— არ არის —</option>{st.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="წილი (₾)" htmlFor="ip-ss"><input id="ip-ss" className="input mono" inputMode="decimal" value={f.state_share} onChange={(e) => setF({ ...f, state_share: e.target.value })} /></Field>
+        </div>
+        <Line k="ინვოისი" v={money(invoice.total_amount)} />
+        <Line k="პაციენტის წილი" v={money(Math.max(0, patient))} />
+        {patient < -0.001 && <div className="alert danger">წილების ჯამი აღემატება ინვოისის თანხას</div>}
+        <span className="hint">წილი ივსება ხელით (საგარანტიო / პოლისის პირობებით). გადამხდელის მითითება საჭიროა ქლეიმისთვის (ფინანსები → დებიტორები).</span>
+        <ErrorBox error={m.error} />
+      </div>
+    </Modal>
   );
 }
 

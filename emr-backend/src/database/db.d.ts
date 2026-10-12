@@ -970,6 +970,90 @@ export interface ExternalInstitutions {
   sort_order: Generated<number>;
 }
 
+export interface FinClaimAllocations {
+  amount: Numeric;
+  item_id: string;
+  payment_id: string;
+}
+
+export interface FinClaimItems {
+  claim_id: string;
+  claimed: Numeric;
+  id: Generated<string>;
+  invoice_id: string;
+  kind: string;
+  paid: Generated<Numeric>;
+  payer_id: string;
+  resolution: string | null;
+  resolution_reason: string | null;
+  resolved_amount: Generated<Numeric>;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  share_slot: string;
+  stay_payer_id: string | null;
+}
+
+export interface FinClaimPayments {
+  amount: Numeric;
+  claim_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  is_void: Generated<boolean>;
+  note: string | null;
+  paid_on: string;
+  ref_no: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface FinClaims {
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  claim_no: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  due_date: string | null;
+  id: Generated<string>;
+  notes: string | null;
+  overdue_notified: Generated<boolean>;
+  payer_id: string;
+  period_from: string;
+  period_to: string;
+  sent_at: Timestamp | null;
+  sent_by: string | null;
+  status: Generated<string>;
+  total_claimed: Generated<Numeric>;
+  total_paid: Generated<Numeric>;
+  total_resolved: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FinPeriodLog {
+  action: string;
+  created_at: Generated<Timestamp>;
+  data: Json | null;
+  id: Generated<Int8>;
+  month: string;
+  reason: string | null;
+  user_id: string;
+}
+
+export interface FinPeriods {
+  checklist: Json | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  month: string;
+  note: string | null;
+  reopen_reason: string | null;
+  reopened_at: Timestamp | null;
+  reopened_by: string | null;
+  snapshot: Json | null;
+  status: string;
+}
+
 export interface FluidEntries {
   auto_hour: Timestamp | null;
   category: string;
@@ -1299,11 +1383,13 @@ export interface InvoiceLineItems {
   invoice_id: string;
   line_total: Generated<Numeric | null>;
   or_case_id: string | null;
+  ordering_department_id: string | null;
   original_price: Numeric | null;
   package_included: Generated<boolean>;
+  performing_department_id: string | null;
   quantity: Generated<number>;
   referral_id: string | null;
-  service_date: string | null;
+  service_date: Generated<string>;
   stock_doc_line_id: string | null;
   tariff_id: string | null;
   unit_price: Numeric;
@@ -1315,11 +1401,13 @@ export interface Invoices {
   finalized_at: Timestamp | null;
   finalized_by: string | null;
   id: Generated<string>;
+  insurance_payer_id: string | null;
   insurance_share: Generated<Numeric>;
   invoice_number: string;
   paid_status: Generated<string>;
   patient_share: Numeric;
   reopen_count: Generated<number>;
+  state_payer_id: string | null;
   state_share: Generated<Numeric>;
   total_amount: Numeric;
   writeoff_amount: Generated<Numeric>;
@@ -2721,6 +2809,7 @@ export interface Payers {
   kind: string;
   name: string;
   notes: string | null;
+  payment_terms_days: Generated<number>;
   phone: string | null;
   tax_id: string | null;
   updated_at: Generated<Timestamp>;
@@ -3531,6 +3620,12 @@ export interface DB {
   epicrisis_revisions: EpicrisisRevisions;
   expenses: Expenses;
   external_institutions: ExternalInstitutions;
+  fin_claim_allocations: FinClaimAllocations;
+  fin_claim_items: FinClaimItems;
+  fin_claim_payments: FinClaimPayments;
+  fin_claims: FinClaims;
+  fin_period_log: FinPeriodLog;
+  fin_periods: FinPeriods;
   fluid_entries: FluidEntries;
   generated_documents: GeneratedDocuments;
   icd10_chapters: Icd10Chapters;

@@ -44,6 +44,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'icu' && <IcuSettings s={s} set={setS} />}
       {m.code === 'or' && <OrSettingsCard s={s} set={setS} />}
       {m.code === 'procurement' && <ProcSettings s={s} set={setS} />}
+      {m.code === 'finance' && <FinSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -449,6 +450,64 @@ function ProcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<
         <Field label="ვადამდე (დღე)" htmlFor="pdd"><input id="pdd" className="input mono" type="number" min={0} max={60} style={{ maxWidth: 120 }} value={v<number>('ap_due_days') ?? 3}
           onChange={(e) => upd('ap_due_days', Math.min(60, Math.max(0, Math.round(Number(e.target.value)))))} /></Field>
       </div>
+    </div>
+  );
+}
+
+interface Dept { id: string; name: string; type: string; is_active: boolean }
+/** 0053: ფინანსები — შემოსავალი, მარაგის ხარჯი, საერთო ხარჯის განაწილება, პერიოდის დახურვა */
+function FinSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const deps = useQuery({ queryKey: ['departments'], queryFn: () => api<Dept[]>('/departments') });
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 } as const;
+  const dx = (v<Record<string, string | null>>('dx_performing_dept') ?? { lab: null, radiology: null, endoscopy: null });
+  const man = (v<Record<string, number>>('overhead_manual') ?? {});
+  const receivers = (deps.data ?? []).filter((d) => d.is_active && d.type !== 'administrative');
+  const manSum = Object.values(man).reduce((a, x) => a + x, 0);
+  return (
+    <div style={grid}>
+      <Field label="მარაგის ხარჯი განყოფილებაზე" htmlFor="fcb" hint="ორივე შემთხვევაში ჩანს ქვესაწყობის ნაშთიც (გაცემული, დაუხარჯავი)">
+        <select id="fcb" className="select" value={v<string>('dept_consumption_basis')} onChange={(e) => upd('dept_consumption_basis', e.target.value)}>
+          <option value="consumption">ფაქტობრივი მოხმარება ქვესაწყობიდან</option><option value="issue">გაცემა ცენტრალურიდან განყოფილებაზე</option></select></Field>
+      <Field label="შემოსავლის თარიღი" htmlFor="frb" hint="სალაროს (ფულადი) შემოსავალი — ცალკე, „რეპორტები“">
+        <select id="frb" className="select" value={v<string>('revenue_basis')} onChange={(e) => upd('revenue_basis', e.target.value)}>
+          <option value="service_date">მომსახურების თარიღით (საწოლდღე — თავის დღეზე)</option><option value="finalized">ამბ. — ინვოისის, სტაც. — ფინალიზაციის თარიღით</option></select></Field>
+      <Field label="შემოსავლის განყოფილება (ნაგულისხმევი)" htmlFor="frd" hint="რეპორტში გადამრთველით იცვლება">
+        <select id="frd" className="select" value={v<string>('revenue_dept_basis')} onChange={(e) => upd('revenue_dept_basis', e.target.value)}>
+          <option value="performing">შემსრულებელი</option><option value="ordering">დამნიშნავი</option></select></Field>
+      <div className="stack" style={{ gap: 6 }}>
+        <span className="label">დიაგნოსტიკის შემსრულებელი განყოფილება</span>
+        {(['lab', 'radiology', 'endoscopy'] as const).map((k) => (
+          <label key={k} className="row small"><span style={{ width: 110 }}>{({ lab: 'ლაბორატორია', radiology: 'რადიოლოგია', endoscopy: 'ენდოსკოპია' })[k]}</span>
+            <select className="select grow" style={{ height: 34 }} value={dx[k] ?? ''} onChange={(e) => upd('dx_performing_dept', { ...dx, [k]: e.target.value || null })}>
+              <option value="">— დამნიშნავი განყოფილება —</option>{(deps.data ?? []).filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>))}
+        <span className="small muted">ეხება ახალ ხაზებს (არსებული ხაზი ინახავს თავის განყოფილებას).</span>
+      </div>
+      <div className="stack" style={{ gap: 10 }}>
+        {chk('opd_payer_required', 'ამბულატორია: დაზღვევის / სახელმწიფოს წილი — მხოლოდ გადამხდელის მითითებით', 'სალარო → „დაზღვევა / სახელმწიფო“')}
+        {chk('claim_overdue_alert', 'ქლეიმის ანაზღაურების ვადის გასვლა — შეტყობინება ბუღალტერს', 'დილის შემოწმებისას, თითო ქლეიმზე ერთხელ')}
+      </div>
+      <Field label="განყოფილების ფინანსები ხელმძღვანელისთვის" htmlFor="fdv" hint="მენეჯერის როლი + მომხმარებლის განყოფილება → ხედავს თავისი განყოფილების შემოსავალს, ხარჯს, შედეგს">
+        <select id="fdv" className="select" value={v<string>('dept_finance_visible')} onChange={(e) => upd('dept_finance_visible', e.target.value)}>
+          <option value="heads">ჩართული</option><option value="off">გამორთული</option></select></Field>
+      <Field label="საერთო ხარჯის განაწილება" htmlFor="foa" hint="მხოლოდ რეპორტში („განყოფილების შედეგი“); ჩანაწერები არ იცვლება">
+        <select id="foa" className="select" value={v<string>('overhead_allocation')} onChange={(e) => upd('overhead_allocation', e.target.value)}>
+          <option value="none">არ ნაწილდება</option><option value="revenue">შემოსავლის წილით</option><option value="bed_days">საწოლდღეებით</option><option value="manual">ხელით მითითებული %</option></select></Field>
+      <Field label="პერიოდის დახურვა" htmlFor="fpl" hint="ჩართულისას დახურულ თვეში (თარიღით) ფინანსური ცვლილება იბლოკება (409); გახსნა — ბუღალტერი, მიზეზით">
+        <select id="fpl" className="select" value={v<string>('period_lock')} onChange={(e) => upd('period_lock', e.target.value)}>
+          <option value="off">გამორთული (პილოტამდე)</option><option value="on">ჩართული</option></select></Field>
+      {v<string>('overhead_allocation') === 'manual' && (
+        <div className="stack" style={{ gridColumn: '1 / -1', gap: 6 }}>
+          <span className="label">განაწილება ხელით (%) — ჯამი <strong style={{ color: Math.abs(manSum - 100) > 0.01 ? 'var(--danger-ink)' : 'var(--ok-ink)' }}>{Math.round(manSum * 100) / 100}</strong> / 100</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            {receivers.map((d) => <label key={d.id} className="row small"><span className="grow">{d.name}</span>
+              <input className="input mono" type="number" min={0} max={100} step={0.01} style={{ width: 90, height: 32 }} value={man[d.id] ?? ''} onChange={(e) => {
+                const x = { ...man }; if (e.target.value === '') delete x[d.id]; else x[d.id] = Math.min(100, Math.max(0, Number(e.target.value))); upd('overhead_manual', x); }} /></label>)}
+          </div>
+        </div>)}
     </div>
   );
 }

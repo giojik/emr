@@ -50,6 +50,8 @@ export class PayerDto {
   @IsOptional() @Matches(/^[A-Z0-9][A-Z0-9_.-]{1,29}$/, { message: 'კოდი: დიდი ლათინური ასოები, ციფრები, _ . -' }) code?: string;
   @IsOptional() @IsString() @Length(2, 200) name?: string;
   @IsOptional() @IsIn(['insurance', 'state', 'other']) kind?: 'insurance' | 'state' | 'other';
+  /** 0053: ქლეიმის ანაზღაურების ვადა (დღე) */
+  @IsOptional() @IsInt() @Min(0) @Max(365) payment_terms_days?: number;
   @IsOptional() @IsString() @MaxLength(20) tax_id?: string | null;
   @IsOptional() @IsString() @MaxLength(60) contract_no?: string | null;
   @IsOptional() @IsString() @MaxLength(40) phone?: string | null;
@@ -183,7 +185,7 @@ export class BillingConfigService {
       name: dto.name?.trim(), kind: dto.kind, tax_id: dto.tax_id === undefined ? undefined : nz(dto.tax_id), contract_no: dto.contract_no === undefined ? undefined : nz(dto.contract_no),
       phone: dto.phone === undefined ? undefined : nz(dto.phone), email: dto.email === undefined ? undefined : nz(dto.email), address: dto.address === undefined ? undefined : nz(dto.address),
       default_mode: dto.default_mode, default_coverage_pct: m(dto.default_coverage_pct), default_limit: m(dto.default_limit), default_deductible: m(dto.default_deductible),
-      drg_base_rate: m(dto.drg_base_rate), writeoff_excess: dto.writeoff_excess, excluded_categories: dto.excluded_categories, notes: dto.notes === undefined ? undefined : nz(dto.notes),
+      drg_base_rate: m(dto.drg_base_rate), writeoff_excess: dto.writeoff_excess, payment_terms_days: dto.payment_terms_days, excluded_categories: dto.excluded_categories, notes: dto.notes === undefined ? undefined : nz(dto.notes),
       is_active: dto.is_active,
     }).filter(([, v]) => v !== undefined));
   }

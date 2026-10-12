@@ -18,7 +18,7 @@ export const MODE_KA: Record<string, string> = { percent: 'პროცენტ
 export interface Payer {
   id: string; code: string; name: string; kind: string; tax_id: string | null; contract_no: string | null; phone: string | null; email: string | null; address: string | null;
   default_mode: string; default_coverage_pct: string; default_limit: string | null; default_deductible: string; drg_base_rate: string | null; writeoff_excess: boolean;
-  excluded_categories: string[]; notes: string | null; is_active: boolean; used: number;
+  excluded_categories: string[]; notes: string | null; is_active: boolean; used: number; payment_terms_days?: number;
 }
 export interface Package {
   id: string; code: string; name: string; price: string; includes_bed: boolean; included_days: number | null; extra_day_tariff_id: string | null; extra_day_tariff_title: string | null;
@@ -222,14 +222,15 @@ function PayerDialog({ p, onClose }: { p: Payer | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [f, setF] = useState({ code: p?.code ?? '', name: p?.name ?? '', kind: p?.kind ?? 'insurance', tax_id: p?.tax_id ?? '', contract_no: p?.contract_no ?? '', phone: p?.phone ?? '', email: p?.email ?? '',
     address: p?.address ?? '', default_mode: p?.default_mode ?? 'percent', default_coverage_pct: p ? String(Number(p.default_coverage_pct)) : '100', default_limit: p?.default_limit ?? '',
-    default_deductible: p ? String(Number(p.default_deductible)) : '0', drg_base_rate: p?.drg_base_rate ?? '', writeoff_excess: p?.writeoff_excess ?? false, notes: p?.notes ?? '', is_active: p?.is_active ?? true });
+    default_deductible: p ? String(Number(p.default_deductible)) : '0', drg_base_rate: p?.drg_base_rate ?? '', writeoff_excess: p?.writeoff_excess ?? false, notes: p?.notes ?? '', is_active: p?.is_active ?? true,
+    payment_terms_days: String(p?.payment_terms_days ?? 30) });
   const [excl, setExcl] = useState<string[]>(p?.excluded_categories ?? []);
   const m = useMutation({
     mutationFn: () => {
       const body = { name: f.name, kind: f.kind, tax_id: f.tax_id || null, contract_no: f.contract_no || null, phone: f.phone || null, email: f.email || null, address: f.address || null,
         default_mode: f.default_mode, default_coverage_pct: Number(f.default_coverage_pct), default_limit: f.default_limit === '' ? null : Number(f.default_limit),
         default_deductible: Number(f.default_deductible || 0), drg_base_rate: f.drg_base_rate === '' ? null : Number(f.drg_base_rate), writeoff_excess: f.writeoff_excess,
-        excluded_categories: excl, notes: f.notes || null };
+        excluded_categories: excl, notes: f.notes || null, payment_terms_days: Math.max(0, Math.min(365, Math.round(Number(f.payment_terms_days) || 0))) };
       return p ? api(`/billing/payers/${p.id}`, { method: 'PATCH', body: { ...body, is_active: f.is_active } }) : api('/billing/payers', { body: { ...body, code: f.code } });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['payers'] }); onClose(); },
@@ -251,6 +252,7 @@ function PayerDialog({ p, onClose }: { p: Payer | null; onClose: () => void }) {
           <Field label="ტელეფონი" htmlFor="py-ph"><input id="py-ph" className="input" value={f.phone} onChange={set('phone')} /></Field>
           <Field label="ელ-ფოსტა" htmlFor="py-em"><input id="py-em" className="input" type="email" value={f.email} onChange={set('email')} /></Field>
           <div style={{ gridColumn: 'span 2' }}><Field label="მისამართი" htmlFor="py-ad"><input id="py-ad" className="input" value={f.address} onChange={set('address')} /></Field></div>
+          <Field label="ანაზღაურების ვადა (დღე)" htmlFor="py-pt" hint="ქლეიმის გაგზავნიდან (ფინანსები → დებიტორები)"><input id="py-pt" className="input mono" type="number" min={0} max={365} value={f.payment_terms_days} onChange={set('payment_terms_days')} /></Field>
         </div>
         <fieldset className="stack" style={{ gap: 10, border: '1px solid var(--line)', borderRadius: 8, padding: 12 }}>
           <legend className="small">ნაგულისხმევი დაფარვის წესი</legend>
