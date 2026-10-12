@@ -179,6 +179,30 @@ export class StockAlertsService {
     return { orders: rows.length, sent };
   }
 
+  /** 0052: მომწოდებლის ინვოისი — ვადა იწურება (≤ ap_due_days) / ვადაგადაცილებულია; ბუღალტერს, თითო ინვოისზე თითოჯერ */
+  async apDue(today: string, days: number) {
+    const rows = await this.db.selectFrom('ap_invoices as i').innerJoin('stock_suppliers as s', 's.id', 'i.supplier_id')
+      .select(['i.id', 'i.ap_no', 'i.invoice_no', 'i.due_date', 'i.due_notified', 'i.currency', 's.name as supplier_name',
+        sql<string>`i.total - coalesce((SELECT sum(p.amount) FROM ap_payments p WHERE p.invoice_id = i.id AND NOT p.is_void), 0)`.as('balance')])
+      .where('i.status', '=', 'posted').where('i.due_date', '<=', sql<string>`${today}::date + ${days}::int`)
+      .where((eb) => eb.or([eb('i.due_notified', 'is', null), eb.and([eb('i.due_notified', '=', 'soon'), eb('i.due_date', '<', today)])])).execute();
+    const open = rows.filter((r) => Number(r.balance) > 0);
+    if (!open.length) return { invoices: 0, sent: 0 };
+    const staff = (await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').where('u.is_active', '=', true)
+      .where(sql<boolean>`c.capabilities && ARRAY['accountant']::varchar[]`).execute()).map((x) => x.id);
+    let sent = 0;
+    for (const r of open) {
+      const late = r.due_date < today;
+      for (const id of new Set(staff)) {
+        await this.notifications.notify(id, { kind: 'ap_due', title: `${late ? 'ვადაგადაცილებული' : 'ვადა იწურება'}: ${r.supplier_name} — ${r.invoice_no}`,
+          body: `${r.ap_no}; ვადა ${r.due_date}; ნაშთი ${Number(r.balance).toFixed(2)} ${r.currency}`, urgent: late, entityId: r.id, link: `/procurement/invoices?id=${r.id}` });
+        sent++;
+      }
+      await this.db.updateTable('ap_invoices').set({ due_notified: late ? 'overdue' : 'soon' }).where('id', '=', r.id).execute();
+    }
+    return { invoices: open.length, sent };
+  }
+
   /** worker: ყოველ 5 წუთში; `alert_hour`-ის შემდეგ — დღეში ერთხელ */
   async tick(force = false) {
     const { d, h } = await this.now();
@@ -187,15 +211,16 @@ export class StockAlertsService {
     const out: Record<string, unknown> = {};
     const rules = await stockRules(this.db);
     const proc = await procRules(this.db);
-    for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue'] as const) {
+    for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue', 'ap_due'] as const) {
       if (kind === 'po_overdue') { if (proc.po_mode === 'off' || !proc.po_overdue_alert) continue; }   // 0051: შესყიდვების პარამეტრი
+      else if (kind === 'ap_due') { if (!proc.enabled || !proc.ap_due_alert) continue; }                // 0052
       else if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                // შემადგენლობა — კლინიკის პარამეტრი (0038)
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა
       }
       const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : kind === 'lab' ? await this.labOnboard()
-        : kind === 'po_overdue' ? await this.poOverdue(d) : await this.cssdExpiry();
+        : kind === 'po_overdue' ? await this.poOverdue(d) : kind === 'ap_due' ? await this.apDue(d, proc.ap_due_days) : await this.cssdExpiry();
       out[kind] = stats;
       await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d, stats: JSON.stringify(stats) })
         .onConflict((oc) => oc.columns(['kind', 'run_date']).doUpdateSet({ stats: JSON.stringify(stats), created_at: sql`now()` })).execute();

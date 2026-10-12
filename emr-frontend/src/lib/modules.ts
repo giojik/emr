@@ -19,8 +19,10 @@ export const STOCK_RULES_DEFAULT: StockRules = {
 export interface ProcRules {
   po_mode: 'off' | 'optional' | 'required'; pr_approval_levels: 1 | 2; pr_finance_threshold: number; controlled_pharmacist: boolean;
   price_tolerance_pct: number; qty_over_delivery: 'warn' | 'block'; po_overdue_alert: boolean;
+  invoice_match: 'off' | 'rc' | 'three_way'; match_tolerance: number; expense_recognition: 'on_invoice' | 'on_payment'; ap_due_alert: boolean; ap_due_days: number;
 }
-export const PROC_RULES_DEFAULT: ProcRules = { po_mode: 'optional', pr_approval_levels: 2, pr_finance_threshold: 1000, controlled_pharmacist: true, price_tolerance_pct: 5, qty_over_delivery: 'warn', po_overdue_alert: true };
+export const PROC_RULES_DEFAULT: ProcRules = { po_mode: 'optional', pr_approval_levels: 2, pr_finance_threshold: 1000, controlled_pharmacist: true, price_tolerance_pct: 5, qty_over_delivery: 'warn', po_overdue_alert: true,
+  invoice_match: 'rc', match_tolerance: 1, expense_recognition: 'on_invoice', ap_due_alert: true, ap_due_days: 3 };
 /** null — მოდული გამორთულია (PO-ს რეჟიმი ფაქტობრივად off) */
 export const useProcRules = (): ProcRules | null => {
   const q = useModules(); const m = q.data?.find((x) => x.code === 'procurement');

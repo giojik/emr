@@ -95,7 +95,7 @@ export interface StockDoc extends Omit<StockDocRow, 'lines' | 'reversed_by_no'> 
   location_id: string | null; supplier_id: string | null; invoice_date: string | null; prices_include_vat: boolean; notes: string | null; reason: string | null;
   location_kind: LocationKind | null; supplier_tax_id: string | null; supplier_vat_payer: boolean | null; posted_by_name: string | null;
   reversal_of_no: string | null; reversed_by_no: string | null; lines: StockDocLine[]; issues: DocIssue[];
-  no_po_reason?: string | null; po_currency?: string | null;
+  no_po_reason?: string | null; po_currency?: string | null; ap_no?: string | null; ap_invoice_id?: string | null;
 }
 export interface BalanceRow {
   location_id: string; lot_id: string; item_id: string; qty: string; location_name: string; item_name: string; item_code: string; base_unit_name: string; category_name: string;

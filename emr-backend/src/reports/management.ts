@@ -90,6 +90,15 @@ export class ManagementReportsService {
       this.db.selectFrom('expenses').select(['category', sql<string>`sum(amount)`.as('amount'), sql<number>`count(*)::int`.as('count')])
         .where('is_void', '=', false).where('expense_date', '>=', from).where('expense_date', '<=', to).groupBy('category').orderBy(sql`sum(amount)`, 'desc').execute(),
     ]);
+    // 0052: ხარჯის ცენტრები (განყოფილება) და მომწოდებლებისთვის გადახდილი
+    const [expensesByDept, apPaid] = await Promise.all([
+      this.db.selectFrom('expenses as x').leftJoin('departments as d', 'd.id', 'x.department_id')
+        .select([sql<string>`coalesce(d.name, 'საერთო (განყოფილების გარეშე)')`.as('department'), sql<string>`sum(x.amount)`.as('amount'), sql<number>`count(*)::int`.as('count')])
+        .where('x.is_void', '=', false).where('x.expense_date', '>=', from).where('x.expense_date', '<=', to)
+        .groupBy(sql`coalesce(d.name, 'საერთო (განყოფილების გარეშე)')`).orderBy(sql`sum(x.amount)`, 'desc').execute(),
+      this.db.selectFrom('ap_payments').select(sql<string>`coalesce(sum(amount_gel), 0)`.as('amount')).where('kind', '=', 'payment').where('is_void', '=', false)
+        .where('pay_date', '>=', from).where('pay_date', '<=', to).executeTakeFirstOrThrow(),
+    ]);
     const paid = byMethod.reduce((s, r) => s + n(r.amount), 0);
     const spent = expenses.reduce((s, r) => s + n(r.amount), 0);
     return {
@@ -97,9 +106,9 @@ export class ManagementReportsService {
       totals: {
         payments: paid.toFixed(2), services: n(shares.total).toFixed(2), patient_share: n(shares.patient).toFixed(2), insurance_share: n(shares.insurance).toFixed(2),
         state_share: n(shares.state).toFixed(2), discounts: n(discounts.amount).toFixed(2), discount_lines: discounts.count,
-        outstanding: outstanding.reduce((s, r) => s + n(r.patient_share) - n(r.paid), 0).toFixed(2), expenses: spent.toFixed(2), net: (paid - spent).toFixed(2),
+        outstanding: outstanding.reduce((s, r) => s + n(r.patient_share) - n(r.paid), 0).toFixed(2), expenses: spent.toFixed(2), net: (paid - spent).toFixed(2), supplier_payments: n(apPaid.amount).toFixed(2),
       },
-      by_method: byMethod, by_day: byDay, by_category: byCategory, by_doctor: byDoctor, outstanding, expenses_by_category: expenses,
+      by_method: byMethod, by_day: byDay, by_category: byCategory, by_doctor: byDoctor, outstanding, expenses_by_category: expenses, expenses_by_department: expensesByDept,
     };
   }
 
@@ -134,7 +143,8 @@ export class ManagementReportsService {
   expenses(from: string, to: string, includeVoid: boolean) {
     this.range(from, to);
     let q = this.db.selectFrom('expenses as x').leftJoin('users as u', 'u.id', 'x.created_by').leftJoin('departments as d', 'd.id', 'x.department_id')
-      .selectAll('x').select([sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), 'd.name as department_name'])
+      .leftJoin('ap_invoices as ai', 'ai.id', 'x.ap_invoice_id')
+      .selectAll('x').select([sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), 'd.name as department_name', 'ai.ap_no'])
       .where('x.expense_date', '>=', from).where('x.expense_date', '<=', to).orderBy('x.expense_date', 'desc').orderBy('x.created_at', 'desc');
     if (!includeVoid) q = q.where('x.is_void', '=', false);
     return q.limit(2000).execute();
@@ -163,6 +173,7 @@ export class ManagementReportsService {
       const old = await trx.selectFrom('expenses').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!old) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
       if (old.is_void) throw new ConflictException('გაუქმებული ჩანაწერი არ იცვლება');
+      if (old.source !== 'manual') throw new ConflictException('ჩანაწერი მომწოდებლის ინვოისიდანაა — ცვლილება / გაუქმება ინვოისის გვერდიდან (შესყიდვები → ინვოისები)');
       if (dto.void && !dto.void_reason) throw new BadRequestException('მიუთითეთ გაუქმების მიზეზი');
       const set = {
         ...(dto.expense_date !== undefined && { expense_date: dto.expense_date }), ...(dto.category !== undefined && { category: dto.category.trim() }),

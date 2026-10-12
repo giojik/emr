@@ -68,6 +68,75 @@ export interface AllergenGroupTerms {
   term: string;
 }
 
+export interface ApInvoiceLines {
+  amount: Numeric;
+  category: string;
+  department_id: string | null;
+  description: string;
+  id: Generated<string>;
+  invoice_id: string;
+  line_no: number;
+  vat_rate: Generated<Numeric>;
+}
+
+export interface ApInvoiceReceipts {
+  amount_gel: Numeric;
+  doc_id: string;
+  invoice_id: string;
+}
+
+export interface ApInvoices {
+  accepted_at: Timestamp | null;
+  accepted_by: string | null;
+  ap_no: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  currency: Generated<string>;
+  due_date: string;
+  due_notified: string | null;
+  expense_total: Generated<Numeric>;
+  fx_rate: Generated<Numeric>;
+  id: Generated<string>;
+  invoice_date: string;
+  invoice_no: string;
+  match_diff: Numeric | null;
+  match_note: string | null;
+  match_status: Generated<string>;
+  notes: string | null;
+  posted_at: Timestamp | null;
+  posted_by: string | null;
+  status: Generated<string>;
+  stock_gel: Generated<Numeric>;
+  supplier_id: string;
+  total: Numeric;
+  total_gel: Generated<Numeric>;
+  total_vat: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
+export interface ApPayments {
+  amount: Numeric;
+  amount_gel: Numeric;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  fx_rate: Generated<Numeric>;
+  id: Generated<string>;
+  invoice_id: string;
+  is_void: Generated<boolean>;
+  kind: Generated<string>;
+  method: string | null;
+  note: string | null;
+  pay_date: string;
+  reference: string | null;
+  reversal_doc_id: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+}
+
 export interface Appointments {
   created_at: Generated<Timestamp>;
   created_by: string | null;
@@ -872,6 +941,8 @@ export interface EpicrisisRevisions {
 
 export interface Expenses {
   amount: Numeric;
+  ap_invoice_id: string | null;
+  ap_payment_id: string | null;
   category: string;
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -882,7 +953,9 @@ export interface Expenses {
   id: Generated<string>;
   is_void: Generated<boolean>;
   payment_method: Generated<string>;
+  source: Generated<string>;
   supplier: string | null;
+  supplier_id: string | null;
   updated_at: Generated<Timestamp>;
   void_reason: string | null;
 }
@@ -3401,6 +3474,10 @@ export interface DB {
   allergen_cross_reactivity: AllergenCrossReactivity;
   allergen_group_terms: AllergenGroupTerms;
   allergen_groups: AllergenGroups;
+  ap_invoice_lines: ApInvoiceLines;
+  ap_invoice_receipts: ApInvoiceReceipts;
+  ap_invoices: ApInvoices;
+  ap_payments: ApPayments;
   appointments: Appointments;
   asset_categories: AssetCategories;
   asset_conditions: AssetConditions;

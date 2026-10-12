@@ -328,6 +328,7 @@ function ReceiptView({ d, onClose, onOpen }: { d: StockDoc; onClose: () => void;
         <div><span className="small muted">ფაქტურა / ზედნადები</span><div className="small">{[d.invoice_no && `${d.invoice_no}${d.invoice_date ? ` (${dateGe(d.invoice_date)})` : ''}`, d.waybill_no].filter(Boolean).join(' · ') || '—'}</div></div>
         {d.po_no && <div><span className="small muted">შეკვეთა</span><div><a className="mono" href={`/procurement/orders?id=${d.po_id}`} onClick={(e) => { e.preventDefault(); nav(`/procurement/orders?id=${d.po_id}`); }}>{d.po_no}</a></div></div>}
         {d.no_po_reason && <div><span className="small muted">შეკვეთის გარეშე</span><div className="small">{d.no_po_reason}</div></div>}
+        {d.ap_no && <div><span className="small muted">მომწოდებლის ინვოისი</span><div><a className="mono" href={`/procurement/invoices?id=${d.ap_invoice_id}`} onClick={(e) => { e.preventDefault(); nav(`/procurement/invoices?id=${d.ap_invoice_id}`); }}>{d.ap_no}</a></div></div>}
         <div><span className="small muted">გაატარა</span><div className="small">{d.posted_by_name ?? '—'}{d.posted_at && ` · ${tsDate(d.posted_at)}`}</div></div>
         <div><span className="small muted">შექმნა</span><div className="small">{d.created_by_name}</div></div>
         {d.reversal_of_no && <div><span className="small muted">შემობრუნება</span><div className="mono">{d.reversal_of_no}</div></div>}

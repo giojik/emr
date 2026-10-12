@@ -435,6 +435,20 @@ function ProcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<
         {chk('controlled_pharmacist', 'კონტროლირებადი (ნარკოტიკული / ფსიქოტროპული) — ფარმაცევტის დადასტურება', 'შესყიდვის მოთხოვნაზე, დამატებით ნაბიჯად')}
         {chk('po_overdue_alert', 'ვადაგადაცილებული მიწოდების შეტყობინება', 'დილის შემოწმებისას — შესყიდვებს, საწყობის მენეჯერს და ავტორს')}
       </div>
+      <h3 style={{ gridColumn: '1 / -1', margin: '6px 0 0' }}>მომწოდებლის ინვოისი და გადახდა</h3>
+      <Field label="შეჯერება" htmlFor="pim" hint="სხვაობა ტოლერანტობაზე მეტი → გადახდა იბლოკება, სანამ ბუღალტერი მიზეზით არ დაადასტურებს">
+        <select id="pim" className="select" value={v<string>('invoice_match') ?? 'rc'} onChange={(e) => upd('invoice_match', e.target.value)}>
+          <option value="rc">ინვოისი ↔ მიღებები (RC)</option><option value="three_way">სამმხრივი: + შეკვეთის (PO) ფასი</option><option value="off">გამორთული</option></select></Field>
+      <Field label="შეჯერების ტოლერანტობა (₾)" htmlFor="pmt" hint="დამრგვალების სხვაობა, რომელიც სხვაობად არ ითვლება">
+        <input id="pmt" className="input mono" type="number" min={0} step={0.01} value={v<number>('match_tolerance') ?? 1} onChange={(e) => upd('match_tolerance', Math.max(0, Number(e.target.value)))} /></Field>
+      <Field label="ხარჯის აღიარება (არა-მარაგის ხაზები)" htmlFor="per" hint="მარაგის ინვოისი ხარჯში არ ჩაიწერება — ხარჯი აღირიცხება მოხმარებისას">
+        <select id="per" className="select" value={v<string>('expense_recognition') ?? 'on_invoice'} onChange={(e) => upd('expense_recognition', e.target.value)}>
+          <option value="on_invoice">ინვოისის თარიღით</option><option value="on_payment">გადახდის თარიღით (წილით)</option></select></Field>
+      <div className="stack" style={{ gap: 10 }}>
+        {chk('ap_due_alert', 'გადახდის ვადის შეტყობინება ბუღალტერს', 'ვადა იწურება / ვადაგადაცილებულია — დილის შემოწმებისას, თითო ინვოისზე ერთხელ')}
+        <Field label="ვადამდე (დღე)" htmlFor="pdd"><input id="pdd" className="input mono" type="number" min={0} max={60} style={{ maxWidth: 120 }} value={v<number>('ap_due_days') ?? 3}
+          onChange={(e) => upd('ap_due_days', Math.min(60, Math.max(0, Math.round(Number(e.target.value)))))} /></Field>
+      </div>
     </div>
   );
 }

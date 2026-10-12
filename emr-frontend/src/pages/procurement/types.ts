@@ -63,3 +63,30 @@ export interface Hints {
 export interface ProcSummary { pr_to_approve: number; po_to_approve: number; po_overdue: number; pr_to_order: number }
 export const num = (s: string) => Number(s.replace(',', '.'));
 export const fmt = (v: number | string | null | undefined, d = 2) => (v === null || v === undefined || v === '' ? '—' : Number(v).toFixed(d));
+
+// ======================================================================= 0052: მომწოდებლის ინვოისი / გადახდა
+export const AP_EDIT: Role[] = ['admin', 'accountant'];
+export const AP_READ: Role[] = ['admin', 'accountant', 'viewer', 'manager', 'procurement', 'procurement_approve', 'stock_manager'];
+export type ApStatus = 'draft' | 'posted' | 'void';
+export type MatchStatus = 'none' | 'ok' | 'mismatch' | 'accepted';
+export const MATCH_KA: Record<MatchStatus, [string, string]> = { none: ['', 'შეჯერების გარეშე'], ok: ['ok', 'შეჯერებულია'], mismatch: ['danger', 'სხვაობა'], accepted: ['warn', 'სხვაობა დადასტურდა'] };
+export const PAY_METHOD_KA: Record<string, string> = { bank_transfer: 'გადარიცხვა', cash: 'ნაღდი', card: 'ბარათი' };
+export interface ApRow {
+  id: string; ap_no: string | null; status: ApStatus; invoice_no: string; invoice_date: string; due_date: string; currency: Currency; fx_rate: string; total: string; total_gel: string;
+  expense_total: string; stock_gel: string; match_status: MatchStatus; match_diff: string | null; supplier_id: string; supplier_name: string; paid: string; balance: string;
+  receipts: number; days_overdue: number | null;
+}
+export interface ApInvoice extends Omit<ApRow, 'receipts'> {
+  total_vat: string; notes: string | null; match_note: string | null; due_notified: string | null; void_reason: string | null; created_by: string;
+  supplier_tax_id: string | null; supplier_iban: string | null; supplier_bank: string | null; payment_terms_days: number | null;
+  created_by_name: string; posted_by_name: string | null; posted_at: string | null; accepted_by_name: string | null; voided_by_name: string | null; overdue: boolean;
+  lines: { id: string; line_no: number; description: string; category: string; department_id: string | null; department_name: string | null; amount: string; vat_rate: string }[];
+  receipts: { doc_id: string; amount_gel: string; doc_no: string; doc_date: string; invoice_no: string | null; waybill_no: string | null; total_net: string; total_vat: string; po_no: string | null; location_name: string | null; reversed_by_no: string | null }[];
+  payments: { id: string; kind: 'payment' | 'credit_note'; pay_date: string; amount: string; fx_rate: string; amount_gel: string; method: string | null; reference: string | null; note: string | null; is_void: boolean; void_reason: string | null; created_by_name: string; reversal_doc_no: string | null }[];
+  expenses: { id: string; expense_date: string; category: string; amount: string; source: string; is_void: boolean; department_name: string | null }[];
+}
+export interface UninvoicedRc { id: string; doc_no: string; doc_date: string; invoice_no: string | null; invoice_date: string | null; waybill_no: string | null; total_net: string; total_vat: string; po_no: string | null; location_name: string | null }
+export interface ApSummary { drafts: number; mismatch: number; overdue: number; due_soon: number; open_gel: string }
+export interface AgingRow { supplier_id: string; supplier_name: string; not_due: number; d1_30: number; d31_60: number; d61_90: number; d90: number; total: number; invoices: number }
+export interface ApPaymentRow { id: string; kind: 'payment' | 'credit_note'; pay_date: string; amount: string; amount_gel: string; method: string | null; reference: string | null; is_void: boolean; void_reason: string | null;
+  invoice_id: string; ap_no: string; invoice_no: string; currency: Currency; supplier_name: string; supplier_iban: string | null; created_by_name: string }

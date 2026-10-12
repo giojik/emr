@@ -18,7 +18,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] },
   { to: '/diagnostics/radiology?view=schedule', label: 'დიაგნოსტიკის განრიგი', roles: ['receptionist', 'manager', 'viewer'] },
   { to: '/stock', label: 'საწყობი და აფთიაქი', roles: ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'manager', 'viewer', 'accountant'] },
-  { to: '/procurement', label: 'შესყიდვები', roles: ['admin', 'procurement', 'procurement_approve', 'stock_manager', 'storekeeper', 'pharmacist', 'accountant', 'manager', 'viewer'], module: 'procurement' },
+  { to: '/procurement', label: 'შესყიდვები / გადასახდელები', roles: ['admin', 'procurement', 'procurement_approve', 'stock_manager', 'storekeeper', 'pharmacist', 'accountant', 'manager', 'viewer'], module: 'procurement' },
   { to: '/stock/requests', label: 'მარაგი / მოთხოვნები', roles: ['nurse'] },
   { to: '/stock/lab', label: 'ლაბ. მარაგი', roles: ['lab_doctor', 'lab_manager', 'diagnostic'] },
   { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },

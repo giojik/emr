@@ -29,7 +29,7 @@ export class ProcCommon {
     const r = await sql<{ d: string }>`SELECT to_char((now() AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS d`.execute(ex);
     return r.rows[0].d;
   }
-  async nextNo(trx: Trx, prefix: 'PR' | 'PO', date: string) {
+  async nextNo(trx: Trx, prefix: 'PR' | 'PO' | 'AP', date: string) {
     const year = Number(date.slice(0, 4));
     const { last_value } = await trx.insertInto('document_counters').values({ document_type: `proc_${prefix}`, year, last_value: 1 })
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` }))

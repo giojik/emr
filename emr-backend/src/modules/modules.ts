@@ -112,6 +112,9 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
     keys: {
       po_mode: (v) => oneOf(v, ['off', 'optional', 'required']), pr_approval_levels: (v) => v === 1 || v === 2, pr_finance_threshold: (v) => int(v, 0, 100_000_000),
       controlled_pharmacist: bool, price_tolerance_pct: (v) => int(v, 0, 100), qty_over_delivery: (v) => oneOf(v, ['warn', 'block']), po_overdue_alert: bool,
+      // 0052: ინვოისი / გადახდა / ხარჯი
+      invoice_match: (v) => oneOf(v, ['off', 'rc', 'three_way']), match_tolerance: (v) => typeof v === 'number' && v >= 0 && v <= 10_000,
+      expense_recognition: (v) => oneOf(v, ['on_invoice', 'on_payment']), ap_due_alert: bool, ap_due_days: (v) => int(v, 0, 60),
     },
   },
   asset_register: {

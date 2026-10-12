@@ -21,6 +21,7 @@ interface Finance {
   by_category: { category: string; amount: string; count: number }[]; by_doctor: { doctor: string; amount: string; visits: number }[];
   outstanding: { id: string; invoice_number: string; created_at: string; patient_share: string; paid: string; first_name: string; last_name: string; personal_number: string }[];
   expenses_by_category: { category: string; amount: string; count: number }[];
+  expenses_by_department?: { department: string; amount: string; count: number }[];
 }
 interface Activity {
   visits: { visit_kind: string; status: string; count: number }[]; by_department: { name: string; count: number }[]; by_doctor: { doctor: string; count: number }[];
@@ -29,7 +30,10 @@ interface Activity {
 interface Expense {
   id: string; expense_date: string; category: string; description: string | null; amount: string; payment_method: string; supplier: string | null;
   doc_number: string | null; department_id: string | null; department_name: string | null; is_void: boolean; void_reason: string | null; created_by_name: string | null;
+  /** 0052: მომწოდებლის ინვოისიდან — ხელით არ იცვლება */
+  source?: 'manual' | 'ap_invoice' | 'ap_payment' | 'ap_credit'; ap_invoice_id?: string | null; ap_no?: string | null;
 }
+const SRC_KA: Record<string, string> = { ap_invoice: 'ინვოისიდან', ap_payment: 'გადახდიდან', ap_credit: 'კრედიტ-ნოტა' };
 
 const monthStart = () => todayISO().slice(0, 8) + '01';
 
@@ -108,6 +112,7 @@ function FinanceTab({ from, to }: { from: string; to: string }) {
         <Kpi label="ხარჯები" value={money(t.expenses)} />
         <Kpi label="სალდო (შემოსავალი − ხარჯი)" value={money(t.net)} tone={Number(t.net) < 0 ? 'danger' : 'ok'} />
         <Kpi label="დავალიანება" value={money(t.outstanding)} tone={Number(t.outstanding) > 0 ? 'danger' : undefined} />
+        {t.supplier_payments !== undefined && <Kpi label="მომწოდებლებს გადახდილი" value={money(t.supplier_payments)} />}
       </div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
         <Kpi label="პაციენტის წილი" value={money(t.patient_share)} />
@@ -122,6 +127,8 @@ function FinanceTab({ from, to }: { from: string; to: string }) {
           rows={d.by_category.map((r) => [ka(CAT_KA, r.category), r.count, money(r.amount)])} />
         <Table title="ხარჯები კატეგორიით" head={['კატეგორია', 'ჩანაწერი', 'თანხა']} csv={`expenses-by-category_${from}_${to}.csv`}
           rows={d.expenses_by_category.map((r) => [r.category, r.count, money(r.amount)])} />
+        {d.expenses_by_department && <Table title="ხარჯები განყოფილებით (ხარჯის ცენტრი)" head={['განყოფილება', 'ჩანაწერი', 'თანხა']} csv={`expenses-by-department_${from}_${to}.csv`}
+          rows={d.expenses_by_department.map((r) => [r.department, r.count, money(r.amount)])} />}
       </div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
         <Table title="შემოსავალი დღეების მიხედვით" head={['დღე', 'თანხა']} csv={`payments-by-day_${from}_${to}.csv`} rows={d.by_day.map((r) => [r.day, money(r.amount)])} />
@@ -157,10 +164,11 @@ function ExpensesTab({ from, to, canEdit }: { from: string; to: string; canEdit:
             <thead><tr><th>თარიღი</th><th>კატეგორია</th><th>აღწერა / მომწოდებელი</th><th>განყოფილება</th><th>მეთოდი</th><th className="num">თანხა</th><th>შეიყვანა</th></tr></thead>
             <tbody>{q.data?.length === 0 && <tr><td colSpan={7} className="muted small">ჩანაწერი არ არის</td></tr>}
               {q.data?.map((x) => (
-                <tr key={x.id} className={canEdit && !x.is_void ? 'clickable' : undefined} onClick={canEdit && !x.is_void ? () => setEdit(x) : undefined}
+                <tr key={x.id} className={canEdit && !x.is_void && (x.source ?? 'manual') === 'manual' ? 'clickable' : undefined} onClick={canEdit && !x.is_void && (x.source ?? 'manual') === 'manual' ? () => setEdit(x) : undefined}
                   style={x.is_void ? { opacity: 0.5, textDecoration: 'line-through' } : undefined} title={x.is_void ? `გაუქმებულია: ${x.void_reason}` : undefined}>
                   <td className="mono">{x.expense_date}</td><td>{x.category}</td>
-                  <td>{x.description}{x.supplier && <div className="small muted">{x.supplier}{x.doc_number ? ` · № ${x.doc_number}` : ''}</div>}</td>
+                  <td>{x.description}{x.supplier && <div className="small muted">{x.supplier}{x.doc_number ? ` · № ${x.doc_number}` : ''}</div>}
+                    {x.source && x.source !== 'manual' && <a className="chip info" style={{ height: 20, textDecoration: 'none' }} href={`/procurement/invoices?id=${x.ap_invoice_id}`} title="ჩანაწერი ინვოისიდანაა — ცვლილება ინვოისის გვერდიდან">{SRC_KA[x.source]} {x.ap_no ?? ''}</a>}</td>
                   <td>{x.department_name ?? '—'}</td><td>{ka(METHOD_KA, x.payment_method)}</td><td className="num">{money(x.amount)}</td>
                   <td className="small muted">{x.created_by_name}</td>
                 </tr>))}</tbody>

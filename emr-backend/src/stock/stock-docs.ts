@@ -95,7 +95,9 @@ export class StockDocsService {
       .leftJoin('stock_docs as ro', 'ro.id', 'd.reversal_of').leftJoin('stock_docs as rb', 'rb.id', 'd.reversed_by')
       .leftJoin('stock_locations as fl', 'fl.id', 'd.from_location_id').leftJoin('stock_locations as tl', 'tl.id', 'd.to_location_id')
       .leftJoin('stock_requests as rq', 'rq.id', 'd.request_id').leftJoin('users as rcu', 'rcu.id', 'd.received_by').leftJoin('proc_orders as po', 'po.id', 'd.po_id')
-      .selectAll('d').select(['po.po_no', 'po.currency as po_currency', 'fl.name as from_name', 'tl.name as to_name', 'rq.req_no', sql<string | null>`rcu.first_name || ' ' || rcu.last_name`.as('received_by_name')]).select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
+      .selectAll('d').select(['po.po_no', 'po.currency as po_currency',
+        sql<string | null>`(SELECT a.ap_no FROM ap_invoice_receipts r JOIN ap_invoices a ON a.id = r.invoice_id WHERE r.doc_id = d.id LIMIT 1)`.as('ap_no'),
+        sql<string | null>`(SELECT r.invoice_id FROM ap_invoice_receipts r WHERE r.doc_id = d.id LIMIT 1)`.as('ap_invoice_id'), 'fl.name as from_name', 'tl.name as to_name', 'rq.req_no', sql<string | null>`rcu.first_name || ' ' || rcu.last_name`.as('received_by_name')]).select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
         sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), sql<string | null>`pu.first_name || ' ' || pu.last_name`.as('posted_by_name'),
         'ro.doc_no as reversal_of_no', 'rb.doc_no as reversed_by_no'])
       .where('d.id', '=', id).executeTakeFirst();
