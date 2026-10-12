@@ -21,7 +21,8 @@ export interface SessionUser {
 export const can = (u: Pick<SessionUser, 'caps'> | null | undefined, ...caps: Role[]) => !!u && caps.some((c) => u.caps.includes(c));
 export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | 'pharmacist' | 'diagnostic' | 'lab_doctor' | 'lab_manager' | 'phlebotomist' | 'radiographer' | 'radiologist' | 'endoscopist' | 'endoscopy_nurse'
   | 'accountant' | 'manager' | 'hr' | 'med_engineer' | 'viewer' | 'storekeeper' | 'stock_manager'
-  | 'or_schedule' | 'anesthesiologist' | 'or_nurse';
+  | 'or_schedule' | 'anesthesiologist' | 'or_nurse'
+  | 'procurement' | 'procurement_approve';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;

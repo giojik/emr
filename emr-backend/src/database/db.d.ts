@@ -2681,6 +2681,118 @@ export interface Prescriptions {
   route: string;
 }
 
+export interface ProcOrderLines {
+  id: Generated<string>;
+  item_id: string;
+  line_net: Generated<Numeric>;
+  line_no: number;
+  line_vat: Generated<Numeric>;
+  notes: string | null;
+  order_id: string;
+  pack_id: string | null;
+  pack_qty_base: Generated<Numeric>;
+  price: Numeric;
+  qty: Numeric;
+  qty_base: Numeric;
+  qty_received: Generated<Numeric>;
+  requisition_line_id: string | null;
+  unit_cost_gel: Numeric;
+  vat_rate: Generated<Numeric>;
+}
+
+export interface ProcOrders {
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  contract_no: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  currency: Generated<string>;
+  expected_date: string | null;
+  fx_rate: Generated<Numeric>;
+  id: Generated<string>;
+  location_id: string;
+  needs_approval: Generated<boolean>;
+  notes: string | null;
+  order_date: string;
+  overdue_notified: string | null;
+  po_no: string | null;
+  prices_include_vat: Generated<boolean>;
+  reason: string | null;
+  sent_at: Timestamp | null;
+  sent_by: string | null;
+  status: Generated<string>;
+  supplier_id: string;
+  total_gel: Generated<Numeric>;
+  total_net: Generated<Numeric>;
+  total_vat: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface ProcRequisitionLines {
+  est_price: Numeric | null;
+  free_name: string | null;
+  id: Generated<string>;
+  item_id: string | null;
+  line_no: number;
+  notes: string | null;
+  pack_id: string | null;
+  pack_qty_base: Generated<Numeric>;
+  qty: Numeric;
+  qty_base: Numeric;
+  request_line_id: string | null;
+  requisition_id: string;
+  supplier_id: string | null;
+}
+
+export interface ProcRequisitions {
+  closed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  est_total: Generated<Numeric>;
+  finance_at: Timestamp | null;
+  finance_by: string | null;
+  id: Generated<string>;
+  l1_at: Timestamp | null;
+  l1_by: string | null;
+  location_id: string;
+  needed_by: string | null;
+  needs_finance: Generated<boolean>;
+  needs_pharmacist: Generated<boolean>;
+  notes: string | null;
+  pharm_at: Timestamp | null;
+  pharm_by: string | null;
+  pr_no: string | null;
+  reason: string | null;
+  rejected_at: Timestamp | null;
+  rejected_by: string | null;
+  request_id: string | null;
+  source: Generated<string>;
+  status: Generated<string>;
+  submitted_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
+}
+
+export interface ProcSupplierPrices {
+  contract_no: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  item_id: string;
+  min_qty: Numeric | null;
+  notes: string | null;
+  pack_id: string | null;
+  price: Numeric;
+  supplier_id: string;
+  updated_at: Generated<Timestamp>;
+  valid_from: string;
+  valid_to: string | null;
+  vat_rate: Generated<Numeric>;
+}
+
 export interface Referrals {
   completed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -2914,7 +3026,9 @@ export interface StockDocLines {
   pack_id: string | null;
   pack_qty_base: Generated<Numeric>;
   patient_id: string | null;
+  po_line_id: string | null;
   price: Numeric | null;
+  price_reason: string | null;
   produced_on: string | null;
   qty: Numeric;
   qty_base: Numeric;
@@ -2942,8 +3056,10 @@ export interface StockDocs {
   invoice_date: string | null;
   invoice_no: string | null;
   location_id: string | null;
+  no_po_reason: string | null;
   notes: string | null;
   patient_id: string | null;
+  po_id: string | null;
   posted_at: Timestamp | null;
   posted_by: string | null;
   prices_include_vat: Generated<boolean>;
@@ -3175,13 +3291,19 @@ export interface StockShiftCounts {
 
 export interface StockSuppliers {
   address: string | null;
+  bank_name: string | null;
   contact_person: string | null;
+  contract_no: string | null;
+  contract_until: string | null;
   created_at: Generated<Timestamp>;
   email: string | null;
+  iban: string | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  lead_time_days: number | null;
   name: string;
   notes: string | null;
+  payment_terms_days: number | null;
   phone: string | null;
   tax_id: string | null;
   updated_at: Generated<Timestamp>;
@@ -3449,6 +3571,11 @@ export interface DB {
   payers: Payers;
   payments: Payments;
   prescriptions: Prescriptions;
+  proc_order_lines: ProcOrderLines;
+  proc_orders: ProcOrders;
+  proc_requisition_lines: ProcRequisitionLines;
+  proc_requisitions: ProcRequisitions;
+  proc_supplier_prices: ProcSupplierPrices;
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;

@@ -107,6 +107,13 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       pharmacist_scope: (v) => oneOf(v, ['pharmacy', 'any']), lost_requires_approval: bool, alert_expiry: bool, alert_minmax: bool, alert_lab: bool,
     },
   },
+  // 0051: შესყიდვები
+  procurement: {
+    keys: {
+      po_mode: (v) => oneOf(v, ['off', 'optional', 'required']), pr_approval_levels: (v) => v === 1 || v === 2, pr_finance_threshold: (v) => int(v, 0, 100_000_000),
+      controlled_pharmacist: bool, price_tolerance_pct: (v) => int(v, 0, 100), qty_over_delivery: (v) => oneOf(v, ['warn', 'block']), po_overdue_alert: bool,
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

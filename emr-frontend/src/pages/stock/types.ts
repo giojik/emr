@@ -43,6 +43,8 @@ export type Severity = 'contraindicated' | 'major' | 'moderate' | 'minor';
 export interface Supplier {
   id: string; name: string; tax_id: string | null; vat_payer: boolean; address: string | null; phone: string | null; email: string | null;
   contact_person: string | null; notes: string | null; is_active: boolean;
+  /** 0051 */
+  payment_terms_days?: number | null; lead_time_days?: number | null; iban?: string | null; bank_name?: string | null; contract_no?: string | null; contract_until?: string | null;
 }
 export type LocationKind = 'central' | 'pharmacy' | 'household' | 'department' | 'operating' | 'cssd' | 'lab' | 'icu' | 'other' | 'transit';
 export interface StockLocation {
@@ -78,18 +80,22 @@ export interface StockDocRow {
   id: string; doc_type: string; doc_no: string | null; status: DocStatus; doc_date: string; invoice_no: string | null; waybill_no: string | null;
   total_net: string; total_vat: string; posted_at: string | null; reversal_of: string | null; reversed_by: string | null; reversed_by_no: string | null; created_at: string;
   location_name: string | null; supplier_name: string | null; created_by_name: string; lines: number;
+  po_id?: string | null; po_no?: string | null;
 }
 export interface StockDocLine {
   id: string; line_no: number; item_id: string; pack_id: string | null; pack_qty_base: string; qty: string; qty_base: string; lot_no: string | null; serial_no: string | null;
   expires_on: string | null; produced_on: string | null; price: string | null; vat_rate: string; unit_cost: string | null; line_net: string | null; line_vat: string | null;
   lot_id: string | null; short_expiry_reason: string | null; notes: string | null; override_reason?: string | null; patient_name?: string | null;
   item_name: string; item_code: string; requires_lot: boolean; requires_expiry: boolean; serial_tracked: boolean; base_unit_name: string; pack_name: string | null; controlled_class: Controlled | null;
+  /** 0051: შეკვეთის ხაზი */
+  po_line_id?: string | null; price_reason?: string | null; po_unit_cost?: string | null; po_qty_base?: string | null; po_qty_received?: string | null;
 }
 export interface DocIssue { line_no: number; level: 'error' | 'warn'; code: string; message: string }
 export interface StockDoc extends Omit<StockDocRow, 'lines' | 'reversed_by_no'> {
   location_id: string | null; supplier_id: string | null; invoice_date: string | null; prices_include_vat: boolean; notes: string | null; reason: string | null;
   location_kind: LocationKind | null; supplier_tax_id: string | null; supplier_vat_payer: boolean | null; posted_by_name: string | null;
   reversal_of_no: string | null; reversed_by_no: string | null; lines: StockDocLine[]; issues: DocIssue[];
+  no_po_reason?: string | null; po_currency?: string | null;
 }
 export interface BalanceRow {
   location_id: string; lot_id: string; item_id: string; qty: string; location_name: string; item_name: string; item_code: string; base_unit_name: string; category_name: string;
@@ -186,6 +192,8 @@ export interface LotTrace {
 export interface MinmaxRow {
   location_id: string; item_id: string; min_qty: string; max_qty: string; item_name: string; item_code: string; item_active: boolean; base_unit_name: string; location_name: string;
   default_source_id: string | null; on_hand: string; in_transit: string; requested: string; below: boolean; suggested: number;
+  /** 0051: შეკვეთილი (PO) და შესყიდვის მოთხოვნაში (PR) */
+  on_order?: string; pr_pending?: string;
 }
 /** CSV ჩამოტვირთვა (Excel-ისთვის — UTF-8 BOM, „;“) */
 export const downloadCsv = (name: string, head: string[], rows: (string | number | null | undefined)[][]) => {

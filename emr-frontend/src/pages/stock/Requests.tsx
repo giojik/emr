@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, can, type Role } from '../../api/client';
 import type { PatientListItem } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import PatientSearch from '../../components/PatientSearch';
 import { ErrorBox, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
+import { useProcRules } from '../../lib/modules';
 import {
   CONTROLLED_KA, ISSUER_ROLES, qtyFmt, REQ_STATUS,
   type PickLine, type ReqRow, type ReqStatus, type StockItem, type StockLocation, type StockRequest,
@@ -166,6 +167,8 @@ function RequestView({ r, onClose, onDone }: { r: StockRequest; onClose: () => v
     onSuccess: (x) => { setAppr(null); onDone(x); },
   });
   const ask = (msg: string) => { const v = prompt(msg); return v && v.trim().length >= 3 ? v.trim() : null; };
+  const proc = useProcRules(); const nav = useNavigate();
+  const toPr = useMutation({ mutationFn: () => api<{ id: string }>('/procurement/requisitions/from-request', { body: { request_id: r.id } }), onSuccess: (x) => nav(`/procurement/requisitions?id=${x.id}`) });
   return (
     <>
       {toast.node}
@@ -181,6 +184,8 @@ function RequestView({ r, onClose, onDone }: { r: StockRequest; onClose: () => v
           <button className="btn primary" type="button" disabled={act.isPending} onClick={() => act.mutate({ path: 'approve', body: { lines: Object.entries(appr).map(([id, v]) => ({ id, qty_approved: Number(v.replace(',', '.')) || 0 })) } })}>დამტკიცების დადასტურება</button></>}
         {OPEN.includes(r.status) && !picking && <>
           <button className="btn" type="button" disabled={act.isPending} onClick={() => { const v = ask('დახურვის მიზეზი (დარჩენილი აღარ გაიცემა)'); if (v) act.mutate({ path: 'cancel', body: { reason: v } }); }}>დახურვა</button>
+          {proc && can(user, 'admin', 'procurement', 'stock_manager', 'storekeeper', 'pharmacist') && ['submitted', 'approved', 'partial'].includes(r.status) &&
+            <button className="btn" type="button" disabled={toPr.isPending} title="გაუცემელი ნაწილი, რომელსაც გამცემის მარაგი ვერ ფარავს" onClick={() => toPr.mutate()}>დეფიციტი → შესყიდვა</button>}
           {isIssuer(user) && <button className="btn primary" type="button" onClick={() => setPicking(true)}>გაცემა</button>}</>}
       </div>
       <section className="card card-pad" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
@@ -220,7 +225,7 @@ function RequestView({ r, onClose, onDone }: { r: StockRequest; onClose: () => v
                 <td>{d.receive_status === 'received' ? <span className="chip ok">მიღებულია · {d.received_by_name}</span> : d.receive_status === 'returned' ? <span className="chip danger" title={d.receive_note ?? ''}>არ მიიღო — დაბრუნდა</span> : <span className="chip warn">გზაში — ელოდება დადასტურებას</span>}</td></tr>))}</tbody>
           </table>
         </section>)}
-      <ErrorBox error={act.error} />
+      <ErrorBox error={act.error ?? toPr.error} />
     </>
   );
 }

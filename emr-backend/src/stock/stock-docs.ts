@@ -10,6 +10,7 @@ import { has, type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { stockRules } from './stock-rules';
+import { procRules } from '../procurement/procurement-rules';
 import type { DB } from '../database/db';
 import { STOCK_READ } from './stock-catalog';
 
@@ -29,10 +30,14 @@ type Trx = Transaction<DB>;
 export interface LineIn {
   item_id: string; pack_id?: string | null; qty: number; lot_no?: string | null; serial_no?: string | null; expires_on?: string | null; produced_on?: string | null;
   price?: number | null; vat_rate?: number; short_expiry_reason?: string | null; notes?: string | null;
+  /** 0051: შეკვეთის ხაზი და ფასის გადახრის მიზეზი */
+  po_line_id?: string | null; price_reason?: string | null;
 }
 export interface ReceiptIn {
   location_id: string; supplier_id?: string | null; doc_date?: string; invoice_no?: string | null; invoice_date?: string | null; waybill_no?: string | null;
   prices_include_vat?: boolean; notes?: string | null; lines: LineIn[];
+  /** 0051: შეკვეთა მომწოდებელთან; po_mode = required — PO-ს გარეშე მიღების მიზეზი */
+  po_id?: string | null; no_po_reason?: string | null;
 }
 interface Issue { line_no: number; level: 'error' | 'warn'; code: string; message: string }
 
@@ -66,7 +71,8 @@ export class StockDocsService {
     let x = this.db.selectFrom('stock_docs as d').leftJoin('stock_locations as l', 'l.id', 'd.location_id').leftJoin('stock_suppliers as s', 's.id', 'd.supplier_id')
       .innerJoin('users as u', 'u.id', 'd.created_by').leftJoin('stock_docs as rv', 'rv.id', 'd.reversed_by')
       .leftJoin('stock_locations as fl', 'fl.id', 'd.from_location_id').leftJoin('stock_locations as tl', 'tl.id', 'd.to_location_id').leftJoin('stock_requests as rq', 'rq.id', 'd.request_id')
-      .select(['d.id', 'd.doc_type', 'd.doc_no', 'd.status', 'd.doc_date', 'd.invoice_no', 'd.waybill_no', 'd.total_net', 'd.total_vat', 'd.posted_at', 'd.reversal_of', 'd.reversed_by', 'd.created_at',
+      .leftJoin('proc_orders as po', 'po.id', 'd.po_id')
+      .select(['po.po_no', 'd.po_id', 'd.id', 'd.doc_type', 'd.doc_no', 'd.status', 'd.doc_date', 'd.invoice_no', 'd.waybill_no', 'd.total_net', 'd.total_vat', 'd.posted_at', 'd.reversal_of', 'd.reversed_by', 'd.created_at',
         'd.receive_status', 'd.received_at', 'fl.name as from_name', 'tl.name as to_name', 'rq.req_no', 'd.request_id',
         'l.name as location_name', 's.name as supplier_name', 'rv.doc_no as reversed_by_no', sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'),
         sql<number>`(SELECT count(*)::int FROM stock_doc_lines x WHERE x.doc_id = d.id)`.as('lines')])
@@ -88,16 +94,16 @@ export class StockDocsService {
       .innerJoin('users as u', 'u.id', 'd.created_by').leftJoin('users as pu', 'pu.id', 'd.posted_by')
       .leftJoin('stock_docs as ro', 'ro.id', 'd.reversal_of').leftJoin('stock_docs as rb', 'rb.id', 'd.reversed_by')
       .leftJoin('stock_locations as fl', 'fl.id', 'd.from_location_id').leftJoin('stock_locations as tl', 'tl.id', 'd.to_location_id')
-      .leftJoin('stock_requests as rq', 'rq.id', 'd.request_id').leftJoin('users as rcu', 'rcu.id', 'd.received_by')
-      .selectAll('d').select(['fl.name as from_name', 'tl.name as to_name', 'rq.req_no', sql<string | null>`rcu.first_name || ' ' || rcu.last_name`.as('received_by_name')]).select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
+      .leftJoin('stock_requests as rq', 'rq.id', 'd.request_id').leftJoin('users as rcu', 'rcu.id', 'd.received_by').leftJoin('proc_orders as po', 'po.id', 'd.po_id')
+      .selectAll('d').select(['po.po_no', 'po.currency as po_currency', 'fl.name as from_name', 'tl.name as to_name', 'rq.req_no', sql<string | null>`rcu.first_name || ' ' || rcu.last_name`.as('received_by_name')]).select(['l.name as location_name', 'l.kind as location_kind', 's.name as supplier_name', 's.tax_id as supplier_tax_id', 's.vat_payer as supplier_vat_payer',
         sql<string>`u.first_name || ' ' || u.last_name`.as('created_by_name'), sql<string | null>`pu.first_name || ' ' || pu.last_name`.as('posted_by_name'),
         'ro.doc_no as reversal_of_no', 'rb.doc_no as reversed_by_no'])
       .where('d.id', '=', id).executeTakeFirst();
     if (!d) throw new NotFoundException('დოკუმენტი ვერ მოიძებნა');
     const lines = await ex.selectFrom('stock_doc_lines as x').innerJoin('stock_items as i', 'i.id', 'x.item_id').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
       .leftJoin('stock_item_packs as p', 'p.id', 'x.pack_id').leftJoin('med_generics as g', 'g.id', 'i.generic_id')
-      .leftJoin('patients as pt', 'pt.id', 'x.patient_id')
-      .selectAll('x').select([sql<string | null>`pt.first_name || ' ' || pt.last_name`.as('patient_name'), 'i.name as item_name', 'i.code as item_code', 'i.requires_lot', 'i.requires_expiry', 'i.serial_tracked', 'un.name as base_unit_name', 'p.name as pack_name', 'g.controlled_class'])
+      .leftJoin('patients as pt', 'pt.id', 'x.patient_id').leftJoin('proc_order_lines as pol', 'pol.id', 'x.po_line_id')
+      .selectAll('x').select(['pol.unit_cost_gel as po_unit_cost', 'pol.qty_base as po_qty_base', 'pol.qty_received as po_qty_received', sql<string | null>`pt.first_name || ' ' || pt.last_name`.as('patient_name'), 'i.name as item_name', 'i.code as item_code', 'i.requires_lot', 'i.requires_expiry', 'i.serial_tracked', 'un.name as base_unit_name', 'p.name as pack_name', 'g.controlled_class'])
       .where('x.doc_id', '=', id).orderBy('x.line_no').execute();
     return { ...d, lines };
   }
@@ -133,6 +139,7 @@ export class StockDocsService {
         price: l.price === undefined || l.price === null ? null : String(l.price), vat_rate: String(rate), unit_cost: unitCost === null ? null : String(unitCost),
         line_net: lineNet === null ? null : String(lineNet), line_vat: lineVat === null ? null : String(lineVat),
         short_expiry_reason: l.short_expiry_reason?.trim() || null, notes: l.notes?.trim() || null,
+        po_line_id: l.po_line_id ?? null, price_reason: l.price_reason?.trim() || null,
       };
     });
     return { lines: out, net: r2(net), vat: r2(vat) };
@@ -142,6 +149,7 @@ export class StockDocsService {
     return {
       location_id: dto.location_id, supplier_id: dto.supplier_id ?? null, invoice_no: dto.invoice_no?.trim() || null, invoice_date: dto.invoice_date || null,
       waybill_no: dto.waybill_no?.trim() || null, prices_include_vat: dto.prices_include_vat ?? true, notes: dto.notes?.trim() || null,
+      po_id: dto.po_id ?? null, no_po_reason: dto.no_po_reason?.trim() || null,
     };
   }
 
@@ -224,7 +232,57 @@ export class StockDocsService {
         }
       }
     }
+    await this.poIssues(d, out, ex);
     return out;
+  }
+
+  /** 0051: მიღება ↔ შეკვეთა (PO): სტატუსი, მომწოდებელი, ლოკაცია, ფასის გადახრა, ზედმეტი რაოდენობა; po_mode = required */
+  private async poIssues(d: Awaited<ReturnType<StockDocsService['get']>>, out: Issue[], ex: Database | Trx) {
+    const pr = await procRules(ex as Database);
+    if (!d.po_id) {
+      if (pr.po_mode === 'required') {
+        out.push(d.no_po_reason ? { line_no: 0, level: 'warn', code: 'no_po', message: `შეკვეთის (PO) გარეშე — მიზეზი: ${d.no_po_reason} (გატარება — საწყობის მენეჯერი / admin)` }
+          : { line_no: 0, level: 'error', code: 'po_required', message: 'მიღება მხოლოდ შეკვეთიდან (PO) — აირჩიეთ შეკვეთა ან მიუთითეთ მიზეზი' });
+      }
+      if (d.lines.some((l) => l.po_line_id)) out.push({ line_no: 0, level: 'error', code: 'po_line_orphan', message: 'ხაზი შეკვეთას ეკუთვნის, დოკუმენტი კი შეკვეთაზე არ არის მიბმული' });
+      return;
+    }
+    const po = await ex.selectFrom('proc_orders').select(['id', 'po_no', 'status', 'supplier_id', 'location_id']).where('id', '=', d.po_id).executeTakeFirst();
+    if (!po) { out.push({ line_no: 0, level: 'error', code: 'po_missing', message: 'შეკვეთა ვერ მოიძებნა' }); return; }
+    if (!['sent', 'partial', 'received'].includes(po.status)) out.push({ line_no: 0, level: 'error', code: 'po_status', message: `შეკვეთა ${po.po_no ?? ''} არ არის გაგზავნილი (ან დახურულია / გაუქმებულია)` });
+    if (d.supplier_id !== po.supplier_id) out.push({ line_no: 0, level: 'error', code: 'po_supplier', message: `მომწოდებელი არ ემთხვევა შეკვეთას ${po.po_no}` });
+    if (d.location_id !== po.location_id) out.push({ line_no: 0, level: 'error', code: 'po_location', message: `ლოკაცია არ ემთხვევა შეკვეთის მიწოდების ადგილს (${po.po_no})` });
+    const pls = await ex.selectFrom('proc_order_lines').select(['id', 'item_id', 'qty_base', 'unit_cost_gel']).where('order_id', '=', po.id).execute();
+    // სხვა გატარებული (შეუბრუნებელი) მიღებები ამ შეკვეთის ხაზებზე
+    const other = await ex.selectFrom('stock_doc_lines as x').innerJoin('stock_docs as sd', 'sd.id', 'x.doc_id').select(['x.po_line_id', sql<string>`sum(x.qty_base)`.as('q')])
+      .where('sd.po_id', '=', po.id).where('sd.doc_type', '=', 'receipt').where('sd.status', '=', 'posted').where('sd.reversed_by', 'is', null).where('sd.id', '<>', d.id)
+      .groupBy('x.po_line_id').execute();
+    const tol = pr.price_tolerance_pct;
+    const inDoc = new Map<string, number>();
+    for (const l of d.lines) if (l.po_line_id) inDoc.set(l.po_line_id, (inDoc.get(l.po_line_id) ?? 0) + Number(l.qty_base));
+    const overDone = new Set<string>();
+    for (const l of d.lines) {
+      const tag = `ხაზი ${l.line_no} (${l.item_name}): `;
+      if (!l.po_line_id) { out.push({ line_no: l.line_no, level: 'warn', code: 'po_extra', message: `${tag}საქონელი შეკვეთაში (${po.po_no}) არ არის` }); continue; }
+      const pl = pls.find((x) => x.id === l.po_line_id);
+      if (!pl) { out.push({ line_no: l.line_no, level: 'error', code: 'po_line', message: `${tag}ხაზი შეკვეთას ${po.po_no} არ ეკუთვნის` }); continue; }
+      if (pl.item_id !== l.item_id) { out.push({ line_no: l.line_no, level: 'error', code: 'po_item', message: `${tag}საქონელი არ ემთხვევა შეკვეთის ხაზს` }); continue; }
+      const poCost = Number(pl.unit_cost_gel); const cost = l.unit_cost === null ? null : Number(l.unit_cost);
+      if (cost !== null) {
+        const dev = poCost > 0 ? (Math.abs(cost - poCost) / poCost) * 100 : cost > 0 ? 100 : 0;
+        if (dev > tol + 1e-9) {
+          const msg = `${tag}ფასი შეკვეთიდან ${dev.toFixed(1)}%-ით განსხვავდება (შეკვეთა: ${poCost.toFixed(4)} ₾, მიღება: ${cost.toFixed(4)} ₾ საბაზოზე; დასაშვები ${tol}%)`;
+          out.push(l.price_reason ? { line_no: l.line_no, level: 'warn', code: 'po_price', message: `${msg} — მიზეზი: ${l.price_reason}` }
+            : { line_no: l.line_no, level: 'error', code: 'po_price', message: `${msg} — მიუთითეთ მიზეზი` });
+        }
+      }
+      if (!overDone.has(pl.id)) {
+        overDone.add(pl.id);
+        const got = Number(other.find((x) => x.po_line_id === pl.id)?.q ?? 0) + (inDoc.get(pl.id) ?? 0);
+        if (got > Number(pl.qty_base) + 1e-9) out.push({ line_no: l.line_no, level: pr.qty_over_delivery === 'block' ? 'error' : 'warn', code: 'po_over',
+          message: `${tag}შეკვეთილზე მეტია: შეკვეთა ${Number(pl.qty_base)}, მიღებული ამ დოკუმენტის ჩათვლით ${Math.round(got * 1000) / 1000} (საბაზო ერთეულში)` });
+      }
+    }
   }
   async withIssues(id: string) { const d = await this.get(id); return { ...d, issues: d.status === 'draft' ? await this.issues(id) : [] }; }
 
@@ -238,6 +296,8 @@ export class StockDocsService {
         await this.checkLocation(u, d.location_id!, trx);
         const errs = (await this.issues(id, trx)).filter((i) => i.level === 'error');
         if (errs.length) throw new BadRequestException({ message: errs.map((e) => e.message).join('; '), issues: errs });
+        if (!d.po_id && d.no_po_reason && (await procRules(this.db)).po_mode === 'required' && !has(u, 'admin', 'stock_manager'))
+          throw new ForbiddenException('შეკვეთის (PO) გარეშე მიღებას ატარებს საწყობის მენეჯერი ან admin');
         const lines = await trx.selectFrom('stock_doc_lines').selectAll().where('doc_id', '=', id).orderBy('line_no').execute();
         for (const l of lines) {
           const q = Number(l.qty_base); const c = Number(l.unit_cost ?? 0);
@@ -379,12 +439,14 @@ class LineDto {
   @IsOptional() @IsISO8601({ strict: true }) expires_on?: string | null; @IsOptional() @IsISO8601({ strict: true }) produced_on?: string | null;
   @IsOptional() @IsNumber() @Min(0) @Max(100_000_000) price?: number | null; @IsOptional() @IsIn([0, 18]) vat_rate?: number;
   @IsOptional() @IsString() @MaxLength(500) short_expiry_reason?: string | null; @IsOptional() @IsString() @MaxLength(500) notes?: string | null;
+  @IsOptional() @IsUUID() po_line_id?: string | null; @IsOptional() @IsString() @MaxLength(500) price_reason?: string | null;
 }
 class ReceiptDto {
   @IsUUID() location_id: string; @IsOptional() @IsUUID() supplier_id?: string | null; @IsOptional() @IsISO8601({ strict: true }) doc_date?: string;
   @IsOptional() @IsString() @MaxLength(60) invoice_no?: string | null; @IsOptional() @IsISO8601({ strict: true }) invoice_date?: string | null;
   @IsOptional() @IsString() @MaxLength(40) waybill_no?: string | null; @IsOptional() @IsBoolean() prices_include_vat?: boolean; @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
   @IsArray() @ArrayMinSize(0) @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => LineDto) lines: LineDto[];
+  @IsOptional() @IsUUID() po_id?: string | null; @IsOptional() @IsString() @MaxLength(500) no_po_reason?: string | null;
 }
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
 class OptReasonDto { @IsOptional() @IsString() @MaxLength(500) reason?: string }

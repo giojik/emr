@@ -15,6 +15,17 @@ export const STOCK_RULES_DEFAULT: StockRules = {
   issue_mode: 'two_step', witness_classes: ['narcotic', 'psychotropic'], empty_return_classes: ['narcotic'], dose_required: true, count_lock: true, count_blind_default: true,
   pharmacist_scope: 'pharmacy', lost_requires_approval: true, alert_expiry: true, alert_minmax: true, alert_lab: true,
 };
+/** შესყიდვების პარამეტრები (0051) */
+export interface ProcRules {
+  po_mode: 'off' | 'optional' | 'required'; pr_approval_levels: 1 | 2; pr_finance_threshold: number; controlled_pharmacist: boolean;
+  price_tolerance_pct: number; qty_over_delivery: 'warn' | 'block'; po_overdue_alert: boolean;
+}
+export const PROC_RULES_DEFAULT: ProcRules = { po_mode: 'optional', pr_approval_levels: 2, pr_finance_threshold: 1000, controlled_pharmacist: true, price_tolerance_pct: 5, qty_over_delivery: 'warn', po_overdue_alert: true };
+/** null — მოდული გამორთულია (PO-ს რეჟიმი ფაქტობრივად off) */
+export const useProcRules = (): ProcRules | null => {
+  const q = useModules(); const m = q.data?.find((x) => x.code === 'procurement');
+  return m?.enabled ? { ...PROC_RULES_DEFAULT, ...(m.settings as Partial<ProcRules>) } : null;
+};
 export const useStockRules = (): StockRules => {
   const q = useModules();
   return { ...STOCK_RULES_DEFAULT, ...((q.data?.find((m) => m.code === 'stock')?.settings ?? {}) as Partial<StockRules>) };

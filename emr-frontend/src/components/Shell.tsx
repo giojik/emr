@@ -18,6 +18,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] },
   { to: '/diagnostics/radiology?view=schedule', label: 'დიაგნოსტიკის განრიგი', roles: ['receptionist', 'manager', 'viewer'] },
   { to: '/stock', label: 'საწყობი და აფთიაქი', roles: ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'manager', 'viewer', 'accountant'] },
+  { to: '/procurement', label: 'შესყიდვები', roles: ['admin', 'procurement', 'procurement_approve', 'stock_manager', 'storekeeper', 'pharmacist', 'accountant', 'manager', 'viewer'], module: 'procurement' },
   { to: '/stock/requests', label: 'მარაგი / მოთხოვნები', roles: ['nurse'] },
   { to: '/stock/lab', label: 'ლაბ. მარაგი', roles: ['lab_doctor', 'lab_manager', 'diagnostic'] },
   { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },
@@ -37,6 +38,7 @@ const HOME: Record<Role, string> = {
   accountant: '/reports', viewer: '/reports', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',
   storekeeper: '/stock/balances', stock_manager: '/stock/balances',
   or_schedule: '/or?tab=board', anesthesiologist: '/or?tab=my', or_nurse: '/or?tab=board',
+  procurement: '/procurement/requisitions', procurement_approve: '/procurement/requisitions?to_approve=1',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

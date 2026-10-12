@@ -40,11 +40,12 @@ import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles';
 import { ManagementReportsModule } from './reports/management';
 import { StockModule } from './stock/stock.module';
+import { ProcurementModule } from './procurement/procurement.module';
 
 @Module({
   imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, IcuModule, OrAdminModule, OrModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule],
   controllers: [HealthController],
 })
 export class AppModule {}

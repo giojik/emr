@@ -1,0 +1,65 @@
+import type { Role } from '../../api/client';
+
+/** შესყიდვები (0051) — სერვერის PROC_READ / PR_EDIT / PO_EDIT-ის შესაბამისი */
+export const PROC_READ: Role[] = ['admin', 'procurement', 'procurement_approve', 'stock_manager', 'storekeeper', 'pharmacist', 'accountant', 'manager', 'viewer'];
+export const PR_EDIT: Role[] = ['admin', 'procurement', 'stock_manager', 'storekeeper', 'pharmacist'];
+export const PO_EDIT: Role[] = ['admin', 'procurement', 'stock_manager'];
+export const RECEIPT_EDIT: Role[] = ['admin', 'storekeeper', 'stock_manager', 'pharmacist'];
+
+export type PrStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'closed' | 'cancelled';
+export const PR_STATUS: Record<PrStatus, [string, string]> = {
+  draft: ['warn', 'მონახაზი'], submitted: ['info', 'დასამტკიცებელი'], approved: ['ok', 'დამტკიცებული'], rejected: ['danger', 'უარყოფილი'], closed: ['', 'დახურული'], cancelled: ['', 'გაუქმებული'],
+};
+export const PR_SOURCE: Record<string, string> = { manual: 'ხელით', minmax: 'მინ/მაქს', request: 'განყოფილების მოთხოვნა' };
+export type Step = 'l1' | 'finance' | 'pharmacist';
+export const STEP_KA: Record<Step, string> = { l1: 'საწყობის მენეჯერი', finance: 'ფინანსური', pharmacist: 'ფარმაცევტი' };
+
+export interface PrRow {
+  id: string; pr_no: string | null; status: PrStatus; source: string; urgent: boolean; needed_by: string | null; est_total: string; created_at: string; submitted_at: string | null;
+  created_by: string; created_by_name: string; location_id: string; location_name: string; lines: number; lines_ordered: number;
+  needs_finance: boolean; needs_pharmacist: boolean; l1_at: string | null; finance_at: string | null; pharm_at: string | null;
+}
+export interface PrLine {
+  id: string; line_no: number; item_id: string | null; free_name: string | null; item_name: string | null; item_code: string | null; base_unit_name: string | null;
+  pack_id: string | null; pack_name: string | null; pack_qty_base: string; qty: string; qty_base: string; est_price: string | null; supplier_id: string | null; supplier_name: string | null;
+  request_line_id: string | null; notes: string | null; controlled_class: string | null; qty_ordered: string;
+}
+export interface Pr extends Omit<PrRow, 'lines' | 'lines_ordered'> {
+  location_kind: string; request_id: string | null; req_no: string | null; notes: string | null; reason: string | null;
+  l1_by_name: string | null; finance_by_name: string | null; pharm_by_name: string | null; rejected_by_name: string | null; rejected_at: string | null; l1_by: string | null;
+  lines: PrLine[]; orders: { id: string; po_no: string | null; status: PoStatus; order_date: string; supplier_name: string; total_gel: string }[]; pending: Step[];
+}
+
+export type PoStatus = 'draft' | 'pending' | 'sent' | 'partial' | 'received' | 'closed' | 'cancelled';
+export const PO_STATUS: Record<PoStatus, [string, string]> = {
+  draft: ['warn', 'მონახაზი'], pending: ['info', 'დასამტკიცებელი'], sent: ['accent', 'გაგზავნილი'], partial: ['warn', 'ნაწილობრივ მიღებული'], received: ['ok', 'მიღებული'],
+  closed: ['', 'დახურული'], cancelled: ['', 'გაუქმებული'],
+};
+export type Currency = 'GEL' | 'USD' | 'EUR';
+export const CUR_SIGN: Record<Currency, string> = { GEL: '₾', USD: '$', EUR: '€' };
+export interface PoRow {
+  id: string; po_no: string | null; status: PoStatus; order_date: string; expected_date: string | null; currency: Currency; total_net: string; total_vat: string; total_gel: string;
+  supplier_id: string; location_id: string; supplier_name: string; location_name: string; created_by_name: string; overdue: boolean; lines: number; received_ratio: string; needs_approval: boolean;
+}
+export interface PoLine {
+  id: string; line_no: number; item_id: string; item_name: string; item_code: string; base_unit_name: string; pack_id: string | null; pack_name: string | null; pack_qty_base: string;
+  qty: string; qty_base: string; price: string; vat_rate: string; unit_cost_gel: string; line_net: string; line_vat: string; qty_received: string; requisition_line_id: string | null;
+  pr_no: string | null; requisition_id: string | null; notes: string | null;
+}
+export interface Po extends Omit<PoRow, 'lines' | 'received_ratio'> {
+  fx_rate: string; prices_include_vat: boolean; contract_no: string | null; notes: string | null; reason: string | null; created_by: string;
+  supplier_tax_id: string | null; supplier_vat_payer: boolean; supplier_address: string | null; supplier_phone: string | null; supplier_email: string | null; supplier_contact: string | null;
+  approved_by_name: string | null; approved_at: string | null; sent_by_name: string | null; sent_at: string | null; closed_by_name: string | null; closed_at: string | null;
+  lines: PoLine[]; receipts: { id: string; doc_no: string | null; status: string; doc_date: string; total_net: string; total_vat: string; invoice_no: string | null; waybill_no: string | null; reversed_by_no: string | null }[];
+}
+export interface PriceRow {
+  id: string; supplier_id: string; supplier_name: string; item_id: string; item_name: string; item_code: string; base_unit_name: string; pack_id: string | null; pack_name: string | null;
+  pack_qty_base: string; price: string; vat_rate: string; min_qty: string | null; valid_from: string; valid_to: string | null; contract_no: string | null; notes: string | null; is_active: boolean; current: boolean;
+}
+export interface Hints {
+  prices: { id: string; supplier_id: string; supplier_name: string; pack_id: string | null; pack_name: string | null; pack_qty_base: string; price: string; vat_rate: string; base_price: string; valid_to: string | null }[];
+  last: { doc_no: string; doc_date: string; supplier_id: string | null; supplier_name: string | null; unit_cost: string; qty_base: string }[];
+}
+export interface ProcSummary { pr_to_approve: number; po_to_approve: number; po_overdue: number; pr_to_order: number }
+export const num = (s: string) => Number(s.replace(',', '.'));
+export const fmt = (v: number | string | null | undefined, d = 2) => (v === null || v === undefined || v === '' ? '—' : Number(v).toFixed(d));

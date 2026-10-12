@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError, can, type Role } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
-import { ErrorBox, Loading, Spinner, useDebounced, useToast } from '../../components/ui';
+import { ErrorBox, Loading, Modal, Spinner, useDebounced, useToast } from '../../components/ui';
 import { dateGe, todayISO, tsDate } from '../../lib/format';
+import { useProcRules } from '../../lib/modules';
+import type { Po, PoRow } from '../procurement/types';
 import {
   DOC_STATUS, DOC_TYPE_KA, money2, qtyFmt, RECEIPT_EDIT_ROLES, REVERSE_ROLES, useStockRefs,
   type DocIssue, type StockDoc, type StockDocRow, type StockItem, type StockLocation, type Supplier,
@@ -24,8 +26,10 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
   const ds = useDebounced(f.search.trim(), 300);
   const locs = useQuery({ queryKey: ['stock-locations', false], queryFn: () => api<StockLocation[]>('/stock/locations') });
   const q = useQuery({ queryKey: ['stock-docs', f.status, f.location_id, f.from, f.to, ds], queryFn: () => api<StockDocRow[]>('/stock/docs', { query: { ...f, search: ds } }) });
+  const rules = useProcRules(); const [fromPo, setFromPo] = useState(false);
   return (
     <div className="content">
+      {fromPo && <FromPoDialog onClose={() => setFromPo(false)} onCreated={(id) => { setFromPo(false); onOpen(id); }} />}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <input className="input" style={{ maxWidth: 260, height: 38 }} aria-label="ძებნა" placeholder="№, ზედნადები, მომწოდებელი" value={f.search} onChange={(e) => setF({ ...f, search: e.target.value })} />
         <select className="select" style={{ maxWidth: 170, height: 38 }} aria-label="სტატუსი" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
@@ -37,17 +41,18 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
         <input className="input mono" type="date" style={{ maxWidth: 160, height: 38 }} aria-label="დან" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} />
         <input className="input mono" type="date" style={{ maxWidth: 160, height: 38 }} aria-label="მდე" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} />
         <span className="grow" />
+        {can(user, ...(RECEIPT_EDIT_ROLES as unknown as Role[])) && rules && rules.po_mode !== 'off' && <button className="btn" type="button" onClick={() => setFromPo(true)}>+ შეკვეთიდან (PO)</button>}
         {can(user, ...(RECEIPT_EDIT_ROLES as unknown as Role[])) && <button className="btn primary" type="button" onClick={() => onOpen('new')}>+ მიღება</button>}
       </div>
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (
         <div className="card">
           <table className="table">
-            <thead><tr><th>№</th><th>თარიღი</th><th>ტიპი</th><th>ლოკაცია</th><th>მომწოდებელი</th><th>ზედნადები</th><th className="num">ხაზი</th><th className="num">ჯამი (დღგ-ს გარეშე)</th><th className="num">დღგ</th><th>სტატუსი</th></tr></thead>
+            <thead><tr><th>№</th><th>თარიღი</th><th>ტიპი</th><th>ლოკაცია</th><th>მომწოდებელი</th><th>შეკვეთა / ფაქტურა / ზედნადები</th><th className="num">ხაზი</th><th className="num">ჯამი (დღგ-ს გარეშე)</th><th className="num">დღგ</th><th>სტატუსი</th></tr></thead>
             <tbody>{q.data?.map((d) => (
               <tr key={d.id} className="clickable" onClick={() => onOpen(d.id)}>
                 <td className="mono">{d.doc_no ?? '—'}</td><td className="mono">{dateGe(d.doc_date)}</td><td>{DOC_TYPE_KA[d.doc_type] ?? d.doc_type}</td>
-                <td>{d.location_name ?? '—'}</td><td>{d.supplier_name ?? '—'}</td><td className="small">{[d.invoice_no, d.waybill_no].filter(Boolean).join(' · ') || '—'}</td>
+                <td>{d.location_name ?? '—'}</td><td>{d.supplier_name ?? '—'}</td><td className="small">{[d.po_no, d.invoice_no, d.waybill_no].filter(Boolean).join(' · ') || '—'}</td>
                 <td className="num">{d.lines}</td><td className="num mono">{Number(d.total_net).toFixed(2)}</td><td className="num mono">{Number(d.total_vat).toFixed(2)}</td>
                 <td><span className={`chip ${DOC_STATUS[d.status][0]}`}>{DOC_STATUS[d.status][1]}</span>{d.reversed_by_no && <span className="chip" style={{ marginLeft: 4 }}>შემობრუნდა {d.reversed_by_no}</span>}</td>
               </tr>))}
@@ -64,11 +69,13 @@ function ReceiptList({ onOpen }: { onOpen: (id: string) => void }) {
 interface Line {
   key: string; item: Pick<StockItem, 'id' | 'name' | 'code' | 'requires_lot' | 'requires_expiry' | 'serial_tracked' | 'base_unit_name' | 'packs' | 'controlled_class'>;
   pack_id: string; qty: string; lot_no: string; serial_no: string; expires_on: string; price: string; vat_rate: number; short_expiry_reason: string;
+  po_line_id: string; price_reason: string;
 }
 interface ScanResult { parsed: { lot: string | null; serial: string | null; expiry: string | null }; item: StockItem | null; pack: { id: string } | null; warnings: string[] }
 let seq = 0;
 const lineFromItem = (it: Line['item'], vat: number, extra: Partial<Line> = {}): Line => ({
-  key: `l${++seq}`, item: it, pack_id: (it.packs.find((p) => p.is_receipt_default) ?? null)?.id ?? '', qty: '1', lot_no: '', serial_no: '', expires_on: '', price: '', vat_rate: vat, short_expiry_reason: '', ...extra,
+  key: `l${++seq}`, item: it, pack_id: (it.packs.find((p) => p.is_receipt_default) ?? null)?.id ?? '', qty: '1', lot_no: '', serial_no: '', expires_on: '', price: '', vat_rate: vat, short_expiry_reason: '',
+  po_line_id: '', price_reason: '', ...extra,
 });
 const addMonths = (iso: string, m: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + m); return d.toISOString().slice(0, 10); };
 const n = (s: string) => Number(s.replace(',', '.'));
@@ -99,13 +106,22 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
   const today = todayISO();
   const [h, setH] = useState({
     location_id: d?.location_id ?? '', supplier_id: d?.supplier_id ?? '', doc_date: d?.doc_date ?? today, invoice_no: d?.invoice_no ?? '', invoice_date: d?.invoice_date ?? '',
-    waybill_no: d?.waybill_no ?? '', prices_include_vat: d?.prices_include_vat ?? true, notes: d?.notes ?? '',
+    waybill_no: d?.waybill_no ?? '', prices_include_vat: d?.prices_include_vat ?? true, notes: d?.notes ?? '', po_id: d?.po_id ?? '', no_po_reason: d?.no_po_reason ?? '',
   });
   const [lines, setLines] = useState<Line[]>(() => (d?.lines ?? []).map((l) => ({
     key: `l${++seq}`, item: { id: l.item_id, name: l.item_name, code: l.item_code, requires_lot: l.requires_lot, requires_expiry: l.requires_expiry, serial_tracked: l.serial_tracked,
       base_unit_name: l.base_unit_name, packs: [], controlled_class: l.controlled_class }, pack_id: l.pack_id ?? '', qty: qtyFmt(l.qty), lot_no: l.lot_no ?? '', serial_no: l.serial_no ?? '',
     expires_on: l.expires_on ?? '', price: l.price === null ? '' : String(Number(l.price)), vat_rate: Number(l.vat_rate), short_expiry_reason: l.short_expiry_reason ?? '',
+    po_line_id: l.po_line_id ?? '', price_reason: l.price_reason ?? '',
   })));
+  // 0051: შეკვეთა (PO) — ღია შეკვეთები ამ მომწოდებლისა და ლოკაციისთვის; ხაზები ებმება საქონლით
+  const rules = useProcRules(); const poOn = !!rules && rules.po_mode !== 'off';
+  const openPos = useQuery({ queryKey: ['proc-pos-open', h.supplier_id, h.location_id], enabled: poOn && !!h.supplier_id && !!h.location_id,
+    queryFn: () => api<PoRow[]>('/procurement/orders', { query: { status: 'sent,partial,received', supplier_id: h.supplier_id, location_id: h.location_id } }) });
+  const po = useQuery({ queryKey: ['proc-po', h.po_id], enabled: poOn && !!h.po_id, queryFn: () => api<Po>(`/procurement/orders/${h.po_id}`) });
+  const poLineFor = (itemId: string) => po.data?.lines.find((x) => x.item_id === itemId)?.id ?? '';
+  const pickPo = (id: string) => { setH((x) => ({ ...x, po_id: id })); if (!id) setLines((ls) => ls.map((l) => ({ ...l, po_line_id: '' }))); };
+  useQuery({ queryKey: ['rc-po-match', po.data?.id], enabled: !!po.data, queryFn: () => { setLines((ls) => ls.map((l) => (l.po_line_id ? l : { ...l, po_line_id: poLineFor(l.item.id) }))); return true; } });
   // შეფუთვების ჩატვირთვა არსებული ხაზებისთვის
   const itemIds = useMemo(() => [...new Set(lines.filter((l) => !l.item.packs.length).map((l) => l.item.id))], [lines]);
   useQuery({
@@ -137,7 +153,7 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
         const same = !it.serial_tracked && ls.find((l) => l.item.id === it.id && l.pack_id === packId && l.lot_no === lot && l.expires_on === exp);
         if (same) return ls.map((l) => (l === same ? { ...l, qty: String(n(l.qty) + 1) } : l));
         if (it.serial_tracked && serial && ls.some((l) => l.item.id === it.id && l.serial_no === serial)) { setScanMsg(`სერიული ${serial} უკვე დამატებულია`); return ls; }
-        return [...ls, lineFromItem(it, defVat, { pack_id: packId, lot_no: lot, expires_on: exp, serial_no: serial })];
+        return [...ls, lineFromItem(it, defVat, { pack_id: packId, lot_no: lot, expires_on: exp, serial_no: serial, po_line_id: poLineFor(it.id) })];
       });
     },
   });
@@ -148,9 +164,11 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
   const body = () => ({
     location_id: h.location_id, supplier_id: h.supplier_id || null, doc_date: h.doc_date, invoice_no: h.invoice_no || null, invoice_date: h.invoice_date || null,
     waybill_no: h.waybill_no || null, prices_include_vat: h.prices_include_vat, notes: h.notes || null,
+    ...(poOn && { po_id: h.po_id || null, no_po_reason: !h.po_id && h.no_po_reason.trim() ? h.no_po_reason.trim() : null }),
     lines: lines.map((l) => ({
       item_id: l.item.id, pack_id: l.pack_id || null, qty: n(l.qty), lot_no: l.lot_no || null, serial_no: l.serial_no || null, expires_on: l.expires_on || null,
       price: l.price.trim() === '' ? null : n(l.price), vat_rate: l.vat_rate, short_expiry_reason: l.short_expiry_reason || null,
+      ...(poOn && h.po_id && { po_line_id: l.po_line_id || null, price_reason: l.price_reason.trim() || null }),
     })),
   });
   const save = useMutation({
@@ -195,7 +213,7 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
               <option value="">— აირჩიეთ —</option>{locOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></div>
           <div className="field"><label htmlFor="rs">მომწოდებელი</label>
-            <select id="rs" className="select" value={h.supplier_id} onChange={(e) => { const s = sups.data?.find((x) => x.id === e.target.value); setH({ ...h, supplier_id: e.target.value });
+            <select id="rs" className="select" value={h.supplier_id} onChange={(e) => { const s = sups.data?.find((x) => x.id === e.target.value); setH({ ...h, supplier_id: e.target.value, po_id: '' });
               if (s) setLines((ls) => ls.map((l) => ({ ...l, vat_rate: l.price.trim() === '' ? (s.vat_payer ? 18 : 0) : l.vat_rate }))); }}>
               <option value="">—</option>{sups.data?.map((s) => <option key={s.id} value={s.id}>{s.name}{s.tax_id ? ` (${s.tax_id})` : ''}</option>)}
             </select></div>
@@ -205,6 +223,13 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
           <div className="field"><label htmlFor="rid">ფაქტურის თარიღი</label><input id="rid" className="input mono" type="date" value={h.invoice_date} onChange={(e) => setH({ ...h, invoice_date: e.target.value })} /></div>
           <div className="field"><label htmlFor="rw">ზედნადები № (RS.ge)</label><input id="rw" className="input mono" value={h.waybill_no} onChange={(e) => setH({ ...h, waybill_no: e.target.value })} /></div>
           <div className="field"><label htmlFor="rn">შენიშვნა</label><input id="rn" className="input" value={h.notes} onChange={(e) => setH({ ...h, notes: e.target.value })} /></div>
+          {poOn && <div className="field"><label htmlFor="rpo">შეკვეთა (PO){rules?.po_mode === 'required' && <span className="req"> *</span>}</label>
+            <select id="rpo" className="select" value={h.po_id} disabled={!h.supplier_id || !h.location_id} onChange={(e) => pickPo(e.target.value)}>
+              <option value="">{!h.supplier_id || !h.location_id ? 'ჯერ ლოკაცია და მომწოდებელი' : '— შეკვეთის გარეშე —'}</option>
+              {openPos.data?.map((o) => <option key={o.id} value={o.id}>{o.po_no} · {dateGe(o.order_date)}{o.status === 'received' ? ' (მიღებული)' : ''}</option>)}
+              {h.po_id && !openPos.data?.some((o) => o.id === h.po_id) && <option value={h.po_id}>{po.data?.po_no ?? d?.po_no ?? 'შეკვეთა'}</option>}</select></div>}
+          {poOn && rules?.po_mode === 'required' && !h.po_id && <div className="field" style={{ gridColumn: 'span 3' }}><label htmlFor="rnp">მიზეზი შეკვეთის გარეშე (გატარება — საწყობის მენეჯერი)</label>
+            <input id="rnp" className="input" value={h.no_po_reason} onChange={(e) => setH({ ...h, no_po_reason: e.target.value })} /></div>}
         </fieldset>
       </section>
 
@@ -220,7 +245,7 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
               <input className="input" style={{ height: 38 }} aria-label="საქონლის ძებნა" placeholder="ან ძებნა: დასახელება, INN, კოდი" value={search} onChange={(e) => setSearch(e.target.value)} />
               {dsearch.length >= 2 && (found.data?.length ?? 0) > 0 && (
                 <ul className="listbox" role="listbox" aria-label="საქონელი" style={{ position: 'absolute', top: 40, left: 0, right: 0, zIndex: 5 }}>
-                  {found.data!.filter((i) => i.is_active).map((i) => <li key={i.id} role="option" aria-selected={false} onMouseDown={(e) => { e.preventDefault(); setLines((ls) => [...ls, lineFromItem(i, defVat)]); setSearch(''); }}>
+                  {found.data!.filter((i) => i.is_active).map((i) => <li key={i.id} role="option" aria-selected={false} onMouseDown={(e) => { e.preventDefault(); setLines((ls) => [...ls, lineFromItem(i, defVat, { po_line_id: poLineFor(i.id) })]); setSearch(''); }}>
                     <span className="grow">{i.name}{i.inn && <span className="small muted"> · {i.inn}{i.strength ? ` ${i.strength}` : ''}</span>}</span><span className="mono small muted">{i.code}</span></li>)}
                 </ul>)}
             </div>
@@ -253,7 +278,16 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
                   {short && editable && <input className="input" style={{ height: 30, marginTop: 4, width: 140, fontSize: 13 }} aria-label="მოკლე ვადის მიზეზი" placeholder={`< ${shortMonths} თვე — მიზეზი`} value={l.short_expiry_reason} onChange={(e) => upd(l.key, { short_expiry_reason: e.target.value })} />}
                   {short && !editable && l.short_expiry_reason && <div className="small muted">{l.short_expiry_reason}</div>}</td>
                 <td>{l.item.serial_tracked ? <input className="input mono" style={{ height: 34, width: 130 }} aria-label="სერიული" disabled={!editable} value={l.serial_no} onChange={(e) => upd(l.key, { serial_no: e.target.value.toUpperCase() })} /> : <span className="muted">—</span>}</td>
-                <td><input className="input mono num" style={{ height: 34, width: 80 }} aria-label="ფასი" inputMode="decimal" disabled={!editable} placeholder={h.prices_include_vat ? 'დღგ-ით' : 'დღგ-ს გ.'} value={l.price} onChange={(e) => upd(l.key, { price: e.target.value })} /></td>
+                <td><input className="input mono num" style={{ height: 34, width: 80 }} aria-label="ფასი" inputMode="decimal" disabled={!editable} placeholder={h.prices_include_vat ? 'დღგ-ით' : 'დღგ-ს გ.'} value={l.price} onChange={(e) => upd(l.key, { price: e.target.value })} />
+                  {h.po_id && (() => {
+                    const pl = po.data?.lines.find((x) => x.id === l.po_line_id);
+                    if (!pl) return po.data ? <div className="small" style={{ color: 'var(--warn-ink)' }}>შეკვეთაში არ არის</div> : null;
+                    const poBase = Number(pl.unit_cost_gel); const net = l.price.trim() === '' ? null : (h.prices_include_vat ? n(l.price) / (1 + l.vat_rate / 100) : n(l.price)) / per;
+                    const dev = net === null || poBase === 0 ? 0 : (Math.abs(net - poBase) / poBase) * 100;
+                    const bad = rules && dev > rules.price_tolerance_pct;
+                    return <><div className="small muted" title="შეკვეთის ფასი საბაზო ერთეულზე, დღგ-ს გარეშე">PO: {(poBase * per).toFixed(2)}{bad && <span style={{ color: 'var(--danger-ink)' }}> ({dev.toFixed(1)}%)</span>}</div>
+                      {(bad || l.price_reason) && editable && <input className="input" style={{ height: 30, marginTop: 4, width: 140, fontSize: 13 }} aria-label="ფასის გადახრის მიზეზი" placeholder="გადახრის მიზეზი" value={l.price_reason} onChange={(e) => upd(l.key, { price_reason: e.target.value })} />}</>;
+                  })()}</td>
                 <td><select className="select" style={{ height: 34, width: 72 }} aria-label="დღგ" disabled={!editable} value={l.vat_rate} onChange={(e) => upd(l.key, { vat_rate: Number(e.target.value) })}><option value={18}>18%</option><option value={0}>0%</option></select></td>
                 <td className="num mono">{sum === null ? '—' : sum.toFixed(2)}</td>
                 <td>{editable && <button className="icon-btn" type="button" aria-label="ხაზის წაშლა" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>×</button>}</td>
@@ -274,7 +308,7 @@ function ReceiptForm({ d, editable, onClose, onSaved }: { d: StockDoc | null; ed
 }
 
 function ReceiptView({ d, onClose, onOpen }: { d: StockDoc; onClose: () => void; onOpen: (id: string) => void }) {
-  const { user } = useAuth(); const qc = useQueryClient();
+  const { user } = useAuth(); const qc = useQueryClient(); const nav = useNavigate();
   const rev = useMutation({
     mutationFn: (reason: string) => api<StockDoc>(`/stock/docs/${d.id}/reverse`, { body: { reason } }),
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['stock-docs'] }); void qc.invalidateQueries({ queryKey: ['stock-doc', d.id] }); void qc.invalidateQueries({ queryKey: ['stock-balances'] }); onOpen(r.id); },
@@ -292,6 +326,8 @@ function ReceiptView({ d, onClose, onOpen }: { d: StockDoc; onClose: () => void;
         <div><span className="small muted">ლოკაცია</span><div>{d.location_name}</div></div>
         <div><span className="small muted">მომწოდებელი</span><div>{d.supplier_name ?? '—'}{d.supplier_tax_id && <span className="mono small muted"> · {d.supplier_tax_id}</span>}</div></div>
         <div><span className="small muted">ფაქტურა / ზედნადები</span><div className="small">{[d.invoice_no && `${d.invoice_no}${d.invoice_date ? ` (${dateGe(d.invoice_date)})` : ''}`, d.waybill_no].filter(Boolean).join(' · ') || '—'}</div></div>
+        {d.po_no && <div><span className="small muted">შეკვეთა</span><div><a className="mono" href={`/procurement/orders?id=${d.po_id}`} onClick={(e) => { e.preventDefault(); nav(`/procurement/orders?id=${d.po_id}`); }}>{d.po_no}</a></div></div>}
+        {d.no_po_reason && <div><span className="small muted">შეკვეთის გარეშე</span><div className="small">{d.no_po_reason}</div></div>}
         <div><span className="small muted">გაატარა</span><div className="small">{d.posted_by_name ?? '—'}{d.posted_at && ` · ${tsDate(d.posted_at)}`}</div></div>
         <div><span className="small muted">შექმნა</span><div className="small">{d.created_by_name}</div></div>
         {d.reversal_of_no && <div><span className="small muted">შემობრუნება</span><div className="mono">{d.reversal_of_no}</div></div>}
@@ -307,7 +343,7 @@ function ReceiptView({ d, onClose, onOpen }: { d: StockDoc; onClose: () => void;
               <td className="mono small">{l.line_no}</td><td><strong>{l.item_name}</strong> <span className="mono small muted">{l.item_code}</span>{l.short_expiry_reason && <div className="small muted">მოკლე ვადა: {l.short_expiry_reason}</div>}</td>
               <td className="num">{qtyFmt(l.qty)} {l.pack_name ?? l.base_unit_name}{l.pack_name && <div className="small muted">= {qtyFmt(l.qty_base)} {l.base_unit_name}</div>}</td>
               <td className="mono">{l.lot_no ?? '—'}</td><td className="mono">{l.expires_on ? dateGe(l.expires_on) : '—'}</td><td className="mono">{l.serial_no ?? '—'}</td>
-              <td className="num mono">{l.unit_cost !== null ? Number(l.unit_cost).toFixed(4) : '—'}</td><td className="num mono">{money2(l.line_net)}</td><td className="num mono">{money2(l.line_vat)}</td>
+              <td className="num mono">{l.unit_cost !== null ? Number(l.unit_cost).toFixed(4) : '—'}{l.po_unit_cost && <div className="small muted">PO: {Number(l.po_unit_cost).toFixed(4)}</div>}{l.price_reason && <div className="small muted">{l.price_reason}</div>}</td><td className="num mono">{money2(l.line_net)}</td><td className="num mono">{money2(l.line_vat)}</td>
             </tr>))}</tbody>
         </table>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 18, padding: '10px 16px' }}>
@@ -317,5 +353,27 @@ function ReceiptView({ d, onClose, onOpen }: { d: StockDoc; onClose: () => void;
       </section>
       <ErrorBox error={rev.error} />
     </>
+  );
+}
+
+/** 0051: მიღება შეკვეთიდან — ღია შეკვეთების სია → RC-ის მონახაზი დარჩენილი რაოდენობით */
+function FromPoDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const q = useQuery({ queryKey: ['proc-pos', { status: 'sent,partial' }], queryFn: () => api<PoRow[]>('/procurement/orders', { query: { status: 'sent,partial' } }) });
+  const m = useMutation({ mutationFn: (id: string) => api<{ id: string }>(`/procurement/orders/${id}/receipt`, { method: 'POST' }), onSuccess: (r) => onCreated(r.id) });
+  return (
+    <Modal title="მიღება შეკვეთიდან (PO)" onClose={onClose} width={760} footer={<button className="btn" type="button" onClick={onClose}>დახურვა</button>}>
+      {q.isLoading ? <Loading /> : (
+        <table className="table">
+          <thead><tr><th>№</th><th>მომწოდებელი</th><th>მიწოდება</th><th>მოსალოდნელი</th><th className="num">მიღებული</th><th /></tr></thead>
+          <tbody>{q.data?.map((o) => (
+            <tr key={o.id}><td className="mono">{o.po_no}</td><td>{o.supplier_name}</td><td className="small">{o.location_name}</td>
+              <td className="mono" style={o.overdue ? { color: 'var(--danger-ink)' } : undefined}>{o.expected_date ? dateGe(o.expected_date) : '—'}</td>
+              <td className="num">{Math.round(Number(o.received_ratio) * 100)}%</td>
+              <td><button className="btn sm primary" type="button" disabled={m.isPending} onClick={() => m.mutate(o.id)}>მიღება</button></td></tr>))}
+            {!q.data?.length && <tr><td colSpan={6} className="muted">ღია შეკვეთა არ არის</td></tr>}
+          </tbody>
+        </table>)}
+      <ErrorBox error={q.error ?? m.error} />
+    </Modal>
   );
 }

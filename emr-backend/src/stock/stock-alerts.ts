@@ -4,6 +4,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { stockRules } from './stock-rules';
+import { procRules } from '../procurement/procurement-rules';
 
 const TZ = loadEnv().CLINIC_TZ;
 
@@ -92,11 +93,17 @@ export class StockAlertsService {
         sql<string>`coalesce((SELECT sum(x.qty_base) FROM stock_docs d JOIN stock_doc_lines x ON x.doc_id = d.id WHERE d.to_location_id = m.location_id AND x.item_id = m.item_id
           AND d.status = 'posted' AND d.receive_status IS NULL AND d.doc_type IN ('transfer', 'return')), 0)`.as('in_transit'),
         sql<string>`coalesce((SELECT sum(coalesce(rl.qty_approved, rl.qty_base) - rl.qty_issued) FROM stock_requests r JOIN stock_request_lines rl ON rl.request_id = r.id
-          WHERE r.to_location_id = m.location_id AND rl.item_id = m.item_id AND r.status IN ('draft', 'submitted', 'approved', 'partial')), 0)`.as('requested')])
+          WHERE r.to_location_id = m.location_id AND rl.item_id = m.item_id AND r.status IN ('draft', 'submitted', 'approved', 'partial')), 0)`.as('requested'),
+        // 0051: შეკვეთილი მომწოდებელთან (გაგზავნილი / ნაწილობრივ მიღებული PO-ს დარჩენილი) + დამტკიცების პროცესში მყოფი შესყიდვის მოთხოვნა (PR)
+        sql<string>`coalesce((SELECT sum(greatest(ol.qty_base - ol.qty_received, 0)) FROM proc_orders o JOIN proc_order_lines ol ON ol.order_id = o.id
+          WHERE o.location_id = m.location_id AND ol.item_id = m.item_id AND o.status IN ('draft', 'pending', 'sent', 'partial')), 0)`.as('on_order'),
+        sql<string>`coalesce((SELECT sum(greatest(pl.qty_base - coalesce((SELECT sum(ol.qty_base) FROM proc_order_lines ol JOIN proc_orders o ON o.id = ol.order_id
+            WHERE ol.requisition_line_id = pl.id AND o.status <> 'cancelled'), 0), 0)) FROM proc_requisitions p JOIN proc_requisition_lines pl ON pl.requisition_id = p.id
+          WHERE p.location_id = m.location_id AND pl.item_id = m.item_id AND p.status IN ('draft', 'submitted', 'approved')), 0)`.as('pr_pending')])
       .where('l.is_active', '=', true).orderBy('l.name').orderBy('i.name');
     if (locationId) x = x.where('m.location_id', '=', locationId);
     const rows = (await x.execute()).map((r) => {
-      const have = Number(r.on_hand) + Number(r.in_transit) + Math.max(0, Number(r.requested));
+      const have = Number(r.on_hand) + Number(r.in_transit) + Math.max(0, Number(r.requested)) + Number(r.on_order) + Number(r.pr_pending);
       const below = r.item_active && have < Number(r.min_qty);
       return { ...r, below, suggested: below ? Math.max(0, Math.round((Number(r.max_qty) - have) * 1000) / 1000) : 0 };
     });
@@ -152,6 +159,26 @@ export class StockAlertsService {
     return { expired: expired.length, sent };
   }
 
+  /** 0051: ვადაგადაცილებული შეკვეთა (გაგზავნილი / ნაწილობრივ მიღებული, expected_date < დღეს) — ერთხელ, ავტორს + შესყიდვებს + საწყობის მენეჯერს */
+  async poOverdue(today: string) {
+    const rows = await this.db.selectFrom('proc_orders as o').innerJoin('stock_suppliers as s', 's.id', 'o.supplier_id')
+      .select(['o.id', 'o.po_no', 'o.expected_date', 'o.created_by', 's.name as supplier_name'])
+      .where('o.status', 'in', ['sent', 'partial']).where('o.expected_date', '<', today).where('o.overdue_notified', 'is', null).execute();
+    if (!rows.length) return { orders: 0, sent: 0 };
+    const staff = (await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').where('u.is_active', '=', true)
+      .where(sql<boolean>`c.capabilities && ARRAY['procurement','stock_manager']::varchar[]`).execute()).map((x) => x.id);
+    let sent = 0;
+    for (const o of rows) {
+      for (const id of new Set([o.created_by, ...staff])) {
+        await this.notifications.notify(id, { kind: 'proc_po_overdue', title: `შეკვეთა ${o.po_no} — მიწოდება ვადაგადაცილებულია`, body: `${o.supplier_name}; მოსალოდნელი: ${o.expected_date}`,
+          entityId: o.id, link: `/procurement/orders?id=${o.id}` });
+        sent++;
+      }
+      await this.db.updateTable('proc_orders').set({ overdue_notified: today }).where('id', '=', o.id).execute();
+    }
+    return { orders: rows.length, sent };
+  }
+
   /** worker: ყოველ 5 წუთში; `alert_hour`-ის შემდეგ — დღეში ერთხელ */
   async tick(force = false) {
     const { d, h } = await this.now();
@@ -159,13 +186,16 @@ export class StockAlertsService {
     if (!force && h < st.alert_hour) return null;
     const out: Record<string, unknown> = {};
     const rules = await stockRules(this.db);
-    for (const kind of ['expiry', 'minmax', 'lab', 'cssd'] as const) {
-      if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                     // შემადგენლობა — კლინიკის პარამეტრი (0038)
+    const proc = await procRules(this.db);
+    for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue'] as const) {
+      if (kind === 'po_overdue') { if (proc.po_mode === 'off' || !proc.po_overdue_alert) continue; }   // 0051: შესყიდვების პარამეტრი
+      else if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                // შემადგენლობა — კლინიკის პარამეტრი (0038)
       if (!force) {
         const ins = await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d }).onConflict((oc) => oc.columns(['kind', 'run_date']).doNothing()).returning('kind').executeTakeFirst();
         if (!ins) continue;                                     // დღეს უკვე შესრულდა
       }
-      const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : kind === 'lab' ? await this.labOnboard() : await this.cssdExpiry();
+      const stats = kind === 'expiry' ? await this.expiry(d) : kind === 'minmax' ? await this.minmax() : kind === 'lab' ? await this.labOnboard()
+        : kind === 'po_overdue' ? await this.poOverdue(d) : await this.cssdExpiry();
       out[kind] = stats;
       await this.db.insertInto('stock_alert_runs').values({ kind, run_date: d, stats: JSON.stringify(stats) })
         .onConflict((oc) => oc.columns(['kind', 'run_date']).doUpdateSet({ stats: JSON.stringify(stats), created_at: sql`now()` })).execute();

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { Request, Response } from 'express';
 import { sql, type Transaction } from 'kysely';
 import { memoryStorage } from 'multer';
@@ -461,6 +461,10 @@ class SupplierDto {
   @IsOptional() @IsBoolean() vat_payer?: boolean; @IsOptional() @IsString() @MaxLength(500) address?: string | null; @IsOptional() @IsString() @MaxLength(100) phone?: string | null;
   @IsOptional() @IsEmail() email?: string | null; @IsOptional() @IsString() @MaxLength(200) contact_person?: string | null; @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
   @IsOptional() @IsBoolean() is_active?: boolean;
+  // 0051: პირობები
+  @IsOptional() @IsInt() @Min(0) @Max(365) payment_terms_days?: number | null; @IsOptional() @IsInt() @Min(0) @Max(365) lead_time_days?: number | null;
+  @IsOptional() @Matches(/^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/, { message: 'IBAN: მაგ. GE29NB0000000101904917' }) iban?: string | null; @IsOptional() @IsString() @MaxLength(200) bank_name?: string | null;
+  @IsOptional() @IsString() @MaxLength(60) contract_no?: string | null; @IsOptional() @IsISO8601({ strict: true }) contract_until?: string | null;
 }
 class LocationDto {
   @IsOptional() @Matches(/^[A-Z][A-Z0-9_]{1,29}$/, { message: 'კოდი: დიდი ლათინური ასოები, ციფრები, _ (მაგ. D_SURG)' }) code?: string;

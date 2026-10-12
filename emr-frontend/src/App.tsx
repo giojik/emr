@@ -16,6 +16,7 @@ import PatientNew from './pages/PatientNew';
 import Patients from './pages/Patients';
 import Reception from './pages/Reception';
 import Stock, { STOCK_READ } from './pages/stock/Stock';
+import Procurement, { PROC_READ } from './pages/procurement/Procurement';
 import AdminLayout from './pages/admin/AdminLayout';
 import Allergens from './pages/admin/Allergens';
 import Analyzers from './pages/admin/Analyzers';
@@ -102,6 +103,8 @@ export default function App() {
         <Route path="/or/case/:id" element={<Guard roles={OR_READ}><CaseCard /></Guard>} />
         <Route path="/stock" element={<Navigate to="/stock/balances" replace />} />
         <Route path="/stock/:view" element={<Guard roles={STOCK_READ}><Stock /></Guard>} />
+        <Route path="/procurement" element={<Navigate to="/procurement/requisitions" replace />} />
+        <Route path="/procurement/:view" element={<Guard roles={PROC_READ}><Procurement /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

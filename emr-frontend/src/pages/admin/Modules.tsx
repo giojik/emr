@@ -43,6 +43,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
       {m.code === 'icu' && <IcuSettings s={s} set={setS} />}
       {m.code === 'or' && <OrSettingsCard s={s} set={setS} />}
+      {m.code === 'procurement' && <ProcSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -404,6 +405,36 @@ function OrSettingsCard({ s, set }: { s: Record<string, unknown>; set: (v: Recor
       </div>
       <span className="small muted">ტარიფები: პროცედურები — კატალოგში, ანესთეზია — <Link to="/admin/or">ადმინისტრირება → საოპერაციო → ანესთეზიის ტარიფები</Link>. ტარიფის გარეშე ოპერაცია ბლოკავს სტაციონარის ფინანსურ დახურვას. მასალები / იმპლანტები / მედიკამენტები — კატეგორიის წესით; ოთახის დრო და ქირურგის ჰონორარი — არ ერიცხება.</span>
       <span className="small">ოთახები, პროცედურების კატალოგი, ჩეკლისტები — <Link to="/admin/or">ადმინისტრირება → საოპერაციო</Link>; ოქმის შაბლონები, preference card-ები — <Link to="/or?tab=library">საოპერაციო → შაბლონები / ბარათები</Link>. WHO Time out „განაკვეთამდე“ და Sign out „დასრულებამდე“, არასტერილური ნაკრების ბლოკი, ნარკოტიკულზე მოწმე — სავალდებულოა (არაარჩევადი).</span>
+    </div>
+  );
+}
+
+/** 0051: შესყიდვები — PO-ს რეჟიმი, დამტკიცების დონეები / ზღვარი, ფასის / რაოდენობის კონტროლი მიღებისას */
+function ProcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const chk = (k: string, label: string, hint?: string) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={!!v<boolean>(k)} onChange={(e) => upd(k, e.target.checked)} />
+    <span>{label}{hint && <div className="small muted">{hint}</div>}</span></label>;
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div style={grid}>
+      <Field label="შეკვეთა მომწოდებელთან (PO)" htmlFor="ppm" hint="სავალდებულო: მიღება მხოლოდ შეკვეთიდან; გამონაკლისი — საწყობის მენეჯერი, მიზეზით">
+        <select id="ppm" className="select" value={v<string>('po_mode')} onChange={(e) => upd('po_mode', e.target.value)}>
+          <option value="optional">არასავალდებულო — მიღება PO-დან ან პირდაპირ</option><option value="required">სავალდებულო — მიღება მხოლოდ PO-დან</option><option value="off">გამორთული — PO არ გამოიყენება</option></select></Field>
+      <Field label="შესყიდვის მოთხოვნის დამტკიცება" htmlFor="ppl" hint="ორი დონე: ზღვარს ზემოთ — საწყობის მენეჯერი + ფინანსური (სხვადასხვა პირი)">
+        <select id="ppl" className="select" value={v<number>('pr_approval_levels')} onChange={(e) => upd('pr_approval_levels', Number(e.target.value))}>
+          <option value={2}>ორი დონე (ზღვრით)</option><option value={1}>ერთი დონე — საწყობის მენეჯერი</option></select></Field>
+      <Field label="ფინანსური დამტკიცების ზღვარი (₾, დღგ-ს გარეშე)" htmlFor="ppt" hint="0 — ყველა მოთხოვნა ორ დონეზე; ეხება PR-ის გარეშე შექმნილ შეკვეთასაც">
+        <input id="ppt" className="input mono" type="number" min={0} disabled={v<number>('pr_approval_levels') === 1} value={v<number>('pr_finance_threshold') ?? 0} onChange={(e) => upd('pr_finance_threshold', Math.max(0, Math.round(Number(e.target.value))))} /></Field>
+      <Field label="ფასის დასაშვები გადახრა მიღებისას (%)" htmlFor="ppp" hint="მეტი გადახრა შეკვეთის ფასიდან — მიზეზი სავალდებულო">
+        <input id="ppp" className="input mono" type="number" min={0} max={100} value={v<number>('price_tolerance_pct') ?? 5} onChange={(e) => upd('price_tolerance_pct', Math.min(100, Math.max(0, Math.round(Number(e.target.value)))))} /></Field>
+      <Field label="შეკვეთილზე მეტის მიღება" htmlFor="ppq">
+        <select id="ppq" className="select" value={v<string>('qty_over_delivery')} onChange={(e) => upd('qty_over_delivery', e.target.value)}>
+          <option value="warn">გაფრთხილება</option><option value="block">აკრძალული</option></select></Field>
+      <div className="stack" style={{ gap: 10 }}>
+        {chk('controlled_pharmacist', 'კონტროლირებადი (ნარკოტიკული / ფსიქოტროპული) — ფარმაცევტის დადასტურება', 'შესყიდვის მოთხოვნაზე, დამატებით ნაბიჯად')}
+        {chk('po_overdue_alert', 'ვადაგადაცილებული მიწოდების შეტყობინება', 'დილის შემოწმებისას — შესყიდვებს, საწყობის მენეჯერს და ავტორს')}
+      </div>
     </div>
   );
 }

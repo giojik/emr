@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, can } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { useProcRules } from '../../lib/modules';
 import { ErrorBox, Loading } from '../../components/ui';
 import ItemSearch from './ItemSearch';
 import { qtyFmt, type MinmaxRow, type StockLocation } from './types';
@@ -23,6 +24,10 @@ export default function Minmax() {
     onSuccess: (r, b) => { done(r); setEdit((e) => { const n = { ...e }; delete n[b.item_id]; return n; }); } });
   const del = useMutation({ mutationFn: (itemId: string) => api<MinmaxRow[]>(`/stock/minmax/${loc}/${itemId}`, { method: 'DELETE' }), onSuccess: done });
   const req = useMutation({ mutationFn: () => api<{ id: string }>('/stock/minmax/request', { body: { location_id: loc, from_location_id: src || null } }), onSuccess: (r) => nav(`/stock/requests?req=${r.id}`) });
+  // 0051: შესყიდვის მოთხოვნა (PR) მომწოდებლისგან — ცენტრალური / აფთიაქი / სამეურნეო
+  const proc = useProcRules();
+  const pr = useMutation({ mutationFn: () => api<{ id: string }>('/procurement/requisitions/from-minmax', { body: { location_id: loc } }), onSuccess: (r) => nav(`/procurement/requisitions?id=${r.id}`) });
+  const canPr = !!proc && can(user, 'admin', 'procurement', 'stock_manager', 'storekeeper', 'pharmacist');
   const below = (q.data ?? []).filter((r) => r.below);
   const canSet = can(user, 'admin', 'stock_manager') || !!l?.department_id;   // ხელმძღვანელი — სერვერი ამოწმებს
   const sources = (locs.data ?? []).filter((x) => ['pharmacy', 'central', 'household'].includes(x.kind) && x.id !== loc);
@@ -33,7 +38,7 @@ export default function Minmax() {
         <select className="select" style={{ maxWidth: 320, height: 38 }} aria-label="ლოკაცია" value={loc} onChange={(e) => setSp(e.target.value ? { location_id: e.target.value } : {})}>
           <option value="">— ლოკაცია —</option>{options.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <span className="hint grow">მინიმუმზე ქვემოთ: ნაშთი (აქტიური, ვადიანი) + გზაში + გაუცემელი მოთხოვნა &lt; მინ. შემოწმება — ყოველ დილით (შეტყობინება ხელმძღვანელს / საწყობს).</span>
+        <span className="hint grow">მინიმუმზე ქვემოთ: ნაშთი (აქტიური, ვადიანი) + გზაში + გაუცემელი მოთხოვნა{proc ? ' + შეკვეთილი მომწოდებელთან' : ''} &lt; მინ. შემოწმება — ყოველ დილით (შეტყობინება ხელმძღვანელს / საწყობს).</span>
       </div>
       {loc && (
         <>
@@ -44,17 +49,18 @@ export default function Minmax() {
                 <option value="">{l?.default_source_id ? `ნაგულისხმევი: ${locs.data?.find((x) => x.id === l.default_source_id)?.name ?? ''}` : '— საიდან —'}</option>
                 {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
-              <button className="btn primary" type="button" disabled={req.isPending || (!src && !l?.default_source_id)} onClick={() => req.mutate()}>მოთხოვნის მონახაზი</button>
+              <button className={`btn${canPr && !l?.default_source_id ? '' : ' primary'}`} type="button" disabled={req.isPending || (!src && !l?.default_source_id)} onClick={() => req.mutate()}>მოთხოვნის მონახაზი</button>
+              {canPr && <button className={`btn${l?.default_source_id ? '' : ' primary'}`} type="button" disabled={pr.isPending} onClick={() => pr.mutate()}>შესყიდვის მოთხოვნა (მომწოდებლისგან)</button>}
             </div>)}
-          <ErrorBox error={req.error} />
+          <ErrorBox error={req.error ?? pr.error} />
           {canSet && <section className="card card-pad"><ItemSearch placeholder="დაამატეთ საქონელი მინ/მაქს-ისთვის" onPick={(i) => setEdit((e) => ({ ...e, [i.id]: { min: '', max: '' } }))} /></section>}
           {q.isLoading ? <Loading /> : (
             <div className="card">
               <table className="table">
-                <thead><tr><th>საქონელი</th><th className="num">ნაშთი</th><th className="num">გზაში</th><th className="num">მოთხოვნილი</th><th className="num">მინ.</th><th className="num">მაქს.</th><th className="num">შეთავაზება</th><th /></tr></thead>
+                <thead><tr><th>საქონელი</th><th className="num">ნაშთი</th><th className="num">გზაში</th><th className="num">მოთხოვნილი</th>{proc && <th className="num">შეკვეთილი</th>}<th className="num">მინ.</th><th className="num">მაქს.</th><th className="num">შეთავაზება</th><th /></tr></thead>
                 <tbody>
                   {Object.entries(edit).filter(([id]) => !q.data?.some((r) => r.item_id === id)).map(([id, v]) => (
-                    <tr key={id}><td className="muted">ახალი პოზიცია</td><td colSpan={3} />
+                    <tr key={id}><td className="muted">ახალი პოზიცია</td><td colSpan={proc ? 4 : 3} />
                       <td className="num"><input className="input mono num" style={{ height: 32, width: 80 }} aria-label="მინ." value={v.min} onChange={(e) => setEdit({ ...edit, [id]: { ...v, min: e.target.value } })} /></td>
                       <td className="num"><input className="input mono num" style={{ height: 32, width: 80 }} aria-label="მაქს." value={v.max} onChange={(e) => setEdit({ ...edit, [id]: { ...v, max: e.target.value } })} /></td>
                       <td /><td><button className="btn sm primary" type="button" disabled={!v.min || !v.max} onClick={() => save.mutate({ item_id: id, ...v })}>შენახვა</button></td></tr>))}
@@ -64,6 +70,7 @@ export default function Minmax() {
                       <tr key={r.item_id} style={r.below ? { background: 'var(--warn-weak)' } : undefined}>
                         <td><strong>{r.item_name}</strong> <span className="mono small muted">{r.item_code}</span></td>
                         <td className="num">{qtyFmt(r.on_hand)} <span className="small muted">{r.base_unit_name}</span></td><td className="num">{qtyFmt(r.in_transit)}</td><td className="num">{qtyFmt(Math.max(0, Number(r.requested)))}</td>
+                        {proc && <td className="num" title="PO-ში დარჩენილი + შესყიდვის მოთხოვნაში">{qtyFmt(Number(r.on_order ?? 0) + Number(r.pr_pending ?? 0))}</td>}
                         <td className="num">{e ? <input className="input mono num" style={{ height: 32, width: 80 }} aria-label="მინ." value={e.min} onChange={(x) => setEdit({ ...edit, [r.item_id]: { ...e, min: x.target.value } })} /> : qtyFmt(r.min_qty)}</td>
                         <td className="num">{e ? <input className="input mono num" style={{ height: 32, width: 80 }} aria-label="მაქს." value={e.max} onChange={(x) => setEdit({ ...edit, [r.item_id]: { ...e, max: x.target.value } })} /> : qtyFmt(r.max_qty)}</td>
                         <td className="num">{r.below ? <strong>{qtyFmt(r.suggested)}</strong> : '—'}</td>
