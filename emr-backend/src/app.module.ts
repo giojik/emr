@@ -42,13 +42,14 @@ import { ManagementReportsModule } from './reports/management';
 import { StockModule } from './stock/stock.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { FinanceModule } from './finance/finance.module';
+import { DrgModule } from './drg/drg.module';
 import { APP_FILTER } from '@nestjs/core';
 import { PgLockFilter } from './common/pg-lock.filter';
 
 @Module({
   imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, IcuModule, OrAdminModule, OrModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule, DrgModule],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: PgLockFilter }],
 })

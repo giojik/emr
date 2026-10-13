@@ -12,7 +12,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
-  { to: '/inpatient', label: 'სტაციონარი', roles: ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing'], module: 'inpatient' },
+  { to: '/inpatient', label: 'სტაციონარი', roles: ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'], module: 'inpatient' },
   { to: '/or', label: 'საოპერაციო', roles: ['admin', 'doctor', 'nurse', 'or_schedule', 'anesthesiologist', 'or_nurse', 'manager', 'viewer'], module: 'or' },
   { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },
   { to: '/diagnostics', label: 'დიაგნოსტიკა', roles: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse'] },
@@ -28,6 +28,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
   { to: '/admin/tariffs', label: 'ტარიფები', roles: ['tariffs', 'tariffs_approve', 'accountant', 'viewer'] },
+  { to: '/admin/drg', label: 'DRG', roles: ['drg', 'drg_admin'], module: 'drg' },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
   { to: '/admin/catalog', label: 'ანალიზების კატალოგი', roles: ['lab_doctor', 'lab_manager'] },
   { to: '/admin/overrides', label: 'override-ები', roles: ['pharmacist'] },
@@ -42,6 +43,7 @@ const HOME: Record<Role, string> = {
   or_schedule: '/or?tab=board', anesthesiologist: '/or?tab=my', or_nurse: '/or?tab=board',
   procurement: '/procurement/requisitions', procurement_approve: '/procurement/requisitions?to_approve=1',
   tariffs: '/admin/tariffs', tariffs_approve: '/admin/tariffs?tab=changes',
+  drg: '/inpatient?tab=billing', drg_admin: '/admin/drg',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

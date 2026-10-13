@@ -153,6 +153,13 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       payer_price_mode: (v) => oneOf(v, ['primary', 'off']), reprice_on_payer_change: (v) => oneOf(v, ['auto_unpaid', 'manual']),
     },
   },
+  // 0055: DRG
+  drg: {
+    keys: {
+      version_date_basis: (v) => oneOf(v, ['discharge', 'admission']), confirm_required: bool, recheck_on_finalize: (v) => oneOf(v, ['block', 'warn', 'off']),
+      manual_payer_drg: (v) => oneOf(v, ['allowed', 'grouper_only']), version_approval: (v) => oneOf(v, ['off', 'required']),
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

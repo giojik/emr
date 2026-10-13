@@ -23,7 +23,8 @@ export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | '
   | 'accountant' | 'manager' | 'hr' | 'med_engineer' | 'viewer' | 'storekeeper' | 'stock_manager'
   | 'or_schedule' | 'anesthesiologist' | 'or_nurse'
   | 'procurement' | 'procurement_approve'
-  | 'tariffs' | 'tariffs_approve';
+  | 'tariffs' | 'tariffs_approve'
+  | 'drg' | 'drg_admin';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;

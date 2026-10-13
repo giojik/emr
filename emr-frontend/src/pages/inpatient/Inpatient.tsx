@@ -31,7 +31,7 @@ export default function Inpatient() {
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
   const icuOn = !!mods.data?.find((x) => x.code === 'icu')?.enabled;
   const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['icu', 'რეანიმაცია', icuOn && can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
-    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
+    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager', 'drg')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
   if (mods.isLoading) return <div className="content"><Loading /></div>;

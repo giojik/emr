@@ -3,7 +3,9 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 /** ტრიგერის შეცდომები (check_violation), რომლებიც HTTP 409-ია: constraint → კოდი */
 export const PG_CONFLICTS: Record<string, string> = { period_locked: 'PERIOD_LOCKED', invoice_in_claim: 'INVOICE_IN_CLAIM',
   // 0054: ფასის / წესის პირდაპირი ცვლილება, როცა tariff_change_approval = required; ფინალიზებული ინვოისის ხაზი
-  tariff_approval_required: 'TARIFF_APPROVAL_REQUIRED' };
+  tariff_approval_required: 'TARIFF_APPROVAL_REQUIRED',
+  // 0055: DRG ვერსიის შემადგენლობა — მხოლოდ მონახაზში
+  drg_version_locked: 'DRG_VERSION_LOCKED' };
 
 /** PostgreSQL-ის შეცდომების გადაყვანა გასაგებ HTTP პასუხებში. messages: constraint → ტექსტი */
 export function mapPgError(e: unknown, messages: Record<string, string> = {}): never {

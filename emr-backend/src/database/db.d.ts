@@ -566,6 +566,29 @@ export interface DocumentTemplateVersions {
   version: number;
 }
 
+export interface DrgCc {
+  excl_pdx: Generated<string[]>;
+  level: string;
+  notes: string | null;
+  pattern: string;
+  version_id: string;
+}
+
+export interface DrgCodeListItems {
+  list_code: string;
+  pattern: string;
+  title: string | null;
+  version_id: string;
+}
+
+export interface DrgCodeLists {
+  code: string;
+  kind: string;
+  notes: string | null;
+  title: string;
+  version_id: string;
+}
+
 export interface DrgGroups {
   alos: Numeric | null;
   code: string;
@@ -574,6 +597,62 @@ export interface DrgGroups {
   relative_weight: Numeric;
   title: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface DrgRules {
+  conditions: Generated<Json>;
+  drg_code: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  label: string | null;
+  notes: string | null;
+  seq: number;
+  version_id: string;
+}
+
+export interface DrgSchemes {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_default: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface DrgVersionGroups {
+  alos: Numeric | null;
+  code: string;
+  kind: Generated<string>;
+  los_high: number | null;
+  los_low: number | null;
+  mdc: string | null;
+  notes: string | null;
+  title: string;
+  version_id: string;
+  weight: Numeric;
+}
+
+export interface DrgVersions {
+  activated_at: Timestamp | null;
+  activated_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  label: string;
+  notes: string | null;
+  retire_reason: string | null;
+  retired_at: Timestamp | null;
+  retired_by: string | null;
+  scheme_id: string;
+  settings: Generated<Json>;
+  source_version_id: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  valid_from: string;
+  version_no: number;
 }
 
 export interface DxDevices {
@@ -2868,6 +2947,7 @@ export interface Payers {
   default_limit: Numeric | null;
   default_mode: Generated<string>;
   drg_base_rate: Numeric | null;
+  drg_scheme_id: string | null;
   email: string | null;
   excluded_categories: Generated<string[]>;
   id: Generated<string>;
@@ -3131,6 +3211,27 @@ export interface StayDeposits {
   voided_by: string | null;
 }
 
+export interface StayDrg {
+  confirmed_at: Generated<Timestamp>;
+  confirmed_by: string;
+  encounter_id: string;
+  final_code: string;
+  final_weight: Numeric;
+  id: Generated<string>;
+  inputs: Json;
+  inputs_hash: string;
+  reason: string | null;
+  scheme_id: string;
+  status: string;
+  suggested_code: string | null;
+  suggested_rule_id: string | null;
+  supersede_reason: string | null;
+  superseded_at: Timestamp | null;
+  superseded_by: string | null;
+  trace: Generated<Json>;
+  version_id: string;
+}
+
 export interface StayPayers {
   cancel_reason: string | null;
   coverage_pct: Numeric;
@@ -3140,6 +3241,8 @@ export interface StayPayers {
   deductible: Generated<Numeric>;
   drg_base_rate: Numeric | null;
   drg_code: string | null;
+  drg_source: string | null;
+  drg_version_id: string | null;
   drg_weight: Numeric | null;
   encounter_id: string;
   excluded_categories: Generated<string[]>;
@@ -3157,6 +3260,7 @@ export interface StayPayers {
   rule_version_id: string | null;
   seq: number;
   status: Generated<string>;
+  stay_drg_id: string | null;
   valid_until: string | null;
   writeoff_excess: Generated<boolean>;
 }
@@ -3733,7 +3837,14 @@ export interface DB {
   document_counters: DocumentCounters;
   document_template_versions: DocumentTemplateVersions;
   document_templates: DocumentTemplates;
+  drg_cc: DrgCc;
+  drg_code_list_items: DrgCodeListItems;
+  drg_code_lists: DrgCodeLists;
   drg_groups: DrgGroups;
+  drg_rules: DrgRules;
+  drg_schemes: DrgSchemes;
+  drg_version_groups: DrgVersionGroups;
+  drg_versions: DrgVersions;
   dx_devices: DxDevices;
   dx_images: DxImages;
   dx_item_files: DxItemFiles;
@@ -3894,6 +4005,7 @@ export interface DB {
   stay_bed_days: StayBedDays;
   stay_billing: StayBilling;
   stay_deposits: StayDeposits;
+  stay_drg: StayDrg;
   stay_payers: StayPayers;
   stay_vent_days: StayVentDays;
   stock_alert_runs: StockAlertRuns;

@@ -69,6 +69,9 @@ chk "გადამხდელი: DRG რეჟიმი განაკვ�
 INS=$(api POST /billing/payers "$BL" -d "{\"code\":\"E2EINS$S\",\"name\":\"ტესტ-E2E დაზღვევა\",\"kind\":\"insurance\",\"default_mode\":\"percent\",\"default_coverage_pct\":80,\"default_limit\":1000,\"default_deductible\":50,\"tax_id\":\"404000000\"}" | jq -r '.id // empty')
 SSA=$(api POST /billing/payers "$BL" -d "{\"code\":\"E2ESSA$S\",\"name\":\"ტესტ-E2E საყოველთაო\",\"kind\":\"state\",\"default_mode\":\"drg\",\"default_coverage_pct\":90,\"drg_base_rate\":1000,\"writeoff_excess\":true}" | jq -r '.id // empty')
 [ -n "$INS" ] && [ -n "$SSA" ] && ok "გადამხდელები: დაზღვევა (80%, ლიმიტი 1000, ფრანშიზა 50), სახელმწიფო (DRG 1000 ₾, 90%, ჩამოწერა)" || die "გადამხდელები ვერ შეიქმნა"
+# 0055: სახელმწიფო გადამხდელი — ცალკე DRG სქემაზე ვერსიის გარეშე (ხელით არჩევა, კლინიკის აქტიური ვერსიისგან დამოუკიდებლად)
+SCH=$(api POST /drg/schemes "$ADM" -d "{\"code\":\"E2EB$S\",\"name\":\"ტესტ-E2E ბილინგი სქემა $S\"}" | jq -r '.id // empty')
+[ -n "$SCH" ] && api PUT "/drg/payers/$SSA/scheme" "$ADM" -d "{\"drg_scheme_id\":\"$SCH\"}" >/dev/null
 chk "გამეორებული კოდი → 409" "$(code POST /billing/payers "$BL" -d "{\"code\":\"E2EINS$S\",\"name\":\"ტესტ-E2E Y\",\"kind\":\"insurance\"}")" "409"
 chk "მიმღები გადამხდელს ვერ ქმნის (403)" "$(code POST /billing/payers "$RC" -d "{\"code\":\"E2EZ$S\",\"name\":\"ტესტ-E2E Z\",\"kind\":\"other\"}")" "403"
 chk "გადამხდელის რედაქტირება (ტელეფონი)" "$(api PATCH "/billing/payers/$INS" "$BL" -d '{"phone":"032 2 000 000"}' | jq -r '.phone')" "032 2 000 000"
@@ -229,6 +232,7 @@ if [ -n "$OLDGEN" ]; then api PUT /billing/bed-tariffs "$ADM" -d "{\"bed_type_co
 else api DELETE "/billing/bed-tariffs/$(api GET /billing/bed-tariffs "$ADM" | jq -r '[.[]|select(.bed_type_code=="standard" and .department_id==null)][0].id')" "$ADM" >/dev/null; fi
 api PATCH "/tariffs/$T_STD" "$ADM" -d '{"is_active":false}' >/dev/null
 for p in "$INS" "$SSA"; do api PATCH "/billing/payers/$p" "$BL" -d '{"is_active":false}' >/dev/null; done
+[ -n "${SCH:-}" ] && api PATCH "/drg/schemes/$SCH" "$ADM" -d '{"is_active":false}' >/dev/null
 for p in "$PK" "$PB"; do api PATCH "/billing/packages/$p" "$BL" -d '{"is_active":false}' >/dev/null; done
 for c in "$C1" "$C2"; do api PATCH "/billing/drg/$c" "$BL" -d '{"is_active":false}' >/dev/null; done
 for t in "$T_STDA" "$T_EXTRA" "$T_SRV"; do api PATCH "/tariffs/$t" "$ADM" -d '{"is_active":false}' >/dev/null; done

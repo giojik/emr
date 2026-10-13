@@ -8,12 +8,14 @@ import { uploadPatientFile } from '../../components/DocumentsPanel';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { dateGe, money, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { CAT_KA, MODE_KA, type Drg, type Package, type Payer } from '../admin/BillingSetup';
+import { useModuleEnabled } from '../../lib/modules';
+import DrgPanel from './DrgPanel';
 
 /** სტაციონარის ბილინგი (0046): ჰოსპიტალიზაციის პანელი + სამუშაო სია / რეპორტი */
 type Money = Record<'total' | 'insurance' | 'state' | 'writeoff' | 'patient' | 'deposits' | 'refunds' | 'deposit_net' | 'deposit_applied' | 'deposit_unapplied' | 'paid' | 'due' | 'refund_due' | 'surplus', string>;
 interface StayPayer {
   id: string; payer_id: string; payer_name: string; payer_code: string; kind: string; kind_ka: string; seq: number; mode: string; mode_ka: string; status: string;
-  coverage_pct?: string; limit_amount?: string | null; deductible?: string; fixed_amount?: string | null; drg_code: string | null; drg_title: string | null; drg_weight?: string | null; drg_base_rate?: string | null;
+  coverage_pct?: string; limit_amount?: string | null; deductible?: string; fixed_amount?: string | null; drg_code: string | null; drg_title: string | null; drg_weight?: string | null; drg_base_rate?: string | null; drg_source?: string | null;
   writeoff_excess?: boolean; excluded_categories?: string[]; policy_no: string | null; guarantee_no: string | null; guarantee_day?: string | null; valid_day?: string | null; file_id?: string | null;
   override_amount?: string | null; override_reason?: string | null; covered_amount?: string | null; cancel_reason?: string | null; created_by_name?: string;
   calc: { tariff: number | null; eligible: number; amount: number; writeoff: number } | null;
@@ -38,10 +40,11 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
   const qc = useQueryClient(); const toast = useToast();
   const q = useQuery({ queryKey: ['ipd-billing', encounterId], queryFn: () => api<BillingView>(`/inpatient/stays/${encounterId}/billing`) });
   const [dlg, setDlg] = useState<null | 'service' | 'payer' | 'deposit' | 'refund' | 'reopen' | 'days' | 'reprice' | { payer: StayPayer } | { cancelPayer: StayPayer } | { voidDep: string } | { rmLine: Line }>(null);
-  const inval = () => { void qc.invalidateQueries({ queryKey: ['ipd-billing', encounterId] }); void qc.invalidateQueries({ queryKey: ['ipd-billing-list'] }); };
+  const inval = () => { void qc.invalidateQueries({ queryKey: ['ipd-billing', encounterId] }); void qc.invalidateQueries({ queryKey: ['ipd-billing-list'] }); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); };
   const pkgs = useQuery({ queryKey: ['billing-packages', false], queryFn: () => api<Package[]>('/billing/packages'), enabled: !!q.data?.can.package });
   const setPkg = useMutation({ mutationFn: (id: string | null) => api(`/inpatient/stays/${encounterId}/billing/package`, { body: { package_id: id } }), onSuccess: () => { toast.show('პაკეტი შეიცვალა'); inval(); } });
-  const fin = useMutation({ mutationFn: () => api(`/inpatient/stays/${encounterId}/billing/finalize`, { body: {} }), onSuccess: () => { toast.show('ინვოისი ფინალიზებულია'); inval(); } });
+  const fin = useMutation({ mutationFn: () => api<{ drg_warnings?: string[] }>(`/inpatient/stays/${encounterId}/billing/finalize`, { body: {} }),
+    onSuccess: (r) => { toast.show(r.drg_warnings?.length ? `ინვოისი ფინალიზებულია · ${r.drg_warnings.join(' | ')}` : 'ინვოისი ფინალიზებულია'); inval(); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); } });
   if (q.isLoading) return <section id="billing" className="card card-pad"><Loading /></section>;
   if (q.error || !q.data) return <section id="billing" className="card card-pad"><ErrorBox error={q.error} /></section>;
   const b = q.data; const m = b.money;
@@ -93,7 +96,8 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
               <tbody>{b.payers.map((p) => (
                 <tr key={p.id} style={p.status !== 'active' ? { opacity: 0.55 } : undefined}>
                   <td>{p.seq}</td><td><strong>{p.payer_name}</strong><div className="small muted">{p.kind_ka}</div></td>
-                  <td className="small">{p.mode === 'drg' ? <>DRG <span className="mono">{p.drg_code}</span> — {p.drg_title}{p.drg_weight && <> · {Number(p.drg_weight)} × {money(p.drg_base_rate)}</>}</>
+                  <td className="small">{p.mode === 'drg' ? <>DRG <span className="mono">{p.drg_code}</span> — {p.drg_title}{p.drg_weight && <> · {Number(p.drg_weight)} × {money(p.drg_base_rate)}</>}
+                    {p.drg_source === 'grouper' && <span className="chip info" style={{ marginLeft: 6, height: 18, fontSize: 11 }}>დაჯგუფებით</span>}</>
                     : p.mode === 'fixed' ? `ფიქსირებული ${money(p.fixed_amount)}` : `${p.coverage_pct ? Number(p.coverage_pct) : ''}%`}
                     {p.mode !== 'percent' && p.coverage_pct && ` · ${Number(p.coverage_pct)}%`}
                     {p.limit_amount && ` · ლიმიტი ${money(p.limit_amount)}`}{n(p.deductible) > 0 && ` · ფრანშიზა ${money(p.deductible)}`}
@@ -111,6 +115,8 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
                 </tr>))}</tbody>
             </table>)}
         </div>
+
+        <DrgPanel encounterId={encounterId} onChanged={inval} />
 
         <div className="stack" style={{ gap: 6 }}>
           <h3 style={{ margin: 0 }}>მომსახურება და ხარჯი</h3>
@@ -238,6 +244,7 @@ function PayerDialog({ view, sp, onClose, onDone }: { view: BillingView; sp?: St
   const [file, setFile] = useState<File | null>(null);
   const mode = f.mode || p?.default_mode || 'percent';
   const [drgQ, setDrgQ] = useState(''); const dq = useDebounced(drgQ.trim(), 250);
+  const drgOn = useModuleEnabled('drg');
   const drg = useQuery({ queryKey: ['drg', dq, false], queryFn: () => api<{ rows: Drg[] }>('/billing/drg', { query: { search: dq, limit: 30 } }), enabled: mode === 'drg' });
   const pickPayer = (id: string) => {
     setPayerId(id); const x = payers.data?.find((y) => y.id === id);
@@ -276,7 +283,7 @@ function PayerDialog({ view, sp, onClose, onDone }: { view: BillingView; sp?: St
           {mode === 'fixed' && <Field label="თანხა (₾)" htmlFor="sp-f" required><input id="sp-f" className="input mono" inputMode="decimal" value={f.fixed_amount} onChange={set('fixed_amount')} required /></Field>}
         </div>
         {mode === 'drg' && <div className="stack" style={{ gap: 6 }}>
-          <Field label="DRG ჯგუფი" htmlFor="sp-g" required hint={p?.drg_base_rate ? `საბაზისო განაკვეთი: ${money(p.drg_base_rate)}` : 'გადამხდელს განაკვეთი არ აქვს'}>
+          <Field label="DRG ჯგუფი" htmlFor="sp-g" required={!drgOn} hint={`${p?.drg_base_rate ? `საბაზისო განაკვეთი: ${money(p.drg_base_rate)}` : 'გადამხდელს განაკვეთი არ აქვს'}${drgOn ? ' · ცარიელი — DRG ბლოკიდან (დადასტურებული / შეთავაზება, მოქმედი ვერსიით)' : ''}`}>
             <input id="sp-g" className="input" placeholder="კოდი ან დასახელება" value={drgQ || f.drg_code} onChange={(e) => { setDrgQ(e.target.value); setF({ ...f, drg_code: '' }); }} /></Field>
           {!f.drg_code && drgQ && <div style={{ maxHeight: 180, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 8 }}>
             {drg.data?.rows.map((g) => <button key={g.code} type="button" onClick={() => { setF({ ...f, drg_code: g.code }); setDrgQ(''); }}

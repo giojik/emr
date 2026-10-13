@@ -44,7 +44,7 @@ export interface InpatientSettings {
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
 const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
 const SOURCES = ['emergency', 'outpatient', 'planned', 'transfer_in', 'direct'] as const;
-const READ = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing'] as const;
+const READ = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'] as const;   // 0055: drg — კოდირება (ნახვა)
 const ISO_KA: Record<string, string> = { contact: 'კონტაქტური', droplet: 'წვეთოვანი', airborne: 'საჰაერო', protective: 'დამცავი' };
 
 // ================================================================= DTO

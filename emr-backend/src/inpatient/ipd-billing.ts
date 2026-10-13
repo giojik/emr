@@ -19,6 +19,7 @@ import { CATEGORY_KA, loadBilling, MODE_KA, PAYER_KIND_KA } from './ipd-billing-
 import { writeLineShares } from '../tariffs/payer-shares';
 import { repriceOnPayerChange } from '../tariffs/reprice';
 import { tariffRules } from '../tariffs/tariff-rules';
+import { drgFinalizeCheck, drgForPayer } from '../drg/drg-calc';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -29,7 +30,7 @@ const EXCL = ['bed', 'ventilation', 'surgery', 'anesthesia', 'service', 'consult
 const METHOD_KA: Record<string, string> = { cash: 'ნაღდი', card_terminal: 'ბარათი', bank_transfer: 'გადარიცხვა', deposit: 'ავანსიდან' };
 const BILLING = ['admin', 'billing'] as const;
 const FRONT = ['admin', 'billing', 'receptionist'] as const;
-const READ = ['admin', 'billing', 'receptionist', 'manager', 'doctor', 'nurse', 'viewer'] as const;
+const READ = ['admin', 'billing', 'receptionist', 'manager', 'doctor', 'nurse', 'viewer', 'drg'] as const;
 
 // ================================================================= DTO
 export class PackageSetDto { @IsOptional() @IsUUID() package_id?: string | null }
@@ -244,7 +245,7 @@ export class IpdBillingService {
         } : {
           mode: p.default_mode, coverage_pct: Number(p.default_coverage_pct), limit_amount: p.default_limit === null ? null : Number(p.default_limit), deductible: Number(p.default_deductible),
           writeoff_excess: p.writeoff_excess, excluded_categories: p.excluded_categories ?? [], drg_base_rate: p.drg_base_rate === null ? null : Number(p.drg_base_rate),
-        }, st.patient_id);
+        }, st.patient_id, { encounterId, payerId: p.id });
         const row = await trx.insertInto('stay_payers').values({ encounter_id: encounterId, payer_id: p.id, seq, created_by: u.id, rule_version_id: v?.id ?? null, ...vals } as never).returningAll().executeTakeFirstOrThrow();
         await this.afterPayerChange(trx, encounterId, u);
         await this.ipd.event(trx, { encounter_id: encounterId, kind: 'payer_added', data: { payer: p.name, mode: vals.mode, coverage_pct: vals.coverage_pct, guarantee_no: vals.guarantee_no ?? null, drg: vals.drg_code ?? null } }, u);
@@ -268,7 +269,8 @@ export class IpdBillingService {
 
   /** პირობები: DTO → (ნაგულისხმევი გადამხდელიდან / არსებული ჩანაწერიდან); DRG — წონა ცნობარიდან, განაკვეთი გადამხდელიდან (დაფიქსირება) */
   private async payerTerms(trx: Trx, dto: StayPayerDto, base: { mode: string; coverage_pct: number; limit_amount: number | null; deductible: number; writeoff_excess: boolean;
-    excluded_categories: string[]; drg_base_rate: number | null; fixed_amount?: number | null; drg_code?: string | null; drg_weight?: number | null }, patientId: string) {
+    excluded_categories: string[]; drg_base_rate: number | null; fixed_amount?: number | null; drg_code?: string | null; drg_weight?: number | null }, patientId: string,
+    at: { encounterId: string; payerId: string }) {
     const mode = dto.mode ?? base.mode;
     const m = (v: number | null | undefined) => (v === null || v === undefined ? null : v.toFixed(2));
     const out: Record<string, unknown> = {
@@ -276,17 +278,29 @@ export class IpdBillingService {
       deductible: (dto.deductible ?? base.deductible).toFixed(2), writeoff_excess: dto.writeoff_excess ?? base.writeoff_excess,
       excluded_categories: dto.excluded_categories ?? base.excluded_categories,
       fixed_amount: mode === 'fixed' ? m(dto.fixed_amount !== undefined ? dto.fixed_amount : base.fixed_amount ?? null) : null,
-      drg_code: null, drg_weight: null, drg_base_rate: null,
+      drg_code: null, drg_weight: null, drg_base_rate: null, drg_source: null, drg_version_id: null, stay_drg_id: null,
     };
     if (mode === 'fixed' && out.fixed_amount === null) throw new BadRequestException('ფიქსირებული რეჟიმი: მიუთითეთ თანხა');
     if (mode === 'drg') {
-      const code = (dto.drg_code ?? base.drg_code ?? '').toUpperCase();
-      if (!code) throw new BadRequestException('DRG რეჟიმი: აირჩიეთ DRG ჯგუფი');
-      const g = await trx.selectFrom('drg_groups').select(['code', 'relative_weight', 'is_active']).where('code', '=', code).executeTakeFirst();
-      if (!g?.is_active) throw new BadRequestException(`DRG ${code} ცნობარში ვერ მოიძებნა ან გათიშულია`);
       if (!base.drg_base_rate) throw new BadRequestException('გადამხდელს DRG-ის საბაზისო განაკვეთი არ აქვს (ადმინისტრირება → ბილინგი → გადამხდელები)');
-      const same = base.drg_code === code && base.drg_weight;
-      Object.assign(out, { drg_code: code, drg_weight: same ? String(base.drg_weight) : g.relative_weight, drg_base_rate: base.drg_base_rate.toFixed(2) });
+      const asked = dto.drg_code ? dto.drg_code.toUpperCase() : null;
+      if (base.drg_code && base.drg_weight && (!asked || asked === base.drg_code)) {
+        // კოდი არ იცვლება — წონა / წყარო რჩება (მინიჭებისას დაფიქსირებული)
+        Object.assign(out, { drg_code: base.drg_code, drg_weight: String(base.drg_weight), drg_base_rate: base.drg_base_rate.toFixed(2) });
+        delete out.drg_source; delete out.drg_version_id; delete out.stay_drg_id;
+      } else {
+        // 0055: მოქმედი DRG ვერსია → კოდი (არ არის მითითებული — დადასტურებული / შეთავაზება) და წონა ვერსიიდან
+        const viaGrouper = await drgForPayer(trx, at.encounterId, at.payerId, asked);
+        if (viaGrouper) {
+          Object.assign(out, { drg_code: viaGrouper.code, drg_weight: viaGrouper.weight, drg_base_rate: base.drg_base_rate.toFixed(2), drg_source: viaGrouper.source,
+            drg_version_id: viaGrouper.version_id, stay_drg_id: viaGrouper.stay_drg_id });
+        } else {
+          if (!asked) throw new BadRequestException('DRG რეჟიმი: აირჩიეთ DRG ჯგუფი');
+          const g = await trx.selectFrom('drg_groups').select(['code', 'relative_weight', 'is_active']).where('code', '=', asked).executeTakeFirst();
+          if (!g?.is_active) throw new BadRequestException(`DRG ${asked} ცნობარში ვერ მოიძებნა ან გათიშულია`);
+          Object.assign(out, { drg_code: asked, drg_weight: g.relative_weight, drg_base_rate: base.drg_base_rate.toFixed(2), drg_source: 'manual' });
+        }
+      }
     }
     for (const k of ['policy_no', 'guarantee_no'] as const) if (dto[k] !== undefined) out[k] = dto[k]?.trim() || null;
     for (const k of ['guarantee_date', 'valid_until'] as const) if (dto[k] !== undefined) out[k] = dto[k] || null;
@@ -318,7 +332,7 @@ export class IpdBillingService {
         const n = (v: unknown) => (v === null ? null : Number(v));
         const vals = await this.payerTerms(trx, dto, { mode: old.mode, coverage_pct: Number(old.coverage_pct), limit_amount: n(old.limit_amount), deductible: Number(old.deductible),
           writeoff_excess: old.writeoff_excess, excluded_categories: old.excluded_categories, drg_base_rate: old.mode === 'drg' && (!dto.drg_code || dto.drg_code.toUpperCase() === old.drg_code) ? n(old.drg_base_rate) : n(old.payer_rate),
-          fixed_amount: n(old.fixed_amount), drg_code: old.drg_code, drg_weight: n(old.drg_weight) }, st.patient_id);
+          fixed_amount: n(old.fixed_amount), drg_code: old.drg_code, drg_weight: n(old.drg_weight) }, st.patient_id, { encounterId: old.encounter_id, payerId: old.payer_id });
         if (dto.seq !== undefined) vals.seq = dto.seq;
         const row = await trx.updateTable('stay_payers').set(vals as never).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
         if (dto.seq !== undefined || dto.excluded_categories !== undefined) await this.afterPayerChange(trx, old.encounter_id, u);
@@ -453,6 +467,8 @@ export class IpdBillingService {
           throw new ConflictException({ code: 'OR_TARIFF_MISSING', message: `ოპერაცია ტარიფის გარეშე — ${om.map((x) => `${x.case_no}: ${x.missing.join('; ')}`).join(' | ')} (საოპერაციო → კატალოგი / ანესთეზიის ტარიფები)`,
             missing: om });
         }
+        // 0055: DRG — დადასტურება / შესაბამისობა / შეცვლილი მონაცემები (მოდულის პარამეტრებით)
+        const drgWarnings = await drgFinalizeCheck(trx, encounterId);
         const b = (await loadBilling(trx, encounterId))!;
         for (const p of b.calc.payers) await trx.updateTable('stay_payers').set({ covered_amount: p.amount.toFixed(2) }).where('id', '=', p.id).execute();
         await trx.updateTable('invoices').set({ insurance_share: b.calc.insurance.toFixed(2), state_share: b.calc.state.toFixed(2), writeoff_amount: b.calc.writeoff.toFixed(2) })
@@ -464,9 +480,9 @@ export class IpdBillingService {
         await trx.updateTable('invoices').set({ finalized_at: sql`now()`, finalized_by: u.id }).where('id', '=', inv.id).execute();
         const fin = (await loadBilling(trx, encounterId))!;
         await this.ipd.event(trx, { encounter_id: encounterId, kind: 'billing_finalized', data: { total: fin.money.total, patient: fin.money.patient, insurance: fin.money.insurance,
-          state: fin.money.state, writeoff: fin.money.writeoff, deposit_applied: apply, due: fin.money.due, refund_due: fin.money.refund_due } }, u);
+          state: fin.money.state, writeoff: fin.money.writeoff, deposit_applied: apply, due: fin.money.due, refund_due: fin.money.refund_due, ...(drgWarnings.length && { drg_warnings: drgWarnings }) } }, u);
         await this.audit.log(ctx, { action: 'IPD_BILLING_FINALIZE', entityName: 'invoices', entityId: inv.id, newData: { ...fin.money, payers: fin.calc.payers } }, trx);
-        return { finalized: true, money: fin.money };
+        return { finalized: true, money: fin.money, drg_warnings: drgWarnings };
       });
     } catch (e) { mapPgError(e, { chk_invoice_overpaid: 'გადახდილი თანხა აღემატება პაციენტის წილს — საჭიროა დაბრუნება' }); }
   }
@@ -692,7 +708,7 @@ export class IpdBillingController {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${out.name}"` });
     return new StreamableFile(out.pdf);
   }
-  @Get('billing/worklist') @Roles('admin', 'billing', 'receptionist', 'manager')
+  @Get('billing/worklist') @Roles('admin', 'billing', 'receptionist', 'manager', 'drg')
   worklist(@Query('status') status = 'active') { return this.s.worklist(['active', 'unfinalized', 'due', 'finalized'].includes(status) ? status : 'active'); }
   @Get('billing/report') @Roles('admin', 'billing', 'manager')
   report(@Query('from') from: string, @Query('to') to: string) {

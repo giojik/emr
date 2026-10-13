@@ -46,6 +46,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'procurement' && <ProcSettings s={s} set={setS} />}
       {m.code === 'finance' && <FinSettings s={s} set={setS} />}
       {m.code === 'tariffs' && <TariffSettings s={s} set={setS} />}
+      {m.code === 'drg' && <DrgSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -533,6 +534,33 @@ function TariffSettings({ s, set }: { s: Record<string, unknown>; set: (v: Recor
         <select id="trp" className="select" value={v<string>('reprice_on_payer_change') ?? 'auto_unpaid'} onChange={(e) => upd('reprice_on_payer_change', e.target.value)}>
           <option value="auto_unpaid">ავტომატურად, თუ გადახდა არ არის</option><option value="manual">მხოლოდ ღილაკით („გადაფასება“)</option></select></Field>
       <span className="small muted" style={{ gridColumn: '1 / -1' }}>ნუსხები, ცვლილებები და გადამხდელის წესები — <Link to="/admin/tariffs">ადმინისტრირება → ტარიფები</Link>.</span>
+    </div>
+  );
+}
+
+/** 0055: DRG — ვერსიის თარიღი, დადასტურება, ფინალიზაციის შემოწმება, ხელით არჩევა, ვერსიის დამტკიცება */
+function DrgSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div style={grid}>
+      <Field label="რომელი ვერსია მოქმედებს შემთხვევაზე" htmlFor="dvb" hint="სქემის აქტიური ვერსია, რომლის „მოქმედებს“ თარიღი ≤ ამ დღეს; გაწერამდე — დღევანდელი">
+        <select id="dvb" className="select" value={v<string>('version_date_basis') ?? 'discharge'} onChange={(e) => upd('version_date_basis', e.target.value)}>
+          <option value="discharge">გაწერის დღის</option><option value="admission">მიღების დღის</option></select></Field>
+      <Field label="ფინალიზაციამდე DRG-ის დადასტურება" htmlFor="dcr" hint="ეხება DRG რეჟიმის გადამხდელს, რომლის სქემას მოქმედი ვერსია აქვს; ვერსიის გარეშე — როგორც აქამდე (ხელით არჩევა)">
+        <select id="dcr" className="select" value={v<boolean>('confirm_required') === false ? 'no' : 'yes'} onChange={(e) => upd('confirm_required', e.target.value === 'yes')}>
+          <option value="yes">სავალდებულო</option><option value="no">არ არის სავალდებულო</option></select></Field>
+      <Field label="მონაცემები შეიცვალა დადასტურების შემდეგ" htmlFor="drf" hint="დიაგნოზი, ოპერაცია, დღეები, გაწერის ტიპი, ICU / ვენტილაცია ან მოქმედი ვერსია — ფინალიზაციისას">
+        <select id="drf" className="select" value={v<string>('recheck_on_finalize') ?? 'block'} onChange={(e) => upd('recheck_on_finalize', e.target.value)}>
+          <option value="block">ფინალიზაცია იბლოკება — საჭიროა ხელახლა დადასტურება</option><option value="warn">გაფრთხილება</option><option value="off">არ მოწმდება</option></select></Field>
+      <Field label="DRG კოდი გადამხდელის ფორმაში" htmlFor="dmp" hint="მხოლოდ დაჯგუფებით — კოდი მოდის შეთავაზებიდან / დადასტურებიდან; შეცვლა — DRG ბლოკში, მიზეზით">
+        <select id="dmp" className="select" value={v<string>('manual_payer_drg') ?? 'allowed'} onChange={(e) => upd('manual_payer_drg', e.target.value)}>
+          <option value="allowed">ხელით არჩევაც შეიძლება</option><option value="grouper_only">მხოლოდ დაჯგუფებით</option></select></Field>
+      <Field label="ვერსიის გააქტიურება" htmlFor="dva" hint="სავალდებულოზე ვერსიას ააქტიურებს მეორე პირი (უფლება „DRG კონფიგურაცია“, არა ბოლო რედაქტორი)">
+        <select id="dva" className="select" value={v<string>('version_approval') ?? 'off'} onChange={(e) => upd('version_approval', e.target.value)}>
+          <option value="off">ერთი პირი</option><option value="required">მეორე პირის დამტკიცებით</option></select></Field>
+      <span className="small muted" style={{ alignSelf: 'end' }}>სქემები, ვერსიები, ჯგუფები და წესები — <Link to="/admin/drg">ადმინისტრირება → DRG</Link>.</span>
     </div>
   );
 }
