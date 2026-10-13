@@ -45,7 +45,7 @@ import Devices from './pages/admin/Devices';
 import RolesPage from './pages/admin/Roles';
 import Reports from './pages/Reports';
 import Overrides from './pages/admin/Overrides';
-import Tariffs from './pages/admin/Tariffs';
+import Tariffs from './pages/admin/tariffs/Tariffs';
 import BillingSetup from './pages/admin/BillingSetup';
 import Users from './pages/admin/Users';
 
@@ -73,7 +73,7 @@ function NoAccess() {
 
 function AdminHome() {
   const { user } = useAuth();
-  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing') ? '/admin/tariffs' : '/admin/catalog'} replace />;
+  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing', 'tariffs', 'tariffs_approve') ? '/admin/tariffs' : '/admin/catalog'} replace />;
 }
 
 export default function App() {
@@ -109,11 +109,11 @@ export default function App() {
         <Route path="/finance" element={<Guard roles={[...FIN_READ, 'billing']}><Finance /></Guard>} />
         <Route path="/finance/:view" element={<Guard roles={[...FIN_READ, 'billing']}><Finance /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
-        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer']}><AdminLayout /></Guard>}>
+        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />
           <Route path="users" element={<Guard roles={['admin', 'hr', 'manager']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
-          <Route path="tariffs" element={<Guard roles={['admin', 'billing']}><Tariffs /></Guard>} />
+          <Route path="tariffs" element={<Guard roles={['admin', 'billing', 'tariffs', 'tariffs_approve', 'accountant', 'viewer']}><Tariffs /></Guard>} />
           <Route path="billing" element={<Guard roles={['admin', 'billing']}><BillingSetup /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />

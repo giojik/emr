@@ -110,7 +110,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
             <tbody>
               {i.lines.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>{l.description}</strong>{l.package_included && <span className="chip accent" style={{ marginLeft: 6 }}>პაკეტში</span>}{l.discount_reason && <div className="small muted">ფასდაკლება: {l.discount_reason}</div>}</td>
+                  <td><strong>{l.description}</strong>{l.price_scope && l.price_scope !== 'base' && <span className={`chip ${l.price_scope === 'payer' ? 'info' : ''}`} style={{ marginLeft: 6 }} title={l.price_list_name ?? ''}>{l.price_scope === 'payer' ? 'ხელშეკრ. ფასი' : 'განყოფილების ფასი'}</span>}{l.package_included && <span className="chip accent" style={{ marginLeft: 6 }}>პაკეტში</span>}{l.discount_reason && <div className="small muted">ფასდაკლება: {l.discount_reason}</div>}</td>
                   <td className="num muted">{l.original_price ?? '—'}</td>
                   <td className="num">{l.unit_price}</td>
                   <td className="num">{l.quantity}</td>
@@ -121,6 +121,7 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
             </tbody>
           </table>
           {editLine && <DiscountForm invoiceId={i.id} line={editLine} onDone={() => { setEditLine(null); refresh(); }} />}
+          {canAdjust && !i.finalized_at && !i.claim_nos && <RepriceBar invoice={i} onDone={(n) => { toast.show(n ? `გადაფასდა: ${n} ხაზი` : 'ფასები უკვე მიმდინარეა'); refresh(); }} />}
         </section>
 
         <section className="card card-pad stack">
@@ -144,6 +145,8 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
           {!i.is_inpatient && can(user, 'admin', 'billing', 'receptionist') && (i.claim_nos
             ? <span className="small muted">ქლეიმში: {i.claim_nos} — გადამხდელი აღარ იცვლება</span>
             : <button className="btn sm" type="button" style={{ alignSelf: 'flex-start' }} onClick={() => setPayersOpen(true)}>დაზღვევა / სახელმწიფო</button>)}
+          {!i.is_inpatient && i.opd_payer_mode === 'rules' && (i.insurance_payer_id || i.state_payer_id) && <span className={`chip ${i.payer_shares_manual ? 'warn' : 'ok'}`} style={{ alignSelf: 'flex-start' }}
+            title={i.payer_shares_reason ?? ''}>{i.payer_shares_manual ? 'წილი შესწორებულია ხელით' : 'წილი — გადამხდელის წესებით'}</span>}
           {Number(i.writeoff_amount ?? 0) > 0 && <Line k="ჩამოწერა" v={money(i.writeoff_amount)} muted />}
           <Line k="გადახდილი" v={money(i.paid_amount)} muted />
           <div className="row" style={{ justifyContent: 'space-between', borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4 }}>
@@ -185,37 +188,82 @@ function InvoicePanel({ encounterId }: { encounterId: string }) {
 }
 
 interface PayerOpt { id: string; code: string; name: string; kind: 'insurance' | 'state' | 'other' }
-/** 0053: ამბულატორიის ინვოისის გადამხდელი და წილი (ხელით) — ქლეიმისა და შემოსავლის რეპორტისთვის */
+interface Preview { result: { payers: { payer_id: string; kind: string; amount: number; eligible: number; copay?: number }[]; patient: number } }
+/**
+ * 0053: ამბულატორიის ინვოისის გადამხდელი და წილი — ქლეიმისა და შემოსავლის რეპორტისთვის.
+ * 0054a: opd_payer_mode = rules — წილს ითვლის წესების ძრავა (წინასწარი გაანგარიშება); ბილინგს შეუძლია ხელით შეცვლა მიზეზით / „წესებით აღდგენა“.
+ */
 function PayersDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose: () => void; onDone: () => void }) {
+  const { user } = useAuth();
+  const rules = invoice.opd_payer_mode === 'rules';
+  const billing = can(user, 'admin', 'billing');
   const payers = useQuery({ queryKey: ['payers', false], queryFn: () => api<PayerOpt[]>('/billing/payers') });
   const [f, setF] = useState({ insurance_payer_id: invoice.insurance_payer_id ?? '', insurance_share: Number(invoice.insurance_share).toFixed(2),
     state_payer_id: invoice.state_payer_id ?? '', state_share: Number(invoice.state_share).toFixed(2) });
+  const [manual, setManual] = useState(!rules || !!invoice.payer_shares_manual); const [reason, setReason] = useState(invoice.payer_shares_reason ?? '');
+  const sameSlots = f.insurance_payer_id === (invoice.insurance_payer_id ?? '') && f.state_payer_id === (invoice.state_payer_id ?? '');
+  const prev = useQuery({ queryKey: ['payers-preview', invoice.id, invoice.total_amount], enabled: rules && sameSlots && !!(f.insurance_payer_id || f.state_payer_id),
+    queryFn: () => api<Preview>(`/invoices/${invoice.id}/payers/preview`) });
   const m = useMutation({
-    mutationFn: () => api(`/invoices/${invoice.id}/payers`, { method: 'PUT', body: { insurance_payer_id: f.insurance_payer_id || null, insurance_share: Number(f.insurance_share || 0),
-      state_payer_id: f.state_payer_id || null, state_share: Number(f.state_share || 0) } }),
+    mutationFn: (recalc?: boolean) => api(`/invoices/${invoice.id}/payers`, { method: 'PUT', body: {
+      insurance_payer_id: f.insurance_payer_id || null, state_payer_id: f.state_payer_id || null,
+      ...(manual && !recalc ? { insurance_share: Number(f.insurance_share || 0), state_share: Number(f.state_share || 0), ...(rules ? { reason: reason.trim() } : {}) } : {}),
+      ...(recalc ? { recalc: true } : {}) } }),
     onSuccess: onDone,
   });
   const patient = Number(invoice.total_amount) - Number(f.insurance_share || 0) - Number(f.state_share || 0);
   const ins = (payers.data ?? []).filter((p) => p.kind !== 'state'); const st = (payers.data ?? []).filter((p) => p.kind === 'state');
+  const share = (slot: 'insurance' | 'state') => manual
+    ? <input id={`ip-${slot}`} className="input mono" inputMode="decimal" value={slot === 'insurance' ? f.insurance_share : f.state_share} onChange={(e) => setF({ ...f, [`${slot}_share`]: e.target.value })} />
+    : <div className="input mono" style={{ display: 'flex', alignItems: 'center', background: 'var(--surface-2, #f4f6f9)' }}>{sameSlots && prev.data
+      ? Number(prev.data.result.payers.filter((p) => (slot === 'state') === (p.kind === 'state')).reduce((a, p) => a + p.amount, 0)).toFixed(2) : 'წესებით'}</div>;
   return (
-    <Modal title={`გადამხდელები — ${invoice.invoice_number}`} onClose={onClose} width={600}
-      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending || patient < -0.001} onClick={() => m.mutate()}>შენახვა</button></>}>
+    <Modal title={`გადამხდელები — ${invoice.invoice_number}`} onClose={onClose} width={620}
+      footer={<>
+        {rules && invoice.payer_shares_manual && billing && <button className="btn" type="button" disabled={m.isPending} onClick={() => m.mutate(true)}>წესებით აღდგენა</button>}
+        <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
+        <button className="btn primary" type="button" disabled={m.isPending || (manual && patient < -0.001) || (rules && manual && reason.trim().length < 3)} onClick={() => m.mutate(undefined)}>შენახვა</button></>}>
       <div className="stack">
+        {rules && <div className="row" style={{ flexWrap: 'wrap' }}>
+          <span className="chip ok">წილი — გადამხდელის წესებით</span>
+          {billing && <label className="row small"><input type="checkbox" checked={manual} onChange={(e) => setManual(e.target.checked)} /> ხელით შეცვლა (მიზეზით)</label>}
+        </div>}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12 }}>
           <Field label="დაზღვევა" htmlFor="ip-i"><select id="ip-i" className="select" value={f.insurance_payer_id} onChange={(e) => setF({ ...f, insurance_payer_id: e.target.value })}>
             <option value="">— არ არის —</option>{ins.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-          <Field label="წილი (₾)" htmlFor="ip-is"><input id="ip-is" className="input mono" inputMode="decimal" value={f.insurance_share} onChange={(e) => setF({ ...f, insurance_share: e.target.value })} /></Field>
+          <Field label="წილი (₾)" htmlFor="ip-insurance">{share('insurance')}</Field>
           <Field label="სახელმწიფო პროგრამა" htmlFor="ip-s"><select id="ip-s" className="select" value={f.state_payer_id} onChange={(e) => setF({ ...f, state_payer_id: e.target.value })}>
             <option value="">— არ არის —</option>{st.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-          <Field label="წილი (₾)" htmlFor="ip-ss"><input id="ip-ss" className="input mono" inputMode="decimal" value={f.state_share} onChange={(e) => setF({ ...f, state_share: e.target.value })} /></Field>
+          <Field label="წილი (₾)" htmlFor="ip-state">{share('state')}</Field>
         </div>
+        {rules && manual && <Field label="ხელით შეცვლის მიზეზი" htmlFor="ip-r" required><input id="ip-r" className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="მაგ. საგარანტიო წერილი №" /></Field>}
         <Line k="ინვოისი" v={money(invoice.total_amount)} />
-        <Line k="პაციენტის წილი" v={money(Math.max(0, patient))} />
-        {patient < -0.001 && <div className="alert danger">წილების ჯამი აღემატება ინვოისის თანხას</div>}
-        <span className="hint">წილი ივსება ხელით (საგარანტიო / პოლისის პირობებით). გადამხდელის მითითება საჭიროა ქლეიმისთვის (ფინანსები → დებიტორები).</span>
+        {manual ? <Line k="პაციენტის წილი" v={money(Math.max(0, patient))} />
+          : sameSlots && prev.data ? <Line k="პაციენტის წილი" v={money(prev.data.result.patient)} /> : null}
+        {!manual && sameSlots && prev.data?.result.payers.some((p) => p.copay) && <span className="small muted">თანაგადახდა: {money(prev.data.result.payers.reduce((a, p) => a + (p.copay ?? 0), 0))}</span>}
+        {manual && patient < -0.001 && <div className="alert danger">წილების ჯამი აღემატება ინვოისის თანხას</div>}
+        <span className="hint">{rules ? 'წილს ითვლის გადამხდელის მოქმედი ვერსია (ადმინისტრირება → ტარიფები → გადამხდელის წესები). გადამხდელის შეცვლისას ხაზები შეიძლება გადაფასდეს ხელშეკრულების ფასით.'
+          : 'წილი ივსება ხელით (საგარანტიო / პოლისის პირობებით). გადამხდელის მითითება საჭიროა ქლეიმისთვის (ფინანსები → დებიტორები).'}</span>
         <ErrorBox error={m.error} />
       </div>
     </Modal>
+  );
+}
+
+/** 0054: ხაზების გადაფასება მიმდინარე ნუსხებით (ბილინგი, მიზეზით) */
+function RepriceBar({ invoice, onDone }: { invoice: Invoice; onDone: (n: number) => void }) {
+  const [open, setOpen] = useState(false); const [reason, setReason] = useState('');
+  const m = useMutation({ mutationFn: () => api<{ changed: unknown[]; skipped: { description: string; skipped: string }[] }>(`/invoices/${invoice.id}/reprice`, { body: { reason: reason.trim() } }),
+    onSuccess: (r) => { setOpen(false); setReason(''); onDone(r.changed.length); } });
+  return (
+    <div className="row small" style={{ padding: '8px 12px', borderTop: '1px solid var(--line)', flexWrap: 'wrap' }}>
+      <span className="muted grow">ფასი ხაზზე ფიქსირდება შექმნისას.{invoice.reprice_count ? ` გადაფასება: ${invoice.reprice_count}` : ''}</span>
+      {!open ? <button className="btn sm" type="button" onClick={() => setOpen(true)}>გადაფასება მიმდინარე ტარიფებით</button> : <>
+        <input className="input" style={{ height: 30, maxWidth: 280 }} aria-label="გადაფასების მიზეზი" placeholder="მიზეზი" value={reason} onChange={(e) => setReason(e.target.value)} />
+        <button className="btn sm primary" type="button" disabled={m.isPending || reason.trim().length < 3} onClick={() => m.mutate()}>გადაფასება</button>
+        <button className="btn sm" type="button" onClick={() => setOpen(false)}>×</button></>}
+      <div style={{ width: '100%' }}><ErrorBox error={m.error} /></div>
+    </div>
   );
 }
 

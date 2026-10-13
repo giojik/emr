@@ -18,18 +18,18 @@ interface StayPayer {
   override_amount?: string | null; override_reason?: string | null; covered_amount?: string | null; cancel_reason?: string | null; created_by_name?: string;
   calc: { tariff: number | null; eligible: number; amount: number; writeoff: number } | null;
 }
-interface Line { id: string; category: string; category_ka: string; description: string; quantity: number; unit_price?: string; line_total?: string; package_included: boolean; service_date: string | null;
+interface Line { id: string; category: string; category_ka: string; description: string; price_source?: string | null; quantity: number; unit_price?: string; line_total?: string; package_included: boolean; service_date: string | null;
   created_at: string; added_by: string | null; added_by_name: string | null; manual: boolean; discount_reason?: string | null }
 interface BillingView {
   stay: { encounter_id: string; patient_id: string; adm_no: string; status: string; admitted_at: string; ended_at: string | null; first_name: string; last_name: string };
-  invoice_number: string; finalized: boolean; finalized_at: string | null; finalized_by_name: string | null; reopen_count: number;
+  invoice_id: string; invoice_number: string; finalized: boolean; finalized_at: string | null; finalized_by_name: string | null; reopen_count: number;
   package: { id: string; code: string; name: string; price?: string; includes_bed: boolean; included_days: number | null; set_by_name: string | null } | null;
   bed_days: { day: string; department_name: string; bed_code: string | null; bed_type_name: string; on_leave: boolean; minimum: boolean; package_included: boolean; tariff_title: string | null; price?: string }[];
   bed_days_count: number; missing_tariff_days: number; lines: Line[]; by_category: { category: string; label: string; amount: string; included: string }[];
   payers: StayPayer[]; deposits: { id: string; kind: string; amount: string; method: string; terminal_ref: string | null; receipt_no: string; note: string | null; created_at: string; voided_at: string | null; void_reason: string | null; created_by_name: string }[];
   payments: { id: string; amount: string; method: string; paid_at: string; received_by_name: string | null }[];
   money: Money | null; amounts_visible: boolean;
-  can: { services: boolean; package: boolean; payers: boolean; override: boolean; deposits: boolean; void_deposit: boolean; finalize: boolean; reopen: boolean };
+  can: { services: boolean; package: boolean; payers: boolean; override: boolean; reprice?: boolean; deposits: boolean; void_deposit: boolean; finalize: boolean; reopen: boolean };
 }
 const METHOD_KA: Record<string, string> = { cash: 'ნაღდი', card_terminal: 'ბარათი', bank_transfer: 'გადარიცხვა', deposit: 'ავანსიდან' };
 const n = (v: string | number | null | undefined) => Number(v ?? 0);
@@ -37,7 +37,7 @@ const n = (v: string | number | null | undefined) => Number(v ?? 0);
 export default function StayBillingPanel({ encounterId }: { encounterId: string }) {
   const qc = useQueryClient(); const toast = useToast();
   const q = useQuery({ queryKey: ['ipd-billing', encounterId], queryFn: () => api<BillingView>(`/inpatient/stays/${encounterId}/billing`) });
-  const [dlg, setDlg] = useState<null | 'service' | 'payer' | 'deposit' | 'refund' | 'reopen' | 'days' | { payer: StayPayer } | { cancelPayer: StayPayer } | { voidDep: string } | { rmLine: Line }>(null);
+  const [dlg, setDlg] = useState<null | 'service' | 'payer' | 'deposit' | 'refund' | 'reopen' | 'days' | 'reprice' | { payer: StayPayer } | { cancelPayer: StayPayer } | { voidDep: string } | { rmLine: Line }>(null);
   const inval = () => { void qc.invalidateQueries({ queryKey: ['ipd-billing', encounterId] }); void qc.invalidateQueries({ queryKey: ['ipd-billing-list'] }); };
   const pkgs = useQuery({ queryKey: ['billing-packages', false], queryFn: () => api<Package[]>('/billing/packages'), enabled: !!q.data?.can.package });
   const setPkg = useMutation({ mutationFn: (id: string | null) => api(`/inpatient/stays/${encounterId}/billing/package`, { body: { package_id: id } }), onSuccess: () => { toast.show('პაკეტი შეიცვალა'); inval(); } });
@@ -54,6 +54,7 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
         {b.amounts_visible && <button className="btn sm" type="button" onClick={() => void openBlob(`/inpatient/stays/${encounterId}/billing/pdf`)}>კალკულაცია (PDF)</button>}
         {b.can.services && <button className="btn sm" type="button" onClick={() => setDlg('service')}>+ მომსახურება</button>}
         {b.can.deposits && <button className="btn sm" type="button" onClick={() => setDlg('deposit')}>ავანსი</button>}
+        {b.can.reprice && <button className="btn sm" type="button" title="მიმდინარე ფასთა ნუსხებით (ხელით შესწორებული ფასი — უცვლელი)" onClick={() => setDlg('reprice')}>გადაფასება</button>}
         {b.can.finalize && <button className="btn sm primary" type="button" disabled={fin.isPending} onClick={() => fin.mutate()}>ფინანსური დახურვა</button>}
         {b.can.reopen && <button className="btn sm" type="button" onClick={() => setDlg('reopen')}>გახსნა</button>}
       </div>
@@ -125,6 +126,8 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
                     {ls.map((l) => (
                       <tr key={l.id}>
                         <td>{l.description}{l.package_included && <span className="chip accent" style={{ marginLeft: 6 }}>პაკეტში</span>}
+                          {l.price_source && !l.price_source.startsWith('base:') && <span className={`chip ${l.price_source.startsWith('payer:') ? 'info' : ''}`} style={{ marginLeft: 6 }}
+                            title={l.price_source.split(':').slice(1).join(':')}>{l.price_source.startsWith('payer:') ? 'ხელშეკრ. ფასი' : 'განყოფილების ფასი'}</span>}
                           {l.manual && l.added_by_name && <div className="small muted">{l.added_by_name}</div>}</td>
                         <td className="small">{l.service_date ? dateGe(l.service_date) : tsDate(l.created_at)}</td><td className="num">{l.quantity}</td>
                         {b.amounts_visible && <><td className="num">{money(l.unit_price)}</td><td className="num" style={l.package_included ? { textDecoration: 'line-through', color: 'var(--muted)' } : undefined}>{money(l.line_total)}</td></>}
@@ -161,6 +164,7 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
       {dlg === 'payer' && <PayerDialog view={b} onClose={() => setDlg(null)} onDone={inval} />}
       {dlg && typeof dlg === 'object' && 'payer' in dlg && <PayerDialog view={b} sp={dlg.payer} onClose={() => setDlg(null)} onDone={inval} />}
       {(dlg === 'deposit' || dlg === 'refund') && <DepositDialog encounterId={encounterId} kind={dlg} max={dlg === 'refund' ? n(m?.refund_due) : undefined} onClose={() => setDlg(null)} onDone={inval} />}
+      {dlg === 'reprice' && <ReasonPrompt title="გადაფასება მიმდინარე ტარიფებით" label="მიზეზი" hint="ფასი ხაზზე ფიქსირდება შექმნისას; საწოლდღე / ვენტილაცია / ოპერაცია — ავტომატურად ითვლება" path={`/invoices/${b.invoice_id}/reprice`} method="POST" onClose={() => setDlg(null)} onDone={inval} />}
       {dlg === 'days' && <DaysDialog b={b} onClose={() => setDlg(null)} />}
       {dlg === 'reopen' && <ReasonPrompt title="ინვოისის გახსნა" label="მიზეზი" hint="ავანსის მიმართვა მოიხსნება, გადამხდელების თანხები ხელახლა დაითვლება" path={`/inpatient/stays/${encounterId}/billing/reopen`} method="POST" onClose={() => setDlg(null)} onDone={inval} />}
       {dlg && typeof dlg === 'object' && 'cancelPayer' in dlg && <ReasonPrompt title={`გადამხდელის გაუქმება — ${dlg.cancelPayer.payer_name}`} label="მიზეზი" path={`/inpatient/stay-payers/${dlg.cancelPayer.id}/cancel`} method="POST" onClose={() => setDlg(null)} onDone={inval} />}

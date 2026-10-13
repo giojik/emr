@@ -207,7 +207,13 @@ export class StockOpsService {
           for (const a of alloc) {
             const l = await this.lotAt(trx, a.lot_id, loc.id);
             const unit = st.costing_method === 'fifo' ? Number(l.unit_cost) : Number(it.avg_cost ?? l.unit_cost);
-            const price = it.billing_mode === 'invoice' ? (it.sale_price !== null ? Number(it.sale_price) : r2(unit * (1 + Number(it.markup_pct ?? 0) / 100))) : null;
+            // 0054: ფასი — სატარიფო ფენიდან (გადამხდელი → განყოფილება → საბაზო: საქონლის ფასი, თუ არა — კატეგორიის ფასნამატი); ინვოისის გარეშე — როგორც ადრე
+            let price: number | null = null; let priceItem: string | null = null;
+            if (it.billing_mode === 'invoice') {
+              const tp = inv ? (await sql<{ price: string | null; item_id: string | null }>`SELECT price::text, item_id FROM tariff_stock_price(${inv.id}::uuid, ${it.id}::uuid, ${unit}::numeric, ${today}::date)`.execute(trx)).rows[0] : undefined;
+              if (tp?.price != null) { price = Number(tp.price); priceItem = tp.item_id; }
+              else price = it.sale_price !== null ? Number(it.sale_price) : r2(unit * (1 + Number(it.markup_pct ?? 0) / 100));
+            }
             n++;
             const line = await trx.insertInto('stock_doc_lines').values({ doc_id: id, line_no: n, item_id: it.id, qty: String(a.qty), qty_base: String(a.qty), lot_no: l.lot_no, serial_no: l.serial_no,
               expires_on: l.expires_on, produced_on: l.produced_on, unit_cost: l.unit_cost, lot_id: l.id, patient_id: dto.patient_id, line_net: String(r2(a.qty * unit)),
@@ -221,7 +227,7 @@ export class StockOpsService {
               const whole = Number.isInteger(a.qty);
               await trx.insertInto('invoice_line_items').values({ invoice_id: inv.id, stock_doc_line_id: line.id,
                 description: `${it.name}${l.lot_no ? ` (ლოტი ${l.lot_no})` : ''}${whole ? '' : ` — ${a.qty} ${it.unit_name}`}`,
-                quantity: whole ? a.qty : 1, unit_price: String(whole ? price : r2(price * a.qty)) }).execute();
+                quantity: whole ? a.qty : 1, unit_price: String(whole ? price : r2(price * a.qty)), price_item_id: priceItem }).execute();
               billed += r2(price * a.qty);
             }
           }

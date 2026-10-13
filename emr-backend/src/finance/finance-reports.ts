@@ -14,7 +14,7 @@ type Kind = (typeof KINDS)[number];
 const COMMON = 'საერთო (განყოფილების გარეშე)';
 
 /**
- * შემოსავლის ხაზები (CTE „rv“): ინვოისის ხაზი × გადამხდელის წილი (pro rata).
+ * შემოსავლის ხაზები (CTE „rv“): ინვოისის ხაზი × გადამხდელის წილი — ხაზობრივი (0054a: invoice_line_shares), თუ არა — pro rata ინვოისიდან.
  *   საწოლდღე / ვენტილაციის დღე — დღეებად (stay_bed_days / stay_vent_days): თარიღი და განყოფილება — თავისი დღის;
  *   სხვა ხაზი — service_date, ordering / performing (0053); პაკეტში შემავალი ხაზი არ ითვლება.
  *   წილები: პაციენტი, ჩამოწერა (DRG / ფიქს.), გადამხდელები (სტაც. — stay_payers.covered_amount; ამბ. — invoices.*_payer_id);
@@ -29,17 +29,21 @@ export function revenueCte(basis: Basis, from: string, to: string): RawBuilder<u
         FROM invoices i JOIN encounters e ON e.id = i.encounter_id LEFT JOIN inpatient_stays st ON st.encounter_id = i.encounter_id
        WHERE e.status::text <> 'cancelled' AND st.status IS DISTINCT FROM 'cancelled'),
     ln AS (
-      SELECT inv.id AS invoice_id, 'bed'::text AS category, d.day AS sdate, d.department_id AS ord, d.department_id AS perf, l.unit_price::numeric AS amount
+      SELECT l.id AS line_id, inv.id AS invoice_id, 'bed'::text AS category, d.day AS sdate, d.department_id AS ord, d.department_id AS perf,
+             coalesce(d.unit_price, l.unit_price)::numeric AS amount, l.line_total::numeric AS line_total
         FROM invoice_line_items l JOIN inv ON inv.id = l.invoice_id
         JOIN stay_bed_days d ON d.encounter_id = inv.encounter_id AND d.tariff_id = l.tariff_id AND d.package_included = l.package_included
+             AND d.price_item_id IS NOT DISTINCT FROM l.price_item_id AND (d.unit_price IS NULL OR d.unit_price = l.unit_price)
        WHERE l.category = 'bed' AND NOT l.package_included
       UNION ALL
-      SELECT inv.id, 'ventilation', v.day, fin_enc_department(inv.encounter_id, v.day), fin_enc_department(inv.encounter_id, v.day), l.unit_price::numeric
+      SELECT l.id, inv.id, 'ventilation', v.day, fin_enc_department(inv.encounter_id, v.day), fin_enc_department(inv.encounter_id, v.day),
+             coalesce(v.unit_price, l.unit_price)::numeric, l.line_total::numeric
         FROM invoice_line_items l JOIN inv ON inv.id = l.invoice_id
         JOIN stay_vent_days v ON v.encounter_id = inv.encounter_id AND v.tariff_id = l.tariff_id AND v.package_included = l.package_included
+             AND v.price_item_id IS NOT DISTINCT FROM l.price_item_id AND (v.unit_price IS NULL OR v.unit_price = l.unit_price)
        WHERE l.category = 'ventilation' AND NOT l.package_included
       UNION ALL
-      SELECT inv.id, l.category::text, l.service_date, l.ordering_department_id, l.performing_department_id, l.line_total::numeric
+      SELECT l.id, inv.id, l.category::text, l.service_date, l.ordering_department_id, l.performing_department_id, l.line_total::numeric, l.line_total::numeric
         FROM invoice_line_items l JOIN inv ON inv.id = l.invoice_id
        WHERE l.category NOT IN ('bed', 'ventilation') AND NOT l.package_included),
     dl AS (
@@ -67,10 +71,30 @@ export function revenueCte(basis: Basis, from: string, to: string): RawBuilder<u
       UNION ALL
       SELECT ci.invoice_id, 'denied', ci.payer_id, ci.resolved_amount FROM fin_claim_items ci JOIN inv ON inv.id = ci.invoice_id WHERE ci.resolution = 'writeoff'),
     sw AS (SELECT sp.*, sp.amount / nullif(sum(sp.amount) OVER (PARTITION BY sp.invoice_id), 0) AS w FROM sp),
+    -- 0054a: ზუსტი ხაზობრივი წილი (invoice_line_shares — სტაც. ფინალიზაცია / ამბ. წესებით); ქლეიმის უარი (ჩამოწერილი) — გადამხდელის ხაზებზე პროპორციულად
+    ls AS (
+      SELECT s.invoice_id, s.line_id, s.kind::text AS kind, s.payer_id, s.amount, l.line_total
+        FROM invoice_line_shares s JOIN invoice_line_items l ON l.id = s.line_id JOIN inv ON inv.id = s.invoice_id
+       WHERE NOT inv.ipd OR inv.finalized_at IS NOT NULL),
+    adj AS (
+      SELECT ci.invoice_id, ci.payer_id, sum(ci.resolved_amount) AS r FROM fin_claim_items ci JOIN inv ON inv.id = ci.invoice_id
+       WHERE ci.resolution = 'writeoff' GROUP BY ci.invoice_id, ci.payer_id),
+    lsx AS (
+      SELECT ls.line_id, ls.kind, ls.payer_id, ls.amount / nullif(ls.line_total, 0) AS w FROM ls
+      UNION ALL
+      SELECT x.line_id, k.kind, x.payer_id, k.sgn * x.part / nullif(x.line_total, 0)
+        FROM (SELECT ls.line_id, ls.kind, ls.payer_id, ls.line_total, a.r * ls.amount / nullif(sum(ls.amount) OVER (PARTITION BY ls.invoice_id, ls.payer_id), 0) AS part
+                FROM ls JOIN adj a ON a.invoice_id = ls.invoice_id AND a.payer_id = ls.payer_id) x
+        CROSS JOIN LATERAL (VALUES (x.kind, -1), ('denied', 1)) k(kind, sgn)),
     rv AS (
+      SELECT dl.invoice_id, dl.rdate, dl.category, dl.ord, dl.perf, x.kind, x.payer_id, dl.amount * x.w AS amount
+        FROM dl JOIN lsx x ON x.line_id = dl.line_id
+       WHERE dl.rdate BETWEEN ${from}::date AND ${to}::date AND x.w IS NOT NULL AND x.w <> 0
+      UNION ALL
       SELECT dl.invoice_id, dl.rdate, dl.category, dl.ord, dl.perf, sw.kind, sw.payer_id, dl.amount * sw.w AS amount
         FROM dl JOIN sw ON sw.invoice_id = dl.invoice_id
-       WHERE dl.rdate BETWEEN ${from}::date AND ${to}::date AND sw.w IS NOT NULL AND sw.w <> 0)`;
+       WHERE dl.rdate BETWEEN ${from}::date AND ${to}::date AND sw.w IS NOT NULL AND sw.w <> 0
+         AND NOT EXISTS (SELECT 1 FROM ls WHERE ls.line_id = dl.line_id))`;
 }
 const deptKey = (b: DeptBasis) => (b === 'ordering' ? sql`rv.ord` : sql`rv.perf`);
 

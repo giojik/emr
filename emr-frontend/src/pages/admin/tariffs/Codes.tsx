@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../../api/client';
-import type { ReferralTypeTariff, Tariff } from '../../api/types';
-import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
-import { money, REFERRAL_KA } from '../../lib/format';
+import { api } from '../../../api/client';
+import type { ReferralTypeTariff, Tariff } from '../../../api/types';
+import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../../components/ui';
+import { money, REFERRAL_KA } from '../../../lib/format';
 
-export default function Tariffs() {
+export default function Codes() {
   const [search, setSearch] = useState(''); const [inactive, setInactive] = useState(false); const [edit, setEdit] = useState<Tariff | 'new' | null>(null);
   const dq = useDebounced(search.trim(), 250);
   const q = useQuery({ queryKey: ['tariffs', dq, inactive], queryFn: () => api<Tariff[]>('/tariffs', { query: { search: dq, include_inactive: inactive } }) });

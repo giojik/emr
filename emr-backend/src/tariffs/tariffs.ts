@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
@@ -7,6 +8,7 @@ import { AuditService, type AuditContext } from '../audit/audit.service';
 import { Roles } from '../auth/decorators';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
+import { TariffListsController, TariffListsService } from './tariff-lists';
 
 const REFERRAL_TYPES = ['lab', 'imaging', 'hospitalization', 'specialist_consult'] as const;
 const money = ({ value }: { value: unknown }) => (typeof value === 'string' ? Number(value) : value);
@@ -39,15 +41,20 @@ export class TariffsService {
 
   create(dto: CreateTariffDto, ctx: AuditContext) {
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
+      if (ctx.userId) await sql`SELECT set_config('emr.user_id', ${ctx.userId}, true)`.execute(trx);   // 0054: საბაზო ნუსხის ჩანაწერის ავტორი
       const t = await trx.insertInto('service_tariffs').values({ ...dto, base_price: dto.base_price.toFixed(2) }).returningAll().executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'CREATE_TARIFF', entityName: 'service_tariffs', entityId: t.id, newData: t }, trx);
       return t;
     }), { service_tariffs_code_key: `ტარიფის კოდი ${dto.code} უკვე არსებობს` });
   }
 
-  /** ფასის ცვლილება არ ეხება უკვე გამოწერილ ინვოისებს — ხაზებში ფასი შექმნის მომენტშია დაფიქსირებული */
+  /**
+   * ფასის ცვლილება არ ეხება უკვე გამოწერილ ინვოისებს — ხაზებში ფასი შექმნის მომენტშია დაფიქსირებული.
+   * 0054: base_price → საბაზო ნუსხა დღეიდან (DB ტრიგერი); tariff_change_approval = required → 409 (ცვლილების მოთხოვნით).
+   */
   update(id: string, dto: UpdateTariffDto, ctx: AuditContext) {
-    return this.db.transaction().execute(async (trx) => {
+    return withPgErrors(() => this.db.transaction().execute(async (trx) => {
+      if (ctx.userId) await sql`SELECT set_config('emr.user_id', ${ctx.userId}, true)`.execute(trx);
       const old = await trx.selectFrom('service_tariffs').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!old) throw new NotFoundException('ტარიფი ვერ მოიძებნა');
       const t = await trx.updateTable('service_tariffs')
@@ -55,7 +62,7 @@ export class TariffsService {
         .where('id', '=', id).returningAll().executeTakeFirstOrThrow();
       await this.audit.log(ctx, { action: 'UPDATE_TARIFF', entityName: 'service_tariffs', entityId: id, oldData: old, newData: t }, trx);
       return t;
-    });
+    }));
   }
 
   referralTypes() {
@@ -93,5 +100,5 @@ export class TariffsController {
   setReferralType(@Body() dto: ReferralTypeTariffDto, @Req() req: Request) { return this.tariffs.setReferralType(dto, auditCtx(req)); }
 }
 
-@Module({ controllers: [TariffsController], providers: [TariffsService] })
+@Module({ controllers: [TariffsController, TariffListsController], providers: [TariffsService, TariffListsService], exports: [TariffListsService] })
 export class TariffsModule {}

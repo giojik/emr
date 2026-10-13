@@ -27,6 +27,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
+  { to: '/admin/tariffs', label: 'ტარიფები', roles: ['tariffs', 'tariffs_approve', 'accountant', 'viewer'] },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
   { to: '/admin/catalog', label: 'ანალიზების კატალოგი', roles: ['lab_doctor', 'lab_manager'] },
   { to: '/admin/overrides', label: 'override-ები', roles: ['pharmacist'] },
@@ -40,6 +41,7 @@ const HOME: Record<Role, string> = {
   storekeeper: '/stock/balances', stock_manager: '/stock/balances',
   or_schedule: '/or?tab=board', anesthesiologist: '/or?tab=my', or_nurse: '/or?tab=board',
   procurement: '/procurement/requisitions', procurement_approve: '/procurement/requisitions?to_approve=1',
+  tariffs: '/admin/tariffs', tariffs_approve: '/admin/tariffs?tab=changes',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

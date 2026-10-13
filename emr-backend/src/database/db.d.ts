@@ -1387,12 +1387,35 @@ export interface InvoiceLineItems {
   original_price: Numeric | null;
   package_included: Generated<boolean>;
   performing_department_id: string | null;
+  price_item_id: string | null;
   quantity: Generated<number>;
   referral_id: string | null;
   service_date: Generated<string>;
   stock_doc_line_id: string | null;
   tariff_id: string | null;
   unit_price: Numeric;
+}
+
+export interface InvoiceLineReprices {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  invoice_id: string;
+  kind: string;
+  line_id: string;
+  new_item_id: string | null;
+  new_price: Numeric;
+  old_item_id: string | null;
+  old_price: Numeric;
+  reason: string;
+}
+
+export interface InvoiceLineShares {
+  amount: Numeric;
+  invoice_id: string;
+  kind: string;
+  line_id: string;
+  payer_id: string | null;
 }
 
 export interface Invoices {
@@ -1406,6 +1429,10 @@ export interface Invoices {
   invoice_number: string;
   paid_status: Generated<string>;
   patient_share: Numeric;
+  payer_shares_at: Timestamp | null;
+  payer_shares_manual: Generated<boolean>;
+  payer_shares_reason: string | null;
+  payer_shares_stale: Generated<boolean>;
   reopen_count: Generated<number>;
   state_payer_id: string | null;
   state_share: Generated<Numeric>;
@@ -2792,6 +2819,45 @@ export interface Patients {
   updated_at: Generated<Timestamp>;
 }
 
+export interface PayerRuleClauses {
+  age_max: number | null;
+  age_min: number | null;
+  categories: Generated<string[]>;
+  codes: Generated<string[]>;
+  coverage_pct: Numeric | null;
+  dx_prefixes: Generated<string[]>;
+  effect: string;
+  id: Generated<string>;
+  label: string | null;
+  line_limit: Numeric | null;
+  seq: number;
+  sex: string | null;
+  version_id: string;
+}
+
+export interface PayerRuleVersions {
+  applies_to: Generated<string>;
+  change_id: string | null;
+  copay_amount: Generated<Numeric>;
+  coverage_pct: Numeric;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  deductible: Generated<Numeric>;
+  drg_base_rate: Numeric | null;
+  excluded_categories: Generated<string[]>;
+  excluded_codes: Generated<string[]>;
+  fixed_amount: Numeric | null;
+  id: Generated<string>;
+  limit_amount: Numeric | null;
+  mode: string;
+  notes: string | null;
+  payer_id: string;
+  status: string;
+  valid_from: string | null;
+  version_no: number;
+  writeoff_excess: Generated<boolean>;
+}
+
 export interface Payers {
   address: string | null;
   code: string;
@@ -3035,7 +3101,9 @@ export interface StayBedDays {
   minimum: Generated<boolean>;
   on_leave: Generated<boolean>;
   package_included: Generated<boolean>;
+  price_item_id: string | null;
   tariff_id: string | null;
+  unit_price: Numeric | null;
 }
 
 export interface StayBilling {
@@ -3086,6 +3154,7 @@ export interface StayPayers {
   override_reason: string | null;
   payer_id: string;
   policy_no: string | null;
+  rule_version_id: string | null;
   seq: number;
   status: Generated<string>;
   valid_until: string | null;
@@ -3097,7 +3166,9 @@ export interface StayVentDays {
   encounter_id: string;
   minimum: Generated<boolean>;
   package_included: Generated<boolean>;
+  price_item_id: string | null;
   tariff_id: string | null;
+  unit_price: Numeric | null;
 }
 
 export interface StockAlertRuns {
@@ -3491,6 +3562,68 @@ export interface SystemModules {
   updated_by: string | null;
 }
 
+export interface TariffChangeItems {
+  action: string;
+  change_id: string;
+  id: Generated<string>;
+  kind: string;
+  list_id: string;
+  markup_pct: Numeric | null;
+  prev_markup: Numeric | null;
+  prev_price: Numeric | null;
+  price: Numeric | null;
+  ref: string;
+  valid_from: string;
+}
+
+export interface TariffChanges {
+  applied_at: Timestamp | null;
+  approval: Generated<string>;
+  change_no: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  id: Generated<string>;
+  kind: string;
+  reason: string;
+  source: Generated<string>;
+  status: string;
+  title: string;
+}
+
+export interface TariffListItems {
+  change_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  kind: string;
+  list_id: string;
+  markup_pct: Numeric | null;
+  price: Numeric | null;
+  ref: Generated<string | null>;
+  stock_category_id: string | null;
+  stock_item_id: string | null;
+  superseded: Generated<boolean>;
+  tariff_id: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+}
+
+export interface TariffLists {
+  code: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  department_id: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  payer_id: string | null;
+  scope: string;
+}
+
 export interface UserCapabilities {
   capabilities: string[] | null;
   user_id: string | null;
@@ -3644,6 +3777,8 @@ export interface DB {
   inpatient_stays: InpatientStays;
   inpatient_transfers: InpatientTransfers;
   invoice_line_items: InvoiceLineItems;
+  invoice_line_reprices: InvoiceLineReprices;
+  invoice_line_shares: InvoiceLineShares;
   invoices: Invoices;
   ipd_reminders: IpdReminders;
   lab_analytes: LabAnalytes;
@@ -3740,6 +3875,8 @@ export interface DB {
   patient_files: PatientFiles;
   patient_implants: PatientImplants;
   patients: Patients;
+  payer_rule_clauses: PayerRuleClauses;
+  payer_rule_versions: PayerRuleVersions;
   payers: Payers;
   payments: Payments;
   prescriptions: Prescriptions;
@@ -3784,6 +3921,10 @@ export interface DB {
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;
   system_modules: SystemModules;
+  tariff_change_items: TariffChangeItems;
+  tariff_changes: TariffChanges;
+  tariff_list_items: TariffListItems;
+  tariff_lists: TariffLists;
   user_capabilities: UserCapabilities;
   user_notifications: UserNotifications;
   user_roles: UserRoles;

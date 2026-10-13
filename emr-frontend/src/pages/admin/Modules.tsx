@@ -45,6 +45,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'or' && <OrSettingsCard s={s} set={setS} />}
       {m.code === 'procurement' && <ProcSettings s={s} set={setS} />}
       {m.code === 'finance' && <FinSettings s={s} set={setS} />}
+      {m.code === 'tariffs' && <TariffSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -508,6 +509,30 @@ function FinSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
                 const x = { ...man }; if (e.target.value === '') delete x[d.id]; else x[d.id] = Math.min(100, Math.max(0, Number(e.target.value))); upd('overhead_manual', x); }} /></label>)}
           </div>
         </div>)}
+    </div>
+  );
+}
+
+/** 0054: სატარიფო ფენა — ფასთა ნუსხები, ცვლილების დამტკიცება, ამბულატორიის წილი წესებით */
+function TariffSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 } as const;
+  return (
+    <div style={grid}>
+      <Field label="ფასის / წესის ცვლილების დამტკიცება" htmlFor="tca" hint="სავალდებულოზე ცვლილებას ამტკიცებს მეორე პირი (უფლება „ტარიფების დამტკიცება“, ავტორის გარდა); ძველი ეკრანებიდან პირდაპირი ცვლილება იბლოკება">
+        <select id="tca" className="select" value={v<string>('tariff_change_approval') ?? 'off'} onChange={(e) => upd('tariff_change_approval', e.target.value)}>
+          <option value="off">არ არის საჭირო — მაშინვე ძალაშია</option><option value="required">სავალდებულო — მეორე პირი</option></select></Field>
+      <Field label="ამბულატორიის გადამხდელის წილი" htmlFor="tom" hint="წესებით — იგივე ძრავა, რაც სტაციონარში (ვერსია, პუნქტები, თანაგადახდა); ბილინგს შეუძლია ხელით შეცვლა, მიზეზით">
+        <select id="tom" className="select" value={v<string>('opd_payer_mode') ?? 'manual'} onChange={(e) => upd('opd_payer_mode', e.target.value)}>
+          <option value="manual">ხელით (სალარო)</option><option value="rules">გადამხდელის წესებით (ავტომატურად)</option></select></Field>
+      <Field label="გადამხდელის (ხელშეკრულების) ფასი" htmlFor="tpp" hint="ძებნის რიგი: გადამხდელი → განყოფილება → საბაზო. გადამხდელისთვის გამორიცხული კატეგორია / კოდი — ჩვეულებრივი ფასით">
+        <select id="tpp" className="select" value={v<string>('payer_price_mode') ?? 'primary'} onChange={(e) => upd('payer_price_mode', e.target.value)}>
+          <option value="primary">ძირითადი გადამხდელის ნუსხით</option><option value="off">არ გამოიყენება (მხოლოდ განყოფილება / საბაზო)</option></select></Field>
+      <Field label="გადამხდელის ცვლილებისას ხაზების გადაფასება" htmlFor="trp" hint="ფასი ხაზზე ფიქსირდება შექმნისას; ავტომატური ხაზები (საწოლდღე, ვენტილაცია, ოპერაცია) ყოველთვის მიმდინარე გადამხდელით ითვლება">
+        <select id="trp" className="select" value={v<string>('reprice_on_payer_change') ?? 'auto_unpaid'} onChange={(e) => upd('reprice_on_payer_change', e.target.value)}>
+          <option value="auto_unpaid">ავტომატურად, თუ გადახდა არ არის</option><option value="manual">მხოლოდ ღილაკით („გადაფასება“)</option></select></Field>
+      <span className="small muted" style={{ gridColumn: '1 / -1' }}>ნუსხები, ცვლილებები და გადამხდელის წესები — <Link to="/admin/tariffs">ადმინისტრირება → ტარიფები</Link>.</span>
     </div>
   );
 }

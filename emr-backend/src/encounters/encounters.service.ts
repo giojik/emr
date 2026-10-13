@@ -9,6 +9,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { PayInitialDto, PaymentDto, UpdateClinicalDto, WalkInDto } from './dto/encounters.dto';
 import { EncounterCoreService, type Trx } from './encounter-core.service';
+import { applyOpdRules } from '../tariffs/payer-shares';
 
 export const PAYMENT_ERRORS = { chk_invoice_overpaid: 'გადახდის თანხა აღემატება დარჩენილ დავალიანებას' };
 
@@ -105,6 +106,9 @@ export class EncountersService {
   payInitial(id: string, dto: PayInitialDto | undefined, user: AuthUser, ctx: AuditContext) {
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
       await this.core.lock(trx, id, ['planned']);
+      // 0054a: ამბ. წილი წესებით — გადასათვლელი (ხაზი / გადამხდელი შეიცვალა) → ჯერ გადათვლა
+      const inv0 = await trx.selectFrom('invoices').select('id').where('encounter_id', '=', id).executeTakeFirst();
+      if (inv0) await applyOpdRules(trx, inv0.id, { onlyStale: true });
       const inv = await trx.selectFrom('invoices').selectAll().where('encounter_id', '=', id).forUpdate().executeTakeFirst();
       if (!inv) throw new ConflictException('ვიზიტს ინვოისი არ აქვს');
 
@@ -183,6 +187,7 @@ export class EncountersService {
 
   // ---------------------------------------------------------------- helpers
   async insertPayment(trx: Trx, invoiceId: string, dto: PaymentDto, user: AuthUser, ctx: AuditContext) {
+    await applyOpdRules(trx, invoiceId, { onlyStale: true });                  // 0054a
     const p = await trx.insertInto('payments').values({
       invoice_id: invoiceId, amount: dto.amount.toFixed(2), method: dto.method,
       terminal_ref: dto.terminal_ref ?? null, received_by: user.id,

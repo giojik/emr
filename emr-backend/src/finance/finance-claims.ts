@@ -2,6 +2,7 @@ import { BadRequestException, Body, ConflictException, Controller, Delete, Get, 
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { Request, Response } from 'express';
+import { applyOpdRules } from '../tariffs/payer-shares';
 import { sql } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -39,6 +40,13 @@ export class FinClaimsService {
 
   /** ქლეიმში ჯერ არშემავალი შემთხვევები (გადამხდელი × პერიოდი; ერთი შემთხვევა × გადამხდელი — მხოლოდ ერთ ქლეიმში) */
   async candidates(payerId: string, from: string, to: string, ex: Ex = this.db): Promise<Candidate[]> {
+    // 0054a: ამბ. წილი წესებით — გადასათვლელი ინვოისები (ამ გადამხდელის) ჯერ გადაითვლება
+    const stale = await ex.selectFrom('invoices').select('id').where('payer_shares_stale', '=', true)
+      .where((eb) => eb.or([eb('insurance_payer_id', '=', payerId), eb('state_payer_id', '=', payerId)])).execute();
+    for (const s of stale) {
+      if (ex.isTransaction) await applyOpdRules(ex as Trx, s.id, { onlyStale: true });
+      else await this.db.transaction().execute((trx) => applyOpdRules(trx, s.id, { onlyStale: true })).catch(() => undefined);
+    }
     return (await sql<Candidate>`
       SELECT 'ipd' AS kind, i.id AS invoice_id, min(sp.id::text)::uuid AS stay_payer_id, sp.payer_id, CASE WHEN py.kind = 'state' THEN 'state' ELSE 'insurance' END AS share_slot,
              sum(sp.covered_amount)::text AS claimed, to_char(fin_local_date(i.finalized_at), 'YYYY-MM-DD') AS case_date, i.invoice_number, st.adm_no,
@@ -286,6 +294,7 @@ export class FinClaimsService {
               if (d > 0) { await trx.updateTable('stay_payers').set({ covered_amount: r2(n(s.covered_amount) - d).toFixed(2) }).where('id', '=', s.id).execute(); rest = r2(rest - d); }
             }
           }
+          await sql`SELECT fin_line_shares_to_patient(${it.invoice_id}::uuid, ${it.payer_id}::uuid, ${amount}::numeric)`.execute(trx);   // 0054a
           await sql`SELECT set_config('emr.fin_resolution', 'off', true)`.execute(trx);
         }
         await trx.updateTable('fin_claim_items').set({ resolution: dto.action, resolved_amount: amount.toFixed(2), resolution_reason: dto.reason.trim(), resolved_by: u.id, resolved_at: sql`now()` })

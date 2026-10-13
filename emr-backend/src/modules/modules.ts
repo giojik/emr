@@ -146,6 +146,13 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       return null;
     },
   },
+  // 0054: სატარიფო ფენა
+  tariffs: {
+    keys: {
+      tariff_change_approval: (v) => oneOf(v, ['off', 'required']), opd_payer_mode: (v) => oneOf(v, ['manual', 'rules']),
+      payer_price_mode: (v) => oneOf(v, ['primary', 'off']), reprice_on_payer_change: (v) => oneOf(v, ['auto_unpaid', 'manual']),
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

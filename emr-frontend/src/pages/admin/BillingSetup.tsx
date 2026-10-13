@@ -200,6 +200,7 @@ function Payers() {
         <label className="row small"><input type="checkbox" checked={inactive} onChange={(e) => setInactive(e.target.checked)} /> გათიშულებიც</label>
         <button className="btn primary" type="button" onClick={() => setEdit('new')}>+ გადამხდელი</button></div>
       <span className="hint">აქ — ნაგულისხმევი პირობები. ჰოსპიტალიზაციაზე გადამხდელის დამატებისას (საგარანტიო წერილი) პირობები ივსება აქედან და შეიძლება შეიცვალოს.</span>
+      <span className="hint">0054: პირობების ცვლილება ქმნის გადამხდელის წესების ახალ ვერსიას (დღეიდან); ვერსიები, პუნქტები (ასაკი / სქესი / დიაგნოზი / კოდი), თანაგადახდა და ხელშეკრულების ფასები — <Link to="/admin/tariffs?tab=rules">ადმინისტრირება → ტარიფები</Link>.</span>
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (
         <table className="table">

@@ -49,7 +49,9 @@ export interface Referral {
   id: string; type: 'lab' | 'imaging' | 'hospitalization' | 'specialist_consult'; status: 'requested' | 'in_progress' | 'completed' | 'cancelled';
   reason: string; result_text: string | null; created_at: string; completed_at: string | null;
 }
-export interface InvoiceLine { id: string; tariff_id: string | null; description: string; quantity: number; unit_price: string; original_price: string | null; discount_reason: string | null; line_total: string; referral_id: string | null; category?: string; package_included?: boolean }
+export interface InvoiceLine { id: string; tariff_id: string | null; description: string; quantity: number; unit_price: string; original_price: string | null; discount_reason: string | null; line_total: string; referral_id: string | null; category?: string; package_included?: boolean;
+  /** 0054: ფასის წყარო (ნუსხა), ხაზობრივი წილი */
+  price_scope?: 'base' | 'department' | 'payer' | null; price_list_name?: string | null; shares?: { kind: string; payer_id: string | null; amount: string }[] }
 export interface Payment { id: string; amount: string; method: string; terminal_ref: string | null; paid_at: string }
 export interface Invoice {
   id: string; invoice_number: string; total_amount: string; patient_share: string; insurance_share: string; state_share: string;
@@ -57,6 +59,8 @@ export interface Invoice {
   is_inpatient?: boolean; finalized_at?: string | null; writeoff_amount?: string;
   /** 0053: ამბულატორიის გადამხდელი */
   insurance_payer_id?: string | null; state_payer_id?: string | null; insurance_payer_name?: string | null; state_payer_name?: string | null; claim_nos?: string | null;
+  /** 0054: ამბ. წილი წესებით / ხელით; გადაფასებები */
+  opd_payer_mode?: 'manual' | 'rules'; payer_shares_manual?: boolean; payer_shares_reason?: string | null; payer_shares_stale?: boolean; reprice_count?: number;
 }
 export interface EncounterDetail {
   id: string; status: EncounterStatus; visit_kind?: 'consultation' | 'lab'; external_referral?: string | null; start_time: string; end_time: string | null; attending_doctor_id: string | null;

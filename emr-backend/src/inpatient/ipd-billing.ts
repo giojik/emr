@@ -16,6 +16,9 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { CATEGORY_KA, loadBilling, MODE_KA, PAYER_KIND_KA } from './ipd-billing-calc';
+import { writeLineShares } from '../tariffs/payer-shares';
+import { repriceOnPayerChange } from '../tariffs/reprice';
+import { tariffRules } from '../tariffs/tariff-rules';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -127,11 +130,13 @@ export class IpdBillingService {
     const days = await this.db.selectFrom('stay_bed_days as d').innerJoin('departments as dep', 'dep.id', 'd.department_id').innerJoin('bed_types as bt', 'bt.code', 'd.bed_type_code')
       .leftJoin('beds as bd', 'bd.id', 'd.bed_id').leftJoin('service_tariffs as t', 't.id', 'd.tariff_id')
       .select([sql<string>`to_char(d.day, 'YYYY-MM-DD')`.as('day'), 'dep.name as department_name', 'bd.code as bed_code', 'bt.name as bed_type_name', 'd.bed_type_code', 'd.on_leave', 'd.minimum',
-        'd.package_included', 't.title as tariff_title', 't.base_price as price'])
+        'd.package_included', 't.title as tariff_title', sql<string>`coalesce(d.unit_price, t.base_price)`.as('price')])
       .where('d.encounter_id', '=', encounterId).orderBy('d.day').execute();
     const lines = await this.db.selectFrom('invoice_line_items as l').leftJoin('users as a', 'a.id', 'l.added_by')
       .select(['l.id', 'l.category', 'l.description', 'l.quantity', 'l.unit_price', 'l.original_price', 'l.line_total', 'l.package_included', 'l.discount_reason', 'l.created_at',
-        sql<string | null>`to_char(l.service_date, 'YYYY-MM-DD')`.as('service_date'), 'l.added_by', sql<string | null>`a.first_name || ' ' || a.last_name`.as('added_by_name')])
+        sql<string | null>`to_char(l.service_date, 'YYYY-MM-DD')`.as('service_date'), 'l.added_by', sql<string | null>`a.first_name || ' ' || a.last_name`.as('added_by_name'),
+        'l.tariff_id', 'l.stock_doc_line_id', 'l.or_case_id',
+        sql<string | null>`(SELECT tl.scope || ':' || tl.name FROM tariff_list_items x JOIN tariff_lists tl ON tl.id = x.list_id WHERE x.id = l.price_item_id)`.as('price_source')])
       .where('l.invoice_id', '=', b.invoice.id).orderBy(sql`array_position(ARRAY['package','bed','ventilation','surgery','anesthesia','consult','service','lab','radiology','endoscopy','medication','supply','implant','other']::varchar[], l.category)`)
       .orderBy('l.created_at').execute();
     const payers = await this.db.selectFrom('stay_payers as sp').innerJoin('payers as p', 'p.id', 'sp.payer_id').leftJoin('drg_groups as g', 'g.code', 'sp.drg_code')
@@ -158,14 +163,14 @@ export class IpdBillingService {
     const missingTariff = days.filter((d) => !d.tariff_title).length;
     // 0047: ხელოვნური ვენტილაციის დღეები
     const vent = await this.db.selectFrom('stay_vent_days as d').leftJoin('service_tariffs as t', 't.id', 'd.tariff_id')
-      .select([sql<string>`to_char(d.day, 'YYYY-MM-DD')`.as('day'), 'd.minimum', 'd.package_included', 't.title as tariff_title', 't.base_price as price'])
+      .select([sql<string>`to_char(d.day, 'YYYY-MM-DD')`.as('day'), 'd.minimum', 'd.package_included', 't.title as tariff_title', sql<string>`coalesce(d.unit_price, t.base_price)`.as('price')])
       .where('d.encounter_id', '=', encounterId).orderBy('d.day').execute();
     const icuMod = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
     const ventBilling = !!icuMod?.enabled && (icuMod.settings as Record<string, unknown>)?.vent_billing !== false;
     return {
       stay: { encounter_id: st.encounter_id, patient_id: st.patient_id, adm_no: st.adm_no, status: st.status, admitted_at: st.admitted_at, ended_at: st.ended_at, first_name: st.first_name, last_name: st.last_name,
         personal_number: st.personal_number },
-      invoice_number: b.invoice.invoice_number, finalized: b.finalized, finalized_at: b.invoice.finalized_at, finalized_by_name: fin?.n ?? null, reopen_count: b.invoice.reopen_count,
+      invoice_id: b.invoice.id, invoice_number: b.invoice.invoice_number, finalized: b.finalized, finalized_at: b.invoice.finalized_at, finalized_by_name: fin?.n ?? null, reopen_count: b.invoice.reopen_count,
       package: pkg?.id ? strip(pkg as Record<string, unknown>, ['price']) : null,
       bed_days: days.map((d) => strip(d as Record<string, unknown>, ['price'])), bed_days_count: days.length, missing_tariff_days: missingTariff,
       vent_days: vent.map((d) => strip(d as Record<string, unknown>, ['price'])), vent_billing: ventBilling,
@@ -180,7 +185,7 @@ export class IpdBillingService {
       amounts_visible: r.amounts,
       can: {
         services: r.services && !b.finalized && st.status !== 'cancelled', package: r.front && !b.finalized && st.status !== 'cancelled', payers: r.front && !b.finalized && st.status !== 'cancelled',
-        override: r.billing && !b.finalized, deposits: r.front && st.status !== 'cancelled', void_deposit: r.billing && !b.finalized,
+        override: r.billing && !b.finalized, reprice: r.billing && !b.finalized, deposits: r.front && st.status !== 'cancelled', void_deposit: r.billing && !b.finalized,
         finalize: r.billing && !b.finalized && st.status === 'discharged', reopen: r.billing && b.finalized,
       },
     };
@@ -227,16 +232,38 @@ export class IpdBillingService {
         const p = await trx.selectFrom('payers').selectAll().where('id', '=', dto.payer_id!).executeTakeFirst();
         if (!p?.is_active) throw new BadRequestException('გადამხდელი ვერ მოიძებნა ან გათიშულია');
         const seq = dto.seq ?? ((await trx.selectFrom('stay_payers').select(sql<number>`coalesce(max(seq), 0)::int`.as('m')).where('encounter_id', '=', encounterId).where('status', '=', 'active').executeTakeFirstOrThrow()).m + 1);
-        const vals = await this.payerTerms(trx, { ...dto }, {
+        // 0054a: პირობები — გადამხდელის წესების ვერსიიდან, რომელიც მოქმედებს მიღების დღეს (applies_to: all / ipd); ვერსიის გარეშე — ნაგულისხმევი
+        const v = (await sql<{ id: string | null; mode: string; coverage_pct: string; limit_amount: string | null; deductible: string; writeoff_excess: boolean;
+          excluded_categories: string[] | null; drg_base_rate: string | null; fixed_amount: string | null }>`SELECT (x).id, (x).mode, (x).coverage_pct, (x).limit_amount, (x).deductible,
+          (x).writeoff_excess, (x).excluded_categories, (x).drg_base_rate, (x).fixed_amount
+          FROM (SELECT payer_rule_version_at(${p.id}::uuid, fin_local_date(${st.admitted_at}::timestamptz), 'ipd') AS x) q`.execute(trx)).rows[0];
+        const nn = (x: string | null | undefined) => (x === null || x === undefined ? null : Number(x));
+        const vals = await this.payerTerms(trx, { ...dto }, v?.id ? {
+          mode: v.mode, coverage_pct: Number(v.coverage_pct), limit_amount: nn(v.limit_amount), deductible: Number(v.deductible), writeoff_excess: v.writeoff_excess,
+          excluded_categories: v.excluded_categories ?? [], drg_base_rate: nn(v.drg_base_rate), fixed_amount: nn(v.fixed_amount),
+        } : {
           mode: p.default_mode, coverage_pct: Number(p.default_coverage_pct), limit_amount: p.default_limit === null ? null : Number(p.default_limit), deductible: Number(p.default_deductible),
           writeoff_excess: p.writeoff_excess, excluded_categories: p.excluded_categories ?? [], drg_base_rate: p.drg_base_rate === null ? null : Number(p.drg_base_rate),
         }, st.patient_id);
-        const row = await trx.insertInto('stay_payers').values({ encounter_id: encounterId, payer_id: p.id, seq, created_by: u.id, ...vals } as never).returningAll().executeTakeFirstOrThrow();
+        const row = await trx.insertInto('stay_payers').values({ encounter_id: encounterId, payer_id: p.id, seq, created_by: u.id, rule_version_id: v?.id ?? null, ...vals } as never).returningAll().executeTakeFirstOrThrow();
+        await this.afterPayerChange(trx, encounterId, u);
         await this.ipd.event(trx, { encounter_id: encounterId, kind: 'payer_added', data: { payer: p.name, mode: vals.mode, coverage_pct: vals.coverage_pct, guarantee_no: vals.guarantee_no ?? null, drg: vals.drg_code ?? null } }, u);
         await this.audit.log(ctx, { action: 'IPD_ADD_PAYER', entityName: 'stay_payers', entityId: row.id, newData: row }, trx);
         return row;
       });
     } catch (e) { mapPgError(e, { ux_stay_payers_seq: 'ამ რიგითობით გადამხდელი უკვე არის', ux_stay_payers_payer: 'ეს გადამხდელი უკვე დამატებულია', chk_sp_override: 'შესწორებას სჭირდება მიზეზი' }); }
+  }
+
+  /**
+   * 0054: ძირითადი გადამხდელი შეიცვალა → ხელშეკრულების ფასები: ავტომატური ხაზები (საწოლდღე / ვენტილაცია / ოპერაცია) — სინქრონიზაციით,
+   * სხვა ხაზები — reprice_on_payer_change (auto_unpaid: სტაციონარს ფინალიზაციამდე გადახდა არ აქვს — ავანსი ცალკეა).
+   */
+  private async afterPayerChange(trx: Trx, encounterId: string, u: AuthUser) {
+    const inv = await trx.selectFrom('invoices').select('id').where('encounter_id', '=', encounterId).executeTakeFirst();
+    if (!inv) return;
+    const r = await tariffRules(trx);
+    await repriceOnPayerChange(trx, inv.id, u.id, r.reprice_on_payer_change);
+    await this.syncBedDays(trx, encounterId);
   }
 
   /** პირობები: DTO → (ნაგულისხმევი გადამხდელიდან / არსებული ჩანაწერიდან); DRG — წონა ცნობარიდან, განაკვეთი გადამხდელიდან (დაფიქსირება) */
@@ -294,6 +321,7 @@ export class IpdBillingService {
           fixed_amount: n(old.fixed_amount), drg_code: old.drg_code, drg_weight: n(old.drg_weight) }, st.patient_id);
         if (dto.seq !== undefined) vals.seq = dto.seq;
         const row = await trx.updateTable('stay_payers').set(vals as never).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+        if (dto.seq !== undefined || dto.excluded_categories !== undefined) await this.afterPayerChange(trx, old.encounter_id, u);
         await this.audit.log(ctx, { action: dto.override_amount !== undefined ? 'IPD_PAYER_OVERRIDE' : 'IPD_UPDATE_PAYER', entityName: 'stay_payers', entityId: id, oldData: old, newData: row }, trx);
         return row;
       });
@@ -308,6 +336,7 @@ export class IpdBillingService {
       if (old.status !== 'active') throw new ConflictException('უკვე გაუქმებულია');
       this.notFinal(await this.invoiceLocked(trx, old.encounter_id));
       await trx.updateTable('stay_payers').set({ status: 'cancelled', cancel_reason: dto.reason.trim() }).where('id', '=', id).execute();
+      await this.afterPayerChange(trx, old.encounter_id, u);
       await this.ipd.event(trx, { encounter_id: old.encounter_id, kind: 'payer_cancelled', data: { payer: old.name, reason: dto.reason.trim() } }, u);
       await this.audit.log(ctx, { action: 'IPD_CANCEL_PAYER', entityName: 'stay_payers', entityId: id, oldData: old, newData: { reason: dto.reason } }, trx);
       return { ok: true };
@@ -428,6 +457,7 @@ export class IpdBillingService {
         for (const p of b.calc.payers) await trx.updateTable('stay_payers').set({ covered_amount: p.amount.toFixed(2) }).where('id', '=', p.id).execute();
         await trx.updateTable('invoices').set({ insurance_share: b.calc.insurance.toFixed(2), state_share: b.calc.state.toFixed(2), writeoff_amount: b.calc.writeoff.toFixed(2) })
           .where('id', '=', inv.id).execute();
+        await writeLineShares(trx, inv.id, b.calc);                                 // 0054a: ხაზობრივი წილი (შემოსავლის რეპორტი)
         const after = await trx.selectFrom('invoices').select('patient_share').where('id', '=', inv.id).executeTakeFirstOrThrow();
         const apply = r2(Math.min(b.money.deposit_net - b.money.deposit_applied, Number(after.patient_share) - b.money.paid));
         if (apply > 0) await trx.insertInto('payments').values({ invoice_id: inv.id, amount: apply.toFixed(2), method: 'deposit', received_by: u.id }).execute();
@@ -452,6 +482,7 @@ export class IpdBillingService {
       await trx.deleteFrom('payments').where('invoice_id', '=', inv.id).where('method', '=', 'deposit').execute();
       await trx.updateTable('invoices').set({ insurance_share: '0', state_share: '0', writeoff_amount: '0' }).where('id', '=', inv.id).execute();
       await trx.updateTable('stay_payers').set({ covered_amount: null }).where('encounter_id', '=', encounterId).execute();
+      await trx.deleteFrom('invoice_line_shares').where('invoice_id', '=', inv.id).execute();
       await this.ipd.event(trx, { encounter_id: encounterId, kind: 'billing_reopened', data: { reason: dto.reason.trim(), refunds_after_final: refunds.n } }, u);
       await this.audit.log(ctx, { action: 'IPD_BILLING_REOPEN', entityName: 'invoices', entityId: inv.id, oldData: { finalized_at: inv.finalized_at, patient_share: inv.patient_share }, newData: { reason: dto.reason } }, trx);
       return { finalized: false };
