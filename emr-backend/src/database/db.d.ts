@@ -519,6 +519,7 @@ export interface DenialReasons {
   default_action: string | null;
   external_codes: Generated<string[]>;
   is_active: Generated<boolean>;
+  scrub_rules: Generated<string[]>;
   sort_order: Generated<number>;
   title: string;
 }

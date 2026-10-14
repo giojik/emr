@@ -155,11 +155,20 @@ export class ClaimExportService {
     try {
       await this.db.transaction().execute(async (trx) => {
         await trx.insertInto('denial_reasons').values({ code: d.code!, title: d.title!.trim(), category: d.category ?? 'other', external_codes: this.extCodes(d.external_codes),
-          default_action: d.default_action ?? null, is_active: d.is_active ?? true, sort_order: d.sort_order ?? 100 }).execute();
+          default_action: d.default_action ?? null, is_active: d.is_active ?? true, sort_order: d.sort_order ?? 100, scrub_rules: await this.ruleCodes(trx, d.scrub_rules) }).execute();
         await this.audit.log(ctx, { action: 'DENIAL_REASON_CREATE', entityName: 'denial_reasons', entityId: d.code!, newData: d }, trx);
       });
     } catch (e) { return pg(e); }
     return this.reasons();
+  }
+  /** 0059: მიბმული შემოწმების წესები — არსებული კოდები */
+  private async ruleCodes(ex: Trx, x?: string[]) {
+    const codes = [...new Set((x ?? []).map((c) => c.trim().toUpperCase()).filter(Boolean))];
+    if (!codes.length) return [];
+    const ok = new Set((await ex.selectFrom('scrub_rules').select('code').where('code', 'in', codes).execute()).map((r) => r.code));
+    const bad = codes.filter((c) => !ok.has(c));
+    if (bad.length) throw new BadRequestException(`შემოწმების წესი ვერ მოიძებნა: ${bad.join(', ')}`);
+    return codes;
   }
   private extCodes(x?: string[]) { return [...new Set((x ?? []).map((s) => s.trim()).filter(Boolean))].slice(0, 50); }
   async updateReason(code: string, d: ReasonDto, ctx: AuditContext) {
@@ -170,7 +179,8 @@ export class ClaimExportService {
         if (d.code && d.code !== code) throw new BadRequestException('კოდი არ იცვლება');
         const set = { ...(d.title !== undefined && { title: d.title.trim() }), ...(d.category !== undefined && { category: d.category }),
           ...(d.external_codes !== undefined && { external_codes: this.extCodes(d.external_codes) }), ...(d.default_action !== undefined && { default_action: d.default_action }),
-          ...(d.is_active !== undefined && { is_active: d.is_active }), ...(d.sort_order !== undefined && { sort_order: d.sort_order }) };
+          ...(d.is_active !== undefined && { is_active: d.is_active }), ...(d.sort_order !== undefined && { sort_order: d.sort_order }),
+          ...(d.scrub_rules !== undefined && { scrub_rules: await this.ruleCodes(trx, d.scrub_rules) }) };
         if (!Object.keys(set).length) return;
         await trx.updateTable('denial_reasons').set(set).where('code', '=', code).execute();
         await this.audit.log(ctx, { action: 'DENIAL_REASON_UPDATE', entityName: 'denial_reasons', entityId: code, oldData: r, newData: set }, trx);
@@ -445,8 +455,9 @@ export class ClaimExportService {
     await this.c.rules();
     const p = this.c.period(from, to);
     const rows = (await sql<{ item_id: string; claim_id: string; claim_no: string | null; payer_id: string; payer_name: string; kind: string; claimed: string; resp_amount: string;
-      resp_status: string; reason: string; reason_title: string; category: string; dept: string | null; invoice_number: string; patient: string; resp_date: string; resolution: string | null; resolved_amount: string }>`
-      SELECT ci.id AS item_id, c.id AS claim_id, c.claim_no, c.payer_id, py.name AS payer_name, ci.kind, ci.claimed::text, ci.resp_amount::text, ci.resp_status,
+      resp_status: string; reason: string; reason_title: string; category: string; dept: string | null; invoice_number: string; patient: string; resp_date: string; resolution: string | null; resolved_amount: string;
+      invoice_id: string; scrub_rules: string[] }>`
+      SELECT ci.id AS item_id, ci.invoice_id, dr.scrub_rules, c.id AS claim_id, c.claim_no, c.payer_id, py.name AS payer_name, ci.kind, ci.claimed::text, ci.resp_amount::text, ci.resp_status,
              dr.code AS reason, dr.title AS reason_title, dr.category, coalesce(bd.name, d.name) AS dept, i.invoice_number, pt.last_name || ' ' || pt.first_name AS patient,
              to_char(fin_local_date(ci.resp_at), 'YYYY-MM-DD') AS resp_date, ci.resolution, ci.resolved_amount::text
         FROM fin_claim_items ci JOIN fin_claims c ON c.id = ci.claim_id JOIN payers py ON py.id = ci.payer_id
@@ -477,6 +488,26 @@ export class ClaimExportService {
       return [...m.values()].sort((a, b) => b.denied - a.denied);
     };
     const denied = r2(rows.reduce((s, r) => s + n(r.claimed) - n(r.resp_amount), 0));
+    // 0059: მიბმული წესების ეფექტიანობა (ახლანდელი მონაცემებით / წესებით):
+    //   caught — აქტიური წესი ახლა იჭერს; overridden — იჭერს, მაგრამ გამონაკლისით; inactive — წესი გამორთულია, ჩართულს დაიჭერდა;
+    //   missed — წესები ვერ იჭერს (ლოგიკის / პარამეტრის ხარვეზი); unlinked — მიზეზს წესი არ აქვს მიბმული
+    const all = await loadRules(this.db);
+    const eff = new Map<string, { status: 'caught' | 'overridden' | 'inactive' | 'missed' | 'unlinked'; rules: string[] }>();
+    for (const r of rows.slice(0, 500)) {
+      if (!r.scrub_rules.length) { eff.set(r.item_id, { status: 'unlinked', rules: [] }); continue; }
+      const linked = all.filter((x) => r.scrub_rules.includes(x.code));
+      const res = await scrubInvoice(this.db, r.invoice_id, { payerId: r.payer_id, rules: linked.map((x) => ({ ...x, is_active: true })) });
+      const fired = [...new Set(res.issues.map((i) => i.code))];
+      const activeFired = fired.filter((c) => linked.find((x) => x.code === c)?.is_active);
+      const status = !fired.length ? 'missed' : activeFired.length ? (res.issues.filter((i) => activeFired.includes(i.code)).every((i) => i.overridden) ? 'overridden' : 'caught') : 'inactive';
+      eff.set(r.item_id, { status, rules: fired });
+    }
+    const effRows = [...new Set(rows.map((r) => r.reason))].map((code) => {
+      const its = rows.filter((r) => r.reason === code && eff.has(r.item_id));
+      const cnt = (st: string) => its.filter((r) => eff.get(r.item_id)!.status === st).length;
+      return { reason: code, title: its[0]?.reason_title ?? rows.find((r) => r.reason === code)!.reason_title, rules: rows.find((r) => r.reason === code)!.scrub_rules, cases: its.length,
+        caught: cnt('caught'), overridden: cnt('overridden'), inactive: cnt('inactive'), missed: cnt('missed'), unlinked: cnt('unlinked') };
+    }).sort((a, b) => (b.missed + b.inactive + b.unlinked) - (a.missed + a.inactive + a.unlinked) || b.cases - a.cases);
     return {
       from: p.from, to: p.to,
       totals: { responded_cases: base.cases, responded_claimed: n(base.claimed), denied_cases: rows.length, denied, denial_rate: n(base.claimed) ? r2((denied / n(base.claimed)) * 100) : 0,
@@ -486,7 +517,9 @@ export class ClaimExportService {
       by_category: group((r) => [r.category, CATEGORY_KA[r.category] ?? r.category]),
       by_department: group((r) => [r.dept ?? '—', r.dept ?? '—']),
       by_payer: group((r) => [r.payer_id, r.payer_name]),
-      items: rows.slice(0, 500).map((r) => ({ ...r, claimed: n(r.claimed), approved: n(r.resp_amount), denied: r2(n(r.claimed) - n(r.resp_amount)), resp_ka: RESP_KA[r.resp_status] })),
+      rule_effect: effRows,
+      items: rows.slice(0, 500).map((r) => ({ ...r, claimed: n(r.claimed), approved: n(r.resp_amount), denied: r2(n(r.claimed) - n(r.resp_amount)), resp_ka: RESP_KA[r.resp_status],
+        rule_status: eff.get(r.item_id)?.status ?? null, rules_fired: eff.get(r.item_id)?.rules ?? [] })),
     };
   }
 }
@@ -511,6 +544,7 @@ class ReasonDto {
   @IsOptional() @IsIn(['patient', 'writeoff', null]) default_action?: 'patient' | 'writeoff' | null;
   @IsOptional() @IsBoolean() is_active?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(100_000) sort_order?: number;
+  @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({ each: true }) @MaxLength(40, { each: true }) scrub_rules?: string[];
 }
 class ExportDto { @IsOptional() @IsUUID() template_id?: string; @IsOptional() @IsString() @MaxLength(500) note?: string | null }
 class ResponseDto {

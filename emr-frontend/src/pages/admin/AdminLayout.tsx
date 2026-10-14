@@ -10,6 +10,7 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/drg', label: 'DRG', roles: ['admin', 'billing', 'drg', 'drg_admin', 'tariffs', 'accountant', 'viewer'] },
   { to: '/admin/scrubber', label: 'ქლეიმის შემოწმება', roles: ['admin', 'billing', 'drg', 'drg_admin', 'tariffs', 'accountant', 'viewer'] },
   { to: '/admin/claim-export', label: 'ქლეიმის ფაილები', roles: ['admin', 'accountant', 'viewer', 'billing'] },
+  { to: '/admin/config-package', label: 'კონფიგურაციის პაკეტი', roles: ['admin', 'drg_admin', 'accountant'] },
   { to: '/admin/billing', label: 'სტაციონარის ბილინგი', roles: ['admin', 'billing'] },
   { to: '/admin/catalog', label: 'კვლევების კატალოგი', roles: ['admin', 'lab_doctor', 'lab_manager', 'billing'] },
   { to: '/admin/devices', label: 'აპარატები', roles: ['admin', 'med_engineer'] },

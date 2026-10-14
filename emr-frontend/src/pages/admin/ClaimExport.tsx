@@ -290,11 +290,11 @@ function Reasons({ meta, edit }: { meta: ExportMeta; edit: boolean }) {
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (
         <table className="table">
-          <thead><tr><th>კოდი</th><th>დასახელება</th><th>კატეგორია</th><th>გადამხდელის კოდები</th><th>ნაგულისხმევი გადაწყვეტა</th><th className="num">გამოყენება</th></tr></thead>
+          <thead><tr><th>კოდი</th><th>დასახელება</th><th>კატეგორია</th><th>გადამხდელის კოდები</th><th>შემოწმების წესები</th><th>ნაგულისხმევი გადაწყვეტა</th><th className="num">გამოყენება</th></tr></thead>
           <tbody>{q.data?.map((r) => (
             <tr key={r.code} className="clickable" onClick={() => setDlg(r)} style={r.is_active ? undefined : { opacity: 0.55 }}>
               <td className="mono">{r.code}</td><td><strong>{r.title}</strong></td><td className="small">{r.category_ka}</td>
-              <td className="mono small">{r.external_codes.join(', ') || '—'}</td><td className="small">{r.default_action ? ACTION_KA[r.default_action] : <span className="muted">ხელით</span>}</td>
+              <td className="mono small">{r.external_codes.join(', ') || '—'}</td><td className="mono small">{r.scrub_rules.join(', ') || <span className="muted">—</span>}</td><td className="small">{r.default_action ? ACTION_KA[r.default_action] : <span className="muted">ხელით</span>}</td>
               <td className="num">{r.used || '—'}</td></tr>))}</tbody>
         </table>)}
       {dlg && <ReasonDialog r={dlg === 'new' ? null : dlg} meta={meta} edit={edit} onClose={() => setDlg(null)}
@@ -305,17 +305,18 @@ function Reasons({ meta, edit }: { meta: ExportMeta; edit: boolean }) {
 
 function ReasonDialog({ r, meta, edit, onClose, onDone }: { r: DenialReason | null; meta: ExportMeta; edit: boolean; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ code: r?.code ?? '', title: r?.title ?? '', category: r?.category ?? 'other', ext: r?.external_codes.join('; ') ?? '', action: r?.default_action ?? '',
-    is_active: r?.is_active ?? true, sort: String(r?.sort_order ?? 100) });
+    is_active: r?.is_active ?? true, sort: String(r?.sort_order ?? 100), rules: r?.scrub_rules ?? [] });
+  const rules = useQuery({ queryKey: ['scrub-rules'], queryFn: () => api<{ code: string; title: string; is_active: boolean; group_ka: string }[]>('/scrub/rules') });
   const m = useMutation({
     mutationFn: () => {
       const body = { title: f.title.trim(), category: f.category, external_codes: f.ext.split(';').map((x) => x.trim()).filter(Boolean), default_action: f.action || null,
-        is_active: f.is_active, sort_order: Number(f.sort) || 0 };
+        is_active: f.is_active, sort_order: Number(f.sort) || 0, scrub_rules: f.rules };
       return r ? api(`/denial-reasons/${r.code}`, { method: 'PATCH', body }) : api('/denial-reasons', { body: { ...body, code: f.code.trim().toUpperCase() } });
     },
     onSuccess: onDone,
   });
   return (
-    <Modal title={r ? `${r.code} — ${r.title}` : 'ახალი უარის მიზეზი'} onClose={onClose} width={720}
+    <Modal title={r ? `${r.code} — ${r.title}` : 'ახალი უარის მიზეზი'} onClose={onClose} width={860}
       footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button>{edit && <button className="btn primary" type="button" disabled={m.isPending || f.title.trim().length < 2 || !f.code} onClick={() => m.mutate()}>შენახვა</button>}</>}>
       <div className="stack" style={{ gap: 10 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: 10 }}>
@@ -330,6 +331,13 @@ function ReasonDialog({ r, meta, edit, onClose, onDone }: { r: DenialReason | nu
           <Field label="რიგი" htmlFor="dr-s"><input id="dr-s" className="input mono" disabled={!edit} inputMode="numeric" value={f.sort} onChange={(e) => setF({ ...f, sort: e.target.value })} /></Field>
         </div>
         <Field label="გადამხდელის კოდები / ტექსტები („;“-ით)" htmlFor="dr-e" hint="პასუხის ფაილში ასე წერია — იმპორტისას ემთხვევა ამ მიზეზს"><input id="dr-e" className="input mono" disabled={!edit} value={f.ext} onChange={(e) => setF({ ...f, ext: e.target.value })} /></Field>
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="small muted">შემოწმების წესები, რომლებმაც ეს უარი გაგზავნამდე უნდა დაიჭიროს (უარის ანგარიში აჩვენებს — იჭერს თუ არა)</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '4px 14px', maxHeight: 230, overflow: 'auto', padding: 4, border: '1px solid var(--line, #e5e5e5)', borderRadius: 8 }}>
+            {[...(rules.data ?? [])].sort((a, b) => Number((r?.scrub_rules ?? []).includes(b.code)) - Number((r?.scrub_rules ?? []).includes(a.code))).map((x) => (
+            <label key={x.code} className="row small" title={x.code} style={x.is_active ? undefined : { opacity: 0.6 }}><input type="checkbox" disabled={!edit} checked={f.rules.includes(x.code)}
+              onChange={() => setF({ ...f, rules: f.rules.includes(x.code) ? f.rules.filter((c) => c !== x.code) : [...f.rules, x.code] })} /> {x.title}</label>))}</div>
+        </div>
         <label className="row small"><input type="checkbox" disabled={!edit} checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> ჩართული</label>
         <ErrorBox error={m.error} />
       </div>

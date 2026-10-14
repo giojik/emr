@@ -133,7 +133,7 @@ export class TestDto {
   @IsOptional() @Transform(numT) @IsNumber() @Min(0) @Max(1_000_000_000) charges?: number | null;
 }
 
-interface Pkg {
+export interface Pkg {
   format: string; format_version: number; label?: string; valid_from?: string; settings?: Record<string, unknown>; notes?: string | null;
   groups: { code: string; title: string; weight: number | string; alos?: number | string | null; los_low?: number | null; los_high?: number | null; mdc?: string | null; kind?: string; notes?: string | null }[];
   lists: { code: string; title: string; kind: string; notes?: string | null; items: (string | { pattern: string; title?: string | null })[] }[];
@@ -887,7 +887,7 @@ export class DrgConfigService {
   }
 
   /** პაკეტიდან (JSON) — ახალი მონახაზი; ყველაფერი მოწმდება იმავე წესებით, რაც ხელით შეყვანისას */
-  async importPackage(schemeId: string, dto: PackageImportDto, u: AuthUser, ctx: AuditContext, action = 'DRG_VERSION_IMPORT') {
+  async importPackage(schemeId: string, dto: PackageImportDto, u: AuthUser, ctx: AuditContext, action = 'DRG_VERSION_IMPORT', dryRun = false) {
     const p = dto.package as unknown as Pkg;
     if (p?.format !== 'emr-drg-version' || p.format_version !== 1) throw new BadRequestException('ფაილი არ არის DRG ვერსიის პაკეტი (format: emr-drg-version, format_version: 1)');
     for (const k of ['groups', 'lists', 'cc', 'rules'] as const) if (!Array.isArray(p[k])) throw new BadRequestException(`პაკეტი: ${k} — სია`);
@@ -940,6 +940,8 @@ export class DrgConfigService {
     }).filter((x): x is NonNullable<typeof x> => !!x);
     if (settings.fallback_code && !gset.has(settings.fallback_code)) errors.push(`ნაგულისხმევი ჯგუფი ${settings.fallback_code} პაკეტში არ არის`);
     if (errors.length) throw new BadRequestException({ code: 'DRG_PACKAGE_INVALID', message: `პაკეტი: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? ` (+${errors.length - 5})` : ''}`, errors: errors.slice(0, 100) });
+    // 0059: კონფიგურაციის პაკეტი — მხოლოდ შემოწმება
+    if (dryRun) return { id: null as string | null, version_no: 0, groups: groups.length, lists: lists.length, cc: cc.length, rules: rules.length, components: comps.length };
     return this.db.transaction().execute(async (trx) => {
       const s = await trx.selectFrom('drg_schemes').select('is_active').where('id', '=', schemeId).forUpdate().executeTakeFirst();
       if (!s?.is_active) throw new BadRequestException('სქემა ვერ მოიძებნა ან გათიშულია');

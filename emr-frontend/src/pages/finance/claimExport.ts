@@ -21,7 +21,9 @@ export interface TemplateRow {
   updated_at: string; updated_by_name: string | null; payers: string[]; exports: number;
 }
 export interface Template extends Omit<TemplateRow, 'payers' | 'exports'> { config: ExportConfig | ResponseConfig; payers: { id: string; name: string; code: string }[] }
-export interface DenialReason { code: string; title: string; category: string; category_ka: string; external_codes: string[]; default_action: 'patient' | 'writeoff' | null; is_active: boolean; sort_order: number; used: number }
+export interface DenialReason { code: string; title: string; category: string; category_ka: string; external_codes: string[]; default_action: 'patient' | 'writeoff' | null; is_active: boolean; sort_order: number; used: number;
+  /** 0059: მიბმული შემოწმების წესები */
+  scrub_rules: string[] }
 export interface PayerTpl { id: string; name: string; code: string; kind: string; is_active: boolean; export_template_id: string | null; response_template_id: string | null;
   export_template_name: string | null; response_template_name: string | null }
 export interface ExportRow { id: string; file_name: string; sha256: string; rows: number; total: string; scrub_warnings: number; note: string | null; created_at: string; template_revision: number;
