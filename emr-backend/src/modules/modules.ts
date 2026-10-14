@@ -160,6 +160,8 @@ const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => boolean>
       manual_payer_drg: (v) => oneOf(v, ['allowed', 'grouper_only']), version_approval: (v) => oneOf(v, ['off', 'required']),
     },
   },
+  // 0057: ქლეიმის შემოწმება
+  scrubber: { keys: { finalize_check: (v) => oneOf(v, ['off', 'warn', 'block']), claim_check: (v) => oneOf(v, ['off', 'warn', 'block']) } },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

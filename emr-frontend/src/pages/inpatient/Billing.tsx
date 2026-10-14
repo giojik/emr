@@ -10,6 +10,7 @@ import { dateGe, money, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { CAT_KA, MODE_KA, type Drg, type Package, type Payer } from '../admin/BillingSetup';
 import { useModuleEnabled } from '../../lib/modules';
 import DrgPanel from './DrgPanel';
+import ScrubPanel from './ScrubPanel';
 
 /** სტაციონარის ბილინგი (0046): ჰოსპიტალიზაციის პანელი + სამუშაო სია / რეპორტი */
 type Money = Record<'total' | 'insurance' | 'state' | 'writeoff' | 'patient' | 'deposits' | 'refunds' | 'deposit_net' | 'deposit_applied' | 'deposit_unapplied' | 'paid' | 'due' | 'refund_due' | 'surplus', string>;
@@ -40,11 +41,13 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
   const qc = useQueryClient(); const toast = useToast();
   const q = useQuery({ queryKey: ['ipd-billing', encounterId], queryFn: () => api<BillingView>(`/inpatient/stays/${encounterId}/billing`) });
   const [dlg, setDlg] = useState<null | 'service' | 'payer' | 'deposit' | 'refund' | 'reopen' | 'days' | 'reprice' | { payer: StayPayer } | { cancelPayer: StayPayer } | { voidDep: string } | { rmLine: Line }>(null);
-  const inval = () => { void qc.invalidateQueries({ queryKey: ['ipd-billing', encounterId] }); void qc.invalidateQueries({ queryKey: ['ipd-billing-list'] }); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); };
+  const inval = () => { void qc.invalidateQueries({ queryKey: ['ipd-billing', encounterId] }); void qc.invalidateQueries({ queryKey: ['ipd-billing-list'] }); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); void qc.invalidateQueries({ queryKey: ['scrub-stay', encounterId] }); };
   const pkgs = useQuery({ queryKey: ['billing-packages', false], queryFn: () => api<Package[]>('/billing/packages'), enabled: !!q.data?.can.package });
   const setPkg = useMutation({ mutationFn: (id: string | null) => api(`/inpatient/stays/${encounterId}/billing/package`, { body: { package_id: id } }), onSuccess: () => { toast.show('პაკეტი შეიცვალა'); inval(); } });
-  const fin = useMutation({ mutationFn: () => api<{ drg_warnings?: string[] }>(`/inpatient/stays/${encounterId}/billing/finalize`, { body: {} }),
-    onSuccess: (r) => { toast.show(r.drg_warnings?.length ? `ინვოისი ფინალიზებულია · ${r.drg_warnings.join(' | ')}` : 'ინვოისი ფინალიზებულია'); inval(); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); } });
+  const fin = useMutation({ mutationFn: () => api<{ drg_warnings?: string[]; scrub_warnings?: string[] }>(`/inpatient/stays/${encounterId}/billing/finalize`, { body: {} }),
+    onSuccess: (r) => { const w = [...(r.drg_warnings ?? []), ...(r.scrub_warnings?.length ? [`შემოწმება: გაფრთხილება ${r.scrub_warnings.length}`] : [])];
+      toast.show(w.length ? `ინვოისი ფინალიზებულია · ${w.join(' | ')}` : 'ინვოისი ფინალიზებულია'); inval(); },
+    onError: () => { void qc.invalidateQueries({ queryKey: ['scrub-stay', encounterId] }); void qc.invalidateQueries({ queryKey: ['drg-stay', encounterId] }); } });
   if (q.isLoading) return <section id="billing" className="card card-pad"><Loading /></section>;
   if (q.error || !q.data) return <section id="billing" className="card card-pad"><ErrorBox error={q.error} /></section>;
   const b = q.data; const m = b.money;
@@ -117,6 +120,7 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
         </div>
 
         <DrgPanel encounterId={encounterId} onChanged={inval} />
+        <ScrubPanel encounterId={encounterId} onChanged={inval} />
 
         <div className="stack" style={{ gap: 6 }}>
           <h3 style={{ margin: 0 }}>მომსახურება და ხარჯი</h3>

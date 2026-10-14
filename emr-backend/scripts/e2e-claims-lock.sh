@@ -27,6 +27,9 @@ login() { curl -s -X POST "$B/auth/login" -H "$J" -d "$(jq -nc --arg u "$1" --ar
 ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შესვლა ვერ მოხერხდა ($B)"
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
+# 0057: ქლეიმის შემოწმება (scrubber) — ამ სკრიპტში გამორთული (ცალკე ტესტი: e2e-claim-scrubber.sh); ბოლოს აღდგება
+SCRUB_EN=$(curl -s "$B/modules" -H "authorization: Bearer $ADM" | jq -r '.[]|select(.code=="scrubber")|.enabled // empty')
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":false,"reason":"ტესტ-E2E: შემოწმება — ცალკე სკრიპტში"}'
 # HTTP სტატუსი + შეცდომის კოდი: „409:PERIOD_LOCKED“
 sc()   { local m=$1 p=$2 t=$3; shift 3; local o; o=$(curl -s -w '\n%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"); echo "$(echo "$o" | tail -1):$(echo "$o" | head -n -1 | jq -r '.code // .message.code // empty' 2>/dev/null)"; }
 S=$(date +%s | tail -c 7); TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -211,5 +214,6 @@ for R in $(cat "$TMP/roles" 2>/dev/null); do api DELETE "/roles/$R" "$ADM" >/dev
 api PUT /modules/finance "$ADM" -d "{\"settings\":$ORIG,\"reason\":\"ტესტ-E2E აღდგენა\"}" >/dev/null
 chk "პარამეტრები აღდგა; ტესტის ლოკაციის ნაშთი 0" "$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="finance")|.settings' | jq -S -c .):$(api GET "/stock/balances?location_id=$LC" "$ADM" | jq -r '.rows|length')" "$(echo "$ORIG" | jq -S -c .):0"
 
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":true,"reason":"ტესტ-E2E აღდგენა"}'
 printf '\n\033[1mშედეგი: %s ✓  %s ✗\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

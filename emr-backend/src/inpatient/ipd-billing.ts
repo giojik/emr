@@ -20,6 +20,7 @@ import { writeLineShares } from '../tariffs/payer-shares';
 import { repriceOnPayerChange } from '../tariffs/reprice';
 import { tariffRules } from '../tariffs/tariff-rules';
 import { drgFinalizeCheck, drgForPayer } from '../drg/drg-calc';
+import { errorText, scrubInvoice, scrubSettings } from '../scrub/scrub-engine';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -469,6 +470,16 @@ export class IpdBillingService {
         }
         // 0055: DRG — დადასტურება / შესაბამისობა / შეცვლილი მონაცემები (მოდულის პარამეტრებით)
         const drgWarnings = await drgFinalizeCheck(trx, encounterId);
+        // 0057: claim scrubber — შეცდომა (გამონაკლისის გარეშე) ბლოკავს (finalize_check = block), warn — პასუხში
+        let scrubWarnings: string[] = [];
+        const sc = await scrubSettings(trx);
+        if (sc.enabled && sc.finalize_check !== 'off') {
+          const res = await scrubInvoice(trx, inv.id);
+          if (sc.finalize_check === 'block' && res.errors) {
+            throw new ConflictException({ code: 'SCRUB_ERRORS', message: `შემოწმება: ${errorText(res)}`, issues: res.issues.filter((i) => i.severity === 'error' && !i.overridden) });
+          }
+          scrubWarnings = res.issues.filter((i) => !i.overridden && (i.severity === 'warn' || sc.finalize_check === 'warn')).map((i) => `${i.message}${i.detail ? ` (${i.detail})` : ''}`);
+        }
         const b = (await loadBilling(trx, encounterId))!;
         for (const p of b.calc.payers) {
           const d = b.drg.get(p.id);   // 0056: DRG თანხა და დაშლა — ფიქსირდება
@@ -486,7 +497,7 @@ export class IpdBillingService {
         await this.ipd.event(trx, { encounter_id: encounterId, kind: 'billing_finalized', data: { total: fin.money.total, patient: fin.money.patient, insurance: fin.money.insurance,
           state: fin.money.state, writeoff: fin.money.writeoff, deposit_applied: apply, due: fin.money.due, refund_due: fin.money.refund_due, ...(drgWarnings.length && { drg_warnings: drgWarnings }) } }, u);
         await this.audit.log(ctx, { action: 'IPD_BILLING_FINALIZE', entityName: 'invoices', entityId: inv.id, newData: { ...fin.money, payers: fin.calc.payers } }, trx);
-        return { finalized: true, money: fin.money, drg_warnings: drgWarnings };
+        return { finalized: true, money: fin.money, drg_warnings: drgWarnings, scrub_warnings: scrubWarnings };
       });
     } catch (e) { mapPgError(e, { chk_invoice_overpaid: 'გადახდილი თანხა აღემატება პაციენტის წილს — საჭიროა დაბრუნება' }); }
   }

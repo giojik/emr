@@ -3177,6 +3177,39 @@ export interface ScaleDefs {
   sort_order: Generated<number>;
 }
 
+export interface ScrubOverrides {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  invoice_id: string;
+  payer_id: string | null;
+  reason: string;
+  revoke_reason: string | null;
+  revoked_at: Timestamp | null;
+  revoked_by: string | null;
+  rule_code: string;
+}
+
+export interface ScrubRules {
+  allow_override: Generated<boolean>;
+  applies_kind: Generated<string>;
+  builtin: Generated<boolean>;
+  code: string;
+  conditions: Generated<Json>;
+  grp: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  message: string | null;
+  params: Generated<Json>;
+  payer_ids: Generated<string[]>;
+  payer_kinds: Generated<string[]>;
+  severity: Generated<string>;
+  sort_order: Generated<number>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface ServiceTariffs {
   base_price: Numeric;
   code: string;
@@ -4017,6 +4050,8 @@ export interface DB {
   roles: Roles;
   scale_assessments: ScaleAssessments;
   scale_defs: ScaleDefs;
+  scrub_overrides: ScrubOverrides;
+  scrub_rules: ScrubRules;
   service_tariffs: ServiceTariffs;
   stay_bed_days: StayBedDays;
   stay_billing: StayBilling;

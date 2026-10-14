@@ -11,6 +11,7 @@ import type { AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { addDays, DATE_RE, type Ex, FinCommon, n, r2, toCsv, type Trx, userName } from './finance-common';
 import { CLAIM_RESOLVE, FIN_EDIT, FIN_FULL, PAYER_KIND_KA } from './finance-rules';
+import { errorText, loadRules, scrubInvoice, scrubSettings, type ScrubResult } from '../scrub/scrub-engine';
 
 const ERR = {
   fin_claim_item_amounts: 'ანაზღაურებული + გადაწყვეტილი თანხა აღემატება მოთხოვნილს',
@@ -105,7 +106,37 @@ export class FinClaimsService {
       .select(['cp.id', 'cp.paid_on', 'cp.amount', 'cp.ref_no', 'cp.note', 'cp.is_void', 'cp.void_reason', 'cp.created_at', userName('u').as('created_by_name'), userName('uv').as('voided_by_name'),
         sql<number>`(SELECT count(*)::int FROM fin_claim_allocations a WHERE a.payment_id = cp.id)`.as('items')])
       .where('cp.claim_id', '=', id).orderBy('cp.paid_on').orderBy('cp.created_at').execute();
-    return { ...c, payer_kind_ka: PAYER_KIND_KA[c.payer_kind], items, payments };
+    // 0057: შემოწმება — მონახაზში და გაგზავნილში (ნაშთით)
+    const sc = c.status === 'draft' || c.status === 'sent' ? await this.scrubItems(ex, c.payer_id, items) : new Map<string, ScrubResult>();
+    const withScrub = items.map((x) => {
+      const r = sc.get(x.id);
+      return { ...x, scrub: r ? { errors: r.errors, warnings: r.warnings, overridden: r.overridden, issues: r.issues.filter((i) => !i.overridden).map((i) => ({ code: i.code, severity: i.severity, message: i.message, detail: i.detail })) } : null };
+    });
+    return { ...c, payer_kind_ka: PAYER_KIND_KA[c.payer_kind], items: withScrub, payments,
+      scrub: sc.size ? { errors: [...sc.values()].filter((r) => r.errors).length, warnings: [...sc.values()].filter((r) => !r.errors && r.warnings).length } : null };
+  }
+
+  // ---------------------------------------------------------------- 0057: შემოწმება (claim scrubber)
+  /** claim_check = block → შეცდომიანი შემთხვევები (გამონაკლისის გარეშე) ქლეიმში არ შედის; აბრუნებს დარჩენილს და გამოტოვებულს */
+  private async scrubFilter(trx: Trx, cand: Candidate[]) {
+    const sc = await scrubSettings(trx);
+    if (!sc.enabled || sc.claim_check !== 'block' || !cand.length) return { ok: cand, skipped: [] as { invoice_number: string; patient: string; errors: string }[] };
+    const rules = await loadRules(trx);
+    const ok: Candidate[] = []; const skipped: { invoice_number: string; patient: string; errors: string }[] = [];
+    for (const c of cand) {
+      const r = await scrubInvoice(trx, c.invoice_id, { payerId: c.payer_id, rules });
+      if (r.errors) skipped.push({ invoice_number: c.invoice_number, patient: c.patient, errors: errorText(r) }); else ok.push(c);
+    }
+    return { ok, skipped };
+  }
+  /** ქლეიმის შემთხვევების შემოწმება (გადამხდელის ჭრილში): item_id → შედეგი */
+  private async scrubItems(ex: Ex, payerId: string, items: { id: string; invoice_id: string }[]) {
+    const out = new Map<string, ScrubResult>();
+    const sc = await scrubSettings(ex);
+    if (!sc.enabled || sc.claim_check === 'off') return out;
+    const rules = await loadRules(ex);
+    for (const it of items) out.set(it.id, await scrubInvoice(ex, it.invoice_id, { payerId, rules }));
+    return out;
   }
 
   // ---------------------------------------------------------------- მონახაზი
@@ -116,13 +147,16 @@ export class FinClaimsService {
       return await this.db.transaction().execute(async (trx) => {
         const p = await trx.selectFrom('payers').select(['id', 'name', 'is_active']).where('id', '=', dto.payer_id).executeTakeFirst();
         if (!p) throw new BadRequestException('გადამხდელი ვერ მოიძებნა');
-        const cand = await this.candidates(dto.payer_id, dto.period_from, dto.period_to, trx);
-        if (!cand.length) throw new BadRequestException(`„${p.name}“: პერიოდში ქლეიმში შესატანი შემთხვევა არ არის (ან უკვე სხვა ქლეიმშია)`);
+        const all = await this.candidates(dto.payer_id, dto.period_from, dto.period_to, trx);
+        if (!all.length) throw new BadRequestException(`„${p.name}“: პერიოდში ქლეიმში შესატანი შემთხვევა არ არის (ან უკვე სხვა ქლეიმშია)`);
+        const { ok: cand, skipped } = await this.scrubFilter(trx, all);
+        if (!cand.length) throw new ConflictException({ code: 'SCRUB_ERRORS', message: `ყველა შემთხვევას (${skipped.length}) აქვს შემოწმების შეცდომა — გაასწორეთ ან დაუშვით გამონაკლისი`, skipped });
         const c = await trx.insertInto('fin_claims').values({ payer_id: dto.payer_id, period_from: dto.period_from, period_to: dto.period_to, notes: dto.notes?.trim() || null, created_by: u.id })
           .returning('id').executeTakeFirstOrThrow();
         await this.insertItems(trx, c.id, cand);
-        await this.audit.log(ctx, { action: 'FIN_CLAIM_CREATE', entityName: 'fin_claims', entityId: c.id, newData: { payer: p.name, period_from: dto.period_from, period_to: dto.period_to, items: cand.length } }, trx);
-        return this.get(c.id, trx);
+        await this.audit.log(ctx, { action: 'FIN_CLAIM_CREATE', entityName: 'fin_claims', entityId: c.id, newData: { payer: p.name, period_from: dto.period_from, period_to: dto.period_to, items: cand.length,
+          scrub_skipped: skipped.length } }, trx);
+        return { ...(await this.get(c.id, trx)), scrub_skipped: skipped };
       });
     } catch (e) { return pg(e); }
   }
@@ -152,10 +186,10 @@ export class FinClaimsService {
           sql<string>`to_char(CASE WHEN ci.kind = 'ipd' THEN fin_local_date(i.finalized_at) ELSE fin_local_date(i.created_at) END, 'YYYY-MM-DD')`.as('d')]).where('ci.claim_id', '=', id).execute();
         const out = items.filter((x) => x.d < from || x.d > to).map((x) => x.id);
         if (out.length) await trx.deleteFrom('fin_claim_items').where('id', 'in', out).execute();
-        const cand = await this.candidates(c.payer_id, from, to, trx);
+        const { ok: cand, skipped } = await this.scrubFilter(trx, await this.candidates(c.payer_id, from, to, trx));
         await this.insertItems(trx, id, cand);
-        await this.audit.log(ctx, { action: 'FIN_CLAIM_UPDATE', entityName: 'fin_claims', entityId: id, newData: { period_from: from, period_to: to, added: cand.length, removed: out.length } }, trx);
-        return this.get(id, trx);
+        await this.audit.log(ctx, { action: 'FIN_CLAIM_UPDATE', entityName: 'fin_claims', entityId: id, newData: { period_from: from, period_to: to, added: cand.length, removed: out.length, scrub_skipped: skipped.length } }, trx);
+        return { ...(await this.get(id, trx)), scrub_skipped: skipped };
       });
     } catch (e) { return pg(e); }
   }
@@ -198,6 +232,15 @@ export class FinClaimsService {
         if (c.status !== 'draft') throw new ConflictException('ქლეიმი უკვე გაგზავნილია');
         const cnt = await trx.selectFrom('fin_claim_items').select(sql<number>`count(*)::int`.as('n')).where('claim_id', '=', id).executeTakeFirstOrThrow();
         if (!cnt.n) throw new BadRequestException('ქლეიმი ცარიელია');
+        // 0057: გაგზავნამდე — ხელახალი შემოწმება (claim_check = block)
+        const sc = await scrubSettings(trx);
+        if (sc.enabled && sc.claim_check === 'block') {
+          const its = await trx.selectFrom('fin_claim_items as ci').innerJoin('invoices as i', 'i.id', 'ci.invoice_id').select(['ci.id', 'ci.invoice_id', 'i.invoice_number'])
+            .where('ci.claim_id', '=', id).execute();
+          const res = await this.scrubItems(trx, c.payer_id, its);
+          const bad = its.filter((x) => (res.get(x.id)?.errors ?? 0) > 0).map((x) => ({ item_id: x.id, invoice_number: x.invoice_number, errors: errorText(res.get(x.id)!) }));
+          if (bad.length) throw new ConflictException({ code: 'SCRUB_ERRORS', message: `შემოწმება: ${bad.length} შემთხვევას აქვს შეცდომა — გაასწორეთ, დაუშვით გამონაკლისი ან ამოიღეთ ქლეიმიდან (${bad.slice(0, 3).map((b) => b.invoice_number).join(', ')}${bad.length > 3 ? ' …' : ''})`, items: bad });
+        }
         const p = await trx.selectFrom('payers').select('payment_terms_days').where('id', '=', c.payer_id).executeTakeFirstOrThrow();
         const today = await this.c.today(trx);
         const no = await this.c.nextNo(trx, 'CL', today);
@@ -310,10 +353,11 @@ export class FinClaimsService {
   async csv(id: string, ctx: AuditContext) {
     await this.c.rules();
     const c = await this.get(id);
-    const head = ['№', 'ტიპი', 'ჰოსპ. №', 'ინვოისი', 'თარიღი', 'პაციენტი', 'პირადი №', 'პოლისი', 'საგარანტიო', 'მოთხოვნილი', 'ანაზღაურებული', 'გადაწყვეტილი', 'ნაშთი'];
+    const head = ['№', 'ტიპი', 'ჰოსპ. №', 'ინვოისი', 'თარიღი', 'პაციენტი', 'პირადი №', 'პოლისი', 'საგარანტიო', 'მოთხოვნილი', 'ანაზღაურებული', 'გადაწყვეტილი', 'ნაშთი', 'შემოწმება'];
     const rows = c.items.map((x, i) => [i + 1, x.kind === 'ipd' ? 'სტაციონარი' : 'ამბულატორია', x.adm_no, x.invoice_number, x.case_date, x.patient, x.personal_number, x.policy_no,
-      x.guarantee_no, n(x.claimed).toFixed(2), n(x.paid).toFixed(2), n(x.resolved_amount).toFixed(2), n(x.outstanding).toFixed(2)]);
-    rows.push(['', '', '', '', '', 'ჯამი', '', '', '', n(c.total_claimed).toFixed(2), n(c.total_paid).toFixed(2), n(c.total_resolved).toFixed(2), n(c.outstanding).toFixed(2)]);
+      x.guarantee_no, n(x.claimed).toFixed(2), n(x.paid).toFixed(2), n(x.resolved_amount).toFixed(2), n(x.outstanding).toFixed(2),
+      x.scrub ? x.scrub.issues.map((i) => `${i.severity === 'error' ? '✗' : '⚠'} ${i.message}${i.detail ? ` (${i.detail})` : ''}`).join(' | ') : '']);
+    rows.push(['', '', '', '', '', 'ჯამი', '', '', '', n(c.total_claimed).toFixed(2), n(c.total_paid).toFixed(2), n(c.total_resolved).toFixed(2), n(c.outstanding).toFixed(2), '']);
     await this.audit.log(ctx, { action: 'FIN_CLAIM_EXPORT', entityName: 'fin_claims', entityId: id, newData: { items: c.items.length } });
     return { name: `claim-${c.claim_no ?? 'draft'}-${c.payer_code}.csv`,
       csv: toCsv(head, rows, `${c.payer_name} (${c.payer_code}); ${c.claim_no ?? 'მონახაზი'}; ${c.period_from} — ${c.period_to}`) };

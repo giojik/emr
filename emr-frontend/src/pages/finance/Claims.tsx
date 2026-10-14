@@ -91,10 +91,17 @@ function NewClaim({ onClose, onCreated }: { onClose: () => void; onCreated: (id:
   const [payer, setPayer] = useState(''); const [from, setFrom] = useState(monthStart(prev)); const [to, setTo] = useState(prev); const [notes, setNotes] = useState('');
   const cand = useQuery({ queryKey: ['fin-cand', payer, from, to], queryFn: () => api<Candidate[]>('/finance/claims/candidates', { query: { payer_id: payer, from, to } }), enabled: !!payer && from <= to });
   const sum = (cand.data ?? []).reduce((s, x) => s + Number(x.claimed), 0);
+  const [created, setCreated] = useState<Claim | null>(null);
   const m = useMutation({
     mutationFn: () => api<Claim>('/finance/claims', { body: { payer_id: payer, period_from: from, period_to: to, notes: notes.trim() || null } }),
-    onSuccess: (c) => { void qc.invalidateQueries({ queryKey: ['fin-claims'] }); void qc.invalidateQueries({ queryKey: ['fin-summary'] }); onCreated(c.id); },
+    onSuccess: (c) => { void qc.invalidateQueries({ queryKey: ['fin-claims'] }); void qc.invalidateQueries({ queryKey: ['fin-summary'] }); if (c.scrub_skipped?.length) setCreated(c); else onCreated(c.id); },
   });
+  const skippedErr = (m.error as { body?: { skipped?: Claim['scrub_skipped'] } } | null)?.body?.skipped;
+  if (created) return (
+    <Modal title="ქლეიმი შეიქმნა — ნაწილი გამოტოვდა" onClose={() => onCreated(created.id)} width={760}
+      footer={<button className="btn primary" type="button" onClick={() => onCreated(created.id)}>ქლეიმის გახსნა</button>}>
+      <SkippedList rows={created.scrub_skipped!} added={created.items.length} />
+    </Modal>);
   return (
     <Modal title="ახალი ქლეიმი" onClose={onClose} width={720} footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button>
       <button className="btn primary" type="button" disabled={!cand.data?.length || m.isPending} onClick={() => m.mutate()}>მონახაზის შექმნა ({cand.data?.length ?? 0})</button></>}>
@@ -116,9 +123,29 @@ function NewClaim({ onClose, onCreated }: { onClose: () => void; onCreated: (id:
                 {!!cand.data?.length && <tr><td colSpan={3}><strong>სულ ({cand.data.length})</strong></td><td className="num mono"><strong>{fmt(sum)}</strong></td></tr>}</tbody></table>
           </div>)}
         <ErrorBox error={cand.error ?? m.error} />
+        {skippedErr && <SkippedList rows={skippedErr} added={0} />}
       </div>
     </Modal>
   );
+}
+
+/** 0057: შემოწმების შეცდომის გამო ქლეიმში შეუტანელი შემთხვევები */
+function SkippedList({ rows, added }: { rows: NonNullable<Claim['scrub_skipped']>; added: number }) {
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <span className="small">{added ? `შევიდა ${added} შემთხვევა. ` : ''}<strong>შემოწმების შეცდომის გამო არ შევიდა: {rows.length}</strong> — გაასწორეთ (ან დაუშვით გამონაკლისი ჰოსპიტალიზაციის ბილინგში) და დააჭირეთ „ახალი შემთხვევების დამატება“.</span>
+      <table className="table"><thead><tr><th>ინვოისი</th><th>პაციენტი</th><th>შეცდომა</th></tr></thead>
+        <tbody>{rows.map((r) => <tr key={r.invoice_number}><td className="mono small">{r.invoice_number}</td><td>{r.patient}</td><td className="small" style={{ color: 'var(--danger, #b00020)' }}>{r.errors}</td></tr>)}</tbody></table>
+    </div>
+  );
+}
+
+function ScrubChip({ s }: { s: ClaimItem['scrub'] }) {
+  if (!s) return <span className="muted">—</span>;
+  const title = s.issues.map((i) => `${i.severity === 'error' ? '✗' : '⚠'} ${i.message}${i.detail ? ` (${i.detail})` : ''}`).join('\n');
+  if (s.errors) return <span className="chip danger" title={title}>✗ {s.errors}{s.warnings ? ` · ⚠ ${s.warnings}` : ''}</span>;
+  if (s.warnings) return <span className="chip warn" title={title}>⚠ {s.warnings}</span>;
+  return <span className="chip ok" title={s.overridden ? `გამონაკლისი: ${s.overridden}` : undefined}>✓{s.overridden ? ` (${s.overridden})` : ''}</span>;
 }
 
 function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
@@ -131,7 +158,7 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
   const done = (msg: string) => () => { toast.show(msg); ['fin-claim', 'fin-claims', 'fin-summary', 'fin-recv', 'fin-revenue'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] })); };
   const act = useMutation({
     mutationFn: (x: { path: string; body?: unknown; method?: string }) => api<Claim>(x.path, { method: x.method ?? 'POST', body: x.body ?? {} }),
-    onSuccess: done('შესრულდა'),
+    onSuccess: (r) => { done(r?.scrub_skipped?.length ? `შესრულდა · შემოწმების შეცდომით გამოტოვდა ${r.scrub_skipped.length}` : 'შესრულდა')(); },
   });
   const c = q.data;
   const edit = can(user, ...FIN_EDIT);
@@ -157,6 +184,8 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
             {edit && ['draft', 'sent'].includes(c.status) && <button className="btn danger sm" type="button" onClick={() => setCancelOpen(true)}>გაუქმება</button>}
           </div>
           {c.notes && <span className="small muted">{c.notes}</span>}
+          {c.scrub && (c.scrub.errors > 0 ? <div className="alert warn">შემოწმება: {c.scrub.errors} შემთხვევას აქვს შეცდომა — გაგზავნა დაიბლოკება (გაასწორეთ, დაუშვით გამონაკლისი ან ამოიღეთ)</div>
+            : c.scrub.warnings > 0 ? <span className="small muted">შემოწმება: შეცდომა არ არის; გაფრთხილება — {c.scrub.warnings} შემთხვევაზე</span> : null)}
           {c.status === 'cancelled' && <div className="alert warn">გაუქმებულია: {c.cancel_reason} ({c.cancelled_by_name})</div>}
           <ErrorBox error={act.error} />
           {cancelOpen && (
@@ -177,7 +206,7 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
             </form>)}
           <div style={{ overflowX: 'auto', flexShrink: 0 }}>
             <table className="table">
-              <thead><tr><th>თარიღი</th><th>პაციენტი</th><th>ინვოისი</th><th>პოლისი / საგარანტიო</th><th className="num">მოთხოვნილი</th><th className="num">ანაზღ.</th><th className="num">ნაშთი</th><th>გადაწყვეტა</th><th /></tr></thead>
+              <thead><tr><th>თარიღი</th><th>პაციენტი</th><th>ინვოისი</th><th>პოლისი / საგარანტიო</th><th className="num">მოთხოვნილი</th><th className="num">ანაზღ.</th><th className="num">ნაშთი</th><th>გადაწყვეტა</th><th>შემოწმება</th><th /></tr></thead>
               <tbody>{c.items.map((x) => (
                 <tr key={x.id}>
                   <td className="mono small">{dateGe(x.case_date)}</td>
@@ -187,12 +216,13 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
                   <td className="num mono"><strong>{Number(x.outstanding) ? fmt(x.outstanding) : '—'}</strong></td>
                   <td className="small">{x.resolution ? <span title={`${x.resolution_reason ?? ''} — ${x.resolved_by_name ?? ''}`} className={`chip ${x.resolution === 'patient' ? 'info' : 'danger'}`}>
                     {x.resolution === 'patient' ? 'პაციენტზე' : 'ჩამოწერა'} {fmt(x.resolved_amount)}</span> : '—'}</td>
+                  <td className="small">{x.scrub === undefined ? '—' : x.kind === 'ipd' && x.scrub?.errors ? <Link to={`/inpatient/stay/${x.encounter_id}#scrub`}><ScrubChip s={x.scrub} /></Link> : <ScrubChip s={x.scrub} />}</td>
                   <td style={{ textAlign: 'right' }}>
                     {edit && c.status === 'draft' && <button className="btn sm" type="button" onClick={() => act.mutate({ path: `/finance/claims/${id}/items/${x.id}`, method: 'DELETE' })}>ამოღება</button>}
                     {can(user, ...CLAIM_RESOLVE) && open && !x.resolution && Number(x.outstanding) > 0 && <button className="btn sm" type="button" onClick={() => setResolve(x)}>გადაწყვეტა</button>}
                   </td>
                 </tr>))}
-                {!c.items.length && <tr><td colSpan={9} className="muted">შემთხვევა არ არის</td></tr>}
+                {!c.items.length && <tr><td colSpan={10} className="muted">შემთხვევა არ არის</td></tr>}
               </tbody>
             </table>
           </div>

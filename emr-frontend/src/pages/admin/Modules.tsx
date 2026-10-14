@@ -47,6 +47,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'finance' && <FinSettings s={s} set={setS} />}
       {m.code === 'tariffs' && <TariffSettings s={s} set={setS} />}
       {m.code === 'drg' && <DrgSettings s={s} set={setS} />}
+      {m.code === 'scrubber' && <ScrubSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -561,6 +562,22 @@ function DrgSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
         <select id="dva" className="select" value={v<string>('version_approval') ?? 'off'} onChange={(e) => upd('version_approval', e.target.value)}>
           <option value="off">ერთი პირი</option><option value="required">მეორე პირის დამტკიცებით</option></select></Field>
       <span className="small muted" style={{ alignSelf: 'end' }}>სქემები, ვერსიები, ჯგუფები და წესები — <Link to="/admin/drg">ადმინისტრირება → DRG</Link>.</span>
+    </div>
+  );
+}
+
+/** 0057: ქლეიმის შემოწმება — როდის ბლოკავს */
+function ScrubSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = (k: string) => String(s[k] ?? 'block');
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const opts = <><option value="block">შეცდომა ბლოკავს (გამონაკლისის გარეშე)</option><option value="warn">მხოლოდ გაფრთხილება</option><option value="off">არ მოწმდება</option></>;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+      <Field label="სტაციონარის ფინანსური დახურვა" htmlFor="scf" hint="მოწმდება მხოლოდ გადამხდელიანი შემთხვევა">
+        <select id="scf" className="select" value={v('finalize_check')} onChange={(e) => upd('finalize_check', e.target.value)}>{opts}</select></Field>
+      <Field label="ქლეიმი (დამატება და გაგზავნა)" htmlFor="scc" hint="ბლოკზე: შეცდომიანი შემთხვევა ქლეიმში არ შედის, გაგზავნა იბლოკება">
+        <select id="scc" className="select" value={v('claim_check')} onChange={(e) => upd('claim_check', e.target.value)}>{opts}</select></Field>
+      <span className="small muted" style={{ gridColumn: '1 / -1' }}>წესები — <Link to="/admin/scrubber">ადმინისტრირება → ქლეიმის შემოწმება</Link>.</span>
     </div>
   );
 }

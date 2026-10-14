@@ -76,11 +76,16 @@ export interface ClaimItem {
   id: string; kind: 'ipd' | 'opd'; invoice_id: string; share_slot: 'insurance' | 'state'; claimed: string; paid: string; resolution: 'patient' | 'writeoff' | null; resolved_amount: string;
   resolution_reason: string | null; resolved_at: string | null; resolved_by_name: string | null; outstanding: string; invoice_number: string; adm_no: string | null; encounter_id: string;
   personal_number: string | null; patient: string; policy_no: string | null; guarantee_no: string | null; case_date: string;
+  /** 0057: შემოწმება (მონახაზი / გაგზავნილი) */
+  scrub?: { errors: number; warnings: number; overridden: number; issues: { code: string; severity: 'error' | 'warn'; message: string; detail: string | null }[] } | null;
 }
 export interface ClaimPayment { id: string; paid_on: string; amount: string; ref_no: string | null; note: string | null; is_void: boolean; void_reason: string | null; created_at: string; created_by_name: string; voided_by_name: string | null; items: number }
 export interface Claim extends Omit<ClaimRow, 'items' | 'days_overdue'> {
   payer_code: string; payment_terms_days: number; notes: string | null; created_by_name: string; sent_by_name: string | null; cancel_reason: string | null; cancelled_by_name: string | null;
   payer_kind_ka: string; items: ClaimItem[]; payments: ClaimPayment[];
+  scrub?: { errors: number; warnings: number } | null;
+  /** 0057: შექმნა / განახლება — შეცდომის გამო გამოტოვებული შემთხვევები */
+  scrub_skipped?: { invoice_number: string; patient: string; errors: string }[];
 }
 export interface Candidate { kind: 'ipd' | 'opd'; invoice_id: string; payer_id: string; claimed: string; case_date: string; invoice_number: string; adm_no: string | null; patient: string; personal_number: string | null }
 export interface RecvRow { payer_id: string; payer_name: string; kind: string; kind_ka: string; unclaimed: number; draft: number; not_due: number; d1_30: number; d31_60: number; d61_90: number; d90: number; outstanding: number; total: number }

@@ -23,6 +23,9 @@ login() { curl -s -X POST "$B/auth/login" -H "$J" -d "$(jq -nc --arg u "$1" --ar
 ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შესვლა ვერ მოხერხდა ($B)"
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
+# 0057: ქლეიმის შემოწმება (scrubber) — ამ სკრიპტში გამორთული (ცალკე ტესტი: e2e-claim-scrubber.sh); ბოლოს აღდგება
+SCRUB_EN=$(curl -s "$B/modules" -H "authorization: Bearer $ADM" | jq -r '.[]|select(.code=="scrubber")|.enabled // empty')
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":false,"reason":"ტესტ-E2E: შემოწმება — ცალკე სკრიპტში"}'
 csvb() { jq -nc --arg c "$1" --argjson d "${2:-false}" --argjson r "${3:-false}" '{csv:$c,dry_run:$d,replace:$r}'; }
 S=$(date +%s | tail -c 7); TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 uid() { cat "$TMP/u$1" 2>/dev/null; }
@@ -270,5 +273,6 @@ api PUT /modules/drg "$ADM" -d "{\"enabled\":$ORIG_EN,\"settings\":$ORIG,\"reaso
 api PUT /modules/inpatient "$ADM" -d "{\"settings\":$ORIG_IPD,\"reason\":\"ტესტ-E2E აღდგენა\"}" >/dev/null
 chk "სქემა გაითიშა, ვერსია გაუქმდა, პარამეტრები აღდგა" "$(api GET /drg/schemes "$ADM" | jq -r --arg s "$SCH" '.[]|select(.id==$s)|"\(.is_active):\(.current_version)"'):$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="drg")|.settings' | jq -r '.recheck_on_finalize')" "false:null:$(echo "$ORIG" | jq -r .recheck_on_finalize)"
 
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":true,"reason":"ტესტ-E2E აღდგენა"}'
 printf '\n\033[1mშედეგი: %s ✓  %s ✗\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

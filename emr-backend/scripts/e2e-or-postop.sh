@@ -27,6 +27,9 @@ login() { curl -s -X POST "$B/auth/login" -H "$J" -d "$(jq -nc --arg u "$1" --ar
 ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შესვლა ვერ მოხერხდა ($B)"
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 code() { local m=$1 p=$2 t=$3; shift 3; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
+# 0057: ქლეიმის შემოწმება (scrubber) — ამ სკრიპტში გამორთული (ცალკე ტესტი: e2e-claim-scrubber.sh); ბოლოს აღდგება
+SCRUB_EN=$(curl -s "$B/modules" -H "authorization: Bearer $ADM" | jq -r '.[]|select(.code=="scrubber")|.enabled // empty')
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":false,"reason":"ტესტ-E2E: შემოწმება — ცალკე სკრიპტში"}'
 ecode() { echo "$1" | jq -r 'if type=="object" then (.code // .statusCode // "") else "" end' 2>/dev/null; }
 S=$(date +%s | tail -c 7); TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 uid() { cat "$TMP/u$1" 2>/dev/null; }
@@ -260,5 +263,6 @@ for t in "$T_PA" "$T_PB" "$T_PC" "$T_AF" "$T_AH" "$T_BED"; do api PATCH "/tariff
 chk "პარამეტრები / ანესთეზიის ტარიფები აღდგენილია" "$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="or")|.settings' | jq -S . | md5sum | cut -c1-8):$(api GET /or/anesthesia-tariffs "$ADM" | jq -S '[.[]|{anesthesia_type,mode,tariff_id}]' | md5sum | cut -c1-8)" \
   "$(echo "$ORIG_OR" | jq -S . | md5sum | cut -c1-8):$(echo "$ORIG_AT" | jq -S '[.[]|{anesthesia_type,mode,tariff_id}]' | md5sum | cut -c1-8)"
 
+[ "$SCRUB_EN" = "true" ] && curl -s -o /dev/null -X PUT "$B/modules/scrubber" -H "authorization: Bearer $ADM" -H "$J" -d '{"enabled":true,"reason":"ტესტ-E2E აღდგენა"}'
 printf '\n\033[1mშედეგი: %d ✓  %d ✗\033[0m\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
