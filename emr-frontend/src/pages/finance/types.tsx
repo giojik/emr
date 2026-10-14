@@ -78,6 +78,9 @@ export interface ClaimItem {
   personal_number: string | null; patient: string; policy_no: string | null; guarantee_no: string | null; case_date: string;
   /** 0057: შემოწმება (მონახაზი / გაგზავნილი) */
   scrub?: { errors: number; warnings: number; overridden: number; issues: { code: string; severity: 'error' | 'warn'; message: string; detail: string | null }[] } | null;
+  /** 0058: გადამხდელის პასუხი */
+  resp_status: 'accepted' | 'partial' | 'rejected' | 'pending' | null; resp_amount: string | null; resp_reason: string | null; resp_reason_title: string | null;
+  resp_default_action: 'patient' | 'writeoff' | null; resp_note: string | null; resp_ref: string | null; resp_at: string | null; resp_import_id: string | null;
 }
 export interface ClaimPayment { id: string; paid_on: string; amount: string; ref_no: string | null; note: string | null; is_void: boolean; void_reason: string | null; created_at: string; created_by_name: string; voided_by_name: string | null; items: number }
 export interface Claim extends Omit<ClaimRow, 'items' | 'days_overdue'> {
@@ -86,6 +89,8 @@ export interface Claim extends Omit<ClaimRow, 'items' | 'days_overdue'> {
   scrub?: { errors: number; warnings: number } | null;
   /** 0057: შექმნა / განახლება — შეცდომის გამო გამოტოვებული შემთხვევები */
   scrub_skipped?: { invoice_number: string; patient: string; errors: string }[];
+  /** 0058: პასუხის შეჯამება */
+  responses: { accepted: number; partial: number; rejected: number; pending: number; none: number; approved: number; denied: number };
 }
 export interface Candidate { kind: 'ipd' | 'opd'; invoice_id: string; payer_id: string; claimed: string; case_date: string; invoice_number: string; adm_no: string | null; patient: string; personal_number: string | null }
 export interface RecvRow { payer_id: string; payer_name: string; kind: string; kind_ka: string; unclaimed: number; draft: number; not_due: number; d1_30: number; d31_60: number; d61_90: number; d90: number; outstanding: number; total: number }

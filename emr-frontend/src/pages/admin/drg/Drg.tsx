@@ -9,6 +9,7 @@ import { useModuleEnabled } from '../../../lib/modules';
 import { CcTab, GroupsTab, ListsTab } from './DrgTables';
 import { RulesTab, TestTab } from './DrgRules';
 import { FormulaTab } from './DrgFormula';
+import DrgCmi from './DrgCmi';
 import { type CheckResult, DRG_ADMIN, download, type Scheme, STATUS_CHIP, STATUS_KA, type VersionDetail, type VersionRow, type VersionSettings } from './types';
 
 /**
@@ -28,6 +29,12 @@ export default function Drg() {
   const scheme = schemes.data?.find((s) => s.id === sid);
   const go = (p: Record<string, string>) => setSp(Object.fromEntries(Object.entries({ s: sid, ...p }).filter(([, x]) => x)));
   if (schemes.isLoading) return <div className="content"><Loading /></div>;
+  // 0058: ანგარიში (CMI)
+  if (sp.get('view') === 'cmi') return (
+    <div className="content stack" style={{ gap: 14 }}>
+      <div className="row"><button className="btn" type="button" onClick={() => setSp({})}>← კონფიგურაცია</button><strong className="grow">DRG ანგარიში — CMI, ჯგუფები, ხანგრძლივობა</strong></div>
+      <DrgCmi schemes={schemes.data ?? []} />
+    </div>);
   return (
     <div className="content stack" style={{ gap: 14 }}>
       {!on && <div className="chip warn" style={{ height: 'auto', padding: '8px 12px' }}>მოდული „DRG“ გამორთულია — კონფიგურაცია შეიძლება, მაგრამ შემთხვევებზე არ გამოიყენება (ადმინისტრირება → მოდულები).</div>}
@@ -36,6 +43,7 @@ export default function Drg() {
           {schemes.data?.map((s) => <option key={s.id} value={s.id}>{s.name}{s.is_default ? ' (ნაგულისხმევი)' : ''}{s.is_active ? '' : ' (გათიშული)'}</option>)}</select>
         {scheme?.current_version ? <span className="chip ok">მოქმედებს: {scheme.current_version.label}</span> : <span className="chip warn">დღეს მოქმედი ვერსია არ არის</span>}
         <span className="grow" />
+        <button className="btn" type="button" onClick={() => setSp({ view: 'cmi' })}>ანგარიში (CMI)</button>
         <button className="btn" type="button" onClick={() => setDlg('schemes')}>სქემები და გადამხდელები</button>
         {admin && sid && <button className="btn primary" type="button" onClick={() => setDlg('new')}>+ ახალი ვერსია</button>}
       </div>

@@ -337,6 +337,22 @@ export interface BillingPackages {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ClaimTemplates {
+  code: string;
+  config: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  format: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  notes: string | null;
+  revision: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface ClinicSettings {
   address: string;
   consent_methods: Generated<string[]>;
@@ -494,6 +510,17 @@ export interface CssdTemplates {
   owner_department_id: string | null;
   packaging_type_id: string | null;
   program_hint: string | null;
+}
+
+export interface DenialReasons {
+  category: Generated<string>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  default_action: string | null;
+  external_codes: Generated<string[]>;
+  is_active: Generated<boolean>;
+  sort_order: Generated<number>;
+  title: string;
 }
 
 export interface Departments {
@@ -1068,6 +1095,24 @@ export interface FinClaimAllocations {
   payment_id: string;
 }
 
+export interface FinClaimExports {
+  claim_id: string;
+  content: Buffer;
+  content_type: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  file_name: string;
+  id: Generated<string>;
+  note: string | null;
+  rows: number;
+  scrub_warnings: Generated<number>;
+  sha256: string;
+  template_id: string;
+  template_revision: number;
+  template_snapshot: Json;
+  total: Generated<Numeric>;
+}
+
 export interface FinClaimItems {
   claim_id: string;
   claimed: Numeric;
@@ -1081,6 +1126,14 @@ export interface FinClaimItems {
   resolved_amount: Generated<Numeric>;
   resolved_at: Timestamp | null;
   resolved_by: string | null;
+  resp_amount: Numeric | null;
+  resp_at: Timestamp | null;
+  resp_by: string | null;
+  resp_import_id: string | null;
+  resp_note: string | null;
+  resp_reason: string | null;
+  resp_ref: string | null;
+  resp_status: string | null;
   share_slot: string;
   stay_payer_id: string | null;
 }
@@ -1098,6 +1151,20 @@ export interface FinClaimPayments {
   void_reason: string | null;
   voided_at: Timestamp | null;
   voided_by: string | null;
+}
+
+export interface FinClaimResponseImports {
+  applied: Generated<number>;
+  claim_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  file_name: string;
+  id: Generated<string>;
+  matched: Generated<number>;
+  problems: Generated<Json>;
+  rows: Generated<number>;
+  sha256: string;
+  template_id: string | null;
 }
 
 export interface FinClaims {
@@ -2963,6 +3030,7 @@ export interface Payers {
   drg_scheme_id: string | null;
   email: string | null;
   excluded_categories: Generated<string[]>;
+  export_template_id: string | null;
   id: Generated<string>;
   is_active: Generated<boolean>;
   kind: string;
@@ -2970,6 +3038,7 @@ export interface Payers {
   notes: string | null;
   payment_terms_days: Generated<number>;
   phone: string | null;
+  response_template_id: string | null;
   tax_id: string | null;
   updated_at: Generated<Timestamp>;
   writeoff_excess: Generated<boolean>;
@@ -3869,6 +3938,7 @@ export interface DB {
   beds: Beds;
   billing_package_items: BillingPackageItems;
   billing_packages: BillingPackages;
+  claim_templates: ClaimTemplates;
   clinic_settings: ClinicSettings;
   consultations: Consultations;
   cssd_cycles: CssdCycles;
@@ -3880,6 +3950,7 @@ export interface DB {
   cssd_sets: CssdSets;
   cssd_template_items: CssdTemplateItems;
   cssd_templates: CssdTemplates;
+  denial_reasons: DenialReasons;
   departments: Departments;
   doctor_notes: DoctorNotes;
   document_counters: DocumentCounters;
@@ -3914,8 +3985,10 @@ export interface DB {
   expenses: Expenses;
   external_institutions: ExternalInstitutions;
   fin_claim_allocations: FinClaimAllocations;
+  fin_claim_exports: FinClaimExports;
   fin_claim_items: FinClaimItems;
   fin_claim_payments: FinClaimPayments;
+  fin_claim_response_imports: FinClaimResponseImports;
   fin_claims: FinClaims;
   fin_period_log: FinPeriodLog;
   fin_periods: FinPeriods;

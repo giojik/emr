@@ -48,6 +48,7 @@ import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/tariffs/Tariffs';
 import Drg from './pages/admin/drg/Drg';
 import Scrubber from './pages/admin/Scrubber';
+import ClaimExport from './pages/admin/ClaimExport';
 import BillingSetup from './pages/admin/BillingSetup';
 import Users from './pages/admin/Users';
 
@@ -116,6 +117,7 @@ export default function App() {
           <Route path="users" element={<Guard roles={['admin', 'hr', 'manager']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
           <Route path="tariffs" element={<Guard roles={['admin', 'billing', 'tariffs', 'tariffs_approve', 'accountant', 'viewer']}><Tariffs /></Guard>} />
+          <Route path="claim-export" element={<Guard roles={['admin', 'accountant', 'viewer', 'billing']}><ClaimExport /></Guard>} />
           <Route path="scrubber" element={<Guard roles={['admin', 'billing', 'drg', 'drg_admin', 'tariffs', 'accountant', 'viewer']}><Scrubber /></Guard>} />
           <Route path="drg" element={<Guard roles={['admin', 'billing', 'drg', 'drg_admin', 'tariffs', 'accountant', 'viewer']}><Drg /></Guard>} />
           <Route path="billing" element={<Guard roles={['admin', 'billing']}><BillingSetup /></Guard>} />

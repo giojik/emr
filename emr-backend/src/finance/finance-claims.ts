@@ -98,7 +98,10 @@ export class FinClaimsService {
       .innerJoin('patients as p', 'p.id', 'e.patient_id').leftJoin('inpatient_stays as st', 'st.encounter_id', 'i.encounter_id').leftJoin('stay_payers as sp', 'sp.id', 'ci.stay_payer_id')
       .leftJoin('users as ur', 'ur.id', 'ci.resolved_by')
       .select(['ci.id', 'ci.kind', 'ci.invoice_id', 'ci.share_slot', 'ci.claimed', 'ci.paid', 'ci.resolution', 'ci.resolved_amount', 'ci.resolution_reason', 'ci.resolved_at',
-        userName('ur').as('resolved_by_name'), OUTSTANDING.as('outstanding'), 'i.invoice_number', 'st.adm_no', 'e.id as encounter_id', 'p.personal_number',
+        userName('ur').as('resolved_by_name'), OUTSTANDING.as('outstanding'),
+        'ci.resp_status', 'ci.resp_amount', 'ci.resp_reason', 'ci.resp_note', 'ci.resp_ref', 'ci.resp_at', 'ci.resp_import_id',
+        sql<string | null>`(SELECT dr.title FROM denial_reasons dr WHERE dr.code = ci.resp_reason)`.as('resp_reason_title'),
+        sql<string | null>`(SELECT dr.default_action FROM denial_reasons dr WHERE dr.code = ci.resp_reason)`.as('resp_default_action'), 'i.invoice_number', 'st.adm_no', 'e.id as encounter_id', 'p.personal_number',
         sql<string>`p.last_name || ' ' || p.first_name`.as('patient'), 'sp.policy_no', 'sp.guarantee_no',
         sql<string>`to_char(CASE WHEN st.encounter_id IS NOT NULL THEN fin_local_date(i.finalized_at) ELSE fin_local_date(i.created_at) END, 'YYYY-MM-DD')`.as('case_date')])
       .where('ci.claim_id', '=', id).orderBy(sql`case_date`).orderBy('i.invoice_number').execute();
@@ -112,7 +115,14 @@ export class FinClaimsService {
       const r = sc.get(x.id);
       return { ...x, scrub: r ? { errors: r.errors, warnings: r.warnings, overridden: r.overridden, issues: r.issues.filter((i) => !i.overridden).map((i) => ({ code: i.code, severity: i.severity, message: i.message, detail: i.detail })) } : null };
     });
-    return { ...c, payer_kind_ka: PAYER_KIND_KA[c.payer_kind], items: withScrub, payments,
+    // 0058: პასუხის შეჯამება
+    const resp = { accepted: 0, partial: 0, rejected: 0, pending: 0, none: 0, approved: 0, denied: 0 };
+    for (const x of items) {
+      if (!x.resp_status) { resp.none++; continue; }
+      resp[x.resp_status as 'accepted' | 'partial' | 'rejected' | 'pending']++;
+      if (x.resp_amount !== null) { resp.approved = r2(resp.approved + n(x.resp_amount)); resp.denied = r2(resp.denied + n(x.claimed) - n(x.resp_amount)); }
+    }
+    return { ...c, payer_kind_ka: PAYER_KIND_KA[c.payer_kind], items: withScrub, payments, responses: resp,
       scrub: sc.size ? { errors: [...sc.values()].filter((r) => r.errors).length, warnings: [...sc.values()].filter((r) => !r.errors && r.warnings).length } : null };
   }
 
@@ -310,43 +320,45 @@ export class FinClaimsService {
   async resolve(itemId: string, dto: { action: 'patient' | 'writeoff'; amount?: number; reason: string }, u: AuthUser, ctx: AuditContext) {
     await this.c.rules();
     try {
-      return await this.db.transaction().execute(async (trx) => {
-        const it = await trx.selectFrom('fin_claim_items as ci').selectAll('ci').select(OUTSTANDING.as('outstanding')).where('ci.id', '=', itemId).forUpdate().executeTakeFirst();
-        if (!it) throw new NotFoundException('შემთხვევა ვერ მოიძებნა');
-        const c = await this.lockClaim(trx, it.claim_id);
-        if (!['sent', 'partial'].includes(c.status)) throw new ConflictException('გადაწყვეტა — მხოლოდ გაგზავნილ, დაუფარავ ქლეიმზე');
-        if (it.resolution) throw new ConflictException('შემთხვევა უკვე გადაწყვეტილია');
-        const out = n(it.outstanding);
-        const amount = r2(dto.amount ?? out);
-        if (amount <= 0 || amount > out + 0.001) throw new BadRequestException(`თანხა: 0 < x ≤ ${out.toFixed(2)} (დაუფარავი)`);
-        if (dto.action === 'patient') {
-          // წილი გადადის პაციენტზე: ინვოისის დაზღვევის / სახელმწიფოს წილი მცირდება (ტრიგერი — პაციენტის წილი იზრდება); სტაციონარი — stay_payers.covered_amount
-          await sql`SELECT set_config('emr.fin_resolution', 'on', true)`.execute(trx);
-          const inv = await trx.selectFrom('invoices').select(['id', 'insurance_share', 'state_share']).where('id', '=', it.invoice_id).forUpdate().executeTakeFirstOrThrow();
-          const slot = it.share_slot === 'state' ? 'state_share' : 'insurance_share';
-          const cur = n(inv[slot]);
-          if (cur + 0.001 < amount) throw new ConflictException(`ინვოისის წილი (${cur.toFixed(2)}) ნაკლებია გადასატან თანხაზე`);
-          await trx.updateTable('invoices').set(slot === 'state_share' ? { state_share: r2(cur - amount).toFixed(2) } : { insurance_share: r2(cur - amount).toFixed(2) }).where('id', '=', inv.id).execute();
-          if (it.kind === 'ipd') {
-            const sps = await trx.selectFrom('stay_payers as sp').innerJoin('invoices as i', 'i.encounter_id', 'sp.encounter_id').select(['sp.id', 'sp.covered_amount'])
-              .where('i.id', '=', it.invoice_id).where('sp.payer_id', '=', it.payer_id).where('sp.status', '=', 'active').orderBy('sp.seq', 'desc').execute();
-            let rest = amount;
-            for (const s of sps) {
-              if (rest <= 0) break;
-              const d = r2(Math.min(rest, n(s.covered_amount)));
-              if (d > 0) { await trx.updateTable('stay_payers').set({ covered_amount: r2(n(s.covered_amount) - d).toFixed(2) }).where('id', '=', s.id).execute(); rest = r2(rest - d); }
-            }
-          }
-          await sql`SELECT fin_line_shares_to_patient(${it.invoice_id}::uuid, ${it.payer_id}::uuid, ${amount}::numeric)`.execute(trx);   // 0054a
-          await sql`SELECT set_config('emr.fin_resolution', 'off', true)`.execute(trx);
-        }
-        await trx.updateTable('fin_claim_items').set({ resolution: dto.action, resolved_amount: amount.toFixed(2), resolution_reason: dto.reason.trim(), resolved_by: u.id, resolved_at: sql`now()` })
-          .where('id', '=', itemId).execute();
-        await this.audit.log(ctx, { action: 'FIN_CLAIM_RESOLVE', entityName: 'fin_claim_items', entityId: itemId,
-          newData: { claim_id: it.claim_id, invoice_id: it.invoice_id, action: dto.action, amount, reason: dto.reason } }, trx);
-        return this.get(it.claim_id, trx);
-      });
+      return await this.db.transaction().execute(async (trx) => this.get(await this.resolveTx(trx, itemId, dto, u, ctx), trx));
     } catch (e) { return pg(e); }
+  }
+  /** გადაწყვეტა ტრანზაქციაში (0058: უარის მიზეზის ნაგულისხმევი ქმედებით — ჯგუფურად); აბრუნებს claim_id-ს */
+  async resolveTx(trx: Trx, itemId: string, dto: { action: 'patient' | 'writeoff'; amount?: number; reason: string }, u: AuthUser, ctx: AuditContext): Promise<string> {
+    const it = await trx.selectFrom('fin_claim_items as ci').selectAll('ci').select(OUTSTANDING.as('outstanding')).where('ci.id', '=', itemId).forUpdate().executeTakeFirst();
+    if (!it) throw new NotFoundException('შემთხვევა ვერ მოიძებნა');
+    const c = await this.lockClaim(trx, it.claim_id);
+    if (!['sent', 'partial'].includes(c.status)) throw new ConflictException('გადაწყვეტა — მხოლოდ გაგზავნილ, დაუფარავ ქლეიმზე');
+    if (it.resolution) throw new ConflictException('შემთხვევა უკვე გადაწყვეტილია');
+    const out = n(it.outstanding);
+    const amount = r2(dto.amount ?? out);
+    if (amount <= 0 || amount > out + 0.001) throw new BadRequestException(`თანხა: 0 < x ≤ ${out.toFixed(2)} (დაუფარავი)`);
+    if (dto.action === 'patient') {
+      // წილი გადადის პაციენტზე: ინვოისის დაზღვევის / სახელმწიფოს წილი მცირდება (ტრიგერი — პაციენტის წილი იზრდება); სტაციონარი — stay_payers.covered_amount
+      await sql`SELECT set_config('emr.fin_resolution', 'on', true)`.execute(trx);
+      const inv = await trx.selectFrom('invoices').select(['id', 'insurance_share', 'state_share']).where('id', '=', it.invoice_id).forUpdate().executeTakeFirstOrThrow();
+      const slot = it.share_slot === 'state' ? 'state_share' : 'insurance_share';
+      const cur = n(inv[slot]);
+      if (cur + 0.001 < amount) throw new ConflictException(`ინვოისის წილი (${cur.toFixed(2)}) ნაკლებია გადასატან თანხაზე`);
+      await trx.updateTable('invoices').set(slot === 'state_share' ? { state_share: r2(cur - amount).toFixed(2) } : { insurance_share: r2(cur - amount).toFixed(2) }).where('id', '=', inv.id).execute();
+      if (it.kind === 'ipd') {
+        const sps = await trx.selectFrom('stay_payers as sp').innerJoin('invoices as i', 'i.encounter_id', 'sp.encounter_id').select(['sp.id', 'sp.covered_amount'])
+          .where('i.id', '=', it.invoice_id).where('sp.payer_id', '=', it.payer_id).where('sp.status', '=', 'active').orderBy('sp.seq', 'desc').execute();
+        let rest = amount;
+        for (const s of sps) {
+          if (rest <= 0) break;
+          const d = r2(Math.min(rest, n(s.covered_amount)));
+          if (d > 0) { await trx.updateTable('stay_payers').set({ covered_amount: r2(n(s.covered_amount) - d).toFixed(2) }).where('id', '=', s.id).execute(); rest = r2(rest - d); }
+        }
+      }
+      await sql`SELECT fin_line_shares_to_patient(${it.invoice_id}::uuid, ${it.payer_id}::uuid, ${amount}::numeric)`.execute(trx);   // 0054a
+      await sql`SELECT set_config('emr.fin_resolution', 'off', true)`.execute(trx);
+    }
+    await trx.updateTable('fin_claim_items').set({ resolution: dto.action, resolved_amount: amount.toFixed(2), resolution_reason: dto.reason.trim(), resolved_by: u.id, resolved_at: sql`now()` })
+      .where('id', '=', itemId).execute();
+    await this.audit.log(ctx, { action: 'FIN_CLAIM_RESOLVE', entityName: 'fin_claim_items', entityId: itemId,
+      newData: { claim_id: it.claim_id, invoice_id: it.invoice_id, action: dto.action, amount, reason: dto.reason } }, trx);
+    return it.claim_id;
   }
 
   // ---------------------------------------------------------------- CSV / დებიტორები

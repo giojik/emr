@@ -7,6 +7,7 @@ import { ErrorBox, Loading } from '../../components/ui';
 import { todayISO } from '../../lib/format';
 import { useModuleEnabled, useModules } from '../../lib/modules';
 import Claims from './Claims';
+import DenialsView from './Denials';
 import DeptResultView from './DeptResult';
 import Periods from './Periods';
 import RevenueView from './Revenue';
@@ -21,6 +22,7 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType<TabPr
   { key: 'stock', label: 'მარაგი / მოხმარება', roles: FIN_READ, el: StockView, period: true },
   { key: 'result', label: 'განყოფილების შედეგი', roles: FIN_READ, el: DeptResultView, period: true },
   { key: 'claims', label: 'დებიტორები / ქლეიმები', roles: [...FIN_FULL, 'billing'], el: Claims, badge: (s) => s.claims?.overdue ?? 0 },
+  { key: 'denials', label: 'უარები', roles: [...FIN_FULL, 'billing'], el: DenialsView, period: true },
   { key: 'periods', label: 'პერიოდები', roles: FIN_FULL, el: Periods },
 ];
 

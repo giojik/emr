@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { NotificationsModule } from '../notifications/notifications';
+import { ClaimExportController, ClaimExportService } from '../claims-export/claim-export';
 import { FinClaimsController, FinClaimsService } from './finance-claims';
 import { FinCommon } from './finance-common';
 import { FinPeriodsController, FinPeriodsService } from './finance-periods';
@@ -27,7 +28,7 @@ export class FinSummaryController {
 /** ფინანსები (0053): შემოსავალი, მარაგი / მოხმარება, განყოფილების შედეგი, გადამხდელის დებიტორები (ქლეიმები), პერიოდის დახურვა */
 @Module({
   imports: [NotificationsModule, AuthModule],
-  controllers: [FinSummaryController, FinReportsController, FinClaimsController, FinPeriodsController],
-  providers: [FinCommon, FinReportsService, FinClaimsService, FinPeriodsService],
+  controllers: [FinSummaryController, FinReportsController, FinClaimsController, FinPeriodsController, ClaimExportController],
+  providers: [FinCommon, FinReportsService, FinClaimsService, FinPeriodsService, ClaimExportService],
 })
 export class FinanceModule {}

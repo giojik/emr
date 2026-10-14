@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, todayISO } from '../../lib/format';
 import { downloadCsv } from '../stock/types';
+import { ExportDialog, ImportDialog, RespChip, ResponseForm, RespSummary } from './ClaimFiles';
 import type { TabProps } from './Finance';
 import { type Candidate, type Claim, type ClaimItem, type ClaimRow, CLAIM_RESOLVE, CLAIM_STATUS, FIN_EDIT, FIN_FULL, fmt, Kpi, monthStart, type Payer, type Receivables } from './types';
 
@@ -155,10 +156,16 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [resolve, setResolve] = useState<ClaimItem | null>(null);
   const [reason, setReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [files, setFiles] = useState<'export' | 'import' | null>(null);
+  const [respItem, setRespItem] = useState<ClaimItem | null>(null);
   const done = (msg: string) => () => { toast.show(msg); ['fin-claim', 'fin-claims', 'fin-summary', 'fin-recv', 'fin-revenue'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] })); };
   const act = useMutation({
     mutationFn: (x: { path: string; body?: unknown; method?: string }) => api<Claim>(x.path, { method: x.method ?? 'POST', body: x.body ?? {} }),
     onSuccess: (r) => { done(r?.scrub_skipped?.length ? `შესრულდა · შემოწმების შეცდომით გამოტოვდა ${r.scrub_skipped.length}` : 'შესრულდა')(); },
+  });
+  const apply = useMutation({
+    mutationFn: () => api<{ done: unknown[]; skipped: { reason: string }[] }>(`/finance/claims/${id}/apply-denials`, { body: {} }),
+    onSuccess: (r) => done(`გადაწყდა ${r.done.length}${r.skipped.length ? ` · გამოტოვდა ${r.skipped.length}` : ''}`)(),
   });
   const c = q.data;
   const edit = can(user, ...FIN_EDIT);
@@ -177,6 +184,8 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
             <button className="btn sm" type="button" onClick={() => downloadCsv(`claim-${c.claim_no ?? 'draft'}-${c.payer_code}.csv`,
               ['ტიპი', 'ჰოსპ. №', 'ინვოისი', 'თარიღი', 'პაციენტი', 'პირადი №', 'პოლისი', 'საგარანტიო', 'მოთხოვნილი', 'ანაზღაურებული', 'გადაწყვეტილი', 'ნაშთი'],
               c.items.map((x) => [x.kind === 'ipd' ? 'სტაციონარი' : 'ამბულატორია', x.adm_no, x.invoice_number, x.case_date, x.patient, x.personal_number, x.policy_no, x.guarantee_no, x.claimed, x.paid, x.resolved_amount, x.outstanding]))}>CSV (რეესტრი)</button>
+            {c.status !== 'cancelled' && <button className="btn sm" type="button" onClick={() => setFiles('export')}>ფაილი (შაბლონით)</button>}
+            {can(user, ...CLAIM_RESOLVE) && ['sent', 'partial', 'settled'].includes(c.status) && <button className="btn sm" type="button" onClick={() => setFiles('import')}>პასუხის იმპორტი</button>}
             {edit && c.status === 'draft' && <>
               <button className="btn sm" type="button" disabled={act.isPending} onClick={() => act.mutate({ path: `/finance/claims/${id}`, method: 'PUT', body: {} })}>ახალი შემთხვევების დამატება</button>
               <button className="btn primary sm" type="button" disabled={act.isPending || !c.items.length} onClick={() => act.mutate({ path: `/finance/claims/${id}/send` })}>გაგზავნა</button></>}
@@ -187,7 +196,8 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
           {c.scrub && (c.scrub.errors > 0 ? <div className="alert warn">შემოწმება: {c.scrub.errors} შემთხვევას აქვს შეცდომა — გაგზავნა დაიბლოკება (გაასწორეთ, დაუშვით გამონაკლისი ან ამოიღეთ)</div>
             : c.scrub.warnings > 0 ? <span className="small muted">შემოწმება: შეცდომა არ არის; გაფრთხილება — {c.scrub.warnings} შემთხვევაზე</span> : null)}
           {c.status === 'cancelled' && <div className="alert warn">გაუქმებულია: {c.cancel_reason} ({c.cancelled_by_name})</div>}
-          <ErrorBox error={act.error} />
+          <RespSummary c={c} onApply={() => apply.mutate()} applying={apply.isPending} />
+          <ErrorBox error={act.error ?? apply.error} />
           {cancelOpen && (
             <div className="row card-pad" style={{ background: 'var(--surface-2)', flexWrap: 'wrap' }}>
               <input className="input grow" placeholder="გაუქმების მიზეზი" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -206,7 +216,7 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
             </form>)}
           <div style={{ overflowX: 'auto', flexShrink: 0 }}>
             <table className="table">
-              <thead><tr><th>თარიღი</th><th>პაციენტი</th><th>ინვოისი</th><th>პოლისი / საგარანტიო</th><th className="num">მოთხოვნილი</th><th className="num">ანაზღ.</th><th className="num">ნაშთი</th><th>გადაწყვეტა</th><th>შემოწმება</th><th /></tr></thead>
+              <thead><tr><th>თარიღი</th><th>პაციენტი</th><th>ინვოისი</th><th>პოლისი / საგარანტიო</th><th className="num">მოთხოვნილი</th><th className="num">ანაზღ.</th><th className="num">ნაშთი</th><th>პასუხი</th><th>გადაწყვეტა</th><th>შემოწმება</th><th /></tr></thead>
               <tbody>{c.items.map((x) => (
                 <tr key={x.id}>
                   <td className="mono small">{dateGe(x.case_date)}</td>
@@ -214,6 +224,9 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
                   <td className="mono small">{x.invoice_number}</td><td className="small">{[x.policy_no, x.guarantee_no].filter(Boolean).join(' / ') || '—'}</td>
                   <td className="num mono">{fmt(x.claimed)}</td><td className="num mono">{Number(x.paid) ? fmt(x.paid) : '—'}</td>
                   <td className="num mono"><strong>{Number(x.outstanding) ? fmt(x.outstanding) : '—'}</strong></td>
+                  <td className="small">{can(user, ...CLAIM_RESOLVE) && c.status !== 'draft' && c.status !== 'cancelled'
+                    ? <button type="button" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }} title="პასუხის ჩაწერა / შეცვლა" onClick={() => setRespItem(x)}>{x.resp_status ? <RespChip x={x} /> : <span className="muted">+ პასუხი</span>}</button>
+                    : <RespChip x={x} />}</td>
                   <td className="small">{x.resolution ? <span title={`${x.resolution_reason ?? ''} — ${x.resolved_by_name ?? ''}`} className={`chip ${x.resolution === 'patient' ? 'info' : 'danger'}`}>
                     {x.resolution === 'patient' ? 'პაციენტზე' : 'ჩამოწერა'} {fmt(x.resolved_amount)}</span> : '—'}</td>
                   <td className="small">{x.scrub === undefined ? '—' : x.kind === 'ipd' && x.scrub?.errors ? <Link to={`/inpatient/stay/${x.encounter_id}#scrub`}><ScrubChip s={x.scrub} /></Link> : <ScrubChip s={x.scrub} />}</td>
@@ -222,10 +235,11 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
                     {can(user, ...CLAIM_RESOLVE) && open && !x.resolution && Number(x.outstanding) > 0 && <button className="btn sm" type="button" onClick={() => setResolve(x)}>გადაწყვეტა</button>}
                   </td>
                 </tr>))}
-                {!c.items.length && <tr><td colSpan={10} className="muted">შემთხვევა არ არის</td></tr>}
+                {!c.items.length && <tr><td colSpan={11} className="muted">შემთხვევა არ არის</td></tr>}
               </tbody>
             </table>
           </div>
+          {respItem && <ResponseForm key={respItem.id} item={respItem} onClose={() => setRespItem(null)} onDone={() => { setRespItem(null); done('პასუხი ჩაიწერა')(); }} />}
           {resolve && <ResolveForm item={resolve} onClose={() => setResolve(null)} onDone={() => { setResolve(null); done('გადაწყვეტილია')(); }} />}
           {c.payments.length > 0 && (
             <section className="stack" style={{ gap: 6 }}>
@@ -237,6 +251,8 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
                   <td style={{ textAlign: 'right' }}>{edit && !p.is_void && <button className="btn sm" type="button" onClick={() => { const r = window.prompt('გაუქმების მიზეზი'); if (r && r.trim().length >= 3) act.mutate({ path: `/finance/claim-payments/${p.id}/void`, body: { reason: r } }); }}>გაუქმება</button>}</td>
                 </tr>))}</tbody></table>
             </section>)}
+          {files === 'export' && <ExportDialog claim={c} onClose={() => setFiles(null)} />}
+          {files === 'import' && <ImportDialog claim={c} onClose={() => setFiles(null)} onDone={() => done('პასუხი ჩაიწერა')()} />}
           <span className="small muted">შექმნა: {c.created_by_name}{c.sent_by_name ? ` · გაგზავნა: ${c.sent_by_name}` : ''}</span>
         </div>)}
     </Modal>
@@ -244,8 +260,11 @@ function ClaimModal({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function ResolveForm({ item, onClose, onDone }: { item: ClaimItem; onClose: () => void; onDone: () => void }) {
-  const [action, setAction] = useState<'patient' | 'writeoff'>('patient');
-  const [amount, setAmount] = useState(Number(item.outstanding).toFixed(2)); const [reason, setReason] = useState('');
+  // 0058: პასუხიდან — უარის თანხა, მიზეზი და ნაგულისხმევი ქმედება
+  const denied = item.resp_amount !== null && (item.resp_status === 'rejected' || item.resp_status === 'partial') ? Math.min(Number(item.claimed) - Number(item.resp_amount), Number(item.outstanding)) : null;
+  const [action, setAction] = useState<'patient' | 'writeoff'>(item.resp_default_action ?? 'patient');
+  const [amount, setAmount] = useState((denied ?? Number(item.outstanding)).toFixed(2));
+  const [reason, setReason] = useState(item.resp_reason ? `უარი: ${item.resp_reason} — ${item.resp_reason_title ?? ''}` : '');
   const m = useMutation({ mutationFn: () => api(`/finance/claim-items/${item.id}/resolve`, { body: { action, amount: Number(amount), reason } }), onSuccess: onDone });
   return (
     <form className="stack card-pad" style={{ background: 'var(--surface-2)' }} onSubmit={(e) => { e.preventDefault(); m.mutate(); }}>
