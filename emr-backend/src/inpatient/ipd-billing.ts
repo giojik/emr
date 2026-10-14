@@ -470,7 +470,11 @@ export class IpdBillingService {
         // 0055: DRG — დადასტურება / შესაბამისობა / შეცვლილი მონაცემები (მოდულის პარამეტრებით)
         const drgWarnings = await drgFinalizeCheck(trx, encounterId);
         const b = (await loadBilling(trx, encounterId))!;
-        for (const p of b.calc.payers) await trx.updateTable('stay_payers').set({ covered_amount: p.amount.toFixed(2) }).where('id', '=', p.id).execute();
+        for (const p of b.calc.payers) {
+          const d = b.drg.get(p.id);   // 0056: DRG თანხა და დაშლა — ფიქსირდება
+          await trx.updateTable('stay_payers').set({ covered_amount: p.amount.toFixed(2), ...(d && { drg_amount: d.total.toFixed(2), drg_breakdown: JSON.stringify(d) }) })
+            .where('id', '=', p.id).execute();
+        }
         await trx.updateTable('invoices').set({ insurance_share: b.calc.insurance.toFixed(2), state_share: b.calc.state.toFixed(2), writeoff_amount: b.calc.writeoff.toFixed(2) })
           .where('id', '=', inv.id).execute();
         await writeLineShares(trx, inv.id, b.calc);                                 // 0054a: ხაზობრივი წილი (შემოსავლის რეპორტი)
@@ -497,7 +501,7 @@ export class IpdBillingService {
       await trx.updateTable('invoices').set({ finalized_at: null, finalized_by: null, reopen_count: sql`reopen_count + 1` }).where('id', '=', inv.id).execute();
       await trx.deleteFrom('payments').where('invoice_id', '=', inv.id).where('method', '=', 'deposit').execute();
       await trx.updateTable('invoices').set({ insurance_share: '0', state_share: '0', writeoff_amount: '0' }).where('id', '=', inv.id).execute();
-      await trx.updateTable('stay_payers').set({ covered_amount: null }).where('encounter_id', '=', encounterId).execute();
+      await trx.updateTable('stay_payers').set({ covered_amount: null, drg_amount: null, drg_breakdown: null }).where('encounter_id', '=', encounterId).execute();
       await trx.deleteFrom('invoice_line_shares').where('invoice_id', '=', inv.id).execute();
       await this.ipd.event(trx, { encounter_id: encounterId, kind: 'billing_reopened', data: { reason: dto.reason.trim(), refunds_after_final: refunds.n } }, u);
       await this.audit.log(ctx, { action: 'IPD_BILLING_REOPEN', entityName: 'invoices', entityId: inv.id, oldData: { finalized_at: inv.finalized_at, patient_share: inv.patient_share }, newData: { reason: dto.reason } }, trx);
@@ -562,18 +566,18 @@ export class IpdBillingService {
       SELECT st.adm_no, i.invoice_number, pt.last_name || ' ' || pt.first_name AS patient, pt.personal_number,
              to_char(st.admitted_at AT TIME ZONE ${TZ}, 'DD.MM.YYYY') AS admitted, to_char(st.ended_at AT TIME ZONE ${TZ}, 'DD.MM.YYYY') AS discharged,
              (SELECT string_agg(DISTINCT d.icd10_code, ', ') FROM encounter_diagnoses d WHERE d.encounter_id = st.encounter_id AND d.diagnosis_type = 'primary') AS icd10,
-             sp.policy_no, sp.guarantee_no, to_char(sp.guarantee_date, 'DD.MM.YYYY') AS guarantee_date, sp.drg_code, sp.drg_weight::text, sp.drg_base_rate::text,
+             sp.policy_no, sp.guarantee_no, to_char(sp.guarantee_date, 'DD.MM.YYYY') AS guarantee_date, sp.drg_code, sp.drg_weight::text, sp.drg_base_rate::text, sp.drg_amount::text,
              (SELECT count(*) FROM stay_bed_days b WHERE b.encounter_id = st.encounter_id)::int AS bed_days,
              i.total_amount::text AS total, sp.covered_amount::text AS covered, i.patient_share::text AS patient
         FROM stay_payers sp JOIN inpatient_stays st ON st.encounter_id = sp.encounter_id JOIN invoices i ON i.encounter_id = st.encounter_id JOIN patients pt ON pt.id = st.patient_id
        WHERE sp.payer_id = ${payerId} AND sp.status = 'active' AND i.finalized_at >= ${from}::date AND i.finalized_at < ${to}::date + 1
        ORDER BY i.finalized_at`.execute(this.db);
-    const head = ['ჰოსპ. №', 'ინვოისი', 'პაციენტი', 'პირადი №', 'მოთავსება', 'გაწერა', 'ICD-10', 'პოლისი', 'საგარანტიო №', 'საგარანტიოს თარიღი', 'DRG', 'წონა', 'განაკვეთი', 'საწოლდღე', 'ჯამი', 'გადამხდელი', 'პაციენტი (თანაგადახდა)'];
-    const keys = ['adm_no', 'invoice_number', 'patient', 'personal_number', 'admitted', 'discharged', 'icd10', 'policy_no', 'guarantee_no', 'guarantee_date', 'drg_code', 'drg_weight', 'drg_base_rate', 'bed_days', 'total', 'covered', 'patient_share'];
+    const head = ['ჰოსპ. №', 'ინვოისი', 'პაციენტი', 'პირადი №', 'მოთავსება', 'გაწერა', 'ICD-10', 'პოლისი', 'საგარანტიო №', 'საგარანტიოს თარიღი', 'DRG', 'წონა', 'განაკვეთი', 'DRG თანხა', 'საწოლდღე', 'ჯამი', 'გადამხდელი', 'პაციენტი (თანაგადახდა)'];
+    const keys = ['adm_no', 'invoice_number', 'patient', 'personal_number', 'admitted', 'discharged', 'icd10', 'policy_no', 'guarantee_no', 'guarantee_date', 'drg_code', 'drg_weight', 'drg_base_rate', 'drg_amount', 'bed_days', 'total', 'covered', 'patient_share'];
     const esc = (v: unknown) => { const t = v === null || v === undefined ? '' : String(v); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
     const body = rows.rows.map((r) => keys.map((k) => esc(k === 'patient_share' ? r.patient : r[k])).join(';'));
     const tot = rows.rows.reduce((s, r) => s + Number(r.covered ?? 0), 0);
-    const csv = '﻿' + [`${p.name} (${p.code});${from} — ${to}`, head.join(';'), ...body, `ჯამი;;;;;;;;;;;;;;;${tot.toFixed(2)};`].join('\r\n');
+    const csv = '﻿' + [`${p.name} (${p.code});${from} — ${to}`, head.join(';'), ...body, `ჯამი;;;;;;;;;;;;;;;;${tot.toFixed(2)};`].join('\r\n');
     await this.audit.log(ctx, { action: 'PAYER_REGISTER_EXPORT', entityName: 'payers', entityId: payerId, newData: { from, to, rows: rows.rows.length } });
     return { csv, name: `register-${p.code}-${from}-${to}.csv` };
   }
@@ -627,9 +631,16 @@ export class IpdBillingService {
     kv('ჯამი (პაკეტში შემავალის გარეშე)', `${m.total} ₾`, true);
     for (const p of v.payers as Record<string, unknown>[]) {
       if (p.status !== 'active') continue;
-      const c = p.calc as { amount: number; tariff: number | null; writeoff: number } | null;
-      const terms = p.mode === 'drg' ? `DRG ${String(p.drg_code)} (${String(p.drg_weight)} × ${String(p.drg_base_rate)})` : p.mode === 'fixed' ? `ფიქს. ${String(p.fixed_amount)}` : `${Number(p.coverage_pct)}%`;
+      const c = p.calc as { amount: number; tariff: number | null; writeoff: number; drg_price?: { base: number; factor: number; items: { label: string; amount: number; note: string }[]; total: number } } | null;
+      const terms = p.mode === 'drg' ? `DRG ${String(p.drg_code)} (${String(p.drg_weight)} × ${String(p.drg_base_rate)}${c?.drg_price ? ` → ${c.drg_price.total.toFixed(2)}` : ''})` : p.mode === 'fixed' ? `ფიქს. ${String(p.fixed_amount)}` : `${Number(p.coverage_pct)}%`;
       kv(`${String(p.payer_name)} — ${terms}${p.guarantee_no ? `, საგარანტიო № ${String(p.guarantee_no)}` : ''}`, `${(v.finalized ? Number(p.covered_amount ?? 0) : c?.amount ?? 0).toFixed(2)} ₾`);
+      // 0056: DRG თანხის დაშლა
+      if (c?.drg_price && (c.drg_price.items.length || c.drg_price.factor !== 1)) {
+        doc.font('R').fontSize(8.5).fillColor('#444');
+        doc.text(`   საბაზისო: ${c.drg_price.base.toFixed(2)}${c.drg_price.factor !== 1 ? ` (კოეფ. ${c.drg_price.factor})` : ''}`, 45, doc.y, { width: W });
+        for (const it of c.drg_price.items.filter((x) => x.amount !== 0)) doc.text(`   ${it.label}: ${it.amount > 0 ? '+' : ''}${it.amount.toFixed(2)}${it.note ? ` (${it.note})` : ''}`, 45, doc.y, { width: W });
+        doc.fillColor('black'); doc.x = 45;
+      }
     }
     if (Number(m.writeoff) > 0) kv('ჩამოწერა (ტარიფს ზემოთ)', `${m.writeoff} ₾`);
     kv('პაციენტის წილი', `${m.patient} ₾`, true);

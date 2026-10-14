@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { DB } from '../database/db';
-import { group, type GroupInputs, type GroupResult } from './drg-engine';
+import { ccLevel, group, type GroupInputs, type GroupResult, type Level } from './drg-engine';
+import { price, type Price } from './drg-pricing';
 import { defaultSchemeId, drgRules, type DrgRules, gatherInputs, type InputDetails, inputsHash, loadVersion, stayInfo, type StayInfo, versionAt, versionDate, versionMeta,
   type VersionMeta } from './drg-data';
 
@@ -138,4 +139,43 @@ export async function drgForPayer(ex: Ex, eid: string, payerId: string, code: st
 export async function mirrorGroup(ex: Ex, g: { code: string; title: string; weight: string | number }) {
   await ex.insertInto('drg_groups').values({ code: g.code, title: g.title, relative_weight: String(g.weight), is_active: true })
     .onConflict((oc) => oc.column('code').doUpdateSet({ is_active: true })).execute();
+}
+
+// ================================================================= 0056: თანხა
+export type StayPrice = Price & { version_id: string; version_label: string; group_code: string; group_title: string };
+
+/**
+ * DRG თანხა სქემის ვერსიის ფორმულით — თითო DRG გადამხდელზე (stay_payers.id → თანხა და დაშლა).
+ *   ვერსია: გადამხდელის drg_version_id (დაჯგუფებით მინიჭებული), თუ არა — სქემის მოქმედი; ჯგუფი ვერსიაში უნდა იყოს.
+ *   წონა და განაკვეთი — გადამხდელის ჩანაწერიდან (მინიჭებისას დაფიქსირებული). ფორმულის / ვერსიის გარეშე → არ ითვლება (0046: წონა × განაკვეთი).
+ *   charges — ფაქტობრივი ხარჯი (ინვოისი, პაკეტში შემავალის გარდა) — cost_outlier-ისთვის.
+ */
+export async function drgPrices(ex: Ex, eid: string, charges: number | null, rules?: DrgRules & { enabled: boolean }): Promise<Map<string, StayPrice>> {
+  const out = new Map<string, StayPrice>();
+  const r = rules ?? await drgRules(ex);
+  if (!r.enabled) return out;
+  const payers = (await drgPayers(ex, eid)).filter((p) => p.drg_code && p.drg_weight && p.drg_base_rate);
+  if (!payers.length) return out;
+  const st = await stayInfo(ex, eid);
+  if (!st) return out;
+  const cache = new Map<string, { v: Awaited<ReturnType<typeof loadVersion>>; meta: VersionMeta; x: GroupInputs; level: Level }>();
+  for (const p of payers) {
+    const vid = p.drg_version_id ?? (p.scheme_id ? await versionAt(ex, p.scheme_id, versionDate(st, r)) : null);
+    if (!vid) continue;
+    let c = cache.get(vid);
+    if (!c) {
+      const meta = await versionMeta(ex, vid);
+      if (!meta) continue;
+      const v = await loadVersion(ex, vid);
+      const { inputs } = await gatherInputs(ex, st, v.settings);
+      c = { v, meta, x: inputs, level: ccLevel(inputs, v).level };
+      cache.set(vid, c);
+    }
+    const g = await ex.selectFrom('drg_version_groups').select(['code', 'title', 'alos', 'los_low', 'los_high']).where('version_id', '=', vid).where('code', '=', p.drg_code!).executeTakeFirst();
+    if (!g) continue;
+    const pr = price(c.v.components ?? [], c.v, { code: g.code, weight: Number(p.drg_weight), alos: g.alos === null ? null : Number(g.alos), los_low: g.los_low, los_high: g.los_high },
+      Number(p.drg_base_rate), c.x, c.level, charges);
+    out.set(p.id, { ...pr, version_id: vid, version_label: c.meta.label, group_code: g.code, group_title: g.title });
+  }
+  return out;
 }

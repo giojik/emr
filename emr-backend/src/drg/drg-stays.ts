@@ -9,7 +9,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
-import { drgPayers, evaluateStay, mirrorGroup, type StayEval } from './drg-calc';
+import { drgPayers, drgPrices, evaluateStay, mirrorGroup, type StayEval, type StayPrice } from './drg-calc';
 import { DRG_ADMIN, DRG_CONFIRM, DRG_STAY_READ, defaultSchemeId, drgRules, stayInfo } from './drg-data';
 import { DISCHARGE_KA, SOURCE_KA } from './drg-engine';
 
@@ -69,16 +69,29 @@ export class DrgStaysService {
     const noPayer = ids.length === 0;
     if (schemeId) ids = [schemeId];
     else if (noPayer) { const d = await defaultSchemeId(this.db); ids = d ? [d] : []; }
+    // 0056: თანხა გადამხდელზე — ფინალიზებულზე დაფიქსირებული, სხვა შემთხვევაში — მიმდინარე ფორმულით
+    const money = has(u, 'admin', 'billing', 'drg', 'drg_admin', 'receptionist', 'manager', 'accountant', 'viewer');
+    const prices = new Map<string, StayPrice>();
+    if (money && payers.length) {
+      if (inv?.finalized_at) {
+        const fx = await this.db.selectFrom('stay_payers').select(['id', 'drg_breakdown']).where('encounter_id', '=', eid).where('drg_breakdown', 'is not', null).execute();
+        for (const f of fx) prices.set(f.id, f.drg_breakdown as unknown as StayPrice);
+      } else {
+        const ch = (await sql<{ s: string }>`SELECT coalesce(sum(l.line_total), 0) AS s FROM invoice_line_items l JOIN invoices i ON i.id = l.invoice_id
+          WHERE i.encounter_id = ${eid}::uuid AND NOT l.package_included`.execute(this.db)).rows[0]?.s;
+        for (const [k, v] of await drgPrices(this.db, eid, Number(ch ?? 0), rules)) prices.set(k, v);
+      }
+    }
     const schemes = [];
     for (const sid of ids) {
       const ev = await evaluateStay(this.db, eid, sid, { rules, st, versionId });
-      schemes.push({ ...this.present(ev), payers: payers.filter((p) => p.scheme_id === sid).map(({ drg_scheme_id: _x, ...p }) => p) });
+      schemes.push({ ...this.present(ev), payers: payers.filter((p) => p.scheme_id === sid).map(({ drg_scheme_id: _x, ...p }) => ({ ...p, price: prices.get(p.id) ?? null })) });
     }
     return {
       enabled: rules.enabled, settings: { confirm_required: rules.confirm_required, recheck_on_finalize: rules.recheck_on_finalize, manual_payer_drg: rules.manual_payer_drg,
         version_date_basis: rules.version_date_basis },
       stay: { adm_no: st.adm_no, status: st.status }, finalized: !!inv?.finalized_at, no_drg_payer: noPayer, test_version: !!versionId,
-      can: { confirm: has(u, ...DRG_CONFIRM) && !inv?.finalized_at && st.status !== 'cancelled', admin: has(u, ...DRG_ADMIN) },
+      can: { confirm: has(u, ...DRG_CONFIRM) && !inv?.finalized_at && st.status !== 'cancelled', admin: has(u, ...DRG_ADMIN), money },
       schemes,
     };
   }

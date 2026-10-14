@@ -67,7 +67,7 @@ chk "არასწორი პარამეტრი (recheck_on_finalize=x
 chk "უფლებების კატალოგი: drg, drg_admin" "$(api GET /roles/capabilities "$ADM" | jq -r '[.[].code|select(.=="drg" or .=="drg_admin")]|sort|join(",")')" "drg,drg_admin"
 chk "ექთანი DRG კონფიგურაციას ვერ ხედავს (403)" "$(code GET /drg/schemes "$NA")" "403"
 chk "კოდირება / ბილინგი — ნახვა (200 / 200)" "$(code GET /drg/schemes "$CD") / $(code GET /drg/meta "$BL")" "200 / 200"
-chk "მეტა: 16 ველი, ოპერატორები" "$(api GET /drg/meta "$CD" | jq -r '"\(.fields|length):\(.ops.between)"')" "16:შუალედი"
+chk "მეტა: 17 ველი, ოპერატორები" "$(api GET /drg/meta "$CD" | jq -r '"\(.fields|length):\(.ops.between)"')" "17:შუალედი"
 
 step "2. სქემა, გადამხდელი"
 chk "ბილინგი სქემას ვერ ქმნის (403)" "$(code POST /drg/schemes "$BL" -d "{\"code\":\"E2ED$S\",\"name\":\"ტესტ-E2E\"}")" "403"

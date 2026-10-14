@@ -4,6 +4,7 @@ import type { Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import type { DB } from '../database/db';
 import { type Cond, type GroupInputs, type ListKind, norm, stableJson, type VersionData, versionSettings, type VersionSettings } from './drg-engine';
+import type { Component } from './drg-pricing';
 
 type Ex = Kysely<DB> | Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -44,13 +45,14 @@ export async function versionMeta(ex: Ex, id: string): Promise<VersionMeta | und
     .where('v.id', '=', id).executeTakeFirst();
 }
 export async function loadVersion(ex: Ex, id: string): Promise<VersionData> {
-  const [v, groups, lists, items, cc, rules] = await Promise.all([
+  const [v, groups, lists, items, cc, rules, comps] = await Promise.all([
     ex.selectFrom('drg_versions').select('settings').where('id', '=', id).executeTakeFirstOrThrow(),
-    ex.selectFrom('drg_version_groups').select(['code', 'title', 'weight', 'kind', 'mdc']).where('version_id', '=', id).execute(),
+    ex.selectFrom('drg_version_groups').select(['code', 'title', 'weight', 'kind', 'mdc', 'alos']).where('version_id', '=', id).execute(),
     ex.selectFrom('drg_code_lists').select(['code', 'kind']).where('version_id', '=', id).execute(),
     ex.selectFrom('drg_code_list_items').select(['list_code', 'pattern']).where('version_id', '=', id).execute(),
     ex.selectFrom('drg_cc').select(['pattern', 'level', 'excl_pdx']).where('version_id', '=', id).execute(),
     ex.selectFrom('drg_rules').select(['id', 'seq', 'drg_code', 'label', 'conditions', 'is_active']).where('version_id', '=', id).orderBy('seq').orderBy('id').execute(),
+    ex.selectFrom('drg_price_components').select(['id', 'seq', 'kind', 'label', 'conditions', 'params', 'exclusive_group', 'is_active']).where('version_id', '=', id).orderBy('seq').orderBy('id').execute(),
   ]);
   const lm = new Map<string, { kind: ListKind; patterns: string[] }>(lists.map((l) => [l.code, { kind: l.kind as ListKind, patterns: [] }]));
   for (const i of items) lm.get(i.list_code)?.patterns.push(i.pattern);
@@ -60,6 +62,7 @@ export async function loadVersion(ex: Ex, id: string): Promise<VersionData> {
     lists: lm,
     cc: cc.map((c) => ({ pattern: c.pattern, level: c.level as 'cc' | 'mcc', excl_pdx: c.excl_pdx ?? [] })),
     rules: rules.map((r) => ({ ...r, conditions: r.conditions as unknown as Cond[] })),
+    components: comps.map((c) => ({ ...c, kind: c.kind as Component['kind'], conditions: c.conditions as unknown as Cond[], params: (c.params ?? {}) as Record<string, unknown> })),
   };
 }
 export async function listKinds(ex: Ex, versionId: string) {
@@ -102,7 +105,7 @@ const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T
 /** შემთხვევის მონაცემები დასაჯგუფებლად (ვერსიის პარამეტრებით) */
 export async function gatherInputs(ex: Ex, st: StayInfo, s: VersionSettings): Promise<{ inputs: GroupInputs; details: InputDetails }> {
   const eid = st.encounter_id;
-  const [dxRows, opRows, planRows, svcRows, bed, icu, vent] = await Promise.all([
+  const [dxRows, opRows, planRows, svcRows, bed, icu, vent, dept] = await Promise.all([
     ex.selectFrom('encounter_diagnoses').select(['icd10_code', 'icd10_title', 'diagnosis_type']).where('encounter_id', '=', eid).orderBy('created_at').orderBy('id').execute(),
     // ოპერაციები: დასრულებული შემთხვევის ხელმოწერილი ოქმის (მიმდინარე ვერსია) პროცედურები
     sql<{ case_id: string; case_no: string; p: { code?: string; ncsp_code?: string | null; name?: string; is_primary?: boolean } }>`
@@ -122,6 +125,9 @@ export async function gatherInputs(ex: Ex, st: StayInfo, s: VersionSettings): Pr
        FROM icu_episodes e WHERE e.encounter_id = ${eid}::uuid AND e.exit_kind IS DISTINCT FROM 'cancel'`.execute(ex),
     sql<{ h: string | null }>`SELECT sum(extract(epoch FROM (coalesce(v.ended_at, ${st.ended_at}::timestamptz, now()) - v.started_at)) / 3600) AS h
        FROM icu_ventilation v WHERE v.encounter_id = ${eid}::uuid AND v.voided_at IS NULL AND v.kind = ANY(${s.vent_kinds.length ? s.vent_kinds : ['__none__']}::text[])`.execute(ex),
+    // 0056: განყოფილება — ბოლო (გაწერის) მოთავსება
+    sql<{ code: string }>`SELECT d.code FROM bed_assignments a JOIN departments d ON d.id = a.department_id WHERE a.encounter_id = ${eid}::uuid AND a.end_kind IS DISTINCT FROM 'cancel'
+       ORDER BY a.ended_at IS NULL DESC, a.started_at DESC, a.id DESC LIMIT 1`.execute(ex),
   ]);
 
   // დიაგნოზები
@@ -161,7 +167,7 @@ export async function gatherInputs(ex: Ex, st: StayInfo, s: VersionSettings): Pr
     age: yearsBetween(st.birth_date, ageDate), age_days: daysBetween(st.birth_date, ageDate), sex,
     los: s.los_basis === 'calendar_days' ? losCal : Math.max(bed.n, 1),
     icu_hours: r1(icu.rows[0]?.h), vent_hours: r1(vent.rows[0]?.h),
-    discharge: st.discharge_type, source: st.source,
+    discharge: st.discharge_type, source: st.source, dept: dept.rows[0]?.code ? norm(dept.rows[0].code) : null,
   };
   return { inputs, details: { dx, procs, services: svcRows.rows, los_bed_days: bed.n, los_calendar: losCal, age_basis_date: ageDate } };
 }

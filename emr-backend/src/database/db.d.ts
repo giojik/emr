@@ -599,6 +599,19 @@ export interface DrgGroups {
   updated_at: Generated<Timestamp>;
 }
 
+export interface DrgPriceComponents {
+  conditions: Generated<Json>;
+  exclusive_group: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  label: string;
+  notes: string | null;
+  params: Generated<Json>;
+  seq: number;
+  version_id: string;
+}
+
 export interface DrgRules {
   conditions: Generated<Json>;
   drg_code: string;
@@ -3239,7 +3252,9 @@ export interface StayPayers {
   created_at: Generated<Timestamp>;
   created_by: string;
   deductible: Generated<Numeric>;
+  drg_amount: Numeric | null;
   drg_base_rate: Numeric | null;
+  drg_breakdown: Json | null;
   drg_code: string | null;
   drg_source: string | null;
   drg_version_id: string | null;
@@ -3841,6 +3856,7 @@ export interface DB {
   drg_code_list_items: DrgCodeListItems;
   drg_code_lists: DrgCodeLists;
   drg_groups: DrgGroups;
+  drg_price_components: DrgPriceComponents;
   drg_rules: DrgRules;
   drg_schemes: DrgSchemes;
   drg_version_groups: DrgVersionGroups;

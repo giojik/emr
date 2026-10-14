@@ -5,6 +5,8 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Modal, useDebounced, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
 import { useModuleEnabled } from '../../lib/modules';
+import { PriceView } from '../admin/drg/DrgFormula';
+import type { Price } from '../admin/drg/types';
 
 /** DRG შემთხვევაზე (0055): შეთავაზება და „რატომ“, დადასტურება / შეცვლა მიზეზით / გაუქმება */
 export const DRG_STAY_READ: Role[] = ['admin', 'billing', 'drg', 'drg_admin', 'receptionist', 'manager', 'doctor', 'viewer', 'accountant'];
@@ -25,12 +27,12 @@ interface Scheme {
     icu_hours: number; vent_hours: number; discharge_ka: string | null; source_ka: string | null; los_bed_days: number; los_calendar: number;
     dx: { code: string; title: string; type: string; role: string }[]; proc_list: { case_no: string; code: string; ncsp: string | null; name: string; primary: boolean; from: string }[];
     service_list: { code: string; title: string }[] } | null;
-  payers: { id: string; payer_name: string; drg_code: string | null; drg_weight: string | null; drg_source: string | null }[];
+  payers: { id: string; payer_name: string; drg_code: string | null; drg_weight: string | null; drg_source: string | null; drg_base_rate?: string | null; price: (Price & { version_label?: string }) | null }[];
 }
 interface DrgView {
   enabled: boolean; finalized: boolean; no_drg_payer: boolean; test_version: boolean;
   settings: { confirm_required: boolean; recheck_on_finalize: string; manual_payer_drg: string };
-  can: { confirm: boolean; admin: boolean }; schemes: Scheme[];
+  can: { confirm: boolean; admin: boolean; money?: boolean }; schemes: Scheme[];
 }
 interface HistoryRow { id: string; scheme_code: string; version_label: string; status: string; final_code: string; final_weight: string; suggested_code: string | null; reason: string | null;
   confirmed_at: string; confirmed_by_name: string; superseded_at: string | null; supersede_reason: string | null; superseded_by_name: string | null; rule_text: string | null }
@@ -95,6 +97,8 @@ function SchemeBlock({ eid, v, s, onChanged }: { eid: string; v: DrgView; s: Sch
             <div className="small muted">{cur.confirmed_by_name} · {tsDate(cur.confirmed_at)}{cur.status === 'overridden' && <> · შეთავაზება იყო {cur.suggested_code ?? '—'}</>}</div>
             {cur.reason && <div className="small">მიზეზი: {cur.reason}</div>}</div> : <span className="small muted">—</span>}
           {s.payers.length > 0 && <span className="small">გადამხდელი: {s.payers.map((p) => `${p.payer_name} — ${p.drg_code ?? '—'}${p.drg_weight ? ` (${Number(p.drg_weight)})` : ''}`).join('; ')}</span>}
+          {s.payers.filter((p) => p.price).map((p) => <div key={p.id} className="stack" style={{ gap: 2, marginTop: 4 }}>
+            <span className="small muted">DRG თანხა{s.payers.length > 1 ? ` — ${p.payer_name}` : ''}{v.finalized ? ' (დაფიქსირებული)' : ' (მიმდინარე)'}</span><PriceView p={p.price!} compact /></div>)}
           {v.can.confirm && <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
             {r.code && !sameAsCurrent && <button className="btn sm primary" type="button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>დადასტურება: {r.code}</button>}
             <button className="btn sm" type="button" onClick={() => setDlg('override')}>სხვა ჯგუფი…</button>

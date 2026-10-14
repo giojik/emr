@@ -17,7 +17,8 @@ import type { DB } from '../database/db';
 import { buildCsv, num, parseCsv } from './drg-csv';
 import { mirrorGroup } from './drg-calc';
 import { DRG_ADMIN, DRG_READ, drgRules, listKinds, loadVersion, versionMeta } from './drg-data';
-import { type Cond, condsText, FIELDS, group, type GroupInputs, type ListKind, norm, normPattern, OP_KA, parseConds, PATTERN_RE, validateCond, validateVersionSettings,
+import { type Component, KINDS as PRICE_KINDS, price, validateComponent } from './drg-pricing';
+import { ccLevel, type Cond, condsText, FIELDS, group, type GroupInputs, type ListKind, norm, normPattern, OP_KA, parseConds, PATTERN_RE, validateCond, validateVersionSettings,
   VERSION_SETTINGS_DEFAULT, versionSettings } from './drg-engine';
 
 type Trx = Transaction<DB>;
@@ -86,6 +87,18 @@ export class RuleDto {
   @IsOptional() @IsString() @MaxLength(1000) notes?: string | null;
 }
 export class ReorderDto { @IsArray() @IsUUID('all', { each: true }) ids: string[] }
+const PKINDS = ['coef', 'high_los', 'low_los', 'transfer', 'percent', 'fixed', 'per_unit', 'cost_outlier', 'cap'] as const;
+export class ComponentDto {
+  @IsOptional() @Transform(numT) @IsInt() @Min(1) @Max(1_000_000) seq?: number;
+  @IsOptional() @IsIn(PKINDS) kind?: (typeof PKINDS)[number];
+  @IsOptional() @IsString() @Length(2, 300) label?: string;
+  @IsOptional() @IsArray() conditions?: Cond[];
+  @IsOptional() @IsString() @MaxLength(20000) conditions_text?: string;
+  @IsOptional() @IsObject() params?: Record<string, unknown>;
+  @IsOptional() @IsString() @Matches(/^[a-z0-9_]{1,30}$/, { message: 'ჯგუფი: ლათ. პატარა ასოები, ციფრები, _' }) exclusive_group?: string | null;
+  @IsOptional() @IsBoolean() is_active?: boolean;
+  @IsOptional() @IsString() @MaxLength(1000) notes?: string | null;
+}
 export class CsvImportDto {
   @IsString() @Length(3, 5_000_000) csv: string;
   @IsOptional() @IsBoolean() dry_run?: boolean;
@@ -113,6 +126,11 @@ export class TestDto {
   @IsOptional() @Transform(numT) @IsNumber() @Min(0) @Max(87600) vent_hours?: number;
   @IsOptional() @IsString() discharge?: string | null;
   @IsOptional() @IsString() source?: string | null;
+  @IsOptional() @IsString() @MaxLength(30) dept?: string | null;
+  /** 0056: თანხა — საბაზისო განაკვეთი, ჯგუფი (ცარიელი — შედეგის), ფაქტობრივი ხარჯი */
+  @IsOptional() @Transform(numT) @IsNumber() @Min(0) @Max(100_000_000) base_rate?: number | null;
+  @IsOptional() @IsString() @MaxLength(20) drg_code?: string | null;
+  @IsOptional() @Transform(numT) @IsNumber() @Min(0) @Max(1_000_000_000) charges?: number | null;
 }
 
 interface Pkg {
@@ -121,6 +139,8 @@ interface Pkg {
   lists: { code: string; title: string; kind: string; notes?: string | null; items: (string | { pattern: string; title?: string | null })[] }[];
   cc: { pattern: string; level: string; excl_pdx?: string[]; notes?: string | null }[];
   rules: { seq: number; drg_code: string; label?: string | null; conditions?: Cond[]; conditions_text?: string; is_active?: boolean; notes?: string | null }[];
+  /** 0056 (არასავალდებულო) */
+  components?: { seq: number; kind: string; label: string; conditions?: Cond[]; conditions_text?: string; params?: Record<string, unknown>; exclusive_group?: string | null; is_active?: boolean; notes?: string | null }[];
 }
 
 // ================================================================= სერვისი
@@ -134,7 +154,7 @@ export class DrgConfigService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService) {}
 
   meta() {
-    return { fields: FIELDS, ops: OP_KA, list_kinds: KIND_KA, version_settings_default: VERSION_SETTINGS_DEFAULT,
+    return { fields: FIELDS, ops: OP_KA, list_kinds: KIND_KA, version_settings_default: VERSION_SETTINGS_DEFAULT, price_kinds: PRICE_KINDS,
       examples: ['pdx in @APPENDICITIS', 'proc any @APPENDECTOMY & cc >= cc', 'age between 0..17', 'sex = F', 'los >= 3', 'discharge in death', 'surgery is no', 'vent_hours >= 96'] };
   }
 
@@ -193,6 +213,7 @@ export class DrgConfigService {
     sql<number>`(SELECT count(*)::int FROM drg_code_lists l WHERE l.version_id = v.id)`.as('n_lists'),
     sql<number>`(SELECT count(*)::int FROM drg_cc c WHERE c.version_id = v.id)`.as('n_cc'),
     sql<number>`(SELECT count(*)::int FROM drg_rules r WHERE r.version_id = v.id)`.as('n_rules'),
+    sql<number>`(SELECT count(*)::int FROM drg_price_components c WHERE c.version_id = v.id)`.as('n_components'),
     sql<number>`(SELECT count(*)::int FROM stay_drg d WHERE d.version_id = v.id)`.as('n_stays'),
   ] as const;
   async versions(schemeId: string) {
@@ -252,6 +273,8 @@ export class DrgConfigService {
     await sql`INSERT INTO drg_cc (version_id, pattern, level, excl_pdx, notes) SELECT ${to}::uuid, pattern, level, excl_pdx, notes FROM drg_cc WHERE version_id = ${from}::uuid`.execute(trx);
     await sql`INSERT INTO drg_rules (version_id, seq, drg_code, label, conditions, is_active, notes)
       SELECT ${to}::uuid, seq, drg_code, label, conditions, is_active, notes FROM drg_rules WHERE version_id = ${from}::uuid`.execute(trx);
+    await sql`INSERT INTO drg_price_components (version_id, seq, kind, label, conditions, params, exclusive_group, is_active, notes)
+      SELECT ${to}::uuid, seq, kind, label, conditions, params, exclusive_group, is_active, notes FROM drg_price_components WHERE version_id = ${from}::uuid`.execute(trx);
   }
   async updateVersion(id: string, dto: VersionUpdateDto, u: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
@@ -305,6 +328,7 @@ export class DrgConfigService {
       }
     }
     for (const c of v.cc) for (const x of c.excl_pdx) if (x.startsWith('@')) { used.add(x.slice(1)); if (!kinds.has(x.slice(1))) errors.push(`CC ${c.pattern}: სია ${x} ვერსიაში არ არის`); }
+    for (const c of v.components ?? []) for (const q of c.conditions) if (Array.isArray(q.v)) for (const x of q.v as unknown[]) if (typeof x === 'string' && x.startsWith('@')) used.add(x.slice(1));
     for (const [k, l] of v.lists) {
       if (!l.patterns.length) (used.has(k) ? errors : warnings).push(`სია @${k} ცარიელია`);
       else if (!used.has(k)) warnings.push(`სია @${k} არცერთ წესში / CC-ში არ გამოიყენება`);
@@ -320,6 +344,17 @@ export class DrgConfigService {
     const orphan = [...v.groups.keys()].filter((g) => !ruled.has(g));
     if (orphan.length) warnings.push(`ჯგუფები წესის გარეშე (მხოლოდ ხელით არჩევით): ${orphan.length} — ${orphan.slice(0, 15).join(', ')}${orphan.length > 15 ? ' …' : ''}`);
     if (!v.cc.length) warnings.push('CC / MCC სია ცარიელია — სიმძიმე ყოველთვის „არა“');
+    // 0056: თანხის კომპონენტები
+    for (const c of v.components ?? []) {
+      const err = validateComponent({ kind: c.kind, params: { ...c.params }, conditions: JSON.parse(JSON.stringify(c.conditions)) as Cond[] }, kinds);
+      if (err) errors.push(`ფორმულა #${c.seq}: ${err}`);
+    }
+    const active2 = (v.components ?? []).filter((c) => c.is_active);
+    if (active2.some((c) => ['high_los', 'low_los', 'transfer'].includes(c.kind))) {
+      const noLos = [...v.groups.values()].filter((g) => !g.alos).length;
+      if (noLos) warnings.push(`ფორმულა: ${noLos} ჯგუფს საშუალო ხანგრძლივობა არ აქვს — დღეების კომპონენტები მათზე არ მოქმედებს`);
+    }
+    if (!active2.length) warnings.push('ფორმულა: კომპონენტები არ არის — თანხა = განაკვეთი × წონა');
     return { version: meta, errors, warnings, ok: errors.length === 0 };
   }
 
@@ -737,15 +772,87 @@ export class DrgConfigService {
     return { ...summary, applied: true };
   }
 
+  // ---------------------------------------------------------------- 0056: თანხის ფორმულა (კომპონენტები)
+  async components(id: string) {
+    const rows = await this.db.selectFrom('drg_price_components').selectAll().where('version_id', '=', id).orderBy('seq').orderBy('id').execute();
+    return rows.map((c) => ({ ...c, conditions_text: condsText(c.conditions as unknown as Cond[]), kind_ka: PRICE_KINDS[c.kind as Component['kind']]?.label ?? c.kind }));
+  }
+  private async componentValues(trx: Trx | Database, id: string, dto: ComponentDto, old?: { kind: string; params: unknown; conditions: unknown }) {
+    const kinds = await listKinds(trx, id);
+    let conds = (old?.conditions ?? []) as Cond[];
+    if (dto.conditions_text !== undefined) {
+      const r = parseConds(dto.conditions_text, kinds);
+      if ('error' in r) throw new BadRequestException(`პირობები: ${r.error}`);
+      conds = r.conds;
+    } else if (dto.conditions !== undefined) conds = dto.conditions.map((c) => ({ f: c.f, op: c.op, v: c.v }));
+    const c = { kind: dto.kind ?? old?.kind ?? '', params: { ...(dto.params ?? (old?.params as Record<string, unknown>) ?? {}) }, conditions: conds };
+    if (dto.kind && old && dto.kind !== old.kind && !dto.params) c.params = {};
+    const err = validateComponent(c, kinds);
+    if (err) throw new BadRequestException(err);
+    return c;
+  }
+  async createComponent(id: string, dto: ComponentDto, u: AuthUser, ctx: AuditContext) {
+    if (!dto.kind || !dto.label) throw new BadRequestException('კომპონენტს სჭირდება სახეობა და დასახელება');
+    return this.db.transaction().execute(async (trx) => {
+      await this.draft(trx, id);
+      const c = await this.componentValues(trx, id, dto);
+      const seq = dto.seq ?? ((await trx.selectFrom('drg_price_components').select(sql<number>`coalesce(max(seq), 0)::int`.as('m')).where('version_id', '=', id).executeTakeFirstOrThrow()).m + 10);
+      const r = await trx.insertInto('drg_price_components').values({ version_id: id, seq, kind: c.kind, label: dto.label!.trim(), conditions: JSON.stringify(c.conditions),
+        params: JSON.stringify(c.params), exclusive_group: dto.exclusive_group || null, is_active: dto.is_active ?? true, notes: nz(dto.notes) }).returningAll().executeTakeFirstOrThrow();
+      await this.touch(trx, id, u);
+      await this.audit.log(ctx, { action: 'DRG_COMPONENT_CREATE', entityName: 'drg_price_components', entityId: r.id, newData: r }, trx);
+      return { ...r, conditions_text: condsText(c.conditions) };
+    });
+  }
+  async updateComponent(cid: string, dto: ComponentDto, u: AuthUser, ctx: AuditContext) {
+    return this.db.transaction().execute(async (trx) => {
+      const old = await trx.selectFrom('drg_price_components').selectAll().where('id', '=', cid).forUpdate().executeTakeFirst();
+      if (!old) throw new NotFoundException('კომპონენტი ვერ მოიძებნა');
+      await this.draft(trx, old.version_id);
+      const c = await this.componentValues(trx, old.version_id, dto, old);
+      const r = await trx.updateTable('drg_price_components').set({
+        kind: c.kind, params: JSON.stringify(c.params), conditions: JSON.stringify(c.conditions), ...(dto.seq !== undefined && { seq: dto.seq }), ...(dto.label !== undefined && { label: dto.label.trim() }),
+        ...(dto.exclusive_group !== undefined && { exclusive_group: dto.exclusive_group || null }), ...(dto.is_active !== undefined && { is_active: dto.is_active }),
+        ...(dto.notes !== undefined && { notes: nz(dto.notes) }),
+      }).where('id', '=', cid).returningAll().executeTakeFirstOrThrow();
+      await this.touch(trx, old.version_id, u);
+      await this.audit.log(ctx, { action: 'DRG_COMPONENT_UPDATE', entityName: 'drg_price_components', entityId: cid, oldData: old, newData: r }, trx);
+      return { ...r, conditions_text: condsText(c.conditions) };
+    });
+  }
+  async deleteComponent(cid: string, u: AuthUser, ctx: AuditContext) {
+    return this.db.transaction().execute(async (trx) => {
+      const old = await trx.selectFrom('drg_price_components').selectAll().where('id', '=', cid).executeTakeFirst();
+      if (!old) throw new NotFoundException('კომპონენტი ვერ მოიძებნა');
+      await this.draft(trx, old.version_id);
+      await trx.deleteFrom('drg_price_components').where('id', '=', cid).execute();
+      await this.touch(trx, old.version_id, u);
+      await this.audit.log(ctx, { action: 'DRG_COMPONENT_DELETE', entityName: 'drg_price_components', entityId: cid, oldData: old }, trx);
+      return { ok: true };
+    });
+  }
+  async reorderComponents(id: string, dto: ReorderDto, u: AuthUser, ctx: AuditContext) {
+    return this.db.transaction().execute(async (trx) => {
+      await this.draft(trx, id);
+      const all = (await trx.selectFrom('drg_price_components').select('id').where('version_id', '=', id).execute()).map((r) => r.id);
+      if (dto.ids.length !== all.length || !all.every((x) => dto.ids.includes(x))) throw new BadRequestException('რიგი: ვერსიის ყველა კომპონენტი ზუსტად ერთხელ');
+      for (const [i, cid] of dto.ids.entries()) await trx.updateTable('drg_price_components').set({ seq: (i + 1) * 10 }).where('id', '=', cid).execute();
+      await this.touch(trx, id, u);
+      await this.audit.log(ctx, { action: 'DRG_COMPONENTS_REORDER', entityName: 'drg_price_components', entityId: id, newData: { n: dto.ids.length } }, trx);
+      return { ok: true };
+    });
+  }
+
   // ---------------------------------------------------------------- ექსპორტი / პაკეტი
   async exportPackage(id: string): Promise<Pkg & { scheme_code: string; exported_at: string }> {
     const v = await this.version(id);
-    const [groups, lists, items, cc, rules] = await Promise.all([
+    const [groups, lists, items, cc, rules, comps] = await Promise.all([
       this.db.selectFrom('drg_version_groups').select(['code', 'title', 'weight', 'alos', 'los_low', 'los_high', 'mdc', 'kind', 'notes']).where('version_id', '=', id).orderBy('code').execute(),
       this.db.selectFrom('drg_code_lists').select(['code', 'title', 'kind', 'notes']).where('version_id', '=', id).orderBy('code').execute(),
       this.db.selectFrom('drg_code_list_items').select(['list_code', 'pattern', 'title']).where('version_id', '=', id).orderBy('list_code').orderBy('pattern').execute(),
       this.db.selectFrom('drg_cc').select(['pattern', 'level', 'excl_pdx', 'notes']).where('version_id', '=', id).orderBy('pattern').execute(),
       this.db.selectFrom('drg_rules').select(['seq', 'drg_code', 'label', 'conditions', 'is_active', 'notes']).where('version_id', '=', id).orderBy('seq').execute(),
+      this.db.selectFrom('drg_price_components').select(['seq', 'kind', 'label', 'conditions', 'params', 'exclusive_group', 'is_active', 'notes']).where('version_id', '=', id).orderBy('seq').execute(),
     ]);
     return {
       format: 'emr-drg-version', format_version: 1, scheme_code: v.scheme_code, label: v.label, valid_from: v.valid_from, settings: v.settings as unknown as Record<string, unknown>,
@@ -754,6 +861,7 @@ export class DrgConfigService {
       lists: lists.map((l) => ({ ...l, items: items.filter((i) => i.list_code === l.code).map((i) => (i.title ? { pattern: i.pattern, title: i.title } : i.pattern)) })),
       cc: cc.map((c) => ({ ...c, excl_pdx: c.excl_pdx ?? [] })),
       rules: rules.map((r) => ({ ...r, conditions: r.conditions as unknown as Cond[] })),
+      components: comps.map((c) => ({ ...c, conditions: c.conditions as unknown as Cond[], params: c.params as Record<string, unknown> })),
     };
   }
   async exportCsv(id: string, table: string) {
@@ -820,6 +928,16 @@ export class DrgConfigService {
       else for (const c of r.conditions ?? []) { const e = validateCond(c, kinds); if (e) { errors.push(`წესი ${r.seq}: ${e}`); return null; } conds.push({ f: c.f, op: c.op, v: c.v }); }
       return { seq: r.seq, drg_code: code, label: nz(r.label ?? null), conditions: conds, is_active: r.is_active !== false, notes: nz(r.notes ?? null) };
     }).filter((x): x is NonNullable<typeof x> => !!x);
+    const comps = (p.components ?? []).map((c, i) => {
+      if (!Number.isInteger(c.seq) || c.seq < 1 || String(c.label ?? '').trim().length < 2) { errors.push(`ფორმულა ${i + 1}: seq / დასახელება`); return null; }
+      if (c.exclusive_group && !/^[a-z0-9_]{1,30}$/.test(c.exclusive_group)) { errors.push(`ფორმულა ${c.seq}: exclusive_group`); return null; }
+      let conds: Cond[] = (c.conditions ?? []).map((q) => ({ f: q.f, op: q.op, v: q.v }));
+      if (typeof c.conditions_text === 'string') { const x = parseConds(c.conditions_text, kinds); if ('error' in x) { errors.push(`ფორმულა ${c.seq}: ${x.error}`); return null; } conds = x.conds; }
+      const o = { kind: c.kind, params: { ...(c.params ?? {}) }, conditions: conds };
+      const e = validateComponent(o, kinds);
+      if (e) { errors.push(`ფორმულა ${c.seq}: ${e}`); return null; }
+      return { seq: c.seq, kind: o.kind, label: String(c.label).trim(), conditions: o.conditions, params: o.params, exclusive_group: c.exclusive_group || null, is_active: c.is_active !== false, notes: nz(c.notes ?? null) };
+    }).filter((x): x is NonNullable<typeof x> => !!x);
     if (settings.fallback_code && !gset.has(settings.fallback_code)) errors.push(`ნაგულისხმევი ჯგუფი ${settings.fallback_code} პაკეტში არ არის`);
     if (errors.length) throw new BadRequestException({ code: 'DRG_PACKAGE_INVALID', message: `პაკეტი: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? ` (+${errors.length - 5})` : ''}`, errors: errors.slice(0, 100) });
     return this.db.transaction().execute(async (trx) => {
@@ -835,8 +953,9 @@ export class DrgConfigService {
       }
       if (cc.length) await trx.insertInto('drg_cc').values(cc.map((c) => ({ version_id: v.id, ...c }))).execute();
       for (const r of rules) await trx.insertInto('drg_rules').values({ version_id: v.id, ...r, conditions: JSON.stringify(r.conditions) }).execute();
+      for (const c of comps) await trx.insertInto('drg_price_components').values({ version_id: v.id, ...c, conditions: JSON.stringify(c.conditions), params: JSON.stringify(c.params) }).execute();
       await this.audit.log(ctx, { action, entityName: 'drg_versions', entityId: v.id, newData: { label, valid_from: from, groups: groups.length, lists: lists.length, cc: cc.length, rules: rules.length } }, trx);
-      return { id: v.id, version_no: no, groups: groups.length, lists: lists.length, cc: cc.length, rules: rules.length };
+      return { id: v.id, version_no: no, groups: groups.length, lists: lists.length, cc: cc.length, rules: rules.length, components: comps.length };
     });
   }
   /** სადემონსტრაციო კონფიგურაცია (assets/drg-demo.json) — მონახაზად; რეალური სტანდარტი არ არის */
@@ -854,9 +973,19 @@ export class DrgConfigService {
     const x: GroupInputs = {
       pdx, sdx: codes(dto.sdx).filter((c) => c !== pdx), procs: codes(dto.procs), services: codes(dto.services), surgery: dto.surgery ?? (dto.procs ?? []).length > 0,
       age: dto.age ?? null, age_days: dto.age_days ?? (dto.age != null ? Math.floor(dto.age * 365.25) : null), sex: dto.sex ?? null, los: dto.los ?? 1,
-      icu_hours: dto.icu_hours ?? 0, vent_hours: dto.vent_hours ?? 0, discharge: dto.discharge || null, source: dto.source || null,
+      icu_hours: dto.icu_hours ?? 0, vent_hours: dto.vent_hours ?? 0, discharge: dto.discharge || null, source: dto.source || null, dept: dto.dept?.trim() ? norm(dto.dept) : null,
     };
-    return { inputs: x, result: group(x, v) };
+    const result = group(x, v);
+    // 0056: თანხა — ჯგუფი (მითითებული ან შედეგი) და საბაზისო განაკვეთი
+    const code = dto.drg_code?.trim().toUpperCase() || result.code;
+    let pricing = null;
+    if (dto.base_rate && code) {
+      const g = await this.db.selectFrom('drg_version_groups').select(['code', 'weight', 'alos', 'los_low', 'los_high']).where('version_id', '=', id).where('code', '=', code).executeTakeFirst();
+      if (!g) throw new BadRequestException(`ჯგუფი ${code} ვერსიაში არ არის`);
+      pricing = price(v.components ?? [], v, { code: g.code, weight: Number(g.weight), alos: g.alos === null ? null : Number(g.alos), los_low: g.los_low, los_high: g.los_high },
+        dto.base_rate, x, ccLevel(x, v).level, dto.charges ?? null);
+    }
+    return { inputs: x, result, pricing };
   }
 }
 
@@ -935,6 +1064,15 @@ export class DrgConfigController {
   reorder(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReorderDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.reorder(id, d, u, auditCtx(r)); }
   @Post('versions/:id/rules-import') @HttpCode(200) @Roles(...DRG_ADMIN)
   importRules(@Param('id', ParseUUIDPipe) id: string, @Body() d: CsvImportDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.importRules(id, d, u, auditCtx(r)); }
+  @Get('versions/:id/components') @Roles(...DRG_READ) components(@Param('id', ParseUUIDPipe) id: string) { return this.s.components(id); }
+  @Post('versions/:id/components') @Roles(...DRG_ADMIN)
+  addComp(@Param('id', ParseUUIDPipe) id: string, @Body() d: ComponentDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.createComponent(id, d, u, auditCtx(r)); }
+  @Post('versions/:id/components-reorder') @HttpCode(200) @Roles(...DRG_ADMIN)
+  reorderComp(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReorderDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.reorderComponents(id, d, u, auditCtx(r)); }
+  @Patch('components/:cid') @Roles(...DRG_ADMIN)
+  updComp(@Param('cid', ParseUUIDPipe) cid: string, @Body() d: ComponentDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.updateComponent(cid, d, u, auditCtx(r)); }
+  @Delete('components/:cid') @Roles(...DRG_ADMIN)
+  delComp(@Param('cid', ParseUUIDPipe) cid: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.deleteComponent(cid, u, auditCtx(r)); }
   @Patch('rules/:rid') @Roles(...DRG_ADMIN)
   updRule(@Param('rid', ParseUUIDPipe) rid: string, @Body() d: RuleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.updateRule(rid, d, u, auditCtx(r)); }
   @Delete('rules/:rid') @Roles(...DRG_ADMIN)

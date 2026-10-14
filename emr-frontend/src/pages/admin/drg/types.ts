@@ -11,11 +11,11 @@ export interface Scheme {
 export interface VersionRow {
   id: string; version_no: number; label: string; valid_from: string; status: 'draft' | 'active' | 'retired'; created_at: string; updated_at: string; activated_at: string | null;
   retired_at: string | null; retire_reason: string | null; notes: string | null; created_by_name: string; activated_by_name: string | null; current: boolean;
-  n_groups: number; n_lists: number; n_cc: number; n_rules: number; n_stays: number;
+  n_groups: number; n_lists: number; n_cc: number; n_rules: number; n_stays: number; n_components?: number;
 }
 export interface VersionSettings {
   los_basis: 'bed_days' | 'calendar_days'; age_basis: 'admission' | 'discharge'; pdx_source: 'primary' | 'primary_or_admission';
-  cc_sources: string[]; cc_exclude_same_category: boolean; cc_count_to_mcc: number | null; proc_sources: string[]; vent_kinds: string[]; fallback_code: string | null;
+  cc_sources: string[]; cc_exclude_same_category: boolean; cc_count_to_mcc: number | null; proc_sources: string[]; vent_kinds: string[]; fallback_code: string | null; rounding: 'total' | 'component';
 }
 export interface VersionDetail extends Omit<VersionRow, 'current'> {
   scheme_id: string; scheme_code: string; scheme_name: string; settings: VersionSettings; created_by: string; updated_by: string | null; updated_by_name: string | null;
@@ -27,7 +27,12 @@ export interface CcRow { pattern: string; level: 'cc' | 'mcc'; excl_pdx: string[
 export interface Cond { f: string; op: string; v: unknown }
 export interface Rule { id: string; seq: number; drg_code: string; drg_title: string | null; drg_weight: string | null; label: string | null; conditions: Cond[]; conditions_text: string; is_active: boolean; notes: string | null }
 export interface FieldDef { label: string; type: 'codes' | 'num' | 'enum' | 'bool' | 'level'; ops: string[]; list?: 'dx' | 'proc' | 'service'; values?: { v: string; label: string }[]; unit?: string }
-export interface Meta { fields: Record<string, FieldDef>; ops: Record<string, string>; list_kinds: Record<string, string>; version_settings_default: VersionSettings; examples: string[] }
+export interface ParamDef { key: string; label: string; type: 'num' | 'enum'; required?: boolean; min?: number; max?: number; values?: { v: string; label: string }[]; hint?: string }
+export interface PriceKind { label: string; hint: string; params: ParamDef[] }
+export interface Meta { fields: Record<string, FieldDef>; ops: Record<string, string>; list_kinds: Record<string, string>; version_settings_default: VersionSettings; examples: string[]; price_kinds: Record<string, PriceKind> }
+export interface PriceComponent { id: string; seq: number; kind: string; kind_ka: string; label: string; conditions: Cond[]; conditions_text: string; params: Record<string, unknown>; exclusive_group: string | null; is_active: boolean; notes: string | null }
+export interface Price { base_rate: number; weight: number; base0: number; factor: number; base: number; items: { seq: number | null; kind: string; label: string; amount: number; note: string }[]; total: number; charges: number | null; rounding: string;
+  version_label?: string; group_code?: string; group_title?: string }
 export interface CheckResult { errors: string[]; warnings: string[]; ok: boolean }
 
 export const STATUS_KA: Record<string, string> = { draft: 'მონახაზი', active: 'აქტიური', retired: 'გაუქმებული' };

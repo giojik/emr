@@ -2,6 +2,7 @@ import { sql, type Kysely, type Transaction } from 'kysely';
 import type { DB } from '../database/db';
 import { split } from '../tariffs/payer-engine';
 import { calcLines, patientCtx, versionRules } from '../tariffs/payer-shares';
+import { drgPrices, type StayPrice } from '../drg/drg-calc';
 
 /**
  * სტაციონარის ბილინგის გაანგარიშება (0046) — სუფთა ფუნქციები, გამოიყენება API-ში, გაწერის შემოწმებაში და worker-ში.
@@ -35,7 +36,7 @@ export async function loadBilling(ex: Ex, encounterId: string) {
   const lines = await calcLines(ex, inv.id);
   const payers = await ex.selectFrom('stay_payers as sp').innerJoin('payers as p', 'p.id', 'sp.payer_id')
     .select(['sp.id', 'sp.payer_id', 'p.kind', 'sp.mode', 'sp.coverage_pct', 'sp.limit_amount', 'sp.deductible', 'sp.fixed_amount', 'sp.drg_weight', 'sp.drg_base_rate',
-      'sp.writeoff_excess', 'sp.excluded_categories', 'sp.override_amount', 'sp.rule_version_id'])
+      'sp.writeoff_excess', 'sp.excluded_categories', 'sp.override_amount', 'sp.rule_version_id', 'sp.drg_amount', 'sp.drg_breakdown'])
     .where('sp.encounter_id', '=', encounterId).where('sp.status', '=', 'active').orderBy('sp.seq').execute();
   const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   // 0054a: ვერსიის პუნქტები / გამორიცხული კოდები / თანაგადახდა; პაციენტის კონტექსტი — მიღების დღეს
@@ -43,10 +44,18 @@ export async function loadBilling(ex: Ex, encounterId: string) {
   const adm = (await sql<{ d: string }>`SELECT to_char(fin_local_date(admitted_at), 'YYYY-MM-DD') AS d FROM inpatient_stays WHERE encounter_id = ${encounterId}`.execute(ex)).rows[0]?.d
     ?? new Date().toISOString().slice(0, 10);
   const ctx = vr.size && [...vr.values()].some((r) => r.clauses.length) ? await patientCtx(ex, encounterId, adm) : undefined;
+  // 0056: DRG თანხა ფორმულით — ფინალიზებულზე დაფიქსირებული, სხვა შემთხვევაში — მიმდინარე (ვერსიის კომპონენტებით)
+  const finalized0 = !!inv.finalized_at;
+  const charges = r2(lines.filter((l) => !l.package_included).reduce((s, l) => s + l.line_total, 0));
+  const drg = new Map<string, StayPrice>();
+  if (finalized0) { for (const p of payers) if (p.drg_amount !== null && p.drg_breakdown) drg.set(p.id, p.drg_breakdown as unknown as StayPrice); }
+  else if (payers.some((p) => p.mode === 'drg')) for (const [k, v] of await drgPrices(ex, encounterId, charges)) drg.set(k, v);
   const res = split(lines,
     payers.map((p) => ({ id: p.id, payer_id: p.payer_id, kind: p.kind, mode: p.mode, coverage_pct: Number(p.coverage_pct), limit_amount: n(p.limit_amount), deductible: Number(p.deductible),
       fixed_amount: n(p.fixed_amount), drg_weight: n(p.drg_weight), drg_base_rate: n(p.drg_base_rate), writeoff_excess: p.writeoff_excess, excluded_categories: p.excluded_categories ?? [],
-      override_amount: n(p.override_amount), ...(p.rule_version_id ? vr.get(p.rule_version_id) : {}) })), ctx);
+      override_amount: n(p.override_amount), ...(p.rule_version_id ? vr.get(p.rule_version_id) : {}),
+      drg_amount: p.mode === 'drg' ? (finalized0 && p.drg_amount !== null ? Number(p.drg_amount) : drg.get(p.id)?.total ?? null) : null })), ctx);
+  for (const x of res.payers) { const d = drg.get(x.id); if (d) Object.assign(x, { drg_price: d }); }
   const dep = (await sql<{ deposits: string; refunds: string }>`SELECT coalesce(sum(amount) FILTER (WHERE kind = 'deposit'), 0) AS deposits,
       coalesce(sum(amount) FILTER (WHERE kind = 'refund'), 0) AS refunds FROM stay_deposits WHERE encounter_id = ${encounterId} AND voided_at IS NULL`.execute(ex)).rows[0];
   const pay = (await sql<{ applied: string; paid: string }>`SELECT coalesce(sum(amount) FILTER (WHERE method = 'deposit'), 0) AS applied,
@@ -58,7 +67,7 @@ export async function loadBilling(ex: Ex, encounterId: string) {
   const patient = finalized ? Number(inv.patient_share) : res.patient;
   const covered = r2(paid + (finalized ? applied : Math.min(depositNet, patient)));
   return {
-    invoice: inv, calc: res, finalized,
+    invoice: inv, calc: res as typeof res & { payers: (typeof res.payers[number] & { drg_price?: StayPrice })[] }, finalized, drg,
     money: {
       total: finalized ? Number(inv.total_amount) : res.total, insurance: finalized ? Number(inv.insurance_share) : res.insurance, state: finalized ? Number(inv.state_share) : res.state,
       writeoff: finalized ? Number(inv.writeoff_amount) : res.writeoff, patient, deposits, refunds, deposit_net: depositNet, deposit_applied: applied,

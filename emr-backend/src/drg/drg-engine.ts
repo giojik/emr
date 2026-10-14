@@ -33,10 +33,12 @@ export interface VersionSettings {
   vent_kinds: ('invasive' | 'niv' | 'hfnc')[];
   /** არცერთი წესი არ დაემთხვა → ეს ჯგუფი (მაგ. „ვერ დაჯგუფდა“); null — შედეგის გარეშე */
   fallback_code: string | null;
+  /** 0056: თანხის დამრგვალება — total (ჯამი) / component (თითო კომპონენტი) */
+  rounding: 'total' | 'component';
 }
 export const VERSION_SETTINGS_DEFAULT: VersionSettings = {
   los_basis: 'bed_days', age_basis: 'admission', pdx_source: 'primary', cc_sources: ['secondary', 'complication'], cc_exclude_same_category: true,
-  cc_count_to_mcc: null, proc_sources: ['or_ncsp', 'or_code'], vent_kinds: ['invasive'], fallback_code: null,
+  cc_count_to_mcc: null, proc_sources: ['or_ncsp', 'or_code'], vent_kinds: ['invasive'], fallback_code: null, rounding: 'total',
 };
 /** ვერსიის პარამეტრების ვალიდაცია: შეცდომის ტექსტი ან null */
 export function validateVersionSettings(s: Record<string, unknown>): string | null {
@@ -51,6 +53,7 @@ export function validateVersionSettings(s: Record<string, unknown>): string | nu
     proc_sources: (v) => sub(v, ['or_ncsp', 'or_code', 'service_code']) && (v as unknown[]).length > 0,
     vent_kinds: (v) => sub(v, ['invasive', 'niv', 'hfnc']),
     fallback_code: (v) => v === null || (typeof v === 'string' && /^[A-Z0-9][A-Z0-9_.-]{0,19}$/.test(v)),
+    rounding: (v) => v === 'total' || v === 'component',
   };
   for (const [k, v] of Object.entries(s)) {
     if (!checks[k]) return `უცნობი პარამეტრი: ${k}`;
@@ -75,9 +78,10 @@ export interface GroupInputs {
   vent_hours: number;
   discharge: string | null;           // home / other_clinic / against_advice / death
   source: string | null;              // emergency / outpatient / planned / transfer_in / direct
+  dept?: string | null;               // 0056: განყოფილების კოდი (გაწერის / ბოლო) — ნორმალიზებული
 }
 
-export interface GroupRow { code: string; title: string; weight: string | number; kind?: string; mdc?: string | null }
+export interface GroupRow { code: string; title: string; weight: string | number; kind?: string; mdc?: string | null; alos?: string | number | null }
 export interface CcRow { pattern: string; level: 'cc' | 'mcc'; excl_pdx: string[] }
 export interface RuleRow { id: string; seq: number; drg_code: string; label: string | null; conditions: Cond[]; is_active: boolean }
 export interface VersionData {
@@ -86,6 +90,8 @@ export interface VersionData {
   lists: Map<string, { kind: ListKind; patterns: string[] }>;
   cc: CcRow[];
   rules: RuleRow[];
+  /** 0056: თანხის კომპონენტები (drg-pricing.ts) */
+  components?: import('./drg-pricing').Component[];
 }
 
 // ---------------------------------------------------------------- კოდები
@@ -127,6 +133,7 @@ export const FIELDS: Record<string, FieldDef> = {
   dx: { label: 'ნებისმიერი დიაგნოზი', type: 'codes', ops: ['any', 'none'], list: 'dx' },
   proc: { label: 'პროცედურა / ოპერაცია', type: 'codes', ops: ['any', 'none'], list: 'proc' },
   service: { label: 'მომსახურება (ინვოისის კოდი)', type: 'codes', ops: ['any', 'none'], list: 'service' },
+  dept: { label: 'განყოფილება (კოდი)', type: 'codes', ops: ['in', 'not_in'] },
   proc_count: { label: 'პროცედურების რაოდენობა', type: 'num', ops: NUM_OPS },
   surgery: { label: 'ოპერაცია ჩატარდა', type: 'bool', ops: ['is'] },
   cc: { label: 'სიმძიმე (CC / MCC)', type: 'level', ops: ['eq', 'ne', 'gte', 'lte'], values: [{ v: 'none', label: 'არა' }, { v: 'cc', label: 'CC' }, { v: 'mcc', label: 'MCC' }] },
@@ -155,6 +162,7 @@ export function validateCond(c: Cond, lists: Map<string, ListKind>): string | nu
       if (t.startsWith('@')) {
         const name = t.slice(1).toUpperCase();
         const k = lists.get(name);
+        if (!d.list) return `${d.label}: სია აქ არ გამოიყენება — მიუთითეთ კოდები`;
         if (!k) return `${d.label}: სია @${name} ვერსიაში არ არის`;
         if (k !== d.list) return `${d.label}: სია @${name} სხვა სახეობისაა (${k})`;
         out.push(`@${name}`);
@@ -195,7 +203,7 @@ export function evalCond(c: Cond, x: GroupInputs, lists: VersionData['lists'], c
   const d = FIELDS[c.f];
   if (d.type === 'codes') {
     const pats = expand(c.v as string[], lists);
-    const codes = c.f === 'pdx' ? (x.pdx ? [x.pdx] : []) : c.f === 'sdx' ? x.sdx : c.f === 'dx' ? [...(x.pdx ? [x.pdx] : []), ...x.sdx] : c.f === 'proc' ? x.procs : x.services;
+    const codes = c.f === 'dept' ? (x.dept ? [x.dept] : []) : c.f === 'pdx' ? (x.pdx ? [x.pdx] : []) : c.f === 'sdx' ? x.sdx : c.f === 'dx' ? [...(x.pdx ? [x.pdx] : []), ...x.sdx] : c.f === 'proc' ? x.procs : x.services;
     const hit = codes.filter((k) => anyMatch(pats, k));
     const pos = c.op === 'in' || c.op === 'any';
     return { ok: pos ? hit.length > 0 : hit.length === 0, why: hit.length ? `დაემთხვა: ${hit.slice(0, 5).join(', ')}` : codes.length ? 'არ დაემთხვა' : 'მონაცემი არ არის' };

@@ -8,6 +8,7 @@ import { todayISO, tsDate } from '../../../lib/format';
 import { useModuleEnabled } from '../../../lib/modules';
 import { CcTab, GroupsTab, ListsTab } from './DrgTables';
 import { RulesTab, TestTab } from './DrgRules';
+import { FormulaTab } from './DrgFormula';
 import { type CheckResult, DRG_ADMIN, download, type Scheme, STATUS_CHIP, STATUS_KA, type VersionDetail, type VersionRow, type VersionSettings } from './types';
 
 /**
@@ -45,12 +46,12 @@ export default function Drg() {
         <div className="card-head"><strong>ვერსიები</strong></div>
         {versions.data?.length === 0 ? <div className="empty">ვერსია ჯერ არ არის. დაიწყეთ „+ ახალი ვერსია“ — ცარიელი, სადემონსტრაციო ან ფაილიდან.</div> : (
           <table className="table">
-            <thead><tr><th>#</th><th>დასახელება</th><th>მოქმედებს</th><th>სტატუსი</th><th className="num">ჯგუფი</th><th className="num">სია</th><th className="num">CC</th><th className="num">წესი</th><th className="num">შემთხვევა</th><th>ბოლო ცვლილება</th></tr></thead>
+            <thead><tr><th>#</th><th>დასახელება</th><th>მოქმედებს</th><th>სტატუსი</th><th className="num">ჯგუფი</th><th className="num">სია</th><th className="num">CC</th><th className="num">წესი</th><th className="num">ფორმ.</th><th className="num">შემთხვევა</th><th>ბოლო ცვლილება</th></tr></thead>
             <tbody>{versions.data?.map((v) => (
               <tr key={v.id} onClick={() => go({ v: v.id })} style={{ cursor: 'pointer', background: v.id === vid ? 'var(--accent-soft, #eef4ff)' : undefined }}>
                 <td className="mono">{v.version_no}</td><td><strong>{v.label}</strong>{v.current && <span className="chip ok" style={{ marginLeft: 6 }}>მიმდინარე</span>}</td>
                 <td className="mono" style={{ whiteSpace: 'nowrap' }}>{v.valid_from}</td><td><span className={`chip ${STATUS_CHIP[v.status]}`}>{STATUS_KA[v.status]}</span></td>
-                <td className="num">{v.n_groups}</td><td className="num">{v.n_lists}</td><td className="num">{v.n_cc}</td><td className="num">{v.n_rules}</td><td className="num">{v.n_stays}</td>
+                <td className="num">{v.n_groups}</td><td className="num">{v.n_lists}</td><td className="num">{v.n_cc}</td><td className="num">{v.n_rules}</td><td className="num">{v.n_components ?? 0}</td><td className="num">{v.n_stays}</td>
                 <td className="small muted">{tsDate(v.updated_at)}</td></tr>))}</tbody>
           </table>)}
       </section>
@@ -67,6 +68,7 @@ const TABS: { key: string; label: string; el: ComponentType<{ v: VersionDetail; 
   { key: 'lists', label: 'კოდების სიები', el: ListsTab },
   { key: 'cc', label: 'CC / MCC', el: CcTab },
   { key: 'rules', label: 'დაჯგუფების წესები', el: RulesTab },
+  { key: 'formula', label: 'თანხის ფორმულა', el: FormulaTab },
   { key: 'test', label: 'ტესტი', el: TestTab },
 ];
 
@@ -107,7 +109,8 @@ function Overview({ v, edit, admin, onDeleted }: { v: VersionDetail; edit: boole
   const save = useMutation({
     mutationFn: () => api(`/drg/versions/${v.id}`, { method: 'PATCH', body: { label: f.label.trim(), valid_from: f.valid_from, notes: f.notes, settings: {
       los_basis: f.los_basis, age_basis: f.age_basis, pdx_source: f.pdx_source, cc_sources: f.cc_sources, cc_exclude_same_category: f.cc_exclude_same_category,
-      cc_count_to_mcc: f.cc_count === '' ? null : Number(f.cc_count), proc_sources: f.proc_sources, vent_kinds: f.vent_kinds, fallback_code: f.fallback.trim().toUpperCase() || null } } }),
+      cc_count_to_mcc: f.cc_count === '' ? null : Number(f.cc_count), proc_sources: f.proc_sources, vent_kinds: f.vent_kinds, fallback_code: f.fallback.trim().toUpperCase() || null,
+      rounding: f.rounding } } }),
     onSuccess: () => { toast.show('შენახულია'); inval(); },
   });
   const activate = useMutation({ mutationFn: () => api<{ warnings: string[] }>(`/drg/versions/${v.id}/activate`, { body: {} }), onSuccess: () => { toast.show('ვერსია გააქტიურდა'); inval(); } });
@@ -141,6 +144,8 @@ function Overview({ v, edit, admin, onDeleted }: { v: VersionDetail; edit: boole
           {[['invasive', 'ინვაზიური'], ['niv', 'არაინვაზიური (NIV)'], ['hfnc', 'HFNC']].map(([k, l]) => <label key={k} className="row small"><input type="checkbox" disabled={dis} checked={f.vent_kinds.includes(k)} onChange={() => toggle('vent_kinds', k)} /> {l}</label>)}</div>
         <label className="row small"><input type="checkbox" disabled={dis} checked={f.cc_exclude_same_category} onChange={(e) => setF({ ...f, cc_exclude_same_category: e.target.checked })} /> CC არ ითვლება, თუ ძირითადის იგივე კატეგორიაა (3 სიმბოლო)</label>
         <Field label="N ცალი CC = MCC" htmlFor="dv-ccn" hint="ცარიელი — გამორთული; 2–10"><input id="dv-ccn" className="input mono" inputMode="numeric" disabled={dis} value={f.cc_count} onChange={(e) => setF({ ...f, cc_count: e.target.value })} /></Field>
+        <Field label="თანხის დამრგვალება" htmlFor="dv-rd"><select id="dv-rd" className="select" disabled={dis} value={f.rounding ?? 'total'} onChange={(e) => setF({ ...f, rounding: e.target.value as VersionSettings['rounding'] })}>
+          <option value="total">ჯამი (2 ათწილადი)</option><option value="component">თითო კომპონენტი</option></select></Field>
         <Field label="შენიშვნა" htmlFor="dv-n"><textarea id="dv-n" className="textarea" rows={2} disabled={dis} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
       </div>
       {edit && <div className="row"><button className="btn primary" type="button" disabled={save.isPending} onClick={() => save.mutate()}>პარამეტრების შენახვა</button></div>}

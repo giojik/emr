@@ -23,6 +23,8 @@ export interface CalcPayer {
   id: string; payer_id: string; kind: string; mode: string; coverage_pct: number; limit_amount: number | null; deductible: number; fixed_amount: number | null;
   drg_weight: number | null; drg_base_rate: number | null; writeoff_excess: boolean; excluded_categories: string[]; override_amount: number | null;
   excluded_codes?: string[]; clauses?: RuleClause[]; copay_amount?: number;
+  /** 0056: DRG თანხა ფორმულით (ნაცვლად წონა × განაკვეთი) */
+  drg_amount?: number | null;
 }
 export interface PatientCtx { age: number | null; sex: string | null; dx: string[] }
 export interface PayerResult { id: string; payer_id: string; kind: string; tariff: number | null; eligible: number; amount: number; writeoff: number; copay?: number }
@@ -89,7 +91,7 @@ export function split(lines: CalcLine[], payers: CalcPayer[], ctx: PatientCtx = 
     const eligible = r2(ids.reduce((s, id) => s + rem.get(id)!, 0));
     let amount = 0; let wo = 0; let tariff: number | null = null; let weight: Map<string, number> | undefined;
     if (p.mode === 'fixed' || p.mode === 'drg') {
-      tariff = r2(p.mode === 'drg' ? (p.drg_weight ?? 0) * (p.drg_base_rate ?? 0) : (p.fixed_amount ?? 0));
+      tariff = r2(p.mode === 'drg' ? (p.drg_amount ?? (p.drg_weight ?? 0) * (p.drg_base_rate ?? 0)) : (p.fixed_amount ?? 0));
       amount = Math.min(r2(tariff * p.coverage_pct / 100), eligible);
       if (p.writeoff_excess && eligible > tariff) wo = r2(eligible - tariff);
     } else {

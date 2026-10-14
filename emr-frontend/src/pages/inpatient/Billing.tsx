@@ -18,7 +18,7 @@ interface StayPayer {
   coverage_pct?: string; limit_amount?: string | null; deductible?: string; fixed_amount?: string | null; drg_code: string | null; drg_title: string | null; drg_weight?: string | null; drg_base_rate?: string | null; drg_source?: string | null;
   writeoff_excess?: boolean; excluded_categories?: string[]; policy_no: string | null; guarantee_no: string | null; guarantee_day?: string | null; valid_day?: string | null; file_id?: string | null;
   override_amount?: string | null; override_reason?: string | null; covered_amount?: string | null; cancel_reason?: string | null; created_by_name?: string;
-  calc: { tariff: number | null; eligible: number; amount: number; writeoff: number } | null;
+  calc: { tariff: number | null; eligible: number; amount: number; writeoff: number; drg_price?: { total: number; items: unknown[] } } | null;
 }
 interface Line { id: string; category: string; category_ka: string; description: string; price_source?: string | null; quantity: number; unit_price?: string; line_total?: string; package_included: boolean; service_date: string | null;
   created_at: string; added_by: string | null; added_by_name: string | null; manual: boolean; discount_reason?: string | null }
@@ -96,7 +96,7 @@ export default function StayBillingPanel({ encounterId }: { encounterId: string 
               <tbody>{b.payers.map((p) => (
                 <tr key={p.id} style={p.status !== 'active' ? { opacity: 0.55 } : undefined}>
                   <td>{p.seq}</td><td><strong>{p.payer_name}</strong><div className="small muted">{p.kind_ka}</div></td>
-                  <td className="small">{p.mode === 'drg' ? <>DRG <span className="mono">{p.drg_code}</span> — {p.drg_title}{p.drg_weight && <> · {Number(p.drg_weight)} × {money(p.drg_base_rate)}</>}
+                  <td className="small">{p.mode === 'drg' ? <>DRG <span className="mono">{p.drg_code}</span> — {p.drg_title}{p.drg_weight && <> · {Number(p.drg_weight)} × {money(p.drg_base_rate)}</>}{p.calc?.drg_price && <> → <strong>{money(p.calc.drg_price.total)}</strong>{p.calc.drg_price.items.length > 0 && <span className="muted"> (ფორმულით)</span>}</>}
                     {p.drg_source === 'grouper' && <span className="chip info" style={{ marginLeft: 6, height: 18, fontSize: 11 }}>დაჯგუფებით</span>}</>
                     : p.mode === 'fixed' ? `ფიქსირებული ${money(p.fixed_amount)}` : `${p.coverage_pct ? Number(p.coverage_pct) : ''}%`}
                     {p.mode !== 'percent' && p.coverage_pct && ` · ${Number(p.coverage_pct)}%`}
