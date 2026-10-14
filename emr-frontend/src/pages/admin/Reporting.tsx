@@ -15,7 +15,7 @@ interface Run { id: string; kind: string; date_from: string; date_to: string; st
   finished_at: string | null; duration_ms: number | null; requested_by: string | null }
 interface Dept { id: string; name: string; is_active: boolean }
 
-type Tab = 'kpis' | 'scopes' | 'runs';
+type Tab = 'kpis' | 'dash' | 'scopes' | 'runs';
 const KIND_KA: Record<string, string> = { today: 'დღევანდელი', nightly: 'ღამის', manual: 'ხელით' };
 const RUN_STATUS: Record<string, [string, string]> = { ok: ['ok', 'შესრულდა'], running: ['warn', 'მიმდინარე'], error: ['danger', 'შეცდომა'], skipped: ['', 'გამოტოვდა'] };
 
@@ -25,7 +25,7 @@ export default function ReportingAdmin() {
   const enabled = useModuleEnabled('reporting');
   const isAdmin = can(user, 'admin');
   const [tab, setTab] = useState<Tab>('kpis');
-  const tabs: [Tab, string][] = [['kpis', 'KPI ცნობარი და სამიზნეები'], ...(isAdmin ? [['scopes', 'ხედვის არე'] as [Tab, string]] : []), ['runs', 'გადათვლა']];
+  const tabs: [Tab, string][] = [['kpis', 'KPI ცნობარი და სამიზნეები'], ['dash', 'დაფები'], ...(isAdmin ? [['scopes', 'ხედვის არე'] as [Tab, string]] : []), ['runs', 'გადათვლა']];
   const st = { background: 'none', borderTop: 0, borderLeft: 0, borderRight: 0, font: 'inherit', cursor: 'pointer' } as const;
   return (
     <div className="content">
@@ -33,7 +33,7 @@ export default function ReportingAdmin() {
       <nav className="row" style={{ gap: 2 }} aria-label="რეპორტინგი">
         {tabs.map(([k, l]) => <button key={k} type="button" className={`admin-tab${tab === k ? ' active' : ''}`} style={st} onClick={() => setTab(k)}>{l}</button>)}
       </nav>
-      {tab === 'kpis' ? <Kpis /> : tab === 'scopes' ? <Scopes /> : <Runs canRefresh={isAdmin} />}
+      {tab === 'kpis' ? <Kpis /> : tab === 'dash' ? <Dashboards /> : tab === 'scopes' ? <Scopes /> : <Runs canRefresh={isAdmin} />}
     </div>
   );
 }
@@ -141,6 +141,62 @@ function TargetsEdit({ k, onClose }: { k: KpiCfg; onClose: () => void }) {
         <ErrorBox error={m.error} />
       </div>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------- დაფები (0061)
+const DASH_KA: Record<string, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება' };
+function Dashboards() {
+  const q = useQuery({ queryKey: ['rpt-dashboards'], queryFn: () => api<Record<string, { code: string; name: string; finance: boolean; is_active: boolean }[]>>('/reporting/dashboards') });
+  const kpis = useQuery({ queryKey: ['rpt-kpis'], queryFn: () => api<KpiCfg[]>('/reporting/kpis') });
+  if (q.error || kpis.error) return <ErrorBox error={q.error ?? kpis.error} />;
+  if (!q.data || !kpis.data) return <Loading />;
+  return (
+    <>
+      <p className="hint" style={{ margin: 0 }}>ზედა ზოლის ძირითადი KPI-ები (მაქს. 8, რიგით). ფინანსური მაჩვენებელი ჩანს მხოლოდ მათ, ვისაც ფინანსების ხედვა აქვს; დამალული KPI დაფაზე არ ჩანს.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 12, alignItems: 'start' }}>
+        {Object.keys(DASH_KA).map((d) => <DashEdit key={`${d}-${q.dataUpdatedAt}`} dash={d} cur={q.data[d] ?? []} all={kpis.data} />)}
+      </div>
+    </>
+  );
+}
+function DashEdit({ dash, cur, all }: { dash: string; cur: { code: string }[]; all: KpiCfg[] }) {
+  const qc = useQueryClient(); const toast = useToast();
+  const [list, setList] = useState(cur.map((x) => x.code)); const [reason, setReason] = useState(''); const [add, setAdd] = useState('');
+  const dirty = list.join() !== cur.map((x) => x.code).join();
+  const m = useMutation({
+    mutationFn: () => api(`/reporting/dashboards/${dash}`, { method: 'PUT', body: { kpi_codes: list, reason } }),
+    onSuccess: () => { setReason(''); toast.show('შენახულია'); void qc.invalidateQueries({ queryKey: ['rpt-dashboards'] }); void qc.invalidateQueries({ queryKey: ['rpt-headline'] }); },
+  });
+  const k = (c: string) => all.find((x) => x.code === c);
+  const move = (i: number, d: number) => { const a = [...list]; [a[i], a[i + d]] = [a[i + d], a[i]]; setList(a); };
+  return (
+    <section className="card card-pad stack" style={{ gap: 8 }}>
+      {toast.node}
+      <strong>{DASH_KA[dash]}</strong>
+      <ol className="stack" style={{ gap: 4, margin: 0, paddingLeft: 20 }}>
+        {list.map((c, i) => (
+          <li key={c}><span className="row" style={{ gap: 6 }}>
+            <span className="grow">{k(c)?.name ?? c}{k(c)?.finance && <span className="chip" style={{ marginLeft: 6, height: 18 }}>ფინანსური</span>}{k(c) && !k(c)!.is_active && <span className="chip warn" style={{ marginLeft: 6, height: 18 }}>დამალული</span>}</span>
+            <button className="btn sm" type="button" disabled={i === 0} aria-label="ზემოთ" onClick={() => move(i, -1)}>↑</button>
+            <button className="btn sm" type="button" disabled={i === list.length - 1} aria-label="ქვემოთ" onClick={() => move(i, 1)}>↓</button>
+            <button className="btn sm" type="button" disabled={list.length <= 1} onClick={() => setList(list.filter((x) => x !== c))}>წაშლა</button>
+          </span></li>))}
+      </ol>
+      {list.length < 8 && (
+        <div className="row" style={{ gap: 6 }}>
+          <select className="select grow" style={{ height: 34 }} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="KPI-ის დამატება">
+            <option value="">+ KPI-ის დამატება…</option>
+            {all.filter((x) => !list.includes(x.code)).map((x) => <option key={x.code} value={x.code}>{CATEGORY_KA[x.category] ?? x.category} · {x.name}</option>)}
+          </select>
+          <button className="btn sm" type="button" disabled={!add} onClick={() => { setList([...list, add]); setAdd(''); }}>დამატება</button>
+        </div>)}
+      {dirty && <div className="row" style={{ gap: 6 }}>
+        <input className="input grow" style={{ height: 34 }} placeholder="მიზეზი (სავალდებულო)" aria-label="მიზეზი" value={reason} onChange={(e) => setReason(e.target.value)} />
+        <button className="btn" type="button" onClick={() => setList(cur.map((x) => x.code))}>გაუქმება</button>
+        <button className="btn primary" type="button" disabled={m.isPending || reason.trim().length < 3} onClick={() => m.mutate()}>შენახვა</button></div>}
+      <ErrorBox error={m.error} />
+    </section>
   );
 }
 

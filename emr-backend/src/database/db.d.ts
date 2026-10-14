@@ -3223,6 +3223,14 @@ export interface Roles {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RptDashboardKpis {
+  dashboard: string;
+  kpi_code: string;
+  sort_order: number;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
 export interface RptFactBeds {
   admissions: Generated<number>;
   available_hours: Generated<Numeric>;
@@ -4284,6 +4292,7 @@ export interface DB {
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;
+  rpt_dashboard_kpis: RptDashboardKpis;
   rpt_fact_beds: RptFactBeds;
   rpt_fact_dx: RptFactDx;
   rpt_fact_finance: RptFactFinance;

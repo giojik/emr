@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req,
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req,
   Res, StreamableFile } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
@@ -52,7 +52,8 @@ export class ReportingService {
     const last = await this.lastRun();
     return {
       settings: { occupancy_basis: s.occupancy_basis, stock_days_window: s.stock_days_window, stock_days_alert: s.stock_days_alert, compare_default: s.compare_default,
-        refresh_today_min: s.refresh_today_min, lab_tat_start: s.lab_tat_start },
+        refresh_today_min: s.refresh_today_min, lab_tat_start: s.lab_tat_start,
+        tv_refresh_min: s.tv_refresh_min, lab_overdue_min: s.lab_overdue_min, dx_overdue_hours: s.dx_overdue_hours, dead_stock_days: s.dead_stock_days },
       today: await this.c.today(),
       scope: { all: scope.all, finance: scope.finance, phi: scope.phi, departments: scope.all ? await this.deptNames() : await this.deptNames(scope.depts) },
       data_as_of: last?.finished_at ?? null,
@@ -430,5 +431,3 @@ export class ReportingController {
   @Post('refresh') @HttpCode(202) @Roles('admin') refresh(@Body() d: RefreshDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.a.refresh(d, u, r); }
 }
 
-@Module({ providers: [ReportingService, ReportingAdminService, RptKpiService, RptRefreshService], controllers: [ReportingController] })
-export class ReportingModule {}

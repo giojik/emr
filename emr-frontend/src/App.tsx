@@ -45,6 +45,7 @@ import Devices from './pages/admin/Devices';
 import RolesPage from './pages/admin/Roles';
 import Reports from './pages/Reports';
 import Dashboard from './pages/reporting/Dashboard';
+import Tv from './pages/reporting/Tv';
 import ReportingAdmin from './pages/admin/Reporting';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/tariffs/Tariffs';
@@ -88,6 +89,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/change-password" element={<Guard><ChangePassword /></Guard>} />
+      <Route path="/dashboard/tv" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><Tv /></Guard>} />
       <Route element={<Guard><Shell /></Guard>}>
         <Route path="/reception" element={<Guard roles={['admin', 'receptionist', 'manager', 'viewer']}><Reception /></Guard>} />
         <Route path="/reports" element={<Guard roles={['admin', 'accountant', 'viewer', 'manager']}><Reports /></Guard>} />

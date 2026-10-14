@@ -38,10 +38,13 @@ export interface RptSettings {
   refresh_today_min: number; nightly_hour: number; recompute_days: number; freeze_closed_periods: boolean;
   occupancy_basis: 'hours' | 'midnight'; stock_days_window: number; stock_days_alert: number;
   compare_default: 'prev' | 'yoy' | 'none'; lab_tat_start: 'collected' | 'ordered';
+  /** 0061 */
+  lab_overdue_min: number; dx_overdue_hours: number; dead_stock_days: number; tv_refresh_min: number;
 }
 export const RPT_DEFAULTS: RptSettings = {
   refresh_today_min: 15, nightly_hour: 2, recompute_days: 35, freeze_closed_periods: true, occupancy_basis: 'hours',
   stock_days_window: 30, stock_days_alert: 7, compare_default: 'prev', lab_tat_start: 'collected',
+  lab_overdue_min: 120, dx_overdue_hours: 24, dead_stock_days: 90, tv_refresh_min: 5,
 };
 export async function rptModule(db: Database) {
   const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'reporting').executeTakeFirst();

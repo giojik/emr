@@ -46,7 +46,7 @@ import { DrgModule } from './drg/drg.module';
 import { ScrubModule } from './scrub/scrub';
 import { ConfigPackageModule } from './config-package/config-package';
 import { RptCommonModule } from './reporting/reporting-common';
-import { ReportingModule } from './reporting/reporting';
+import { ReportingModule } from './reporting/reporting.module';
 import { APP_FILTER } from '@nestjs/core';
 import { PgLockFilter } from './common/pg-lock.filter';
 

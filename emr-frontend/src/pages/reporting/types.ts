@@ -14,7 +14,8 @@ export const DIR_KA: Record<string, string> = { up: 'უკეთესია �
 export const UNIT_FULL: Record<string, string> = { count: 'რაოდენობა', pct: '%', days: 'დღე', hours: 'საათი', min: 'წუთი', gel: '₾', ratio: 'კოეფიციენტი' };
 
 export interface RptMeta {
-  settings: { occupancy_basis: 'hours' | 'midnight'; stock_days_window: number; stock_days_alert: number; compare_default: 'prev' | 'yoy' | 'none'; refresh_today_min: number; lab_tat_start: string };
+  settings: { occupancy_basis: 'hours' | 'midnight'; stock_days_window: number; stock_days_alert: number; compare_default: 'prev' | 'yoy' | 'none'; refresh_today_min: number; lab_tat_start: string;
+    tv_refresh_min: number; lab_overdue_min: number; dx_overdue_hours: number; dead_stock_days: number };
   today: string;
   scope: { all: boolean; finance: boolean; phi: boolean; departments: { id: string; name: string; type: string; is_active: boolean }[] };
   data_as_of: string | null;

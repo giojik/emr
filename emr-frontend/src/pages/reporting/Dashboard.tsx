@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
+import { BarChart } from '../../components/charts';
 import { ErrorBox, Loading, Modal } from '../../components/ui';
 import { useModuleEnabled, useModules } from '../../lib/modules';
 import { Bar } from '../finance/types';
@@ -8,8 +10,10 @@ import {
   type ByDept, CATEGORIES, CATEGORY_KA, changeTone, DIR_KA, type Drill, downloadFile, fmtTime, fmtVal, type KpiValue, type Overview, type RptMeta, type Series,
   shiftDays, STATUS_KA, STATUS_TONE, UNIT_FULL,
 } from './types';
+import { AttentionPanel, DeptRanking, type Headline, HeadlineTiles, LivePanel, TrendCard } from './Panels';
 
-type Tab = 'overview' | 'stock';
+type Tab = 'executive' | 'department' | 'overview' | 'stock';
+const TAB_KA: Record<Tab, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება', overview: 'KPI მიმოხილვა', stock: 'მარაგის დღეები' };
 
 /** მენეჯერული დაფა (0060): KPI მიმოხილვა rpt_* ფაქტებიდან — პერიოდი, განყოფილება (ხედვის არის ფარგლებში), შედარება, სამიზნეები, ჩაღრმავება, ექსპორტი */
 export default function Dashboard() {
@@ -18,13 +22,16 @@ export default function Dashboard() {
   const today = meta.data?.today ?? new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(today.slice(0, 8) + '01'); const [to, setTo] = useState(today);
   const [dept, setDept] = useState(''); const [compare, setCompare] = useState<string>('');
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tabSel, setTab] = useState<Tab | null>(null);
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „მენეჯერული რეპორტინგი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   if (meta.error) return <div className="content"><ErrorBox error={meta.error} /></div>;
   if (!meta.data) return <div className="content"><Loading /></div>;
   const m = meta.data;
   const cmp = compare || m.settings.compare_default;
+  const tabs: Tab[] = m.scope.all ? ['executive', 'department', 'overview', 'stock'] : ['department', 'overview', 'stock'];
+  const tab: Tab = tabSel && tabs.includes(tabSel) ? tabSel : tabs[0];
+  const periodTab = tab !== 'stock';
   const preset = (k: 'month' | 'prev' | '30' | 'year') => {
     if (k === 'month') { setFrom(today.slice(0, 8) + '01'); setTo(today); }
     if (k === '30') { setFrom(shiftDays(today, -29)); setTo(today); }
@@ -37,7 +44,9 @@ export default function Dashboard() {
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <h1 className="grow">მენეჯერული დაფა</h1>
           <span className="chip" title={`დღევანდელი მონაცემები ახლდება ყოველ ${m.settings.refresh_today_min} წუთში; ისტორია — ღამით`}>მონაცემები: {fmtTime(m.data_as_of)}</span>
-          {tab === 'overview' && <>
+          {(tab === 'executive' || tab === 'department') && <Link className="btn sm" to={`/dashboard/tv?view=${tab}${dept ? `&department_id=${dept}` : ''}`} target="_blank"
+            title={`სრულეკრანიანი ხედი კედლის ეკრანისთვის — ახლდება ყოველ ${m.settings.tv_refresh_min ?? 5} წუთში, პაციენტის მონაცემების გარეშე`}>ეკრანის რეჟიმი</Link>}
+          {periodTab && <>
             <div className="seg" role="group" aria-label="სწრაფი პერიოდი">
               <button type="button" onClick={() => preset('month')}>ეს თვე</button><button type="button" onClick={() => preset('prev')}>წინა თვე</button>
               <button type="button" onClick={() => preset('30')}>30 დღე</button><button type="button" onClick={() => preset('year')}>წელი</button>
@@ -47,23 +56,48 @@ export default function Dashboard() {
           </>}
         </div>
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <nav aria-label="დაფა" className="row grow" style={{ gap: 2 }}>
-            <button type="button" className={`admin-tab${tab === 'overview' ? ' active' : ''}`} style={{ background: 'none', borderTop: 0, borderLeft: 0, borderRight: 0, font: 'inherit', cursor: 'pointer' }} onClick={() => setTab('overview')}>KPI მიმოხილვა</button>
-            <button type="button" className={`admin-tab${tab === 'stock' ? ' active' : ''}`} style={{ background: 'none', borderTop: 0, borderLeft: 0, borderRight: 0, font: 'inherit', cursor: 'pointer' }} onClick={() => setTab('stock')}>მარაგის დღეები</button>
+          <nav aria-label="დაფა" className="row grow" style={{ gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
+            {tabs.map((t) => <button key={t} type="button" className={`admin-tab${tab === t ? ' active' : ''}`} style={{ background: 'none', borderTop: 0, borderLeft: 0, borderRight: 0, font: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => setTab(t)}>{TAB_KA[t]}</button>)}
           </nav>
           <label className="row small">განყოფილება
-            <select className="select" style={{ height: 34 }} value={dept} onChange={(e) => setDept(e.target.value)}>
+            <select className="select" style={{ height: 34, width: 280 }} value={dept} onChange={(e) => setDept(e.target.value)}>
               <option value="">{m.scope.all ? 'მთელი კლინიკა' : m.scope.departments.length > 1 ? 'ყველა ჩემი განყოფილება' : m.scope.departments[0]?.name}</option>
               {(m.scope.all || m.scope.departments.length > 1) && m.scope.departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select></label>
-          {tab === 'overview' && <label className="row small">შედარება
+          {periodTab && <label className="row small">შედარება
             <select className="select" style={{ height: 34 }} value={cmp} onChange={(e) => setCompare(e.target.value)}>
               <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელთან</option><option value="none">შედარების გარეშე</option>
             </select></label>}
         </div>
       </header>
-      {tab === 'overview' ? <OverviewView meta={m} from={from} to={to} dept={dept} compare={cmp} /> : <StockDays meta={m} dept={dept} />}
+      {tab === 'executive' || tab === 'department' ? <ThemeView key={tab} dash={tab} meta={m} from={from} to={to} dept={dept} compare={cmp} />
+        : tab === 'overview' ? <OverviewView meta={m} from={from} to={to} dept={dept} compare={cmp} /> : <StockDays meta={m} dept={dept} />}
     </>
+  );
+}
+
+/** თემატური დაფა (0061): ძირითადი KPI-ები (+13 თვე), ტრენდი, რეიტინგი, „ახლა“, „ყურადღება“ */
+function ThemeView({ dash, meta, from, to, dept, compare }: { dash: 'executive' | 'department'; meta: RptMeta; from: string; to: string; dept: string; compare: string }) {
+  const q = useQuery({ queryKey: ['rpt-headline', dash, from, to, dept, compare],
+    queryFn: () => api<Headline>('/reporting/headline', { query: { dashboard: dash, from, to, department_id: dept, compare } }) });
+  const [sel, setSel] = useState<string | null>(null);
+  const k = q.data?.kpis.find((x) => x.code === sel) ?? q.data?.kpis.find((x) => !x.snapshot);
+  return (
+    <div className="content">
+      <ErrorBox error={q.error} />
+      {!q.data ? <Loading /> : <>
+        {!meta.data_as_of && <div className="alert warn">მონაცემები ჯერ არ არის დათვლილი — ადმინისტრირება → რეპორტინგი → გადათვლა.</div>}
+        <HeadlineTiles h={q.data} selected={k?.code} onSelect={setSel} />
+        {k && <div style={{ display: 'grid', gridTemplateColumns: dash === 'executive' && !dept ? 'minmax(0, 3fr) minmax(0, 2fr)' : '1fr', gap: 10 }}>
+          <TrendCard kpi={k.code} dept={dept} unit={k.unit} />
+          {dash === 'executive' && !dept && <DeptRanking kpi={k.code} from={from} to={to} unit={k.unit} />}
+        </div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: 10, alignItems: 'start' }}>
+          <LivePanel dept={dept} showDepartments={dash === 'executive'} />
+          <AttentionPanel dept={dept} />
+        </div>
+      </>}
+    </div>
   );
 }
 
@@ -158,7 +192,8 @@ function KpiDetail({ k, meta, from, to, dept, onClose }: { k: KpiValue; meta: Rp
               </div>
               <button className="btn sm" type="button" onClick={() => exp('series', { grain })}>Excel</button></div>
             <ErrorBox error={series.error} />
-            {series.data ? <Chart points={series.data.points} unit={k.unit} /> : <Loading />}
+            {series.data ? <BarChart points={series.data.points.map((p) => ({ label: p.period.length > 7 ? p.period.slice(5) : p.period, value: p.value, hint: `${p.period}: ${fmtVal(p.value, k.unit)}` }))}
+              format={(v) => fmtVal(v, k.unit)} /> : <Loading />}
           </section>)}
         {!dept && (
           <section className="card" style={{ overflowX: 'auto' }}>
@@ -194,31 +229,6 @@ function KpiDetail({ k, meta, from, to, dept, onClose }: { k: KpiValue; meta: Rp
           </section>)}
       </div>
     </Modal>
-  );
-}
-
-/** სვეტოვანი დიაგრამა (SVG, ბიბლიოთეკის გარეშე) */
-function Chart({ points, unit }: { points: Series['points']; unit: string }) {
-  const W = 820, H = 180, P = 28;
-  const vals = points.map((p) => p.value ?? 0);
-  const max = Math.max(0, ...vals); const min = Math.min(0, ...vals); const span = max - min || 1;
-  const bw = (W - P * 2) / Math.max(1, points.length);
-  const y = (v: number) => P / 2 + (H - P * 1.5) * (1 - (v - min) / span);
-  if (!points.length) return <div className="muted small">მონაცემი არ არის</div>;
-  const step = Math.ceil(points.length / 12);
-  return (
-    <svg viewBox={`0 0 ${W} ${H + 18}`} width="100%" role="img" aria-label="დინამიკა" style={{ maxHeight: 240 }}>
-      <line x1={P} x2={W - P} y1={y(0)} y2={y(0)} stroke="var(--line)" />
-      <text x={2} y={y(max) + 4} fontSize="10" fill="var(--muted)">{fmtVal(max, unit)}</text>
-      {points.map((p, i) => {
-        const v = p.value; const x = P + i * bw + bw * 0.12; const w = Math.max(1, bw * 0.76);
-        return (
-          <g key={p.period}>
-            {v !== null && <rect x={x} width={w} y={Math.min(y(v), y(0))} height={Math.max(1, Math.abs(y(v) - y(0)))} rx={2} fill={v < 0 ? 'var(--danger-ink)' : 'var(--accent)'}><title>{`${p.period}: ${fmtVal(v, unit)}`}</title></rect>}
-            {i % step === 0 && <text x={x + w / 2} y={H + 12} fontSize="10" textAnchor="middle" fill="var(--muted)">{p.period.length > 7 ? p.period.slice(5) : p.period}</text>}
-          </g>);
-      })}
-    </svg>
   );
 }
 

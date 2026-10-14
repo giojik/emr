@@ -168,6 +168,8 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       refresh_today_min: (v) => int(v, 5, 120), nightly_hour: (v) => int(v, 0, 23), recompute_days: (v) => int(v, 1, 120), freeze_closed_periods: bool,
       occupancy_basis: (v) => oneOf(v, ['hours', 'midnight']), stock_days_window: (v) => int(v, 7, 180), stock_days_alert: (v) => int(v, 1, 90),
       compare_default: (v) => oneOf(v, ['prev', 'yoy', 'none']), lab_tat_start: (v) => oneOf(v, ['collected', 'ordered']),
+      // 0061
+      lab_overdue_min: (v) => int(v, 15, 2880), dx_overdue_hours: (v) => int(v, 1, 336), dead_stock_days: (v) => int(v, 30, 730), tv_refresh_min: (v) => int(v, 1, 60),
     },
   },
   asset_register: {

@@ -39,7 +39,7 @@ const HOME: Record<Role, string> = {
   doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/stock/verification',
   diagnostic: '/diagnostics/lab', lab_doctor: '/diagnostics/lab', lab_manager: '/admin/catalog', phlebotomist: '/collection',
   radiographer: '/diagnostics/radiology', radiologist: '/diagnostics/radiology', endoscopist: '/diagnostics/endoscopy', endoscopy_nurse: '/diagnostics/endoscopy',
-  accountant: '/reports', viewer: '/reports', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',
+  accountant: '/reports', viewer: '/dashboard', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',
   storekeeper: '/stock/balances', stock_manager: '/stock/balances',
   or_schedule: '/or?tab=board', anesthesiologist: '/or?tab=my', or_nurse: '/or?tab=board',
   procurement: '/procurement/requisitions', procurement_approve: '/procurement/requisitions?to_approve=1',
