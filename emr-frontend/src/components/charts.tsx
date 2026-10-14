@@ -98,3 +98,26 @@ export function StackBar({ parts, height = 14 }: { parts: { label: string; value
     </div>
   );
 }
+
+/** სითბური რუკა (0062): რიგები × სვეტები; ფერის სიმკვრივე — მნიშვნელობით (0 — ფონი) */
+export function Heatmap({ rows, cols, values, format = (v: number) => String(v), cell = 26 }: {
+  rows: string[]; cols: string[]; values: number[][]; format?: (v: number) => string; cell?: number;
+}) {
+  const max = Math.max(0, ...values.flat());
+  const LW = 40, TH = 18;
+  const W = LW + cols.length * cell, H = TH + rows.length * cell;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="სითბური რუკა" style={{ maxWidth: W * 1.4 }}>
+      {cols.map((c, j) => <text key={c} x={LW + j * cell + cell / 2} y={12} fontSize="9" textAnchor="middle" fill="var(--muted)">{c}</text>)}
+      {rows.map((r, i) => (
+        <g key={r}>
+          <text x={LW - 6} y={TH + i * cell + cell / 2 + 3} fontSize="10" textAnchor="end" fill="var(--muted)">{r}</text>
+          {cols.map((c, j) => {
+            const v = values[i]?.[j] ?? 0; const a = max > 0 ? v / max : 0;
+            return <rect key={c} x={LW + j * cell + 1} y={TH + i * cell + 1} width={cell - 2} height={cell - 2} rx={3}
+              fill={v > 0 ? 'var(--accent)' : 'var(--line-soft)'} fillOpacity={v > 0 ? 0.12 + a * 0.88 : 1}><title>{`${r} ${c}:00 — ${format(v)}`}</title></rect>;
+          })}
+        </g>))}
+    </svg>
+  );
+}

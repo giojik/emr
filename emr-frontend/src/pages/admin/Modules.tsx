@@ -609,6 +609,10 @@ function ReportingSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
       <Field label="კვლევის დასკვნა აგვიანებს (საათი)" htmlFor="rp-dx_overdue_hours" hint="1–336; ჩატარებიდან ხელმოწერამდე">{int('dx_overdue_hours', 24, 1, 336)}</Field>
       <Field label="მარაგი მოძრაობის გარეშე (დღე)" htmlFor="rp-dead_stock_days" hint="30–730">{int('dead_stock_days', 90, 30, 730)}</Field>
       <Field label="ეკრანის რეჟიმის განახლება (წუთი)" htmlFor="rp-tv_refresh_min" hint="1–60">{int('tv_refresh_min', 5, 1, 60)}</Field>
+      <Field label="ექიმის ჭრილი" htmlFor="rp-db" hint="ოპერაციული დაფა → ექიმები: ქირურგი, მკურნალი ექიმი, ვალიდატორი (აუდიტდება)">
+        <select id="rp-db" className="select" value={String(s.doctor_breakdown ?? 'all_only')} onChange={(e) => upd('doctor_breakdown', e.target.value)}>
+          <option value="all_only">მხოლოდ კლინიკის ხედვით (ხელმძღვანელობა)</option><option value="scoped">განყოფილების ხელმძღვანელსაც (თავისი განყოფილება)</option><option value="off">გამორთულია</option></select></Field>
+      <Field label="მცირე ნიმუშის ზღვარი (შემთხვევა)" htmlFor="rp-min_cases" hint="1–50; ნაკლებ შემთხვევაზე ექიმის % / საშუალო არ ჩანს">{int('min_cases', 5, 1, 50)}</Field>
       <Field label="შედარება ნაგულისხმევად" htmlFor="rp-cd">
         <select id="rp-cd" className="select" value={String(s.compare_default ?? 'prev')} onChange={(e) => upd('compare_default', e.target.value)}>
           <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელ იმავე პერიოდთან</option><option value="none">შედარების გარეშე</option></select></Field>

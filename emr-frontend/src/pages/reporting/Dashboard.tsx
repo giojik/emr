@@ -10,10 +10,11 @@ import {
   type ByDept, CATEGORIES, CATEGORY_KA, changeTone, DIR_KA, type Drill, downloadFile, fmtTime, fmtVal, type KpiValue, type Overview, type RptMeta, type Series,
   shiftDays, STATUS_KA, STATUS_TONE, UNIT_FULL,
 } from './types';
+import Ops from './Ops';
 import { AttentionPanel, DeptRanking, type Headline, HeadlineTiles, LivePanel, TrendCard } from './Panels';
 
-type Tab = 'executive' | 'department' | 'overview' | 'stock';
-const TAB_KA: Record<Tab, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება', overview: 'KPI მიმოხილვა', stock: 'მარაგის დღეები' };
+type Tab = 'executive' | 'department' | 'ops' | 'overview' | 'stock';
+const TAB_KA: Record<Tab, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება', ops: 'ოპერაციული', overview: 'KPI მიმოხილვა', stock: 'მარაგის დღეები' };
 
 /** მენეჯერული დაფა (0060): KPI მიმოხილვა rpt_* ფაქტებიდან — პერიოდი, განყოფილება (ხედვის არის ფარგლებში), შედარება, სამიზნეები, ჩაღრმავება, ექსპორტი */
 export default function Dashboard() {
@@ -29,7 +30,7 @@ export default function Dashboard() {
   if (!meta.data) return <div className="content"><Loading /></div>;
   const m = meta.data;
   const cmp = compare || m.settings.compare_default;
-  const tabs: Tab[] = m.scope.all ? ['executive', 'department', 'overview', 'stock'] : ['department', 'overview', 'stock'];
+  const tabs: Tab[] = m.scope.all ? ['executive', 'department', 'ops', 'overview', 'stock'] : ['department', 'ops', 'overview', 'stock'];
   const tab: Tab = tabSel && tabs.includes(tabSel) ? tabSel : tabs[0];
   const periodTab = tab !== 'stock';
   const preset = (k: 'month' | 'prev' | '30' | 'year') => {
@@ -64,13 +65,14 @@ export default function Dashboard() {
               <option value="">{m.scope.all ? 'მთელი კლინიკა' : m.scope.departments.length > 1 ? 'ყველა ჩემი განყოფილება' : m.scope.departments[0]?.name}</option>
               {(m.scope.all || m.scope.departments.length > 1) && m.scope.departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select></label>
-          {periodTab && <label className="row small">შედარება
+          {periodTab && tab !== 'ops' && <label className="row small">შედარება
             <select className="select" style={{ height: 34 }} value={cmp} onChange={(e) => setCompare(e.target.value)}>
               <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელთან</option><option value="none">შედარების გარეშე</option>
             </select></label>}
         </div>
       </header>
       {tab === 'executive' || tab === 'department' ? <ThemeView key={tab} dash={tab} meta={m} from={from} to={to} dept={dept} compare={cmp} />
+        : tab === 'ops' ? <Ops meta={m} from={from} to={to} dept={dept} />
         : tab === 'overview' ? <OverviewView meta={m} from={from} to={to} dept={dept} compare={cmp} /> : <StockDays meta={m} dept={dept} />}
     </>
   );

@@ -3246,12 +3246,49 @@ export interface RptFactBeds {
   transfers_out: Generated<number>;
 }
 
+export interface RptFactDoctor {
+  admissions: Generated<number>;
+  day: string;
+  deaths: Generated<number>;
+  department_id: string | null;
+  discharges: Generated<number>;
+  doctor_id: string;
+  dx_resulted: Generated<number>;
+  dx_tat_hist: Generated<number[]>;
+  dx_tat_sum_min: Generated<Numeric>;
+  los_days_sum: Generated<number>;
+  or_cancelled: Generated<number>;
+  or_done: Generated<number>;
+  or_first_cases: Generated<number>;
+  or_first_on_time: Generated<number>;
+  or_scheduled: Generated<number>;
+  or_surgery_cases: Generated<number>;
+  or_surgery_min: Generated<number>;
+  readmissions_30: Generated<number>;
+  role: string;
+}
+
 export interface RptFactDx {
   cancelled: Generated<number>;
   day: string;
   department_id: string | null;
   ext_cost: Generated<Numeric>;
   external: Generated<number>;
+  ordered: Generated<number>;
+  resulted: Generated<number>;
+  section: string;
+  tat_hist: Generated<number[]>;
+  tat_sum_min: Generated<Numeric>;
+}
+
+export interface RptFactDxDim {
+  cancelled: Generated<number>;
+  day: string;
+  department_id: string | null;
+  device_key: Generated<string>;
+  external: Generated<number>;
+  group_name: Generated<string>;
+  modality: Generated<string>;
   ordered: Generated<number>;
   resulted: Generated<number>;
   section: string;
@@ -3284,6 +3321,15 @@ export interface RptFactFlow {
   new_patients: Generated<number>;
   patients: Generated<number>;
   visit_kind: string;
+}
+
+export interface RptFactHourly {
+  day: string;
+  department_id: string | null;
+  hour: number;
+  layer: string;
+  n: Generated<number>;
+  sub: Generated<string>;
 }
 
 export interface RptFactOr {
@@ -4294,9 +4340,12 @@ export interface DB {
   roles: Roles;
   rpt_dashboard_kpis: RptDashboardKpis;
   rpt_fact_beds: RptFactBeds;
+  rpt_fact_doctor: RptFactDoctor;
   rpt_fact_dx: RptFactDx;
+  rpt_fact_dx_dim: RptFactDxDim;
   rpt_fact_finance: RptFactFinance;
   rpt_fact_flow: RptFactFlow;
+  rpt_fact_hourly: RptFactHourly;
   rpt_fact_or: RptFactOr;
   rpt_fact_or_room: RptFactOrRoom;
   rpt_fact_stock: RptFactStock;

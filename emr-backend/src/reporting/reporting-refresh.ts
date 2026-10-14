@@ -4,6 +4,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { finRules } from '../finance/finance-rules';
 import { revenueCte } from '../finance/finance-reports';
+import { opsFacts } from './reporting-refresh-ops';
 import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type RptSettings, TZ } from './reporting-common';
 
 /**
@@ -116,6 +117,8 @@ export class RptRefreshService {
     out.stock = await this.stock(trx, from, to);
     const fin = await this.finance(trx, from, to, s);
     out.finance = fin.rows; out.frozen_days = fin.frozen;
+    const ops = await opsFacts(this.rdb, trx, from, to, s);   // 0062
+    Object.assign(out, ops);
     if (to >= today) out.stock_snapshot = await this.snapshot(trx, today, s);
     return out;
   }
