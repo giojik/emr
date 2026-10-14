@@ -162,6 +162,14 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
   },
   // 0057: ქლეიმის შემოწმება
   scrubber: { keys: { finalize_check: (v) => oneOf(v, ['off', 'warn', 'block']), claim_check: (v) => oneOf(v, ['off', 'warn', 'block']) } },
+  // 0060: მენეჯერული რეპორტინგი
+  reporting: {
+    keys: {
+      refresh_today_min: (v) => int(v, 5, 120), nightly_hour: (v) => int(v, 0, 23), recompute_days: (v) => int(v, 1, 120), freeze_closed_periods: bool,
+      occupancy_basis: (v) => oneOf(v, ['hours', 'midnight']), stock_days_window: (v) => int(v, 7, 180), stock_days_alert: (v) => int(v, 1, 90),
+      compare_default: (v) => oneOf(v, ['prev', 'yoy', 'none']), lab_tat_start: (v) => oneOf(v, ['collected', 'ordered']),
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

@@ -9,6 +9,7 @@ import { LabAlertsService } from './lab-gateway/lab-alerts.service';
 import { StockAlertsService } from './stock/stock-alerts';
 import { InpatientRemindersService } from './inpatient/inpatient-reminders';
 import { TariffTickService } from './tariffs/tariff-tick';
+import { RptRefreshService } from './reporting/reporting-refresh';
 import { WorkerModule } from './worker.module';
 
 const HEARTBEAT_MS = 60_000;
@@ -41,8 +42,13 @@ async function bootstrap() {
   const tariffs = app.get(TariffTickService);
   const tariffTick = () => void tariffs.tick().catch((e) => log.error(`ტარიფები: ${(e as Error).message}`));
   const tariffTimer = setInterval(tariffTick, 10 * 60_000); setTimeout(tariffTick, 45_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); });
+  // 0060: მენეჯერული რეპორტინგი — დღიური ფაქტების გადათვლა (დღევანდელი — refresh_today_min, ღამის — nightly_hour); ყოველ წუთს მოწმდება
+  const rpt = app.get(RptRefreshService);
+  const rptTick = () => void rpt.tick().then((r) => { if (r && r.status !== 'ok') log.warn(`რეპორტინგი #${r.run_id}: ${r.status} ${r.error ?? ''}`); })
+    .catch((e) => log.error(`რეპორტინგი: ${(e as Error).message}`));
+  const rptTimer = setInterval(rptTick, 60_000); setTimeout(rptTick, 20_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

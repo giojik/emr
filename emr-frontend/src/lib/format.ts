@@ -32,6 +32,7 @@ export const ROLE_KA: Record<string, string> = {
   or_schedule: 'საოპერაციოს კოორდინატორი', anesthesiologist: 'ანესთეზიოლოგი', or_nurse: 'საოპერაციო ექთანი',
   procurement: 'შესყიდვები', procurement_approve: 'შესყიდვების დამტკიცება (ფინანსური)',
   tariffs: 'ტარიფები', tariffs_approve: 'ტარიფების დამტკიცება', drg: 'DRG (კოდირება)', drg_admin: 'DRG კონფიგურაცია',
+  reports: 'მენეჯერული დაფა (განყოფილება)', reports_all: 'მენეჯერული დაფა (მთელი კლინიკა)', reports_phi: 'რეპორტების პერსონალური მონაცემები',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };

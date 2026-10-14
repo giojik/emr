@@ -10,6 +10,8 @@ x-backend-env: &backend-env
   TZ: Asia/Tbilisi
   DATABASE_URL: postgresql://${EMR_APP_USER}:${EMR_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
   MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  # 0060: მენეჯერული რეპორტინგი — წყაროს წაკითხვა რეპლიკიდან (read-only); ცარიელი — მთავარი ბაზა
+  REPORTING_DB_URL: ${REPORTING_DB_URL:-}
   S3_ENDPOINT: http://minio:9000
   S3_ACCESS_KEY: ${MINIO_ROOT_USER}
   S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}

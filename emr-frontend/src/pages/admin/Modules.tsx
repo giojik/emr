@@ -48,6 +48,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'tariffs' && <TariffSettings s={s} set={setS} />}
       {m.code === 'drg' && <DrgSettings s={s} set={setS} />}
       {m.code === 'scrubber' && <ScrubSettings s={s} set={setS} />}
+      {m.code === 'reporting' && <ReportingSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -578,6 +579,36 @@ function ScrubSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record
       <Field label="ქლეიმი (დამატება და გაგზავნა)" htmlFor="scc" hint="ბლოკზე: შეცდომიანი შემთხვევა ქლეიმში არ შედის, გაგზავნა იბლოკება">
         <select id="scc" className="select" value={v('claim_check')} onChange={(e) => upd('claim_check', e.target.value)}>{opts}</select></Field>
       <span className="small muted" style={{ gridColumn: '1 / -1' }}>წესები — <Link to="/admin/scrubber">ადმინისტრირება → ქლეიმის შემოწმება</Link>.</span>
+    </div>
+  );
+}
+
+/** 0060: მენეჯერული რეპორტინგი — გადათვლის რიტმი, ფორმულების არჩევანი */
+function ReportingSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const num = (k: string, d: number) => Number(s[k] ?? d);
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const int = (k: string, d: number, min: number, max: number) => (
+    <input id={`rp-${k}`} className="input mono" type="number" min={min} max={max} value={num(k, d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+      <Field label="დღევანდელი მონაცემების განახლება (წუთი)" htmlFor="rp-refresh_today_min" hint="5–120; დაფა კითხულობს აგრეგაციას და არა ოპერაციულ ცხრილებს">{int('refresh_today_min', 15, 5, 120)}</Field>
+      <Field label="ღამის გადათვლის საათი" htmlFor="rp-nightly_hour" hint="0–23, კლინიკის დროით; ითვლება ბოლო N დღე (დაგვიანებული შესწორებები)">{int('nightly_hour', 2, 0, 23)}</Field>
+      <Field label="ღამით გადასათვლელი დღეები" htmlFor="rp-recompute_days" hint="1–120; უფრო ძველი — ადმინისტრირება → რეპორტინგი → გადათვლა">{int('recompute_days', 35, 1, 120)}</Field>
+      <Field label="დახურული ფინანსური თვე" htmlFor="rp-fcp" hint="დახურულ თვეში ფინანსური მაჩვენებლები აღარ იცვლება">
+        <select id="rp-fcp" className="select" value={s.freeze_closed_periods === false ? 'no' : 'yes'} onChange={(e) => upd('freeze_closed_periods', e.target.value === 'yes')}>
+          <option value="yes">ფიქსირდება (არ გადაითვლება)</option><option value="no">გადაითვლება</option></select></Field>
+      <Field label="საწოლების დატვირთვა" htmlFor="rp-ob" hint="საათებით — ზუსტი (მოკლე დაყოვნებაც ჩანს); შუაღამით — ტრადიციული აღრიცხვა">
+        <select id="rp-ob" className="select" value={String(s.occupancy_basis ?? 'hours')} onChange={(e) => upd('occupancy_basis', e.target.value)}>
+          <option value="hours">საწოლ-საათებით</option><option value="midnight">შუაღამის დაკავებით</option></select></Field>
+      <Field label="ლაბ. პასუხის დრო (TAT) — საწყისი წერტილი" htmlFor="rp-lts">
+        <select id="rp-lts" className="select" value={String(s.lab_tat_start ?? 'collected')} onChange={(e) => upd('lab_tat_start', e.target.value)}>
+          <option value="collected">ნიმუშის აღებიდან</option><option value="ordered">დანიშვნიდან</option></select></Field>
+      <Field label="მარაგის დღეები — ხარჯის ფანჯარა (დღე)" htmlFor="rp-stock_days_window" hint="7–180; საშუალო დღიური ხარჯი ამ პერიოდით">{int('stock_days_window', 30, 7, 180)}</Field>
+      <Field label="დაბალი მარაგის ზღვარი (დღე)" htmlFor="rp-stock_days_alert" hint="1–90">{int('stock_days_alert', 7, 1, 90)}</Field>
+      <Field label="შედარება ნაგულისხმევად" htmlFor="rp-cd">
+        <select id="rp-cd" className="select" value={String(s.compare_default ?? 'prev')} onChange={(e) => upd('compare_default', e.target.value)}>
+          <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელ იმავე პერიოდთან</option><option value="none">შედარების გარეშე</option></select></Field>
+      <span className="small muted" style={{ alignSelf: 'end' }}>KPI-ები, სამიზნეები, ხედვის არე — <Link to="/admin/reporting">ადმინისტრირება → რეპორტინგი</Link>.</span>
     </div>
   );
 }

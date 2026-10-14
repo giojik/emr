@@ -44,6 +44,8 @@ import Departments from './pages/admin/Departments';
 import Devices from './pages/admin/Devices';
 import RolesPage from './pages/admin/Roles';
 import Reports from './pages/Reports';
+import Dashboard from './pages/reporting/Dashboard';
+import ReportingAdmin from './pages/admin/Reporting';
 import Overrides from './pages/admin/Overrides';
 import Tariffs from './pages/admin/tariffs/Tariffs';
 import Drg from './pages/admin/drg/Drg';
@@ -77,7 +79,7 @@ function NoAccess() {
 
 function AdminHome() {
   const { user } = useAuth();
-  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing', 'tariffs', 'tariffs_approve') ? '/admin/tariffs' : can(user, 'drg', 'drg_admin') ? '/admin/drg' : '/admin/catalog'} replace />;
+  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing', 'tariffs', 'tariffs_approve') ? '/admin/tariffs' : can(user, 'drg', 'drg_admin') ? '/admin/drg' : can(user, 'reports_all') ? '/admin/reporting' : '/admin/catalog'} replace />;
 }
 
 export default function App() {
@@ -89,6 +91,7 @@ export default function App() {
       <Route element={<Guard><Shell /></Guard>}>
         <Route path="/reception" element={<Guard roles={['admin', 'receptionist', 'manager', 'viewer']}><Reception /></Guard>} />
         <Route path="/reports" element={<Guard roles={['admin', 'accountant', 'viewer', 'manager']}><Reports /></Guard>} />
+        <Route path="/dashboard" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><Dashboard /></Guard>} />
         <Route path="/no-access" element={<NoAccess />} />
         <Route path="/patients" element={<Guard roles={['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'manager']}><Patients /></Guard>} />
         <Route path="/patients/new" element={<Guard roles={['admin', 'receptionist']}><PatientNew /></Guard>} />
@@ -113,7 +116,7 @@ export default function App() {
         <Route path="/finance" element={<Guard roles={[...FIN_READ, 'billing']}><Finance /></Guard>} />
         <Route path="/finance/:view" element={<Guard roles={[...FIN_READ, 'billing']}><Finance /></Guard>} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
-        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin']}><AdminLayout /></Guard>}>
+        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin', 'reports_all']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />
           <Route path="users" element={<Guard roles={['admin', 'hr', 'manager']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
@@ -125,6 +128,7 @@ export default function App() {
           <Route path="billing" element={<Guard roles={['admin', 'billing']}><BillingSetup /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
+          <Route path="reporting" element={<Guard roles={['admin', 'reports_all']}><ReportingAdmin /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
           <Route path="icu" element={<Guard roles={['admin']}><IcuSetup /></Guard>} />
           <Route path="or" element={<Guard roles={['admin']}><OrSetup /></Guard>} />

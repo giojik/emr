@@ -9,6 +9,8 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),          // runtime: emr_app როლი
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+  /** 0060: რეპორტების წყაროს წაკითხვა (რეპლიკა, read-only); ცარიელი — მთავარი ბაზა */
+  REPORTING_DB_URL: z.string().url().optional().or(z.literal('').transform(() => undefined)),
   CLINIC_TZ: z.string().default('Asia/Tbilisi'),                            // "დღის" საზღვრები განრიგისთვის
 
   // --- ფაილსაცავი (MinIO / S3) ---

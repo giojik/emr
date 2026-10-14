@@ -307,6 +307,14 @@ export interface Beds {
   ward_id: string;
 }
 
+export interface BedStatusLog {
+  at: Generated<Timestamp>;
+  bed_id: string;
+  id: Generated<Int8>;
+  is_active: boolean;
+  status: string;
+}
+
 export interface BedTypes {
   code: string;
   is_active: Generated<boolean>;
@@ -3215,6 +3223,159 @@ export interface Roles {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RptFactBeds {
+  admissions: Generated<number>;
+  available_hours: Generated<Numeric>;
+  day: string;
+  deaths: Generated<number>;
+  department_id: string;
+  discharges: Generated<number>;
+  los_days_sum: Generated<number>;
+  midnight_census: Generated<number>;
+  occupied_hours: Generated<Numeric>;
+  readmissions_30: Generated<number>;
+  transfers_in: Generated<number>;
+  transfers_out: Generated<number>;
+}
+
+export interface RptFactDx {
+  cancelled: Generated<number>;
+  day: string;
+  department_id: string | null;
+  ext_cost: Generated<Numeric>;
+  external: Generated<number>;
+  ordered: Generated<number>;
+  resulted: Generated<number>;
+  section: string;
+  tat_hist: Generated<number[]>;
+  tat_sum_min: Generated<Numeric>;
+}
+
+export interface RptFactFinance {
+  day: string;
+  department_id: string | null;
+  expenses: Generated<Numeric>;
+  payments: Generated<Numeric>;
+  rev_denied: Generated<Numeric>;
+  rev_insurance: Generated<Numeric>;
+  rev_other: Generated<Numeric>;
+  rev_patient: Generated<Numeric>;
+  rev_state: Generated<Numeric>;
+  rev_undetermined: Generated<Numeric>;
+  rev_writeoff: Generated<Numeric>;
+  stock_cost: Generated<Numeric>;
+}
+
+export interface RptFactFlow {
+  cancelled: Generated<number>;
+  completed: Generated<number>;
+  day: string;
+  department_id: string | null;
+  enc_type: string;
+  encounters: Generated<number>;
+  new_patients: Generated<number>;
+  patients: Generated<number>;
+  visit_kind: string;
+}
+
+export interface RptFactOr {
+  cancelled: Generated<number>;
+  cancelled_same_day: Generated<number>;
+  day: string;
+  department_id: string;
+  done: Generated<number>;
+  emergency: Generated<number>;
+  first_cases: Generated<number>;
+  first_on_time: Generated<number>;
+  scheduled: Generated<number>;
+  surgery_cases: Generated<number>;
+  surgery_min: Generated<number>;
+}
+
+export interface RptFactOrRoom {
+  avail_min: Generated<number>;
+  cases: Generated<number>;
+  day: string;
+  department_id: string;
+  room_id: string;
+  used_min: Generated<number>;
+}
+
+export interface RptFactStock {
+  consumption: Generated<Numeric>;
+  day: string;
+  department_id: string | null;
+  location_id: string;
+  loss: Generated<Numeric>;
+  receipts: Generated<Numeric>;
+}
+
+export interface RptKpis {
+  category: string;
+  code: string;
+  definition: string;
+  direction: string;
+  drill: string | null;
+  finance: Generated<boolean>;
+  formula: string;
+  is_active: Generated<boolean>;
+  name: string;
+  snapshot: Generated<boolean>;
+  sort_order: Generated<number>;
+  source: string;
+  unit: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+}
+
+export interface RptKpiTargets {
+  department_id: string | null;
+  id: Generated<string>;
+  kpi_code: string;
+  note: string | null;
+  target: Numeric;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  warn: Numeric | null;
+}
+
+export interface RptRefreshRuns {
+  date_from: string;
+  date_to: string;
+  duration_ms: number | null;
+  error: string | null;
+  facts: Json | null;
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  kind: string;
+  requested_by: string | null;
+  source: Generated<string>;
+  started_at: Generated<Timestamp>;
+  status: Generated<string>;
+}
+
+export interface RptStockSnapshot {
+  avg_daily_use: Generated<Numeric>;
+  computed_at: Generated<Timestamp>;
+  days_of_supply: Numeric | null;
+  department_id: string | null;
+  expired_value: Generated<Numeric>;
+  expiring_value_90: Generated<Numeric>;
+  item_id: string;
+  last_move_at: Timestamp | null;
+  location_id: string;
+  qty: Numeric;
+  used_qty_window: Generated<Numeric>;
+  value: Numeric;
+}
+
+export interface RptUserScopes {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  department_id: string;
+  user_id: string;
+}
+
 export interface ScaleAssessments {
   answers: Json;
   assessed_at: Timestamp;
@@ -3935,6 +4096,7 @@ export interface DB {
   auth_sessions: AuthSessions;
   bed_assignments: BedAssignments;
   bed_day_tariffs: BedDayTariffs;
+  bed_status_log: BedStatusLog;
   bed_types: BedTypes;
   beds: Beds;
   billing_package_items: BillingPackageItems;
@@ -4122,6 +4284,18 @@ export interface DB {
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;
+  rpt_fact_beds: RptFactBeds;
+  rpt_fact_dx: RptFactDx;
+  rpt_fact_finance: RptFactFinance;
+  rpt_fact_flow: RptFactFlow;
+  rpt_fact_or: RptFactOr;
+  rpt_fact_or_room: RptFactOrRoom;
+  rpt_fact_stock: RptFactStock;
+  rpt_kpi_targets: RptKpiTargets;
+  rpt_kpis: RptKpis;
+  rpt_refresh_runs: RptRefreshRuns;
+  rpt_stock_snapshot: RptStockSnapshot;
+  rpt_user_scopes: RptUserScopes;
   scale_assessments: ScaleAssessments;
   scale_defs: ScaleDefs;
   scrub_overrides: ScrubOverrides;
