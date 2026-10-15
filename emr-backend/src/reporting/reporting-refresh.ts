@@ -4,6 +4,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { finRules } from '../finance/finance-rules';
 import { revenueCte } from '../finance/finance-reports';
+import { balanceSnapshot, finExtraFacts } from './reporting-refresh-fin';
 import { opsFacts } from './reporting-refresh-ops';
 import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type RptSettings, TZ } from './reporting-common';
 
@@ -13,6 +14,7 @@ import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type R
  *    (DELETE პერიოდი → INSERT), pg_try_advisory_xact_lock-ით — ერთდროულად ერთი გადათვლა.
  *  • დახურული ფინანსური თვე (freeze_closed_periods) — rpt_fact_finance არ იცვლება.
  *  • მარაგის სურათი — მხოლოდ მაშინ, როცა პერიოდი დღევანდელ დღეს მოიცავს.
+ *  • 0063: rpt_fact_payer / rpt_fact_doctor_rev (finance-სთან ერთად, დახურული თვე — გაყინული), დებიტორები / კრედიტორები (rpt_balance_snapshot — დღევანდელ დღეზე).
  */
 type Trx = Transaction<DB>;
 const LOCK_KEY = 60_060;
@@ -117,9 +119,11 @@ export class RptRefreshService {
     out.stock = await this.stock(trx, from, to);
     const fin = await this.finance(trx, from, to, s);
     out.finance = fin.rows; out.frozen_days = fin.frozen;
+    if (fin.extra) Object.assign(out, fin.extra);                 // 0063: გადამხდელი, ექიმის შემოსავალი
     const ops = await opsFacts(this.rdb, trx, from, to, s);   // 0062
     Object.assign(out, ops);
     if (to >= today) out.stock_snapshot = await this.snapshot(trx, today, s);
+    if (to >= today && (await finRules(this.rdb)).enabled) out.balance_snapshot = await balanceSnapshot(this.rdb, trx, today);   // 0063
     return out;
   }
 
@@ -377,7 +381,7 @@ export class RptRefreshService {
   // ---------------------------------------------------------------------------------- ფინანსები
   private async finance(trx: Trx, from: string, to: string, s: RptSettings) {
     const rules = await finRules(this.rdb);
-    if (!rules.enabled) return { rows: 0, frozen: 0 };
+    if (!rules.enabled) return { rows: 0, frozen: 0, extra: null };
     const closed = s.freeze_closed_periods
       ? (await this.rdb.selectFrom('fin_periods').select('month').where('status', '=', 'closed').execute()).map((r) => String(r.month).slice(0, 7))
       : [];
@@ -421,6 +425,6 @@ export class RptRefreshService {
     const frozenDays = closed.length ? (await sql<{ n: number }>`SELECT count(*)::int AS n FROM generate_series(${from}::date, ${to}::date, interval '1 day') g(d)
       WHERE to_char(g.d, 'YYYY-MM') = ANY(${closed}::text[])`.execute(trx)).rows[0].n : 0;
     await sql`DELETE FROM rpt_fact_finance WHERE day BETWEEN ${from}::date AND ${to}::date AND NOT (to_char(day, 'YYYY-MM') = ANY(${closed}::text[]))`.execute(trx);
-    return { rows: await this.put(trx, 'rpt_fact_finance', rows), frozen: frozenDays };
+    return { rows: await this.put(trx, 'rpt_fact_finance', rows), frozen: frozenDays, extra: await finExtraFacts(this.rdb, trx, from, to, rules, closed) };
   }
 }

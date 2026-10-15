@@ -35,7 +35,7 @@ DEP2=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E სხვ�
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {   # <roles-json> <n> [extra-json]
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.nrc.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ნარკ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.nrc.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ნარკ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.nrc.$2.$S@test.local" "$tmp")
@@ -59,7 +59,7 @@ LM=$(api GET "/stock/items/$MOR/lots" "$SK" | jq -r '.[0].id'); LD=$(api GET "/s
 T1=$(api POST /stock/transfers "$PH" -d "{\"doc_type\":\"transfer\",\"from_location_id\":\"$PHL\",\"to_location_id\":\"$SUB\",\"lines\":[{\"lot_id\":\"$LM\",\"qty_base\":10},{\"lot_id\":\"$LD\",\"qty_base\":5}]}" | jq -r '.id // empty')
 api POST "/stock/docs/$T1/receive" "$NR" -d '{"action":"receive"}' >/dev/null
 chk "მიღება აფთიაქში → გადაცემა რეანიმაციაში (მორფინი 10, დიაზეპამი 5)" "$(bal "$SUB" "$MOR")|$(bal "$SUB" "$DIA")" "M$S:10|D$S:5"
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"8$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ანალგეზია\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"8$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ანალგეზია\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] && ok "სატესტო პაციენტი" || die "პაციენტი ვერ შეიქმნა"
 
 step "1. ხარჯი პაციენტზე: დოზა, ნარჩენი, მოწმე"

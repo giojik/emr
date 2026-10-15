@@ -42,7 +42,7 @@ DEP=$(api GET "/departments?include_inactive=true" "$ADM" | jq -r '[.[]|select(.
 [ -n "$DEP" ] || DEP=$(api POST /departments "$ADM" -d '{"name":"დიაგნოსტიკა","code":"DX","type":"diagnostic"}' | jq -r '.id // empty')
 [ -n "$DEP" ] && ok "დიაგნოსტიკური განყოფილება" || die "განყოფილება ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
   echo "$id" >> "$TRACK"
@@ -56,7 +56,7 @@ COL=$(sid ENDO_COLON); EGD=$(sid ENDO_EGD)
 [ -n "$COL" ] && [ -n "$EGD" ] && ok "კატალოგი: კოლონოსკოპია, ეზოფაგოგასტროდუოდენოსკოპია" || die "კატალოგი"
 ROOM=$(api GET "/dx/devices?section=endoscopy" "$RC" | jq -r '.[0].id // empty'); RAD=$(api GET "/dx/devices?section=radiology" "$RC" | jq -r '.[0].id // empty')
 [ -n "$ROOM" ] && ok "ენდოსკოპიის ოთახი" || die "ენდოსკოპიის ოთახი არ არის"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"51$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ენდოსკოპია\",\"birth_date\":\"1964-05-05\",\"gender\":\"male\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"51$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ენდოსკოპია\",\"birth_date\":\"1964-05-05\",\"gender\":\"male\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] && ok "სატესტო პაციენტი" || die "პაციენტი"
 
 step "2. რეგისტრატორი + განრიგი"

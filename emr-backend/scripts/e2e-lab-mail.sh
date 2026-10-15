@@ -37,7 +37,7 @@ up() { curl -s -X POST "$B/lab/external/mail/upload" -H "authorization: Bearer $
 
 step "1. მომზადება"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mail.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mail.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.mail.$1.$S@test.local" "$tmp")
@@ -50,7 +50,7 @@ chk "ლაბორატორია: ნებადართული გა
 mksvc() { local id; id=$(api POST /dx/catalog "$LM" -d "{\"section\":\"lab\",\"code\":\"$1_$S\",\"name\":\"ტესტ-E2E $2 $S\",\"group_name\":\"ტესტ-E2E\",\"specimen_type\":\"serum\",\"container\":\"Serum gel\",\"performed_by\":\"external\"}" | jq -r '.id // empty')
   api PATCH "/dx/catalog/$id" "$ADM" -d "{\"external_lab_id\":\"$LAB\",\"purchase_price\":10}" >/dev/null; echo "s $id" >> "$TRACK"; echo "$id"; }
 X1=$(mksvc EVITD "ვიტამინი D"); X2=$(mksvc EFERR "ფერიტინი"); [ -n "$X1" ] && [ -n "$X2" ] && ok "2 გარე ანალიზი (კოდები EVITD_$S, EFERR_$S)" || die "ანალიზები ვერ შეიქმნა"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"4$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფოსტა\",\"birth_date\":\"1988-02-02\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"4$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფოსტა\",\"birth_date\":\"1988-02-02\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty')
 visit() { local e sh; e=$(api POST /lab-visits "$RC" -d "{\"patient_id\":\"$PAT\",\"items\":$1}" | jq -r '.encounter_id // empty')
   sh=$(api GET "/invoices/encounter/$e" "$RC" | jq -r .patient_share)
   if [ "$(jq -n --arg s "$sh" '($s|tonumber) > 0')" = "true" ]; then api POST "/encounters/$e/pay-initial" "$RC" -d "{\"amount\":$sh,\"method\":\"cash\"}" >/dev/null; fi
@@ -105,7 +105,7 @@ eml "$DIR/5.eml" "$FROM" "Results - Sample #$BC4" "m5-$S" "report_2026.pdf"
 chk "შემოწმება (ცვლილების გარეშე): lab_pattern" "$(curl -s -X POST "$B/lab/external/mail/test" -H "authorization: Bearer $LT" -F "file=@$DIR/5.eml" | jq -r '.files[0].match.method')" "lab_pattern"
 chk "შემოწმებამ არაფერი შეცვალა" "$(api GET "/lab/items/$I4" "$LT" | jq -r '.ext_result_at == null')" "true"
 chk "„Sample #$BC4“ + report_2026.pdf → მიება (ლაბორატორიის შაბლონით)" "$(up "$LT" "$DIR/5.eml" | jq -r '"\(.status):\(.files[0].method)"')" "matched:lab_pattern"
-PN=$(api GET "/patients/$PAT" "$LT" 2>/dev/null | jq -r '.personal_number // empty'); [ -n "$PN" ] || PN="4$(printf '%010d' "$S")"
+PN=$(api GET "/patients/$PAT" "$LT" 2>/dev/null | jq -r '.personal_number // empty'); [ -n "$PN" ] || PN="4$(printf '%010d' "$((10#$S))")"
 read -r I5 BC5 <<< "$(newbatch)"
 BODY="Laboratory report. Patient ID: $PN" eml "$DIR/6.eml" "$FROM" "Laboratory results" "m6-$S" "rep.pdf"
 chk "ტექსტში პირადი № → მიება (personal_number)" "$(up "$LT" "$DIR/6.eml" | jq -r '"\(.status):\(.files[0].method)"')" "matched:personal_number"
@@ -116,9 +116,9 @@ read -r I7 BC7 <<< "$(newbatch)"
 BODY="პაციენტი: ფოსტა ტესტ-E2E" eml "$DIR/8.eml" "$FROM" "პასუხი" "m8-$S" "rep.pdf"
 R=$(up "$LT" "$DIR/8.eml")
 chk "მხოლოდ სახელი (თარიღის გარეშე) → ავტომატურად არა, მინიშნებით" "$(echo "$R" | jq -r '"\(.status):\(.files[0].reason|startswith("შესაძლოა"))"')" "unmatched:true"
-PAT2=$(api POST /patients "$RC" -d "{\"personal_number\":\"3$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მეორე\",\"birth_date\":\"1990-03-03\",\"gender\":\"female\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty')
+PAT2=$(api POST /patients "$RC" -d "{\"personal_number\":\"3$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მეორე\",\"birth_date\":\"1990-03-03\",\"gender\":\"female\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty')
 P1=$PAT; PAT=$PAT2; visit "[{\"service_id\":\"$X1\"}]" >/dev/null; ship; PAT=$P1
-BODY="Patients: $PN, 3$(printf '%010d' "$S")" eml "$DIR/9.eml" "$FROM" "Batch results" "m9-$S" "batch.pdf"
+BODY="Patients: $PN, 3$(printf '%010d' "$((10#$S))")" eml "$DIR/9.eml" "$FROM" "Batch results" "m9-$S" "batch.pdf"
 chk "ორი პაციენტი ერთ ფაილში → ხელით (ambiguous)" "$(up "$LT" "$DIR/9.eml" | jq -r '"\(.status):\(.files[0].reason|startswith("ფაილში რამდენიმე"))"')" "unmatched:true"
 
 step "7. OCR (სკანი / სურათი)"

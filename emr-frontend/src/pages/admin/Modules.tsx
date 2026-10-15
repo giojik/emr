@@ -613,6 +613,16 @@ function ReportingSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         <select id="rp-db" className="select" value={String(s.doctor_breakdown ?? 'all_only')} onChange={(e) => upd('doctor_breakdown', e.target.value)}>
           <option value="all_only">მხოლოდ კლინიკის ხედვით (ხელმძღვანელობა)</option><option value="scoped">განყოფილების ხელმძღვანელსაც (თავისი განყოფილება)</option><option value="off">გამორთულია</option></select></Field>
       <Field label="მცირე ნიმუშის ზღვარი (შემთხვევა)" htmlFor="rp-min_cases" hint="1–50; ნაკლებ შემთხვევაზე ექიმის % / საშუალო არ ჩანს">{int('min_cases', 5, 1, 50)}</Field>
+      <Field label="შემოსავალი ექიმზე" htmlFor="rp-dr" hint="ფინანსები → შემოსავალი ექიმზე; ჩანს ფინანსების ხედვისა და ექიმის ჭრილის წვდომით (აუდიტდება)">
+        <select id="rp-dr" className="select" value={String(s.doctor_revenue ?? 'on')} onChange={(e) => upd('doctor_revenue', e.target.value)}>
+          <option value="on">ჩართულია</option><option value="off">გამორთულია</option></select></Field>
+      <Field label="„ყურადღების“ შეტყობინება" htmlFor="rp-an" hint="დღეში ერთხელ — დაფის მომხმარებელს (ზარი; სურვილისამებრ ელფოსტაც)">
+        <select id="rp-an" className="select" value={String(s.attention_notify ?? 'in_app')} onChange={(e) => upd('attention_notify', e.target.value)}>
+          <option value="in_app">სისტემაში (ზარი)</option><option value="in_app_email">სისტემაში + ელფოსტა</option><option value="off">გამორთულია</option></select></Field>
+      <Field label="შეტყობინების საათი" htmlFor="rp-attention_notify_hour" hint="0–23, კლინიკის დროით">{int('attention_notify_hour', 8, 0, 23)}</Field>
+      <Field label="შეტყობინების დონე" htmlFor="rp-al">
+        <select id="rp-al" className="select" value={String(s.attention_notify_level ?? 'red')} onChange={(e) => upd('attention_notify_level', e.target.value)}>
+          <option value="red">მხოლოდ წითელი</option><option value="all">წითელი და ყვითელი</option></select></Field>
       <Field label="შედარება ნაგულისხმევად" htmlFor="rp-cd">
         <select id="rp-cd" className="select" value={String(s.compare_default ?? 'prev')} onChange={(e) => upd('compare_default', e.target.value)}>
           <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელ იმავე პერიოდთან</option><option value="none">შედარების გარეშე</option></select></Field>

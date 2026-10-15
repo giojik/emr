@@ -37,7 +37,7 @@ DX=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E სხვა 
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.css.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"სტერ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.css.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"სტერ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.css.$2.$S@test.local" "$tmp")
@@ -54,7 +54,7 @@ UNIT=$(api POST /stock/locations "$SM" -d "{\"code\":\"E2E_ZC_$S\",\"name\":\"�
 HOUSE=$(api GET /stock/refs "$SM" | jq -r '.categories[]|select(.code=="HOUSE").id')
 POUCH=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E სტერ. პაკეტი $S\",\"category_id\":\"$HOUSE\",\"base_unit\":\"piece\"}" | jq -r '.id // empty')
 RC=$(api POST /stock/receipts "$SM" -d "{\"location_id\":\"$UNIT\",\"lines\":[{\"item_id\":\"$POUCH\",\"qty\":10,\"price\":0.5,\"vat_rate\":0}]}" | jq -r .id); api POST "/stock/receipts/$RC/post" "$SM" >/dev/null
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"5$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპერაცია\",\"birth_date\":\"1978-07-07\",\"gender\":\"male\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"5$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპერაცია\",\"birth_date\":\"1978-07-07\",\"gender\":\"male\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty')
 [ -n "$UNIT" ] && [ -n "$POUCH" ] && [ -n "$PAT" ] && ok "CSSD ერთეული (ლოკაცია → განყოფილება), პაკეტი 10 ცალი ერთეულის ქვესაწყობში, პაციენტი" || die "მონაცემები ვერ შეიქმნა"
 pbal() { api GET "/stock/balances?location_id=$UNIT&item_id=$POUCH" "$SM" | jq -r '[.rows[].qty|tonumber+0]|add // 0'; }
 

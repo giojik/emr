@@ -24,6 +24,12 @@ const DOC_COL_KA: Record<string, string> = { doctor_name: 'ექიმი', sch
   mortality_pct: 'ლეტალობა %', readmit30_pct: 'განმეორებითი 30 დღე %', resulted: 'შესრულებული', tat_median_min: 'TAT მედიანა წთ', tat_avg_min: 'TAT საშ. წთ' };
 const pct = (a: number, b: number) => (b > 0 ? r1((a / b) * 100) : null);
 
+/** ექიმის ჭრილის წვდომა (doctor_breakdown) — 0062; 0063-ში ექიმის შემოსავალიც */
+export function doctorAccess(s: RptSettings, scope: RptScope) {
+  if (s.doctor_breakdown === 'off') throw new ForbiddenException({ code: 'DOCTOR_BREAKDOWN_OFF', message: 'ექიმის ჭრილი გამორთულია (მოდულები → მენეჯერული რეპორტინგი → doctor_breakdown)' });
+  if (s.doctor_breakdown === 'all_only' && !scope.all) throw new ForbiddenException({ code: 'DOCTOR_BREAKDOWN_ALL_ONLY', message: 'ექიმის ჭრილი ჩანს მხოლოდ კლინიკის ხედვით (reports_all / ხელმძღვანელობა)' });
+}
+
 @Injectable()
 export class ReportingOpsService {
   constructor(private readonly c: RptCommon, private readonly audit: AuditService) {}
@@ -182,14 +188,10 @@ export class ReportingOpsService {
   }
 
   // ------------------------------------------------------------------------------------ ექიმები
-  private doctorAccess(s: RptSettings, scope: RptScope) {
-    if (s.doctor_breakdown === 'off') throw new ForbiddenException({ code: 'DOCTOR_BREAKDOWN_OFF', message: 'ექიმის ჭრილი გამორთულია (მოდულები → მენეჯერული რეპორტინგი → doctor_breakdown)' });
-    if (s.doctor_breakdown === 'all_only' && !scope.all) throw new ForbiddenException({ code: 'DOCTOR_BREAKDOWN_ALL_ONLY', message: 'ექიმის ჭრილი ჩანს მხოლოდ კლინიკის ხედვით (reports_all / ხელმძღვანელობა)' });
-  }
   async doctors(u: AuthUser, q: Q, req: Request, audit = true) {
     const s = await this.c.settings();
     const base = await this.c.scope(u);
-    this.doctorAccess(s, base);
+    doctorAccess(s, base);
     const scope = this.c.narrow(base, q.department_id);
     const { from, to } = this.period(q);
     const role = q.role ?? 'surgeon';

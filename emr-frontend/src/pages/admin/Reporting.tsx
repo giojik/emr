@@ -15,17 +15,17 @@ interface Run { id: string; kind: string; date_from: string; date_to: string; st
   finished_at: string | null; duration_ms: number | null; requested_by: string | null }
 interface Dept { id: string; name: string; is_active: boolean }
 
-type Tab = 'kpis' | 'dash' | 'scopes' | 'runs';
+type Tab = 'kpis' | 'dash' | 'scopes' | 'sched' | 'runs';
 const KIND_KA: Record<string, string> = { today: 'დღევანდელი', nightly: 'ღამის', manual: 'ხელით' };
 const RUN_STATUS: Record<string, [string, string]> = { ok: ['ok', 'შესრულდა'], running: ['warn', 'მიმდინარე'], error: ['danger', 'შეცდომა'], skipped: ['', 'გამოტოვდა'] };
 
-/** ადმინისტრირება → რეპორტინგი (0060): KPI ცნობარი და სამიზნეები, ხედვის არე, გადათვლა */
+/** ადმინისტრირება → რეპორტინგი (0060): KPI ცნობარი და სამიზნეები, ხედვის არე, გადათვლა; 0063 — განრიგით გაგზავნა */
 export default function ReportingAdmin() {
   const { user } = useAuth();
   const enabled = useModuleEnabled('reporting');
   const isAdmin = can(user, 'admin');
   const [tab, setTab] = useState<Tab>('kpis');
-  const tabs: [Tab, string][] = [['kpis', 'KPI ცნობარი და სამიზნეები'], ['dash', 'დაფები'], ...(isAdmin ? [['scopes', 'ხედვის არე'] as [Tab, string]] : []), ['runs', 'გადათვლა']];
+  const tabs: [Tab, string][] = [['kpis', 'KPI ცნობარი და სამიზნეები'], ['dash', 'დაფები'], ...(isAdmin ? [['scopes', 'ხედვის არე'] as [Tab, string]] : []), ['sched', 'განრიგით გაგზავნა'], ['runs', 'გადათვლა']];
   const st = { background: 'none', borderTop: 0, borderLeft: 0, borderRight: 0, font: 'inherit', cursor: 'pointer' } as const;
   return (
     <div className="content">
@@ -33,7 +33,7 @@ export default function ReportingAdmin() {
       <nav className="row" style={{ gap: 2 }} aria-label="რეპორტინგი">
         {tabs.map(([k, l]) => <button key={k} type="button" className={`admin-tab${tab === k ? ' active' : ''}`} style={st} onClick={() => setTab(k)}>{l}</button>)}
       </nav>
-      {tab === 'kpis' ? <Kpis /> : tab === 'dash' ? <Dashboards /> : tab === 'scopes' ? <Scopes /> : <Runs canRefresh={isAdmin} />}
+      {tab === 'kpis' ? <Kpis /> : tab === 'dash' ? <Dashboards /> : tab === 'scopes' ? <Scopes /> : tab === 'sched' ? <Schedules /> : <Runs canRefresh={isAdmin} />}
     </div>
   );
 }
@@ -250,6 +250,136 @@ function ScopeEdit({ u, onClose }: { u: ScopeUser; onClose: () => void }) {
           </div>)}
         <Field label="მიზეზი" htmlFor="s-reason" required><input id="s-reason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <ErrorBox error={m.error} />
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------- განრიგით გაგზავნა (0063)
+interface Recipient { id: string; name: string; email: string | null; all: boolean; finance: boolean }
+interface Schedule { id: string; name: string; frequency: 'monthly' | 'weekly'; send_day: number; send_hour: number; department_id: string | null; department_name: string | null;
+  formats: string[]; include_doctors: boolean; recipients: { id: string; name: string; email: string | null; is_active: boolean }[]; is_active: boolean; last_period: string | null;
+  last_run_at: string | null; when_ka: string; next: { period: string | null; due_day: string } }
+interface Delivery { id: string; schedule_name: string | null; period: string; date_from: string; date_to: string; user_name: string | null; email: string | null; status: string;
+  error: string | null; files: string[]; bytes: number; manual: boolean; created_at: string }
+const DEL_STATUS: Record<string, [string, string]> = { sent: ['ok', 'გაიგზავნა'], failed: ['danger', 'შეცდომა'], skipped: ['', 'გამოტოვდა'] };
+const WD = ['', 'ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ', 'კვი'];
+
+function Schedules() {
+  const qc = useQueryClient(); const toast = useToast();
+  const q = useQuery({ queryKey: ['rpt-sched'], queryFn: () => api<Schedule[]>('/reporting/schedules') });
+  const dq = useQuery({ queryKey: ['rpt-deliveries'], queryFn: () => api<Delivery[]>('/reporting/deliveries', { query: { limit: 50 } }) });
+  const [edit, setEdit] = useState<Schedule | 'new' | null>(null);
+  const run = useMutation({
+    mutationFn: (v: { id: string; dry: boolean }) => api<{ label: string; results: { user_name: string; status: string; error: string | null }[] }>(`/reporting/schedules/${v.id}/run`,
+      { method: 'POST', body: { dry_run: v.dry } }),
+    onSuccess: (r, v) => { void qc.invalidateQueries({ queryKey: ['rpt-deliveries'] });
+      toast.show(`${r.label}: ${r.results.map((x) => `${x.user_name} — ${DEL_STATUS[x.status]?.[1] ?? x.status}${x.error && x.status !== 'sent' ? ` (${x.error})` : ''}`).join('; ')}${v.dry ? ' · სატესტო' : ''}`); },
+  });
+  if (q.error) return <ErrorBox error={q.error} />;
+  if (!q.data) return <Loading />;
+  return (
+    <>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <p className="hint grow" style={{ margin: 0 }}>მენეჯერული ანგარიში (Excel / PDF) ელფოსტით — ყოველთვიურად (წინა თვე, თვის N-ე სამუშაო დღეს) ან ყოველკვირეულად (წინა კვირა).
+          ანგარიში იქმნება <strong>მიმღების</strong> ხედვის არით და უფლებებით; მხოლოდ აგრეგატები, პაციენტის მონაცემების გარეშე. ყოველი გაგზავნა იწერება ჟურნალში.</p>
+        <button className="btn primary sm" type="button" onClick={() => setEdit('new')}>+ განრიგი</button>
+      </div>
+      {toast.node}
+      <ErrorBox error={run.error} />
+      <section className="card" style={{ overflowX: 'auto', flexShrink: 0 }}>
+        <table className="table">
+          <thead><tr><th>განრიგი</th><th>როდის</th><th>არე</th><th>ფორმატი</th><th>მიმღებები</th><th>ბოლოს</th><th /></tr></thead>
+          <tbody>{q.data.map((s) => (
+            <tr key={s.id} style={{ opacity: s.is_active ? 1 : 0.55 }}>
+              <td><strong>{s.name}</strong>{!s.is_active && <span className="chip" style={{ marginLeft: 6 }}>გამორთული</span>}</td>
+              <td className="small">{s.when_ka}{s.next.period && s.is_active && <div className="muted">შემდეგი: {s.next.period} — {s.next.due_day}</div>}</td>
+              <td className="small">{s.department_name ?? 'მიმღების მთელი არე'}</td>
+              <td className="small">{s.formats.join(' + ')}{s.include_doctors && <div className="muted">+ ექიმები (Excel)</div>}</td>
+              <td className="small">{s.recipients.map((r) => <div key={r.id} style={{ color: r.is_active && r.email ? undefined : 'var(--danger-ink)' }}>{r.name}{!r.email && ' (ელფოსტა არ არის)'}</div>)}</td>
+              <td className="small mono">{s.last_period ?? '—'}<div className="muted">{fmtTime(s.last_run_at)}</div></td>
+              <td><div className="row" style={{ gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button className="btn sm" type="button" disabled={run.isPending} onClick={() => run.mutate({ id: s.id, dry: true })} title="ფაილები შეიქმნება, ელფოსტა არ გაიგზავნება">შემოწმება</button>
+                <button className="btn sm" type="button" disabled={run.isPending} onClick={() => run.mutate({ id: s.id, dry: false })} title="ახლავე გაგზავნა (მიმდინარე პერიოდი); განრიგის მდგომარეობა არ იცვლება">გაგზავნა ახლა</button>
+                <button className="btn sm" type="button" onClick={() => setEdit(s)}>რედაქტირება</button></div></td>
+            </tr>))}
+            {!q.data.length && <tr><td colSpan={7} className="muted">განრიგი არ არის</td></tr>}</tbody>
+        </table>
+      </section>
+      <section className="card" style={{ overflowX: 'auto', flexShrink: 0 }}>
+        <div className="card-pad" style={{ paddingBottom: 0 }}><strong>მიწოდების ჟურნალი</strong> <span className="small muted">ბოლო 50</span></div>
+        <ErrorBox error={dq.error} />
+        {!dq.data ? <Loading /> : (
+          <table className="table">
+            <thead><tr><th>დრო</th><th>განრიგი</th><th>პერიოდი</th><th>მიმღები</th><th>სტატუსი</th><th>ფაილები</th></tr></thead>
+            <tbody>{dq.data.map((d) => (
+              <tr key={d.id}>
+                <td className="small mono">{fmtTime(d.created_at)}{d.manual && <div className="muted">ხელით</div>}</td>
+                <td className="small">{d.schedule_name ?? '—'}</td><td className="small mono">{d.period}</td>
+                <td className="small">{d.user_name ?? '—'}<div className="muted">{d.email ?? ''}</div></td>
+                <td><span className={`chip ${DEL_STATUS[d.status]?.[0] ?? ''}`}>{DEL_STATUS[d.status]?.[1] ?? d.status}</span>{d.error && <div className="small muted" style={{ maxWidth: 320 }}>{d.error}</div>}</td>
+                <td className="small">{d.files.length ? `${d.files.length} · ${Math.round(d.bytes / 1024)} KB` : '—'}</td>
+              </tr>))}
+              {!dq.data.length && <tr><td colSpan={6} className="muted">ჯერ არაფერი გაგზავნილა</td></tr>}</tbody>
+          </table>)}
+      </section>
+      {edit && <ScheduleEdit s={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+    </>
+  );
+}
+
+function ScheduleEdit({ s, onClose }: { s: Schedule | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const deps = useQuery({ queryKey: ['departments'], queryFn: () => api<Dept[]>('/departments') });
+  const rec = useQuery({ queryKey: ['rpt-recipients'], queryFn: () => api<Recipient[]>('/reporting/recipients') });
+  const [f, setF] = useState({ name: s?.name ?? 'თვის მენეჯერული ანგარიში', frequency: s?.frequency ?? 'monthly', send_day: s?.send_day ?? 3, send_hour: s?.send_hour ?? 9,
+    department_id: s?.department_id ?? '', formats: s?.formats ?? ['xlsx', 'pdf'], include_doctors: s?.include_doctors ?? false, recipients: s?.recipients.map((r) => r.id) ?? [] as string[],
+    is_active: s?.is_active ?? true });
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
+  const body = { ...f, department_id: f.department_id || null };
+  const save = useMutation({
+    mutationFn: () => (s ? api(`/reporting/schedules/${s.id}`, { method: 'PATCH', body }) : api('/reporting/schedules', { method: 'POST', body })),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['rpt-sched'] }); onClose(); },
+  });
+  const del = useMutation({ mutationFn: () => api(`/reporting/schedules/${s!.id}`, { method: 'DELETE' }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['rpt-sched'] }); onClose(); } });
+  const [confirmDel, setConfirmDel] = useState(false);
+  const fmtToggle = (x: string) => set('formats', f.formats.includes(x) ? f.formats.filter((y) => y !== x) : [...f.formats, x]);
+  return (
+    <Modal title={s ? `განრიგი: ${s.name}` : 'ახალი განრიგი'} onClose={onClose} width={640}
+      footer={<>
+        {s && (confirmDel ? <button className="btn danger" type="button" disabled={del.isPending} onClick={() => del.mutate()}>წაშლა — დადასტურება</button>
+          : <button className="btn" type="button" onClick={() => setConfirmDel(true)}>წაშლა</button>)}
+        <span className="grow" />
+        <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
+        <button className="btn primary" type="button" disabled={save.isPending || f.name.trim().length < 2 || !f.formats.length || !f.recipients.length} onClick={() => save.mutate()}>შენახვა</button></>}>
+      <div className="stack">
+        <Field label="დასახელება" htmlFor="sc-name" required><input id="sc-name" className="input" value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+          <Field label="სიხშირე" htmlFor="sc-fr">
+            <select id="sc-fr" className="select" value={f.frequency} onChange={(e) => { const v = e.target.value as 'monthly' | 'weekly'; setF((x) => ({ ...x, frequency: v, send_day: v === 'weekly' ? 1 : 3 })); }}>
+              <option value="monthly">ყოველთვიურად — წინა თვე</option><option value="weekly">ყოველკვირეულად — წინა კვირა</option></select></Field>
+          <Field label={f.frequency === 'monthly' ? 'სამუშაო დღე (1–10)' : 'კვირის დღე'} htmlFor="sc-day">
+            {f.frequency === 'monthly' ? <input id="sc-day" className="input mono" type="number" min={1} max={10} style={{ width: 90 }} value={f.send_day} onChange={(e) => set('send_day', Math.min(10, Math.max(1, Number(e.target.value) || 1)))} />
+              : <select id="sc-day" className="select" value={f.send_day} onChange={(e) => set('send_day', Number(e.target.value))}>{WD.slice(1).map((d, i) => <option key={d} value={i + 1}>{d}</option>)}</select>}</Field>
+          <Field label="საათი" htmlFor="sc-h"><input id="sc-h" className="input mono" type="number" min={0} max={23} style={{ width: 80 }} value={f.send_hour} onChange={(e) => set('send_hour', Math.min(23, Math.max(0, Number(e.target.value) || 0)))} /></Field>
+        </div>
+        <Field label="განყოფილება" htmlFor="sc-dep" hint="ცარიელი — თითოეული მიმღების მთელი ხედვის არე">
+          <select id="sc-dep" className="select" value={f.department_id} onChange={(e) => set('department_id', e.target.value)}>
+            <option value="">მიმღების მთელი არე</option>{deps.data?.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
+          <label className="row small"><input type="checkbox" checked={f.formats.includes('xlsx')} onChange={() => fmtToggle('xlsx')} /> Excel</label>
+          <label className="row small"><input type="checkbox" checked={f.formats.includes('pdf')} onChange={() => fmtToggle('pdf')} /> PDF</label>
+          <label className="row small" title="მხოლოდ Excel-ში და მხოლოდ იმ მიმღებთან, ვისაც ექიმის ჭრილზე წვდომა აქვს"><input type="checkbox" checked={f.include_doctors} onChange={(e) => set('include_doctors', e.target.checked)} /> ექიმის ფურცლები</label>
+          <label className="row small"><input type="checkbox" checked={f.is_active} onChange={(e) => set('is_active', e.target.checked)} /> აქტიური</label>
+        </div>
+        <Field label="მიმღებები" htmlFor="sc-rec" hint="მენეჯერული რეპორტინგის უფლების მქონე აქტიური მომხმარებლები">
+          {!rec.data ? <Loading /> : (
+            <div id="sc-rec" className="stack" style={{ gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+              {rec.data.map((r) => <label key={r.id} className="row small">
+                <input type="checkbox" checked={f.recipients.includes(r.id)} onChange={(e) => set('recipients', e.target.checked ? [...f.recipients, r.id] : f.recipients.filter((x) => x !== r.id))} />
+                {r.name} <span className="muted">{r.email ?? 'ელფოსტა არ არის'} · {r.all ? 'მთელი კლინიკა' : 'განყოფილება'}{r.finance ? ' · ფინანსები' : ''}</span></label>)}
+            </div>)}</Field>
+        <ErrorBox error={save.error ?? del.error} />
       </div>
     </Modal>
   );

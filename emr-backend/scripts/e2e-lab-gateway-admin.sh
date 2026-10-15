@@ -40,7 +40,7 @@ step "0. დაფა"
 D=$(api GET /lab/gateway/dashboard "$ADM")
 chk "gateway მუშაობს" "$(echo "$D" | jq -r .gateway.alive)" "true"
 echo "      შეტყობინებები: ელ-ფოსტა $(echo "$D" | jq -r .notify.email), SMS $(echo "$D" | jq -r .notify.sms) (კონფიგურაცია .env-ში)"
-LM=$(api POST /users "$ADM" -d "{\"email\":\"e2e.gwa.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"lab_manager\",\"personal_number\":\"66$(printf '%09d' "$S")\",\"role\":\"lab_manager\"}")
+LM=$(api POST /users "$ADM" -d "{\"email\":\"e2e.gwa.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"lab_manager\",\"personal_number\":\"66$(printf '%09d' "$((10#$S))")\",\"role\":\"lab_manager\"}")
 LMID=$(echo "$LM" | jq -r '.user.id // empty'); echo "$LMID" >> "$TRACK"
 LMT=$(login "e2e.gwa.$S@test.local" "$(echo "$LM" | jq -r .temporaryPassword)")
 chk "ლაბ. მენეჯერს პანელი დახურული აქვს (403)" "$(code GET /lab/gateway/dashboard "$LMT")" "403"

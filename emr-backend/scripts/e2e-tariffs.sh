@@ -38,7 +38,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
 R_TE=$(mkrole tte "ტარიფები" '["tariffs"]'); R_TA=$(mkrole tta "ტარიფების დამტკიცება" '["tariffs_approve"]'); R_VW=$(mkrole tvw "ხელმძღვანელობა" '["viewer"]')
 [ -n "$R_TE" ] && [ -n "$R_TA" ] || die "როლები ვერ შეიქმნა (tariffs / tariffs_approve — მიგრაცია 0054?)"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.tar.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ტარ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.tar.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ტარ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.tar.$2.$S@test.local" "$tmp")
@@ -65,7 +65,7 @@ ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="tariffs")|.settings')
 echo "$ORIG" | jq -e '.tariff_change_approval' >/dev/null || die "მოდული „tariffs“ ვერ მოიძებნა (მიგრაცია 0054?)"
 tset() { api PUT /modules/tariffs "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}" | jq -r '.code // .message'; }
 chk "პარამეტრები: ნაგულისხმევი (off / manual / primary / auto_unpaid)" "$(tset '{"tariff_change_approval":"off","opd_payer_mode":"manual","payer_price_mode":"primary","reprice_on_payer_change":"auto_unpaid"}')" "tariffs"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ტარ-$2\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ტარ-$2\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 71 1); P2=$(mkpat 72 2); P3=$(mkpat 73 3); P4=$(mkpat 74 4); P5=$(mkpat 75 5); P6=$(mkpat 76 6)
 for p in P1 P2 P3 P4 P5 P6; do [ -n "${!p}" ] || die "პაციენტი $p ვერ შეიქმნა"; done
 

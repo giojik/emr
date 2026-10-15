@@ -27,7 +27,7 @@ S=$(date +%s | tail -c 7); TRACK=$(mktemp); TODAY=$(TZ=Asia/Tbilisi date +%F)
 
 step "1. მომზადება"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.qc.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\",\"is_section_head\":$3}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.qc.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\",\"is_section_head\":$3}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.qc.$1.$S@test.local" "$tmp")
@@ -70,7 +70,7 @@ chk "5.10 (z 0.5) → მისაღები" "$(qc "$LT" "$TGLU" 5.1 | jq -r 
 chk "5.45 (z 2.25) → გაფრთხილება 1-2s" "$(qc "$LT" "$TGLU" 5.45 | jq -r '"\(.status):\(.violations|join(","))"')" "warn:1_2s"
 chk "5.70 (z 3.5) → უარყოფა: 1-3s + 2-2s, დაბლოკვა" "$(qc "$LT" "$TGLU" 5.7 | jq -r '"\(.status):\(.violations|sort|join(",")):\(.action)"')" "reject:1_3s,2_2s:block"
 chk "ღია დარღვევა: გლუკოზა" "$(api GET /lab/qc/violations "$LT" | jq -r "[.[]|select(.analyte_id==\"$GLU\")]|length")" "1"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"6$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"QC\",\"birth_date\":\"1970-07-07\",\"gender\":\"male\",\"phone_number\":\"591$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"6$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"QC\",\"birth_date\":\"1970-07-07\",\"gender\":\"male\",\"phone_number\":\"591$S\"}" | jq -r '.id // empty')
 item() {
   local e sh bc it; e=$(api POST /lab-visits "$RC" -d "{\"patient_id\":\"$PAT\",\"items\":[{\"service_id\":\"$SVC\"}]}" | jq -r '.encounter_id // empty')
   sh=$(api GET "/invoices/encounter/$e" "$RC" | jq -r .patient_share)

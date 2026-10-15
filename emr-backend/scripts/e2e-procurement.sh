@@ -35,7 +35,7 @@ step "0. მომზადება"
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.proc.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"შესყიდვა-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.proc.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"შესყიდვა-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.proc.$2.$S@test.local" "$tmp")
@@ -62,8 +62,8 @@ MED=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E Ceftriaxone $
 BOX=$(api GET "/stock/items/$MED" "$SM" | jq -r '.packs[0].id')
 NAR=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E Fentanyl $S\",\"category_id\":\"$(cat_id MED)\",\"generic_id\":\"$GNA\",\"base_unit\":\"ampoule\"}" | jq -r '.id // empty')
 HOU=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E კათეტერი $S\",\"category_id\":\"$(cat_id HOUSE)\",\"base_unit\":\"piece\"}" | jq -r '.id // empty')
-SUP1=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს ფარმა $S\",\"tax_id\":\"7$(printf '%08d' "$S")\",\"vat_payer\":true}" | jq -r '.id // empty')
-SUP2=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მედტექ $S\",\"tax_id\":\"6$(printf '%08d' "$S")\",\"vat_payer\":false}" | jq -r '.id // empty')
+SUP1=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს ფარმა $S\",\"tax_id\":\"7$(printf '%08d' "$((10#$S))")\",\"vat_payer\":true}" | jq -r '.id // empty')
+SUP2=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მედტექ $S\",\"tax_id\":\"6$(printf '%08d' "$((10#$S))")\",\"vat_payer\":false}" | jq -r '.id // empty')
 [ -n "$LOC" ] && [ -n "$LOC2" ] && [ -n "$MED" ] && [ -n "$NAR" ] && [ -n "$HOU" ] && [ -n "$SUP1" ] && [ -n "$SUP2" ] && [ -n "$BOX" ] && ok "ლოკაციები, საქონელი (მედიკამენტი, ნარკოტიკული, სამეურნეო), 2 მომწოდებელი" || die "მონაცემები ვერ შეიქმნა"
 
 step "1. მომწოდებლის პირობები"

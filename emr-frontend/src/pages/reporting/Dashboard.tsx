@@ -10,11 +10,12 @@ import {
   type ByDept, CATEGORIES, CATEGORY_KA, changeTone, DIR_KA, type Drill, downloadFile, fmtTime, fmtVal, type KpiValue, type Overview, type RptMeta, type Series,
   shiftDays, STATUS_KA, STATUS_TONE, UNIT_FULL,
 } from './types';
+import Finance, { doctorRevenueVisible } from './Finance';
 import Ops from './Ops';
 import { AttentionPanel, DeptRanking, type Headline, HeadlineTiles, LivePanel, TrendCard } from './Panels';
 
-type Tab = 'executive' | 'department' | 'ops' | 'overview' | 'stock';
-const TAB_KA: Record<Tab, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება', ops: 'ოპერაციული', overview: 'KPI მიმოხილვა', stock: 'მარაგის დღეები' };
+type Tab = 'executive' | 'department' | 'ops' | 'finance' | 'overview' | 'stock';
+const TAB_KA: Record<Tab, string> = { executive: 'ხელმძღვანელობა', department: 'განყოფილება', ops: 'ოპერაციული', finance: 'ფინანსები', overview: 'KPI მიმოხილვა', stock: 'მარაგის დღეები' };
 
 /** მენეჯერული დაფა (0060): KPI მიმოხილვა rpt_* ფაქტებიდან — პერიოდი, განყოფილება (ხედვის არის ფარგლებში), შედარება, სამიზნეები, ჩაღრმავება, ექსპორტი */
 export default function Dashboard() {
@@ -24,13 +25,15 @@ export default function Dashboard() {
   const [from, setFrom] = useState(today.slice(0, 8) + '01'); const [to, setTo] = useState(today);
   const [dept, setDept] = useState(''); const [compare, setCompare] = useState<string>('');
   const [tabSel, setTab] = useState<Tab | null>(null);
+  const [report, setReport] = useState(false);
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „მენეჯერული რეპორტინგი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   if (meta.error) return <div className="content"><ErrorBox error={meta.error} /></div>;
   if (!meta.data) return <div className="content"><Loading /></div>;
   const m = meta.data;
   const cmp = compare || m.settings.compare_default;
-  const tabs: Tab[] = m.scope.all ? ['executive', 'department', 'ops', 'overview', 'stock'] : ['department', 'ops', 'overview', 'stock'];
+  const tabs = ((m.scope.all ? ['executive', 'department', 'ops', 'finance', 'overview', 'stock'] : ['department', 'ops', 'finance', 'overview', 'stock']) as Tab[])
+    .filter((t) => t !== 'finance' || m.scope.finance);
   const tab: Tab = tabSel && tabs.includes(tabSel) ? tabSel : tabs[0];
   const periodTab = tab !== 'stock';
   const preset = (k: 'month' | 'prev' | '30' | 'year') => {
@@ -47,6 +50,7 @@ export default function Dashboard() {
           <span className="chip" title={`დღევანდელი მონაცემები ახლდება ყოველ ${m.settings.refresh_today_min} წუთში; ისტორია — ღამით`}>მონაცემები: {fmtTime(m.data_as_of)}</span>
           {(tab === 'executive' || tab === 'department') && <Link className="btn sm" to={`/dashboard/tv?view=${tab}${dept ? `&department_id=${dept}` : ''}`} target="_blank"
             title={`სრულეკრანიანი ხედი კედლის ეკრანისთვის — ახლდება ყოველ ${m.settings.tv_refresh_min ?? 5} წუთში, პაციენტის მონაცემების გარეშე`}>ეკრანის რეჟიმი</Link>}
+          <button className="btn sm" type="button" onClick={() => setReport(true)} title="მენეჯერული ანგარიში — Excel (რამდენიმე ფურცელი) / PDF">ანგარიში</button>
           {periodTab && <>
             <div className="seg" role="group" aria-label="სწრაფი პერიოდი">
               <button type="button" onClick={() => preset('month')}>ეს თვე</button><button type="button" onClick={() => preset('prev')}>წინა თვე</button>
@@ -65,7 +69,7 @@ export default function Dashboard() {
               <option value="">{m.scope.all ? 'მთელი კლინიკა' : m.scope.departments.length > 1 ? 'ყველა ჩემი განყოფილება' : m.scope.departments[0]?.name}</option>
               {(m.scope.all || m.scope.departments.length > 1) && m.scope.departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select></label>
-          {periodTab && tab !== 'ops' && <label className="row small">შედარება
+          {periodTab && tab !== 'ops' && tab !== 'finance' && <label className="row small">შედარება
             <select className="select" style={{ height: 34 }} value={cmp} onChange={(e) => setCompare(e.target.value)}>
               <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელთან</option><option value="none">შედარების გარეშე</option>
             </select></label>}
@@ -73,7 +77,9 @@ export default function Dashboard() {
       </header>
       {tab === 'executive' || tab === 'department' ? <ThemeView key={tab} dash={tab} meta={m} from={from} to={to} dept={dept} compare={cmp} />
         : tab === 'ops' ? <Ops meta={m} from={from} to={to} dept={dept} />
+        : tab === 'finance' ? <Finance meta={m} from={from} to={to} dept={dept} />
         : tab === 'overview' ? <OverviewView meta={m} from={from} to={to} dept={dept} compare={cmp} /> : <StockDays meta={m} dept={dept} />}
+      {report && <ReportDialog meta={m} from={from} to={to} dept={dept} onClose={() => setReport(false)} />}
     </>
   );
 }
@@ -229,6 +235,49 @@ function KpiDetail({ k, meta, from, to, dept, onClose }: { k: KpiValue; meta: Rp
               {dq.data?.truncated && <p className="hint card-pad">ნაჩვენებია პირველი 2000 — სრული სია ექსპორტით ან უფრო მოკლე პერიოდით.</p>}
             </>}
           </section>)}
+      </div>
+    </Modal>
+  );
+}
+
+/** მენეჯერული ანგარიში (0063): პერიოდი → xlsx (ფურცლები) / PDF (1–2 გვერდი); ექიმის ფურცლები — მხოლოდ Excel-ში, წვდომით */
+function ReportDialog({ meta, from, to, dept, onClose }: { meta: RptMeta; from: string; to: string; dept: string; onClose: () => void }) {
+  const prevEnd = shiftDays(meta.today.slice(0, 8) + '01', -1);
+  const [f, setF] = useState(prevEnd.slice(0, 8) + '01'); const [t, setT] = useState(prevEnd);
+  const [docs, setDocs] = useState(false); const [busy, setBusy] = useState(''); const [err, setErr] = useState<unknown>(null);
+  const canDocs = meta.settings.doctor_breakdown !== 'off' && (meta.scope.all || meta.settings.doctor_breakdown === 'scoped');
+  const get = async (format: 'xlsx' | 'pdf') => {
+    setBusy(format); setErr(null);
+    try { await downloadFile('/reporting/report', { from: f, to: t, format, department_id: dept || undefined, doctors: format === 'xlsx' && docs ? '1' : undefined }, `report_${f}_${t}.${format}`); }
+    catch (e) { setErr(e); } finally { setBusy(''); }
+  };
+  const days = Math.round((Date.parse(t) - Date.parse(f)) / 86_400_000) + 1;
+  return (
+    <Modal title="მენეჯერული ანგარიში" onClose={onClose} width={560}>
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <div className="seg" role="group" aria-label="პერიოდი">
+            <button type="button" onClick={() => { setF(prevEnd.slice(0, 8) + '01'); setT(prevEnd); }}>წინა თვე</button>
+            <button type="button" onClick={() => { setF(meta.today.slice(0, 8) + '01'); setT(meta.today); }}>ეს თვე</button>
+            <button type="button" onClick={() => { setF(from); setT(to); }}>დაფის პერიოდი</button>
+          </div>
+          <input className="input mono" type="date" style={{ height: 32, width: 150 }} aria-label="დან" value={f} max={t} onChange={(e) => setF(e.target.value || f)} />
+          <input className="input mono" type="date" style={{ height: 32, width: 150 }} aria-label="მდე" value={t} min={f} onChange={(e) => setT(e.target.value || t)} />
+        </div>
+        <p className="small" style={{ margin: 0 }}>{dept ? meta.scope.departments.find((d) => d.id === dept)?.name : meta.scope.all ? 'მთელი კლინიკა' : 'ჩემი განყოფილებები'} · {days} დღე
+          {days > 366 && <span style={{ color: 'var(--danger-ink)' }}> — მაქსიმუმ 1 წელი</span>}</p>
+        <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+          <li><strong>Excel</strong> — შეჯამება (KPI, წინა პერიოდი, შარშან, სამიზნე), ტრენდი 13 თვე, ნაკადი, საწოლები, საოპერაციო, კვლევები, ლაბორატორია, მარაგი
+            {meta.scope.finance && ', ფინანსები, გადამხდელები'}{meta.scope.finance && meta.scope.all && !dept && ', დებიტორები, კრედიტორები'}.</li>
+          <li><strong>PDF</strong> — 1–2 გვერდი: KPI ცხრილი, 13 თვე, ფინანსები მოკლედ.</li>
+        </ul>
+        {canDocs && <label className="row small"><input type="checkbox" checked={docs} onChange={(e) => setDocs(e.target.checked)} /> ექიმის ფურცლები (მხოლოდ Excel{doctorRevenueVisible(meta) ? ', შემოსავლით' : ''}) — ჩამოტვირთვა აუდიტში იწერება</label>}
+        <p className="hint" style={{ margin: 0 }}>მხოლოდ აგრეგირებული მონაცემები, პაციენტის მონაცემების გარეშე. განრიგით გაგზავნა — ადმინისტრირება → რეპორტინგი.</p>
+        <ErrorBox error={err} />
+        <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn" type="button" disabled={!!busy || days > 366} onClick={() => get('pdf')}>{busy === 'pdf' ? 'მზადდება…' : 'PDF'}</button>
+          <button className="btn primary" type="button" disabled={!!busy || days > 366} onClick={() => get('xlsx')}>{busy === 'xlsx' ? 'მზადდება…' : 'Excel'}</button>
+        </div>
       </div>
     </Modal>
   );

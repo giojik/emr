@@ -35,7 +35,7 @@ DB=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ქირუ�
 DO=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ამბულატორია $S\",\"code\":\"E2EIO$S\",\"type\":\"outpatient\"}" | jq -r '.id // empty')
 [ -n "$DA" ] && [ -n "$DB" ] && [ -n "$DO" ] || die "განყოფილებები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ipd.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"სტაც-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ipd.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"სტაც-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.ipd.$2.$S@test.local" "$tmp")
@@ -48,7 +48,7 @@ NB=$(mkuser '["nurse"]' 74 ",\"department_id\":\"$DB\"")
 DR=$(mkuser '["doctor"]' 75 ",\"department_id\":\"$DA\""); DRID=$(cat "$TMP/u75" 2>/dev/null)
 D2=$(mkuser '["doctor"]' 76 ",\"department_id\":\"$DA\""); D2ID=$(cat "$TMP/u76" 2>/dev/null)
 [ -n "$RC" ] && [ -n "$NA" ] && [ -n "$HA" ] && [ -n "$NB" ] && [ -n "$DR" ] && [ -n "$D2" ] && ok "6 მომხმარებელი (რეგისტრატორი, ექთანი A, ხელმძღვანელი A, ექთანი B, 2 ექიმი)" || die "მომხმარებლები ვერ შეიქმნა"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1975-05-05\",\"gender\":\"$3\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1975-05-05\",\"gender\":\"$3\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
 PM=$(mkpat 81 "კაცი" male); PF=$(mkpat 82 "ქალი" female); PF2=$(mkpat 83 "გეგმიური" female); PM2=$(mkpat 84 "გასაუქმებელი" male); PM3=$(mkpat 85 "ვიტალები" male)
 [ -n "$PM" ] && [ -n "$PF" ] && [ -n "$PF2" ] && [ -n "$PM2" ] && [ -n "$PM3" ] && ok "5 პაციენტი" || die "პაციენტები ვერ შეიქმნა"
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|{enabled, settings}')

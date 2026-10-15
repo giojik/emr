@@ -172,6 +172,8 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       lab_overdue_min: (v) => int(v, 15, 2880), dx_overdue_hours: (v) => int(v, 1, 336), dead_stock_days: (v) => int(v, 30, 730), tv_refresh_min: (v) => int(v, 1, 60),
       // 0062
       doctor_breakdown: (v) => oneOf(v, ['off', 'all_only', 'scoped']), min_cases: (v) => int(v, 1, 50),
+      doctor_revenue: (v) => oneOf(v, ['on', 'off']), attention_notify: (v) => oneOf(v, ['off', 'in_app', 'in_app_email']),
+      attention_notify_hour: (v) => int(v, 0, 23), attention_notify_level: (v) => oneOf(v, ['red', 'all']),
     },
   },
   asset_register: {

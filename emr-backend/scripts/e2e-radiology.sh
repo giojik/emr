@@ -43,7 +43,7 @@ if [ -z "$DEP" ]; then
   [ -n "$DEP" ] && ok "შეიქმნა დიაგნოსტიკური განყოფილება" || bad "დიაგნოსტიკური განყოფილება" "ვერ შეიქმნა"
 else ok "დიაგნოსტიკური განყოფილება არსებობს"; fi
 mkuser() { # $1 role, $2 prefix-digits, $3 extra json
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
   echo "$id" >> "$TRACK"
@@ -61,7 +61,7 @@ DEVS=$(api GET "/dx/devices?section=radiology" "$RC")
 dev() { echo "$DEVS" | jq -r "[.[]|select(.modalities|index(\"$1\"))][0].id // empty"; }
 DCT=$(dev CT); DMR=$(dev MR); DUS=$(dev US)
 [ -n "$DCT" ] && [ -n "$DMR" ] && [ -n "$DUS" ] && ok "აპარატები: CT, MRI, ულტრაბგერა" || die "აპარატები ვერ მოიძებნა"
-mkpat() { api POST /patients "$RC" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$RC" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
 PAT=$(mkpat 71 რადიოლოგია 1994-03-10 female); PAT2=$(mkpat 72 გადაფარვა 1970-01-01 male)
 [ -n "$PAT" ] && [ -n "$PAT2" ] && ok "2 სატესტო პაციენტი" || die "პაციენტები ვერ შეიქმნა"
 

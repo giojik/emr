@@ -36,7 +36,7 @@ DB=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E დან. �
 LOC=$(api POST /stock/locations "$ADM" -d "{\"code\":\"E2EO$S\",\"name\":\"ტესტ-E2E დან. ქვესაწყობი $S\",\"kind\":\"department\",\"department_id\":\"$DA\",\"requires_approval\":false}" | jq -r '.id // empty')
 [ -n "$LOC" ] && ok "განყოფილებები + ქვესაწყობი" || die "ქვესაწყობი ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ord.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დან-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ord.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დან-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.ord.$2.$S@test.local" "$tmp")
@@ -51,7 +51,7 @@ DX=$(mkuser '["doctor"]' 76 ",\"department_id\":\"$DB\"")                       
 PH=$(mkuser '["pharmacist"]' 77)
 for t in RC NA DR D2 HD DX PH; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები (რეგისტრატორი, ექთანი, 3 ექიმი A, ექიმი B, ფარმაცევტი)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 81 "მოზრდილი" 1970-03-03 male); P2=$(mkpat 82 "ბავშვი" "$(date -d '-5 years' +%F)" female); P3=$(mkpat 83 "გაუქმება" 1980-01-01 male)
 [ -n "$P1" ] && [ -n "$P2" ] && [ -n "$P3" ] && ok "პაციენტები (მოზრდილი, 5 წლის ბავშვი, მესამე)" || die "პაციენტები ვერ შეიქმნა"
 api POST "/patients/$P1/allergies" "$NA" -d '{"substance":"პენიცილინი","allergy_type":"allergy","severity":"severe"}' >/dev/null

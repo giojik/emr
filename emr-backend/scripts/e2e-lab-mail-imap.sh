@@ -26,7 +26,7 @@ ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შ�
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }
 S=$(date +%s | tail -c 7); TRACK=$(mktemp)
 FROM="lab.$S@e2e-sender.test"; OTHER="stranger.$S@e2e-sender.test"
-PN="0$(printf '%010d' "$S")"; FIRST="ტესტ-E2E"; LAST="იმაპი"; DOB_ISO="1990-01-01"; DOB="01.01.1990"
+PN="0$(printf '%010d' "$((10#$S))")"; FIRST="ტესტ-E2E"; LAST="იმაპი"; DOB_ISO="1990-01-01"; DOB="01.01.1990"
 
 step "0. გარემო"
 ST=$(api GET /lab/external/mail/state "$ADM")
@@ -36,7 +36,7 @@ POLL=$(echo "$ST" | jq -r '.poll_seconds // 120'); ok "ყუთი: $(echo "$ST
 
 step "1. მომზადება"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.imap.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.imap.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.imap.$1.$S@test.local" "$tmp")
@@ -48,7 +48,7 @@ LAB=$(api POST /lab/external-labs "$LM" -d "{\"name\":\"ტესტ-E2E IMAP $S
 SVC=$(api POST /dx/catalog "$LM" -d "{\"section\":\"lab\",\"code\":\"EIMAP_$S\",\"name\":\"ტესტ-E2E ვიტამინი D $S\",\"group_name\":\"ტესტ-E2E\",\"specimen_type\":\"serum\",\"container\":\"Serum gel\",\"performed_by\":\"external\"}" | jq -r '.id // empty')
 echo "s $SVC" >> "$TRACK"; api PATCH "/dx/catalog/$SVC" "$ADM" -d "{\"external_lab_id\":\"$LAB\",\"purchase_price\":10}" >/dev/null
 PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"$PN\",\"first_name\":\"$FIRST\",\"last_name\":\"$LAST\",\"birth_date\":\"$DOB_ISO\",\"gender\":\"female\",\"phone_number\":\"593$S\"}" | jq -r '.id // empty')
-PAT2=$(api POST /patients "$RC" -d "{\"personal_number\":\"9$(printf '%010d' "$S")\",\"first_name\":\"$FIRST\",\"last_name\":\"მეორე\",\"birth_date\":\"1985-05-05\",\"gender\":\"male\",\"phone_number\":\"592$S\"}" | jq -r '.id // empty')
+PAT2=$(api POST /patients "$RC" -d "{\"personal_number\":\"9$(printf '%010d' "$((10#$S))")\",\"first_name\":\"$FIRST\",\"last_name\":\"მეორე\",\"birth_date\":\"1985-05-05\",\"gender\":\"male\",\"phone_number\":\"592$S\"}" | jq -r '.id // empty')
 [ -n "$LAB" ] && [ -n "$SVC" ] && [ -n "$PAT" ] && [ -n "$PAT2" ] && ok "ლაბორატორია (გამგზავნი $FROM), გარე ანალიზი, 2 პაციენტი (პ/ნ $PN)" || die "მომზადება ვერ მოხერხდა"
 # ვიზიტი → აღება → გაგზავნა; აბრუნებს „item_id barcode“
 send_one() { # $1 — პაციენტი (ნაგულისხმევი: PAT)

@@ -28,7 +28,7 @@ S=$(date +%s | tail -c 7); TRACK=$(mktemp)
 
 step "1. მომზადება"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.dlv.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.dlv.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.dlv.$1.$S@test.local" "$tmp")
@@ -40,7 +40,7 @@ ORIG=$(api GET /lab/delivery/settings "$ADM")
 echo "      SMTP: $(echo "$ORIG" | jq -r .configured.email), SMS: $(echo "$ORIG" | jq -r .configured.sms)"
 SVC=$(api POST /dx/catalog "$LM" -d "{\"section\":\"lab\",\"code\":\"LAB_E2E_DLV_$S\",\"name\":\"ტესტ-E2E გლუკოზა (მიწოდება) $S\",\"group_name\":\"ტესტ-E2E\",\"specimen_type\":\"serum\",\"container\":\"Serum gel\"}" | jq -r '.id // empty'); echo "s $SVC" >> "$TRACK"
 GLU=$(api POST "/dx/catalog/$SVC/analytes" "$LM" -d '{"code":"GLU","name":"გლუკოზა","unit":"mmol/L","result_type":"numeric","decimals":1,"ranges":[{"sex":null,"age_min_days":0,"age_max_days":54750,"low":3.9,"high":6.1}]}' | jq -r '.analytes[0].id // empty')
-mkpat() { api POST /patients "$RC" -d "{\"personal_number\":\"$1$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1980-01-01\",\"gender\":\"male\",\"phone_number\":\"599$S\"$3}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$RC" -d "{\"personal_number\":\"$1$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1980-01-01\",\"gender\":\"male\",\"phone_number\":\"599$S\"$3}" | jq -r '.id // empty'; }
 P1=$(mkpat 8 მიწოდება ",\"email\":\"$TEST_EMAIL\",\"result_email\":true,\"result_sms\":true")
 P2=$(mkpat 9 თანხმობისგარეშე "")
 chk "ბარათში: ელ-ფოსტა + თანხმობა (ელ-ფოსტა, SMS)" "$(api GET "/patients/$P1" "$RC" | jq -r '"\(.email):\(.result_email):\(.result_sms)"')" "$TEST_EMAIL:true:true"

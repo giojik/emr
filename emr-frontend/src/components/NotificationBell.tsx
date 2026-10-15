@@ -35,7 +35,7 @@ export default function NotificationBell() {
             style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderTop: '1px solid var(--line)', background: x.read_at ? 'transparent' : x.urgent ? 'var(--danger-weak)' : 'var(--accent-weak, #eef4fb)', cursor: 'pointer', font: 'inherit' }}>
             <div className="row" style={{ gap: 6 }}><strong className="grow" style={{ fontSize: 13, color: x.urgent ? 'var(--danger-ink)' : undefined }}>{x.title}</strong>
               <span className="small muted">{tsDate(x.updated_at)} {time(x.updated_at)}</span></div>
-            {x.body && <div className="small">{x.body}</div>}
+            {x.body && <div className="small" style={{ whiteSpace: 'pre-line' }}>{x.body}</div>}
             {x.items.length > 0 && <div className="small muted">{x.items.join(', ')}</div>}
           </button>))}
       </div>}

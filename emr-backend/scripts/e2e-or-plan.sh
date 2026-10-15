@@ -72,7 +72,7 @@ R2=$(role e2e_anesth "ტესტ-E2E ანესთეზიოლოგი" 
 R3=$(role e2e_or_nurse "ტესტ-E2E საოპერაციო ექთანი" '["or_nurse"]')
 [ "$R1" = "e2e_or_coord" ] && [ "$R2" = "e2e_anesth" ] && [ "$R3" = "e2e_or_nurse" ] || die "როლები ვერ შეიქმნა (უფლებები or_schedule / anesthesiologist / or_nurse — migration 0048?)"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.or.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"OR-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.or.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"OR-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.or.$2.$S@test.local" "$tmp")
@@ -92,7 +92,7 @@ NS=$(mkuser '["nurse"]' 91 ",\"department_id\":\"$DS\"")
 NI=$(mkuser '["nurse"]' 92 ",\"department_id\":\"$DI\"")
 for t in RC SU1 SU2 HD SU3 CO AN1 AN2 ON1 ON2 NS NI; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები: ქირურგები ×3 + ხელმძღვანელი, კოორდინატორი, ანესთეზიოლოგი ×2 (ერთი — ხელმძღვანელი), საოპერაციო ექთანი ×2, ექთნები"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 93 "OR-მუხლი" 1958-04-04 female); P2=$(mkpat 94 "OR-გეგმიური" 1980-06-06 male); P3=$(mkpat 95 "OR-გადაუდებელი" 1990-01-01 male); P4=$(mkpat 96 "OR-ბლოკი" 1970-07-07 female)
 [ -n "$P1" ] && [ -n "$P2" ] && [ -n "$P3" ] && [ -n "$P4" ] || die "პაციენტები ვერ შეიქმნა"
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DS\",\"attending_doctor_id\":\"$(uid 82)\",\"source\":\"$2\",\"icd10_code\":\"M17.1\",\"chief_complaint\":\"ტესტ-E2E\",\"bed_id\":\"$3\"${4:-}}" | jq -r '.encounter_id // empty'; }

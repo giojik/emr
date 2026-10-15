@@ -45,7 +45,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 R_AC=$(mkrole fac "ბუღალტერი" '["accountant"]'); R_VW=$(mkrole fvw "ხელმძღვანელობა" '["viewer"]'); R_MG=$(mkrole fmg "მენეჯერი" '["manager"]')
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.fin.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფინ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.fin.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფინ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.fin.$2.$S@test.local" "$tmp")
@@ -78,7 +78,7 @@ chk "პარამეტრი: dx — უცნობი განყოფ�
 chk "პარამეტრი: manual — ჯამი ≠ 100 → 400" "$(code PUT /modules/finance "$ADM" -d "{\"settings\":{\"overhead_allocation\":\"manual\",\"overhead_manual\":{\"$DA\":60}},\"reason\":\"ტესტ-E2E\"}")" "400"
 chk "პარამეტრი: manual — ადმინისტრაციული განყოფილება → 400" "$(code PUT /modules/finance "$ADM" -d "{\"settings\":{\"overhead_allocation\":\"manual\",\"overhead_manual\":{\"$DX\":100}},\"reason\":\"ტესტ-E2E\"}")" "400"
 chk "პარამეტრს მხოლოდ admin ცვლის (ბუღალტერი 403)" "$(code PUT /modules/finance "$AC" -d '{"settings":{"period_lock":"on"},"reason":"ტესტ-E2E"}')" "403"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფინ-$2\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფინ-$2\",\"birth_date\":\"1970-05-05\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 51 1); P2=$(mkpat 52 2); P3=$(mkpat 53 3); P4=$(mkpat 54 4)
 [ -n "$P1" ] && [ -n "$P2" ] && [ -n "$P3" ] && [ -n "$P4" ] || die "პაციენტები ვერ შეიქმნა"
 

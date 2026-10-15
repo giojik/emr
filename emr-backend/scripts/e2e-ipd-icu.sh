@@ -54,7 +54,7 @@ BI=$(api POST "/inpatient/wards/$WI/beds" "$ADM" -d "{\"count\":3,\"type_code\":
 BW=$(api POST "/inpatient/wards/$WW/beds" "$ADM" -d "{\"count\":2,\"type_code\":\"$BTW\"}"); BW1=$(arr "$BW" 0); BW2=$(arr "$BW" 1)
 [ -n "$BW2" ] || die "განყოფილების საწოლები ვერ შეიქმნა (ტიპი $BTW): $(err "$BW")"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.icu.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ICU-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.icu.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ICU-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.icu.$2.$S@test.local" "$tmp")
@@ -71,7 +71,7 @@ NI2=$(mkuser '["nurse"]' 68 ",\"department_id\":\"$DI\"")
 BL=$(mkuser '["billing"]' 69)
 for t in RC NI DRI NW DRW NN DRN NI2 BL; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები (რეგისტრატორი, ICU ექთანი ×2 / ექიმი, განყოფილების ექთანი / ექიმი, ინტენსიურის ექთანი / ექიმი, ბილინგი)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 71 "ICU-სეფსისი" 1960-02-02 male); P2=$(mkpat 72 "ICU-მიმღებიდან" 1950-05-05 female); P3=$(mkpat 73 "ინტენსიური" 1975-03-03 male)
 [ -n "$P1" ] && [ -n "$P2" ] && [ -n "$P3" ] || die "პაციენტები ვერ შეიქმნა"
 ORIG_IPD=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')

@@ -36,7 +36,7 @@ D2=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ბუღა�
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {   # <roles-json> <n> [extra-json] → "<id> <token>"
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ast.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ინვ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ast.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ინვ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.ast.$2.$S@test.local" "$tmp")

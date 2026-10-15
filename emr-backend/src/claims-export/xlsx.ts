@@ -2,7 +2,7 @@ import { crc32, deflateRawSync } from 'node:zlib';
 
 /**
  * მინიმალური XLSX (Office Open XML) — დამოკიდებულების გარეშე (0058).
- *  • ჩაწერა: ერთი ფურცელი, ტექსტი (inline) / რიცხვი (რიცხვის ფორმატით), სათაურის ხაზი (მუქი), სვეტის სიგანე.
+ *  • ჩაწერა: ერთი ან რამდენიმე ფურცელი (writeXlsxBook, 0063), ტექსტი (inline) / რიცხვი (რიცხვის ფორმატით), სათაურის ხაზი (მუქი), სვეტის სიგანე.
  *  • წაკითხვა: stock/xlsx (readXlsx); CSV — მითითებული გამყოფით.
  * ZIP — deflate, ფიქსირებული თარიღით (ერთი და იგივე შიგთავსი → ერთი და იგივე ფაილი / sha256).
  */
@@ -46,24 +46,31 @@ export const colIndex = (letters: string) => [...letters.toUpperCase()].reduce((
 export type Cell = string | number | null | undefined | { v: number; fmt: string };
 export interface SheetSpec { name: string; header?: string[]; rows: Cell[][]; widths?: (number | undefined)[]; boldRows?: number[] }
 
-export function writeXlsx(s: SheetSpec): Buffer {
+export function writeXlsx(s: SheetSpec): Buffer { return writeXlsxBook([s]); }
+
+/** რამდენიმე ფურცელი ერთ წიგნში (0063 — მენეჯერული ანგარიში); სტილები საერთოა */
+export function writeXlsxBook(sheets: SheetSpec[]): Buffer {
+  if (!sheets.length) throw new Error('writeXlsxBook: ფურცელი არ არის');
   const fmts = new Map<string, number>();            // რიცხვის ფორმატი → style id (2..)
   const fmtId = (f: string) => { if (!fmts.has(f)) fmts.set(f, fmts.size + 2); return fmts.get(f)!; };
-  const rowsXml: string[] = []; let r = 0;
-  const cell = (c: Cell, ci: number, rn: number, bold: boolean) => {
-    const ref = `${colName(ci)}${rn}`;
-    if (c === null || c === undefined || c === '') return '';
-    if (typeof c === 'number') return Number.isFinite(c) ? `<c r="${ref}"${bold ? ' s="1"' : ''}><v>${c}</v></c>` : '';
-    if (typeof c === 'object') return Number.isFinite(c.v) ? `<c r="${ref}" s="${fmtId(c.fmt)}"><v>${c.v}</v></c>` : '';
-    return `<c r="${ref}" t="inlineStr"${bold ? ' s="1"' : ''}><is><t xml:space="preserve">${xmlEsc(c)}</t></is></c>`;
+  const sheetXml = (s: SheetSpec) => {
+    const rowsXml: string[] = []; let r = 0;
+    const cell = (c: Cell, ci: number, rn: number, bold: boolean) => {
+      const ref = `${colName(ci)}${rn}`;
+      if (c === null || c === undefined || c === '') return '';
+      if (typeof c === 'number') return Number.isFinite(c) ? `<c r="${ref}"${bold ? ' s="1"' : ''}><v>${c}</v></c>` : '';
+      if (typeof c === 'object') return Number.isFinite(c.v) ? `<c r="${ref}" s="${fmtId(c.fmt)}"><v>${c.v}</v></c>` : '';
+      return `<c r="${ref}" t="inlineStr"${bold ? ' s="1"' : ''}><is><t xml:space="preserve">${xmlEsc(c)}</t></is></c>`;
+    };
+    const all: Cell[][] = [...(s.header ? [s.header] : []), ...s.rows];
+    const bold = new Set([...(s.header ? [0] : []), ...(s.boldRows ?? []).map((i) => i + (s.header ? 1 : 0))]);
+    for (const row of all) { r++; rowsXml.push(`<row r="${r}">${row.map((c, i) => cell(c, i, r, bold.has(r - 1))).join('')}</row>`); }
+    const cols = s.widths?.some((w) => w) ? `<cols>${s.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w || 12}" customWidth="1"/>`).join('')}</cols>` : '';
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+      + `${s.header ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : ''}`
+      + `${cols}<sheetData>${rowsXml.join('')}</sheetData></worksheet>`;
   };
-  const all: Cell[][] = [...(s.header ? [s.header] : []), ...s.rows];
-  const bold = new Set([...(s.header ? [0] : []), ...(s.boldRows ?? []).map((i) => i + (s.header ? 1 : 0))]);
-  for (const row of all) { r++; rowsXml.push(`<row r="${r}">${row.map((c, i) => cell(c, i, r, bold.has(r - 1))).join('')}</row>`); }
-  const cols = s.widths?.some((w) => w) ? `<cols>${s.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w || 12}" customWidth="1"/>`).join('')}</cols>` : '';
-  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `${s.header ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : ''}`
-    + `${cols}<sheetData>${rowsXml.join('')}</sheetData></worksheet>`;
+  const bodies = sheets.map(sheetXml);
   const numFmts = [...fmts.entries()].map(([f], i) => `<numFmt numFmtId="${164 + i}" formatCode="${xmlEsc(f)}"/>`).join('');
   const xfs = [...fmts.keys()].map((_, i) => `<xf numFmtId="${164 + i}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>`).join('');
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
@@ -74,22 +81,29 @@ export function writeXlsx(s: SheetSpec): Buffer {
     + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
     + `<cellXfs count="${2 + fmts.size}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>${xfs}</cellXfs>`
     + `</styleSheet>`;
-  const sheetName = xmlEsc(s.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Sheet1');
+  // ფურცლის სახელი: აკრძალული სიმბოლოების გარეშე, ≤ 31, უნიკალური
+  const used = new Set<string>();
+  const names = sheets.map((s, i) => {
+    const base = s.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim() || `Sheet${i + 1}`; let nm = base; let k = 2;
+    while (used.has(nm.toLowerCase())) { const suf = ` (${k++})`; nm = base.slice(0, 31 - suf.length) + suf; }
+    used.add(nm.toLowerCase()); return nm;
+  });
   const B = (x: string) => Buffer.from(x, 'utf8');
   return zip([
     { name: '[Content_Types].xml', data: B(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
       + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>`
       + `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>`
-      + `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+      + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
       + `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`) },
     { name: '_rels/.rels', data: B(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
       + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`) },
     { name: 'xl/workbook.xml', data: B(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" `
-      + `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets></workbook>`) },
+      + `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>`
+      + names.map((nm, i) => `<sheet name="${xmlEsc(nm)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + `</sheets></workbook>`) },
     { name: 'xl/_rels/workbook.xml.rels', data: B(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-      + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>`
-      + `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
-    { name: 'xl/worksheets/sheet1.xml', data: B(sheet) },
+      + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+      + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
+    ...bodies.map((b, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: B(b) })),
     { name: 'xl/styles.xml', data: B(styles) },
   ]);
 }

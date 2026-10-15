@@ -31,7 +31,7 @@ DA=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E საექ�
 DB=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E საექთნო B $S\",\"code\":\"E2ENB$S\",\"type\":\"inpatient\"}" | jq -r '.id // empty')
 [ -n "$DA" ] && [ -n "$DB" ] || die "განყოფილებები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.nur.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"საექთ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.nur.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"საექთ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.nur.$2.$S@test.local" "$tmp")
@@ -45,7 +45,7 @@ DR=$(mkuser '["doctor"]' 35 ",\"department_id\":\"$DA\"")
 NX=$(mkuser '["nurse"]' 36 ",\"department_id\":\"$DB\"")
 for t in RC NA NB HN DR NX; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები (რეგისტრატორი, 2 ექთანი A, მთავარი ექთანი A, ექიმი A, ექთანი B)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 51 "საექთნო" 1960-02-02 male); P2=$(mkpat 52 "საექთნო-ბავშვი" "$(date -d '-8 years' +%F)" female)
 [ -n "$P1" ] && [ -n "$P2" ] || die "პაციენტები ვერ შეიქმნა"
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')

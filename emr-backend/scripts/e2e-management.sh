@@ -32,7 +32,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
 # მომხმარებელი: mkuser <roles-json> <n> [department_id] → access token; id → $TMP/u
 mkuser() {
   local dep=""; [ -n "${3:-}" ] && dep=",\"department_id\":\"$3\""
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mgmt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მართვა-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1$dep}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mgmt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მართვა-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1$dep}")
   local id tmp pw; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { echo "ERR:$(echo "$R" | jq -rc .message)"; return; }
   pw="E2e-$S-pass$RANDOM"; echo "$id" > "$TMP/u"; echo "$id" >> "$TMP/all"
@@ -125,12 +125,12 @@ step "4. HR — მომხმარებლები და როლებ�
 chk "ყველა მომხმარებლის სია — 200" "$(code GET /users "$T_HR")" "200"
 chk "როლების სია — 200" "$(code GET /roles "$T_HR")" "200"
 chk "როლის შექმნა/რედაქტირება — 403 (მხოლოდ ადმინი)" "$(code POST /roles "$T_HR" -d '{"code":"e2e_x","name":"x","capabilities":[]}')" "403"
-R=$(api POST /users "$T_HR" -d "{\"email\":\"e2e.mgmt.91.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"HR-ის შექმნილი\",\"personal_number\":\"91$(printf '%09d' "$S")\",\"roles\":[\"nurse\",\"$R_ACC\"]}")
+R=$(api POST /users "$T_HR" -d "{\"email\":\"e2e.mgmt.91.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"HR-ის შექმნილი\",\"personal_number\":\"91$(printf '%09d' "$((10#$S))")\",\"roles\":[\"nurse\",\"$R_ACC\"]}")
 U_H1=$(echo "$R" | jq -r '.user.id // empty'); [ -n "$U_H1" ] && { ok "მომხმარებლის შექმნა (ექთანი + ბუღალტერი)"; echo "$U_H1" >> "$TMP/all"; } || bad "HR: შექმნა" "$(echo "$R" | jq -rc .message)"
 chk "როლის მინიჭება" "$(api PATCH "/users/$U_H1" "$T_HR" -d '{"roles":["nurse","receptionist"]}' | jq -r '[.roles[].code]|sort|join(",")')" "nurse,receptionist"
 chk "ადმინისტრატორის როლის მინიჭება — 403" "$(code PATCH "/users/$U_H1" "$T_HR" -d '{"roles":["nurse","admin"]}')" "403"
 chk "ადმინ-უფლებიანი კლინიკის როლი — 403" "$(code PATCH "/users/$U_H1" "$T_HR" -d "{\"roles\":[\"nurse\",\"$R_SUP\"]}")" "403"
-chk "ადმინისტრატორის შექმნა — 403" "$(code POST /users "$T_HR" -d "{\"email\":\"e2e.mgmt.92.$S@test.local\",\"first_name\":\"x\",\"last_name\":\"y\",\"personal_number\":\"92$(printf '%09d' "$S")\",\"roles\":[\"admin\"]}")" "403"
+chk "ადმინისტრატორის შექმნა — 403" "$(code POST /users "$T_HR" -d "{\"email\":\"e2e.mgmt.92.$S@test.local\",\"first_name\":\"x\",\"last_name\":\"y\",\"personal_number\":\"92$(printf '%09d' "$((10#$S))")\",\"roles\":[\"admin\"]}")" "403"
 chk "გათიშვა — 200" "$(code POST "/users/$U_H1/disable" "$T_HR")" "200"
 chk "ჩართვა — 200" "$(code POST "/users/$U_H1/enable" "$T_HR")" "200"
 chk "ადმინისტრატორის გათიშვა — 403" "$(code POST "/users/$ADMIN_ID/disable" "$T_HR")" "403"

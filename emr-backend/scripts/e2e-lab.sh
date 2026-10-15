@@ -40,7 +40,7 @@ if [ -z "$DEP" ]; then
   [ -n "$DEP" ] && ok "შეიქმნა განყოფილება 'ლაბორატორია'" || bad "დიაგნოსტიკური განყოფილება" "ვერ შეიქმნა"
 else ok "დიაგნოსტიკური განყოფილება არსებობს"; fi
 mkuser() { # $1 role, $2 prefix-digits
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
   echo "$id" >> "$TRACK"
@@ -56,7 +56,7 @@ CBC=$(sid LAB_CBC); COAG=$(sid LAB_COAG); LIP=$(sid LAB_LIPID)
 [ -n "$CBC" ] && [ -n "$COAG" ] && [ -n "$LIP" ] && ok "კატალოგი: სისხლის საერთო, კოაგულოგრამა, ლიპიდური" || die "კატალოგში საჭირო ანალიზები ვერ მოიძებნა"
 PRICED=$(echo "$CAT" | jq -r "[.[]|select(.id==\"$CBC\" or .id==\"$COAG\" or .id==\"$LIP\")|.base_price|tonumber]|add > 0")
 if [ "$PRICED" = "true" ]; then ok "ანალიზებს ფასი აქვს"; else echo "  ⚠ ანალიზებს ფასი არ აქვს — შემოწმდება 0 ₾-ის (უფასო ვიზიტის) სცენარი"; fi
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"9$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფლებოტომია\",\"birth_date\":\"1985-06-15\",\"gender\":\"male\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"9$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ფლებოტომია\",\"birth_date\":\"1985-06-15\",\"gender\":\"male\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] && ok "სატესტო პაციენტი" || die "პაციენტი ვერ შეიქმნა"
 
 step "2. რეგისტრატორი: ლაბორატორიული ვიზიტი + სალარო"

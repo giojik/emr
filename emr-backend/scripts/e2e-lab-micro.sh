@@ -25,7 +25,7 @@ S=$(date +%s | tail -c 7); TRACK=$(mktemp)
 
 step "1. მომზადება"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mic.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mic.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.mic.$1.$S@test.local" "$tmp")
@@ -40,7 +40,7 @@ chk "მიკროორგანიზმის დამატება (ლ
 chk "ლაბორანტს ცნობარის შეცვლა არ შეუძლია (403)" "$(code POST /lab/micro/organisms "$LT" -d '{"code":"zz1","name":"xx","gram":"neg","group_code":"ENT"}')" "403"
 SVC=$(api POST /dx/catalog "$LM" -d "{\"section\":\"lab\",\"code\":\"MIC_E2E_$S\",\"name\":\"ტესტ-E2E შარდის კულტურა $S\",\"group_name\":\"ტესტ-E2E მიკრობიოლოგია\",\"specimen_type\":\"urine\",\"container\":\"Sterile\"}" | jq -r '.id // empty'); echo "s $SVC" >> "$TRACK"
 chk "კატალოგი: ანალიზი — მიკრობიოლოგიური (კომპონენტების გარეშე)" "$(api PATCH "/dx/catalog/$SVC" "$ADM" -d '{"is_micro":true}' | jq -r .is_micro)" "true"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"7$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიკრო\",\"birth_date\":\"1965-03-03\",\"gender\":\"female\",\"phone_number\":\"590$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"7$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიკრო\",\"birth_date\":\"1965-03-03\",\"gender\":\"female\",\"phone_number\":\"590$S\"}" | jq -r '.id // empty')
 item() {
   local e sh bc; e=$(api POST /lab-visits "$RC" -d "{\"patient_id\":\"$PAT\",\"items\":[{\"service_id\":\"$SVC\"}]}" | jq -r '.encounter_id // empty')
   sh=$(api GET "/invoices/encounter/$e" "$RC" | jq -r .patient_share)

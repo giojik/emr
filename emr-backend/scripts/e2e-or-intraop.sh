@@ -68,7 +68,7 @@ role() {
 [ "$(role e2e_or_coord 'ტესტ-E2E საოპერაციოს კოორდინატორი' '["or_schedule"]')" = e2e_or_coord ] && [ "$(role e2e_anesth 'ტესტ-E2E ანესთეზიოლოგი' '["anesthesiologist"]')" = e2e_anesth ] \
   && [ "$(role e2e_or_nurse 'ტესტ-E2E საოპერაციო ექთანი' '["or_nurse"]')" = e2e_or_nurse ] || die "როლები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.oi.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"OI-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.oi.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"OI-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.oi.$2.$S@test.local" "$tmp")
@@ -83,7 +83,7 @@ ON1=$(mkuser '["e2e_or_nurse"]' 68 ",\"department_id\":\"$DBK\",\"is_section_hea
 ON2=$(mkuser '["e2e_or_nurse"]' 69 ",\"department_id\":\"$DBK\""); ON3=$(mkuser '["e2e_or_nurse"]' 70 ",\"department_id\":\"$DBK\""); ON4=$(mkuser '["e2e_or_nurse"]' 71 ",\"department_id\":\"$DBK\"")
 for t in RC SU1 SU2 AS CO AN1 AN2 ON1 ON2 ON3 ON4; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები: ქირურგები ×2 + ასისტენტი, კოორდინატორი, ანესთეზიოლოგი ×2 (ხელმძღვანელი), საოპერაციო ექთანი ×4 (მთავარი)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 72 "OI-მუხლი" 1955-03-03 female); P2=$(mkpat 73 "OI-თიაქარი" 1979-09-09 male)
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DS\",\"attending_doctor_id\":\"$(uid 62)\",\"source\":\"direct\",\"icd10_code\":\"M17.1\",\"chief_complaint\":\"ტესტ-E2E\",\"bed_id\":\"$2\"}" | jq -r '.encounter_id // empty'; }
 E1=$(ADMIT "$P1" "$BS1"); E2=$(ADMIT "$P2" "$BS2")
@@ -108,7 +108,7 @@ IT_FEN=$(item "Fentanyl 0.1mg" MED ampoule ",\"generic_id\":\"$G_FEN\""); IT_PRO
 IT_GAU=$(item "საფენი სტერილური" MEDSUP piece ",\"barcodes\":[{\"barcode\":\"$EAN\"}]"); IT_SUT=$(item "ნაკერი Vicryl 2-0" MEDSUP piece)
 IT_IMP=$(item "მუხლის ენდოპროთეზი" IMPLANT piece ",\"serial_tracked\":true,\"billing_mode\":\"invoice\",\"sale_price\":1500,\"manufacturer\":\"ტესტ-E2E Ortho\"")
 for i in IT_FEN IT_PRO IT_GAU IT_SUT IT_IMP; do [ -n "${!i}" ] || die "საქონელი $i ვერ შეიქმნა"; done
-SUP=$(api POST /stock/suppliers "$ADM" -d "{\"name\":\"ტესტ-E2E OI მიმწოდებელი $S\",\"tax_id\":\"7$(printf '%08d' "$S")\"}" | jq -r '.id // empty')
+SUP=$(api POST /stock/suppliers "$ADM" -d "{\"name\":\"ტესტ-E2E OI მიმწოდებელი $S\",\"tax_id\":\"7$(printf '%08d' "$((10#$S))")\"}" | jq -r '.id // empty')
 ln() { echo "{\"item_id\":\"$1\",\"qty\":$2,\"lot_no\":\"$3$S\",\"expires_on\":\"$D2Y\",\"price\":${4:-1},\"vat_rate\":0${5:-}}"; }
 RCP=$(api POST /stock/receipts "$ADM" -d "{\"location_id\":\"$LOC\",\"supplier_id\":\"$SUP\",\"lines\":[$(ln "$IT_FEN" 10 F),$(ln "$IT_PRO" 20 P),$(ln "$IT_GAU" 100 G 0.2),$(ln "$IT_SUT" 20 V 3),
   $(ln "$IT_IMP" 1 KN 900 ",\"serial_no\":\"SN1-$S\""),$(ln "$IT_IMP" 1 KN 900 ",\"serial_no\":\"SN2-$S\"")]}" | jq -r '.id // empty')

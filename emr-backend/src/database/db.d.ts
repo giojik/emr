@@ -3223,12 +3223,54 @@ export interface Roles {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RptAttentionSent {
+  day: string;
+  item_key: string;
+  sent_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface RptBalanceSnapshot {
+  computed_at: Generated<Timestamp>;
+  d1_30: Generated<Numeric>;
+  d31_60: Generated<Numeric>;
+  d61_90: Generated<Numeric>;
+  d90: Generated<Numeric>;
+  day: string;
+  draft: Generated<Numeric>;
+  items: Generated<number>;
+  kind: string;
+  not_due: Generated<Numeric>;
+  party_id: string | null;
+  party_kind: string | null;
+  party_name: string;
+  total: Generated<Numeric>;
+  unclaimed: Generated<Numeric>;
+}
+
 export interface RptDashboardKpis {
   dashboard: string;
   kpi_code: string;
   sort_order: number;
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
+}
+
+export interface RptDeliveries {
+  bytes: Generated<number>;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  date_from: string;
+  date_to: string;
+  email: string | null;
+  error: string | null;
+  files: Generated<string[]>;
+  id: Generated<Int8>;
+  manual: Generated<boolean>;
+  period: string;
+  schedule_id: string | null;
+  status: string;
+  user_id: string | null;
 }
 
 export interface RptFactBeds {
@@ -3266,6 +3308,16 @@ export interface RptFactDoctor {
   or_surgery_min: Generated<number>;
   readmissions_30: Generated<number>;
   role: string;
+}
+
+export interface RptFactDoctorRev {
+  amount: Generated<Numeric>;
+  basis: string;
+  category: string;
+  day: string;
+  department_id: string | null;
+  doctor_id: string | null;
+  kind: string;
 }
 
 export interface RptFactDx {
@@ -3355,6 +3407,14 @@ export interface RptFactOrRoom {
   used_min: Generated<number>;
 }
 
+export interface RptFactPayer {
+  amount: Generated<Numeric>;
+  day: string;
+  department_id: string | null;
+  kind: string;
+  payer_id: string | null;
+}
+
 export interface RptFactStock {
   consumption: Generated<Numeric>;
   day: string;
@@ -3406,6 +3466,24 @@ export interface RptRefreshRuns {
   source: Generated<string>;
   started_at: Generated<Timestamp>;
   status: Generated<string>;
+}
+
+export interface RptSchedules {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  department_id: string | null;
+  formats: Generated<string[]>;
+  frequency: string;
+  id: Generated<string>;
+  include_doctors: Generated<boolean>;
+  is_active: Generated<boolean>;
+  last_period: string | null;
+  last_run_at: Timestamp | null;
+  name: string;
+  recipients: Generated<string[]>;
+  send_day: number;
+  send_hour: Generated<number>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface RptStockSnapshot {
@@ -4338,9 +4416,13 @@ export interface DB {
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;
+  rpt_attention_sent: RptAttentionSent;
+  rpt_balance_snapshot: RptBalanceSnapshot;
   rpt_dashboard_kpis: RptDashboardKpis;
+  rpt_deliveries: RptDeliveries;
   rpt_fact_beds: RptFactBeds;
   rpt_fact_doctor: RptFactDoctor;
+  rpt_fact_doctor_rev: RptFactDoctorRev;
   rpt_fact_dx: RptFactDx;
   rpt_fact_dx_dim: RptFactDxDim;
   rpt_fact_finance: RptFactFinance;
@@ -4348,10 +4430,12 @@ export interface DB {
   rpt_fact_hourly: RptFactHourly;
   rpt_fact_or: RptFactOr;
   rpt_fact_or_room: RptFactOrRoom;
+  rpt_fact_payer: RptFactPayer;
   rpt_fact_stock: RptFactStock;
   rpt_kpi_targets: RptKpiTargets;
   rpt_kpis: RptKpis;
   rpt_refresh_runs: RptRefreshRuns;
+  rpt_schedules: RptSchedules;
   rpt_stock_snapshot: RptStockSnapshot;
   rpt_user_scopes: RptUserScopes;
   scale_assessments: ScaleAssessments;

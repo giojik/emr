@@ -46,7 +46,7 @@ DA=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E დოკ. �
 DB=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E დოკ. ქირურგია $S\",\"code\":\"E2EDB$S\",\"type\":\"inpatient\"}" | jq -r '.id // empty')
 [ -n "$DA" ] && [ -n "$DB" ] || die "განყოფილებები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.docs.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დოკ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.docs.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დოკ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.docs.$2.$S@test.local" "$tmp")
@@ -61,7 +61,7 @@ NB=$(mkuser '["nurse"]' 66 ",\"department_id\":\"$DB\"")
 DB2=$(mkuser '["doctor"]' 67 ",\"department_id\":\"$DB\""); DB2ID=$(cat "$TMP/u67" 2>/dev/null)
 [ -n "$NB" ] && [ -n "$DB2" ] || die "B განყოფილების მომხმარებლები ვერ შეიქმნა"
 [ -n "$RC" ] && [ -n "$NA" ] && [ -n "$DR" ] && [ -n "$D2" ] && [ -n "$HD" ] && ok "მომხმარებლები (რეგისტრატორი, ექთანი, 2 ექიმი, ხელმძღვანელი)" || die "მომხმარებლები ვერ შეიქმნა"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1975-05-05\",\"gender\":\"$3\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1975-05-05\",\"gender\":\"$3\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 91 "დოკუმენტები" female); P2=$(mkpat 92 "ეპიკრიზი" male); P3=$(mkpat 93 "გადაყვანა" male); P4=$(mkpat 94 "უსაწოლო" female)
 P5=$(mkpat 95 "ბინაზე" male); P6=$(mkpat 96 "თვითნებური" male); P7=$(mkpat 97 "გარდაცვალება" female)
 [ -n "$P1" ] && [ -n "$P2" ] && [ -n "$P3" ] && [ -n "$P4" ] && [ -n "$P5" ] && [ -n "$P6" ] && [ -n "$P7" ] && ok "პაციენტები" || die "პაციენტები ვერ შეიქმნა"

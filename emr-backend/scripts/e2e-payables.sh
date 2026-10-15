@@ -34,7 +34,7 @@ step "0. მომზადება"
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ap.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ბუღალტერია-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ap.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ბუღალტერია-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.ap.$2.$S@test.local" "$tmp")
@@ -53,8 +53,8 @@ REFS=$(api GET /stock/refs "$SM"); cat_id() { echo "$REFS" | jq -r ".categories[
 LOC=$(api POST /stock/locations "$SM" -d "{\"code\":\"E2E_AP_$S\",\"name\":\"ტესტ-E2E ბუღალტერია-საწყობი $S\",\"kind\":\"central\",\"requires_approval\":false}" | jq -r '.id // empty')
 MED=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E ხელთათმანი $S\",\"category_id\":\"$(cat_id HOUSE)\",\"base_unit\":\"piece\",\"packs\":[{\"name\":\"კოლოფი\",\"qty_base\":10,\"is_receipt_default\":true}]}" | jq -r '.id // empty')
 BOX=$(api GET "/stock/items/$MED" "$SM" | jq -r '.packs[0].id')
-SUP=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მედიმპორტი $S\",\"tax_id\":\"5$(printf '%08d' "$S")\",\"vat_payer\":true,\"payment_terms_days\":30}" | jq -r '.id // empty')
-SUP2=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს ენერგო $S\",\"tax_id\":\"4$(printf '%08d' "$S")\",\"vat_payer\":true}" | jq -r '.id // empty')
+SUP=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მედიმპორტი $S\",\"tax_id\":\"5$(printf '%08d' "$((10#$S))")\",\"vat_payer\":true,\"payment_terms_days\":30}" | jq -r '.id // empty')
+SUP2=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს ენერგო $S\",\"tax_id\":\"4$(printf '%08d' "$((10#$S))")\",\"vat_payer\":true}" | jq -r '.id // empty')
 DEP=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ადმინისტრაცია $S\",\"code\":\"E2EAP$S\",\"type\":\"administrative\"}" | jq -r '.id // empty')
 [ -n "$LOC" ] && [ -n "$MED" ] && [ -n "$SUP" ] && [ -n "$SUP2" ] && [ -n "$DEP" ] && ok "ლოკაცია, საქონელი, 2 მომწოდებელი (გადახდის ვადა 30 დღე), განყოფილება" || die "მონაცემები ვერ შეიქმნა"
 # მიღება: N კოლოფი × ფასი (დღგ-ს გარეშე, 18%) → გატარებული RC

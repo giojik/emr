@@ -16,7 +16,8 @@ export const UNIT_FULL: Record<string, string> = { count: 'რაოდენო
 export interface RptMeta {
   settings: { occupancy_basis: 'hours' | 'midnight'; stock_days_window: number; stock_days_alert: number; compare_default: 'prev' | 'yoy' | 'none'; refresh_today_min: number; lab_tat_start: string;
     tv_refresh_min: number; lab_overdue_min: number; dx_overdue_hours: number; dead_stock_days: number;
-    doctor_breakdown: 'off' | 'all_only' | 'scoped'; min_cases: number };
+    doctor_breakdown: 'off' | 'all_only' | 'scoped'; min_cases: number;
+    doctor_revenue: 'on' | 'off'; attention_notify: 'off' | 'in_app' | 'in_app_email'; attention_notify_hour: number; attention_notify_level: 'red' | 'all' };
   today: string;
   scope: { all: boolean; finance: boolean; phi: boolean; departments: { id: string; name: string; type: string; is_active: boolean }[] };
   data_as_of: string | null;

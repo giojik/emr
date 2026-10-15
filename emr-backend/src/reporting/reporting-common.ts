@@ -42,12 +42,15 @@ export interface RptSettings {
   lab_overdue_min: number; dx_overdue_hours: number; dead_stock_days: number; tv_refresh_min: number;
   /** 0062 */
   doctor_breakdown: 'off' | 'all_only' | 'scoped'; min_cases: number;
+  /** 0063 */
+  doctor_revenue: 'on' | 'off'; attention_notify: 'off' | 'in_app' | 'in_app_email'; attention_notify_hour: number; attention_notify_level: 'red' | 'all';
 }
 export const RPT_DEFAULTS: RptSettings = {
   refresh_today_min: 15, nightly_hour: 2, recompute_days: 35, freeze_closed_periods: true, occupancy_basis: 'hours',
   stock_days_window: 30, stock_days_alert: 7, compare_default: 'prev', lab_tat_start: 'collected',
   lab_overdue_min: 120, dx_overdue_hours: 24, dead_stock_days: 90, tv_refresh_min: 5,
   doctor_breakdown: 'all_only', min_cases: 5,
+  doctor_revenue: 'on', attention_notify: 'in_app', attention_notify_hour: 8, attention_notify_level: 'red',
 };
 export async function rptModule(db: Database) {
   const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'reporting').executeTakeFirst();

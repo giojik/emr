@@ -44,7 +44,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
 R_CD=$(mkrole dcd "DRG კოდირება" '["drg"]'); R_DA=$(mkrole dad "DRG კონფიგურაცია" '["drg_admin"]')
 [ -n "$R_CD" ] && [ -n "$R_DA" ] || die "როლები ვერ შეიქმნა (drg / drg_admin — მიგრაცია 0055?)"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.drg.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"DRG-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.drg.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"DRG-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.drg.$2.$S@test.local" "$tmp")
@@ -54,7 +54,7 @@ CD=$(mkuser "[\"$R_CD\"]" 81); DA1=$(mkuser "[\"$R_DA\"]" 82); DA2=$(mkuser "[\"
 DR=$(mkuser '["doctor"]' 86 ",\"department_id\":\"$DA\""); NA=$(mkuser '["nurse"]' 87 ",\"department_id\":\"$DA\""); N2=$(mkuser '["nurse"]' 88 ",\"department_id\":\"$DA\"")
 for t in CD DA1 DA2 BL RC DR NA N2; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "განყოფილება, ტარიფები (საწოლდღე 100, პროცედურა 300), 8 მომხმარებელი (კოდირება, 2 კონფიგურაცია, ბილინგი, მიმღები, ექიმი, 2 ექთანი)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 91 "DRG-1" "1970-05-05" male); P2=$(mkpat 92 "DRG-2" "1985-01-01" female)
 [ -n "$P1" ] && [ -n "$P2" ] || die "პაციენტები ვერ შეიქმნა"
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="drg")|.settings')

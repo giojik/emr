@@ -26,7 +26,7 @@ TXT=$(mktemp --suffix=.pdf); echo "ეს არ არის PDF" > "$TXT"
 
 step "1. მომხმარებლები"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ext.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ext.$1.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
   echo "u $id" >> "$TRACK"
@@ -50,7 +50,7 @@ GLU=$(api POST "/dx/catalog/$INT/analytes" "$LM" -d '{"code":"GLU","name":"გ�
 [ -n "$GLU" ] && ok "შიდა ანალიზი delta-check-ით (20 %, 30 დღე)" || die "კომპონენტი ვერ შეიქმნა"
 
 step "3. ვიზიტი → აღება → გაგზავნა"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"5$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"გარე\",\"birth_date\":\"1975-06-01\",\"gender\":\"female\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"5$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"გარე\",\"birth_date\":\"1975-06-01\",\"gender\":\"female\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] || die "პაციენტი ვერ შეიქმნა"
 visit() {
   local e sh; e=$(api POST /lab-visits "$RC" -d "{\"patient_id\":\"$PAT\",\"items\":$1}" | jq -r '.encounter_id // empty')

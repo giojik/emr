@@ -26,7 +26,7 @@ S=$(date +%s | tail -c 7); CREATED_USERS=(); CREATED_ROLES=()
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # მომხმარებელი როლებით → access token (პაროლი იცვლება); id/email/პაროლი → $TMP/u (subshell-იდან)
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.roles.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"როლები-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.roles.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"როლები-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1}")
   local id tmp pw; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { echo "ERR:$(echo "$R" | jq -rc .message)"; return; }
   pw="E2e-$S-pass$RANDOM"; LAST_EMAIL="e2e.roles.$2.$S@test.local"; LAST_PW=$pw

@@ -86,12 +86,13 @@ export function revenueCte(basis: Basis, from: string, to: string): RawBuilder<u
         FROM (SELECT ls.line_id, ls.kind, ls.payer_id, ls.line_total, a.r * ls.amount / nullif(sum(ls.amount) OVER (PARTITION BY ls.invoice_id, ls.payer_id), 0) AS part
                 FROM ls JOIN adj a ON a.invoice_id = ls.invoice_id AND a.payer_id = ls.payer_id) x
         CROSS JOIN LATERAL (VALUES (x.kind, -1), ('denied', 1)) k(kind, sgn)),
+    -- 0063: rv.line_id — ექიმზე მიწერისთვის (rpt_fact_doctor_rev)
     rv AS (
-      SELECT dl.invoice_id, dl.rdate, dl.category, dl.ord, dl.perf, x.kind, x.payer_id, dl.amount * x.w AS amount
+      SELECT dl.invoice_id, dl.line_id, dl.rdate, dl.category, dl.ord, dl.perf, x.kind, x.payer_id, dl.amount * x.w AS amount
         FROM dl JOIN lsx x ON x.line_id = dl.line_id
        WHERE dl.rdate BETWEEN ${from}::date AND ${to}::date AND x.w IS NOT NULL AND x.w <> 0
       UNION ALL
-      SELECT dl.invoice_id, dl.rdate, dl.category, dl.ord, dl.perf, sw.kind, sw.payer_id, dl.amount * sw.w AS amount
+      SELECT dl.invoice_id, dl.line_id, dl.rdate, dl.category, dl.ord, dl.perf, sw.kind, sw.payer_id, dl.amount * sw.w AS amount
         FROM dl JOIN sw ON sw.invoice_id = dl.invoice_id
        WHERE dl.rdate BETWEEN ${from}::date AND ${to}::date AND sw.w IS NOT NULL AND sw.w <> 0
          AND NOT EXISTS (SELECT 1 FROM ls WHERE ls.line_id = dl.line_id))`;

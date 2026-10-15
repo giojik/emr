@@ -33,7 +33,7 @@ DB=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ჩანა�
 TAR=$(api POST /tariffs "$ADM" -d "{\"code\":\"E2ECN$S\",\"title\":\"ტესტ-E2E კარდიოლოგის კონსულტაცია\",\"base_price\":45}" | jq -r '.id // empty')
 [ -n "$TAR" ] || die "ტარიფი ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.dn.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ჩანაწ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.dn.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ჩანაწ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.dn.$2.$S@test.local" "$tmp")
@@ -48,7 +48,7 @@ DX=$(mkuser '["doctor"]' 26 ",\"department_id\":\"$DB\",\"consultation_tariff_id
 DY=$(mkuser '["doctor"]' 27 ",\"department_id\":\"$DB\"")
 for t in RC NA DR D2 HD DX DY; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები (რეგისტრატორი, ექთანი, 3 ექიმი A + ხელმძღვანელი, 2 ექიმი B; კონსულტანტს — ტარიფი 45 ₾)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1958-05-05\",\"gender\":\"male\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1958-05-05\",\"gender\":\"male\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 61 "ჩანაწერები"); P2=$(mkpat 62 "ჩანაწერები-2")
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')
 mod()  { api PUT /modules/inpatient "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}" >/dev/null; }

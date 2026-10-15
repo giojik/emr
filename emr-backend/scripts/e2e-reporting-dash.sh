@@ -24,7 +24,7 @@ S=$(date +%s | tail -c 7)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 TODAY=$(date +%F); MONTH=$(date +%Y-%m-01)
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rdash.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დაფა-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rdash.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"დაფა-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.rdash.$2.$S@test.local" "$tmp" | jq -r .accessToken)
@@ -70,7 +70,7 @@ step "2. სატესტო განყოფილება: 3 საწო
 W=$(api POST /inpatient/wards "$ADM" -d "{\"department_id\":\"$DR\",\"code\":\"D$S\",\"sex\":\"mixed\"}" | jq -r '.id // empty')
 BD=$(api POST "/inpatient/wards/$W/beds" "$ADM" -d '{"count":3}'); B1=$(echo "$BD" | jq -r '.[0].id'); B2=$(echo "$BD" | jq -r '.[1].id')
 [ -n "$W" ] && [ "$B2" != "null" ] || die "პალატა / საწოლები ვერ შეიქმნა"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1972-02-02\",\"gender\":\"female\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1972-02-02\",\"gender\":\"female\",\"phone_number\":\"594$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 31 "დაფა-ერთი"); P2=$(mkpat 32 "დაფა-ორი")
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DR\",\"attending_doctor_id\":\"$DOCID\",\"source\":\"direct\",\"icd10_code\":\"J18.9\",\"chief_complaint\":\"ტესტ-E2E\"}" | jq -r '.encounter_id // empty'; }
 E1=$(ADMIT "$P1"); E2=$(ADMIT "$P2")
@@ -116,7 +116,8 @@ chk "დამალული KPI დაფაზე არ ჩანს" "$(api
 api PATCH /reporting/kpis/stock_low_items "$ADM" -d '{"is_active":true,"reason":"ტესტ-E2E აღდგენა"}' >/dev/null
 chk "უცნობი დაფა → 404; ექთანი → 403" "$(code GET "/reporting/headline?dashboard=x&from=$TODAY&to=$TODAY" "$ADM"):$(code GET "/reporting/headline?dashboard=executive&from=$TODAY&to=$TODAY" "$NR")" "404:403"
 TR=$(api GET "/reporting/trend?kpi=admissions&department_id=$DR" "$ADM")
-chk "ტრენდი: 13 თვე, ბოლო — მიმდინარე (partial), მნიშვნელობა = თვე დღემდე (2), შარშან — null (მონაცემი არ არის)" "$(echo "$TR" | jq -r '"\(.points|length):\(.points[-1].month):\(.points[-1].partial):\(.points[-1].value):\(.points[-1].prev_year)"')" "13:${TODAY:0:7}:true:2:null"
+# შარშან: სატესტო განყოფილება მაშინ არ არსებობდა — null (აგრეგაცია იქამდე არ სწვდება) ან 0 (ისტორია უკვე გადათვლილია)
+chk "ტრენდი: 13 თვე, ბოლო — მიმდინარე (partial), მნიშვნელობა = თვე დღემდე (2), შარშან — null / 0 (მონაცემი არ არის)" "$(echo "$TR" | jq -r '"\(.points|length):\(.points[-1].month):\(.points[-1].partial):\(.points[-1].value):\(.points[-1].prev_year == null or .points[-1].prev_year == 0)"')" "13:${TODAY:0:7}:true:2:true"
 chk "ტრენდი: months=24 → 24; months=99 → 24; მონაცემამდე თვეები — null" "$(api GET "/reporting/trend?kpi=admissions&months=24" "$ADM" | jq -r '.points|length'):$(api GET "/reporting/trend?kpi=admissions&months=99" "$ADM" | jq -r '.points|length'):$(echo "$TR" | jq -r --arg df "$(echo "$TR" | jq -r .data_from)" '[.points[]|select(.to < $df)|.value]|all(. == null)')" "24:24:true"
 chk "ტრენდი: მომენტალური KPI → 400; უცნობი → 404" "$(code GET "/reporting/trend?kpi=stock_low_items" "$ADM"):$(code GET "/reporting/trend?kpi=xx" "$ADM")" "400:404"
 chk "თვე დღემდე = მიმოხილვა ($MONTH — $TODAY, ვიზიტები, კლინიკა)" "$(api GET "/reporting/trend?kpi=enc_total" "$T_ALL" | jq -r '.points[-1].value'):$(api GET "/reporting/overview?from=$MONTH&to=$TODAY&compare=none" "$T_ALL" | jq -r '.kpis[]|select(.code=="enc_total")|.value')" "$(api GET "/reporting/overview?from=$MONTH&to=$TODAY&compare=none" "$T_ALL" | jq -r '.kpis[]|select(.code=="enc_total")|.value'):$(api GET "/reporting/overview?from=$MONTH&to=$TODAY&compare=none" "$T_ALL" | jq -r '.kpis[]|select(.code=="enc_total")|.value')"

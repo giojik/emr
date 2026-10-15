@@ -30,7 +30,7 @@ TODAY=$(date +%F); YDAY=$(date -d "$TODAY -1 day" +%F); MONTH=$(date +%Y-%m-01)
 kv() { echo "$1" | jq -r --arg c "$2" '.kpis[]|select(.code==$c)|.value'; }
 # მომხმარებელი: mkuser <roles-json> <n> [extra-json-fields] → access token; id → $TMP/u<n>
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rpt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"რეპ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rpt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"რეპ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.rpt.$2.$S@test.local" "$tmp" | jq -r .accessToken)
@@ -78,8 +78,8 @@ BD=$(api POST "/inpatient/wards/$W/beds" "$ADM" -d '{"count":3}'); B1=$(echo "$B
 [ -n "$W" ] && [ "$B3" != "null" ] || die "პალატა / საწოლები ვერ შეიქმნა"
 # საწოლები 2 და 3 — მაშინვე დაბლოკილი: ხელმისაწვდომია მხოლოდ საწოლი 1 (დაბლოკილი მნიშვნელში რომ ითვლებოდეს, დატვირთვა ≤ 1/3 იქნებოდა)
 chk "საწოლები 2, 3 — დაბლოკილი (ხელმძღვანელი ექთანი)" "$(api POST "/inpatient/beds/$B2/block" "$HN" -d '{"reason":"ტესტ-E2E რემონტი"}' | jq -r .status):$(api POST "/inpatient/beds/$B3/block" "$HN" -d '{"reason":"ტესტ-E2E რემონტი"}' | jq -r .status)" "blocked:blocked"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1970-04-04\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
-P1=$(mkpat 51 "რეპ-ერთი"); P2=$(mkpat 52 "რეპ-ორი"); PN1="51$(printf '%09d' "$S")"
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1970-04-04\",\"gender\":\"male\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty'; }
+P1=$(mkpat 51 "რეპ-ერთი"); P2=$(mkpat 52 "რეპ-ორი"); PN1="51$(printf '%09d' "$((10#$S))")"
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DR\",\"attending_doctor_id\":\"$DOCID\",\"source\":\"direct\",\"icd10_code\":\"J18.9\",\"chief_complaint\":\"ტესტ-E2E\"}" | jq -r '.encounter_id // empty'; }
 E1=$(ADMIT "$P1"); E2=$(ADMIT "$P2")
 [ -n "$E1" ] && [ -n "$E2" ] && ok "2 ჰოსპიტალიზაცია" || die "ჰოსპიტალიზაცია ვერ მოხერხდა"

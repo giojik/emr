@@ -38,7 +38,7 @@ PHL=$(api POST /stock/locations "$ADM" -d "{\"code\":\"E2EMP$S\",\"name\":\"ტ�
 LOC=$(api POST /stock/locations "$ADM" -d "{\"code\":\"E2EML$S\",\"name\":\"ტესტ-E2E MAR ქვესაწყობი $S\",\"kind\":\"department\",\"department_id\":\"$DA\",\"requires_approval\":false}" | jq -r '.id // empty')
 [ -n "$PHL" ] && [ -n "$LOC" ] && ok "განყოფილებები, აფთიაქი, ქვესაწყობი" || die "ლოკაციები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mar.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"MAR-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.mar.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"MAR-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.mar.$2.$S@test.local" "$tmp")
@@ -53,7 +53,7 @@ PH=$(mkuser '["pharmacist"]' 66)
 HN=$(mkuser '["nurse"]' 67 ",\"department_id\":\"$DA\",\"is_section_head\":true")   # მთავარი ექთანი (0043b)
 for t in RC NA NB DR NX PH HN; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები (რეგისტრატორი, 2 ექთანი A, ექიმი A, ექთანი B, ფარმაცევტი, მთავარი ექთანი A)"
-P1=$(api POST /patients "$ADM" -d "{\"personal_number\":\"91$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"MAR\",\"birth_date\":\"1965-04-04\",\"gender\":\"male\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
+P1=$(api POST /patients "$ADM" -d "{\"personal_number\":\"91$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"MAR\",\"birth_date\":\"1965-04-04\",\"gender\":\"male\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
 [ -n "$P1" ] || die "პაციენტი ვერ შეიქმნა"
 
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')

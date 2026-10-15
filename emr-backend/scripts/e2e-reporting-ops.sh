@@ -25,7 +25,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 TODAY=$(date +%F); MONTH=$(date +%Y-%m-01)
 DOW=$(( $(date +%u) - 1 ))
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rops.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rops.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.rops.$2.$S@test.local" "$tmp" | jq -r .accessToken)
@@ -58,7 +58,7 @@ RC=$(mkuser '["receptionist"]' 21); NR=$(mkuser '["nurse"]' 22 ",\"department_id
 DOC=$(mkuser '["doctor"]' 23 ",\"department_id\":\"$DR\""); DOCID=$(cat "$TMP/u23" 2>/dev/null)
 T_REP=$(mkuser "[\"$R_REP\"]" 24 ",\"department_id\":\"$DR\""); T_ALL=$(mkuser "[\"$R_ALL\"]" 25)
 [ -n "$RC" ] && [ -n "$NR" ] && [ -n "$DOC" ] && [ -n "$T_REP" ] && [ -n "$T_ALL" ] && ok "მომხმარებლები: რეგისტრატორი, ექთანი, ექიმი, reports, reports_all" || die "მომხმარებლები ვერ შეიქმნა"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1968-08-08\",\"gender\":\"male\",\"phone_number\":\"593$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1968-08-08\",\"gender\":\"male\",\"phone_number\":\"593$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 11 "ოპ-ერთი"); P2=$(mkpat 12 "ოპ-ორი")
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DR\",\"attending_doctor_id\":\"$DOCID\",\"source\":\"direct\",\"icd10_code\":\"J18.9\",\"chief_complaint\":\"ტესტ-E2E\"}" | jq -r '.encounter_id // empty'; }
 HOUR=$((10#$(date +%H)))

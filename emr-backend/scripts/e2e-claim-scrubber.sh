@@ -36,7 +36,7 @@ BT=$(api PUT /billing/bed-tariffs "$ADM" -d "{\"bed_type_code\":\"standard\",\"d
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty'); [ -n "$id" ] && echo "e2e_$1_$S"; }
 R_CD=$(mkrole scd "DRG კოდირება" '["drg"]'); R_DA=$(mkrole sad "DRG კონფიგურაცია" '["drg_admin"]'); R_AC=$(mkrole sac "ბუღალტერი" '["accountant"]')
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.scr.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"SCR-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.scr.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"SCR-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.scr.$2.$S@test.local" "$tmp")
@@ -45,7 +45,7 @@ mkuser() {
 CD=$(mkuser "[\"$R_CD\"]" 41); DA1=$(mkuser "[\"$R_DA\"]" 42); BL=$(mkuser '["billing"]' 43); RC=$(mkuser '["receptionist"]' 44); AC=$(mkuser "[\"$R_AC\"]" 45)
 DR=$(mkuser '["doctor"]' 46 ",\"department_id\":\"$DA\""); NA=$(mkuser '["nurse"]' 47 ",\"department_id\":\"$DA\""); N2=$(mkuser '["nurse"]' 48 ",\"department_id\":\"$DA\"")
 for t in CD DA1 BL RC AC DR NA N2; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
-P1=$(api POST /patients "$ADM" -d "{\"personal_number\":\"49$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"SCR-1\",\"birth_date\":\"1970-03-03\",\"gender\":\"male\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
+P1=$(api POST /patients "$ADM" -d "{\"personal_number\":\"49$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"SCR-1\",\"birth_date\":\"1970-03-03\",\"gender\":\"male\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
 [ -n "$P1" ] || die "პაციენტი ვერ შეიქმნა"
 INS=$(api POST /billing/payers "$BL" -d "{\"code\":\"E2ESCI$S\",\"name\":\"ტესტ-E2E შემოწმება დაზღვევა $S\",\"kind\":\"insurance\",\"default_mode\":\"percent\",\"default_coverage_pct\":80}" | jq -r '.id // empty')
 OTH=$(api POST /billing/payers "$BL" -d "{\"code\":\"E2ESCO$S\",\"name\":\"ტესტ-E2E შემოწმება სხვა $S\",\"kind\":\"other\",\"default_mode\":\"percent\",\"default_coverage_pct\":50}" | jq -r '.id // empty')

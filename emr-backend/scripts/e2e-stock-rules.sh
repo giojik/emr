@@ -35,7 +35,7 @@ DEP=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E თერა
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rul.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"წესი-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rul.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"წესი-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.rul.$2.$S@test.local" "$tmp")
@@ -58,7 +58,7 @@ MED=$(item "Ordinary" "$(gen ჩვეულებრივი)"); PSY=$(item "P
 rcv() { local id; id=$(api POST /stock/receipts "$SK" -d "{\"location_id\":\"$1\",\"lines\":[$2]}" | jq -r .id); api POST "/stock/receipts/$id/post" "$SK" | jq -r .status; }
 L() { echo "{\"item_id\":\"$1\",\"qty\":$2,\"lot_no\":\"$3$S\",\"expires_on\":\"$D2Y\",\"price\":2,\"vat_rate\":0}"; }
 chk "მიღება: აფთიაქი (ჩვეულ. 20), ქვესაწყობი (ფსიქ. 5, პრეკ. 5, ნარკ. 5)" "$(rcv "$PHL" "$(L "$MED" 20 M)"):$(rcv "$SUB" "$(L "$PSY" 5 P),$(L "$PRE" 5 R),$(L "$NAR" 5 N)")" "posted:posted"
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"9$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"წესები\",\"birth_date\":\"1965-06-06\",\"gender\":\"female\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"9$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"წესები\",\"birth_date\":\"1965-06-06\",\"gender\":\"female\",\"phone_number\":\"595$S\"}" | jq -r '.id // empty')
 CN() { api POST /stock/consumptions "$1" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[$2]${3:+,\"witness\":$3}}"; }
 cc() { curl -s -o /dev/null -w '%{http_code}' -X POST "$B/stock/consumptions" -H "authorization: Bearer $1" -H "$J" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[$2]${3:+,\"witness\":$3}}"; }
 

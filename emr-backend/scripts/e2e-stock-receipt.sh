@@ -32,7 +32,7 @@ step "0. მომზადება"
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rcpt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიღება-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.rcpt.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიღება-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.rcpt.$2.$S@test.local" "$tmp")
@@ -50,7 +50,7 @@ MED=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E Amoxil $S\",\
 BOX=$(api GET "/stock/items/$MED" "$NR" | jq -r '.packs[0].id')
 HOU=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E ხელსახოცი $S\",\"category_id\":\"$(cat_id HOUSE)\",\"base_unit\":\"roll\"}" | jq -r '.id // empty')
 IMP=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E ენდოპროთეზი $S\",\"category_id\":\"$(cat_id IMPLANT)\",\"base_unit\":\"piece\"}" | jq -r '.id // empty')
-SUP=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მიმწოდებელი $S\",\"tax_id\":\"8$(printf '%08d' "$S")\",\"vat_payer\":true}" | jq -r '.id // empty')
+SUP=$(api POST /stock/suppliers "$SM" -d "{\"name\":\"ტესტ-E2E შპს მიმწოდებელი $S\",\"tax_id\":\"8$(printf '%08d' "$((10#$S))")\",\"vat_payer\":true}" | jq -r '.id // empty')
 [ -n "$LOC" ] && [ -n "$LOC2" ] && [ -n "$MED" ] && [ -n "$HOU" ] && [ -n "$IMP" ] && [ -n "$SUP" ] && ok "სატესტო ლოკაციები, საქონელი (მედიკამენტი, სამეურნეო, იმპლანტი), მომწოდებელი" || die "მონაცემები ვერ შეიქმნა"
 chk "ახალ საქონელს ნაშთი არ აქვს" "$(api GET "/stock/balances?location_id=$LOC" "$NR" | jq -r '.rows|length')" "0"
 

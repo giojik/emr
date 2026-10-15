@@ -35,7 +35,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {   # <roles-json> <n> [department_id] [is_section_head]
   local dep=""; [ -n "${3:-}" ] && dep=",\"department_id\":\"$3\",\"is_section_head\":${4:-false}"
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.trf.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"გადაცემა-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1$dep}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.trf.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"გადაცემა-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1$dep}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.trf.$2.$S@test.local" "$tmp")
@@ -64,7 +64,7 @@ RC=$(api POST /stock/receipts "$SK" -d "{\"location_id\":\"$PHL\",\"lines\":[
  {\"item_id\":\"$HOU\",\"qty\":20,\"price\":1,\"vat_rate\":0}]}" | jq -r '.id // empty')
 chk "საწყისი მარაგი აფთიაქში (მიღება)" "$(api POST "/stock/receipts/$RC/post" "$SK" | jq -r .status)" "posted"
 AVG0=$(api GET "/stock/items/$MED/moves" "$SK" | jq -r '.avg_cost|tonumber+0')
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"5$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"პაციენტი\",\"birth_date\":\"1980-05-05\",\"gender\":\"female\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"5$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"პაციენტი\",\"birth_date\":\"1980-05-05\",\"gender\":\"female\",\"phone_number\":\"599$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] && ok "სატესტო პაციენტი" || bad "პაციენტი ვერ შეიქმნა"
 
 step "1. მოთხოვნა (განყოფილება)"

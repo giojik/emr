@@ -36,7 +36,7 @@ DEP=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E ტრავ
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {   # <roles-json> <n> [extra-json]
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ctl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"კონტროლი-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ctl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"კონტროლი-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.ctl.$2.$S@test.local" "$tmp")
@@ -62,7 +62,7 @@ chk "მიღება აფთიაქში: A 20 (40 დღე), B 40" "$(
 LA=$(api GET "/stock/items/$MED/lots" "$SK" | jq -r ".[]|select(.lot_no==\"A$S\").id"); LB=$(api GET "/stock/items/$MED/lots" "$SK" | jq -r ".[]|select(.lot_no==\"B$S\").id")
 T1=$(api POST /stock/transfers "$SK" -d "{\"doc_type\":\"transfer\",\"from_location_id\":\"$PHL\",\"to_location_id\":\"$SUB\",\"lines\":[{\"lot_id\":\"$LA\",\"qty_base\":10}]}" | jq -r .id)
 api POST "/stock/docs/$T1/receive" "$NR" -d '{"action":"receive"}' >/dev/null
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"7$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიკვლევა\",\"birth_date\":\"1980-04-04\",\"gender\":\"female\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"7$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"მიკვლევა\",\"birth_date\":\"1980-04-04\",\"gender\":\"female\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
 chk "ქვესაწყობში A 10 → პაციენტზე 1" "$(api POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB\",\"patient_id\":\"$PAT\",\"lines\":[{\"item_id\":\"$MED\",\"qty_base\":1}]}" | jq -r '.lines[0].lot_no'):$(bal "$SUB" "$MED")" "A$S:A$S:9"
 
 step "1. ქარანტინი / გაწვევა და მიკვლევა"

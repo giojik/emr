@@ -10,6 +10,7 @@ import { StockAlertsService } from './stock/stock-alerts';
 import { InpatientRemindersService } from './inpatient/inpatient-reminders';
 import { TariffTickService } from './tariffs/tariff-tick';
 import { RptRefreshService } from './reporting/reporting-refresh';
+import { RptJobsService } from './reporting/reporting-jobs';
 import { WorkerModule } from './worker.module';
 
 const HEARTBEAT_MS = 60_000;
@@ -47,8 +48,13 @@ async function bootstrap() {
   const rptTick = () => void rpt.tick().then((r) => { if (r && r.status !== 'ok') log.warn(`რეპორტინგი #${r.run_id}: ${r.status} ${r.error ?? ''}`); })
     .catch((e) => log.error(`რეპორტინგი: ${(e as Error).message}`));
   const rptTimer = setInterval(rptTick, 60_000); setTimeout(rptTick, 20_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); });
+  // 0063: მენეჯერული ანგარიში განრიგით (ელფოსტა) + „ყურადღების“ შეტყობინებები — ყოველ 5 წუთში
+  const jobs = app.get(RptJobsService);
+  const jobsTick = () => void jobs.tick().then((r) => { if (r && (r.schedules || r.attention)) log.log(`რეპორტინგი: გაგზავნილი ${r.schedules}, ყურადღება ${r.attention}`); })
+    .catch((e) => log.error(`რეპორტინგის განრიგი: ${(e as Error).message}`));
+  const jobsTimer = setInterval(jobsTick, 5 * 60_000); setTimeout(jobsTick, 60_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

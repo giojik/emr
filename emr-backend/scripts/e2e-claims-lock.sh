@@ -51,7 +51,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 R_AC=$(mkrole cac "ბუღალტერი" '["accountant"]'); R_VW=$(mkrole cvw "ხელმძღვანელობა" '["viewer"]')
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.cl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ქლ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.cl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ქლ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.cl.$2.$S@test.local" "$tmp")
@@ -70,7 +70,7 @@ SVC=$(api POST /dx/catalog "$ADM" -d "{\"section\":\"lab\",\"code\":\"LAB_E2E_CL
 api POST "/dx/catalog/$SVC/analytes" "$ADM" -d '{"code":"GLU","name":"გლუკოზა","unit":"mmol/L","result_type":"numeric","decimals":1,"ranges":[]}' >/dev/null
 api PATCH "/dx/catalog/$SVC" "$ADM" -d '{"base_price":50}' >/dev/null
 [ -n "$T_BED" ] && [ -n "$T_SRV" ] && [ -n "$BT" ] && [ -n "$SVC" ] || die "ტარიფები / ანალიზი ვერ შეიქმნა"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ქლ-$2\",\"birth_date\":\"1965-06-06\",\"gender\":\"female\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ქლ-$2\",\"birth_date\":\"1965-06-06\",\"gender\":\"female\",\"phone_number\":\"596$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 81 1); P2=$(mkpat 82 2); P3=$(mkpat 83 3); P4=$(mkpat 84 4)
 ok "მომზადება: 2 განყოფილება, 7 მომხმარებელი, 2 გადამხდელი (ვადა 10 / 0 დღე), ტარიფები, ანალიზი 50 ₾"
 
@@ -166,7 +166,7 @@ chk "შემოწმების სია: 7 პუნქტი" "$(echo "$C
 # მონაცემები წინა თვის თარიღით (დახურვამდე)
 X0=$(api POST /expenses "$AC" -d "{\"expense_date\":\"$PM_DAY\",\"category\":\"ტესტ-E2E ქლ.\",\"amount\":12,\"payment_method\":\"cash\"}" | jq -r '.id // empty')
 [ -n "$X0" ] && ok "ხარჯი წინა თვის თარიღით (დახურვამდე) — 201" || bad "ხარჯი წინა თვით" ""
-SUP=$(api POST /stock/suppliers "$ADM" -d "{\"name\":\"ტესტ-E2E ქლ. მომწოდებელი $S\",\"tax_id\":\"7$(printf '%08d' "$S")\",\"vat_payer\":false,\"payment_terms_days\":30}" | jq -r '.id // empty')
+SUP=$(api POST /stock/suppliers "$ADM" -d "{\"name\":\"ტესტ-E2E ქლ. მომწოდებელი $S\",\"tax_id\":\"7$(printf '%08d' "$((10#$S))")\",\"vat_payer\":false,\"payment_terms_days\":30}" | jq -r '.id // empty')
 AP=$(api POST /payables/invoices "$AC" -d "{\"supplier_id\":\"$SUP\",\"invoice_no\":\"F-$S\",\"invoice_date\":\"$PM_DAY\",\"total\":100,\"lines\":[{\"description\":\"ტესტ-E2E მომსახურება\",\"category\":\"ტესტ-E2E ქლ.\",\"amount\":100}]}" | jq -r '.id // empty')
 [ -n "$AP" ] || bad "მომწოდებლის ინვოისი (მონახაზი)" ""
 fin '{"period_lock":"on"}' >/dev/null

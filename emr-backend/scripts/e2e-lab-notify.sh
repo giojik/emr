@@ -28,7 +28,7 @@ DEP=$(api GET /departments "$ADM" | jq -r '.[]|select(.code=="E2E_NTF")|.id')
 [ -n "$DEP" ] || DEP=$(api POST /departments "$ADM" -d '{"name":"ტესტ-E2E თერაპია","code":"E2E_NTF","type":"outpatient"}' | jq -r .id)
 TC=$(api POST /tariffs "$ADM" -d "{\"code\":\"E2E_NTF_$S\",\"title\":\"ტესტ-E2E კონსულტაცია\",\"base_price\":10}" | jq -r .id)
 mkuser() { # $1 role $2 pn-prefix $3 extra-json
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ntf.$1$4.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1$4\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\"$3}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ntf.$1$4.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1$4\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\"$3}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { echo "ERR $(echo "$R" | jq -rc .message)" >&2; return; }; echo "u $id" >> "$TRACK"
   local t; t=$(login "e2e.ntf.$1$4.$S@test.local" "$tmp")
@@ -44,7 +44,7 @@ K=$(api POST "/dx/catalog/$SVC/analytes" "$LM" -d '{"code":"K","name":"კალ
 SVC2=$(api POST /dx/catalog "$LM" -d "{\"section\":\"lab\",\"code\":\"LAB_E2E_NTF2_$S\",\"name\":\"ტესტ-E2E ნატრიუმი $S\",\"group_name\":\"ტესტ-E2E\",\"specimen_type\":\"serum\",\"container\":\"Serum gel\"}" | jq -r '.id // empty'); echo "s $SVC2" >> "$TRACK"
 NA=$(api POST "/dx/catalog/$SVC2/analytes" "$LM" -d '{"code":"NA","name":"ნატრიუმი","unit":"mmol/L","result_type":"numeric","decimals":0,"ranges":[{"sex":null,"age_min_days":0,"age_max_days":54750,"low":135,"high":145}]}' | jq -r '.analytes[0].id // empty')
 [ -n "$K" ] && [ -n "$NA" ] && ok "2 ანალიზი (კალიუმი — კრიტიკული ზღვრებით)" || die "კატალოგი ვერ შეიქმნა"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"5$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"შეტყობინება\",\"birth_date\":\"1975-05-05\",\"gender\":\"male\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"5$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"შეტყობინება\",\"birth_date\":\"1975-05-05\",\"gender\":\"male\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty')
 E=$(api POST /encounters/walk-in "$RC" -d "{\"patient_id\":\"$PAT\",\"doctor_id\":\"$D1\"}" | jq -r '.encounter_id // empty')
 SH=$(api GET "/invoices/encounter/$E" "$RC" | jq -r .patient_share); [ "$(jq -n --arg s "$SH" '($s|tonumber) > 0')" = "true" ] && api POST "/encounters/$E/pay-initial" "$RC" -d "{\"amount\":$SH,\"method\":\"cash\"}" >/dev/null
 [ -n "$E" ] && ok "ვიზიტი ექიმთან (walk-in)" || die "ვიზიტი ვერ შეიქმნა"

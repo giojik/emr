@@ -38,7 +38,7 @@ tar() { api POST /tariffs "$ADM" -d "{\"code\":\"E2EB$1$S\",\"title\":\"ტე�
 T_STD=$(tar STD "საწოლდღე ჩვეულებრივი" 100); T_STDA=$(tar STDA "საწოლდღე თერაპია" 120); T_EXTRA=$(tar EXT "ზედმეტი დღე (პაკეტი)" 80); T_SRV=$(tar SRV "გადასახვევი" 30)
 for t in T_STD T_STDA T_EXTRA T_SRV; do [ -n "${!t}" ] || die "ტარიფი $t ვერ შეიქმნა"; done
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.bl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ბილ-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.bl.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ბილ-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.bl.$2.$S@test.local" "$tmp")
@@ -53,7 +53,7 @@ HD=$(mkuser '["doctor"]' 36 ",\"department_id\":\"$DA\",\"is_section_head\":true
 DX=$(mkuser '["doctor"]' 37 ",\"department_id\":\"$DB\"")
 for t in RC BL NA N2 DR HD DX; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები: მიმღები, ბილინგი, 2 ექთანი, ექიმი + ხელმძღვანელი (A), ექიმი (B)"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1961-03-03\",\"gender\":\"female\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"1961-03-03\",\"gender\":\"female\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 71 "ბილინგი-1"); P2=$(mkpat 72 "ბილინგი-2"); P3=$(mkpat 73 "ბილინგი-3")
 ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|.settings')
 mod()  { api PUT /modules/inpatient "$ADM" -d "{\"settings\":$1,\"reason\":\"ტესტ-E2E\"}" >/dev/null; }

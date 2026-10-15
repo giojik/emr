@@ -33,7 +33,7 @@ VER=$(curl -s "$B/health" | jq -r .schemaVersion); if [ "$VER" \> "0017" ]; then
 
 step "1. მომხმარებლები"
 mkuser() { # $1 role, $2 prefix-digits, $3 section_head(true/false)
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"role\":\"$1\",\"is_section_head\":$3}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.$1.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$1\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"role\":\"$1\",\"is_section_head\":$3}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || { bad "მომხმარებელი ($1)" "$(echo "$R" | jq -rc .message)"; return; }
   echo "$id" >> "$TRACK"
@@ -72,7 +72,7 @@ chk "ხელმძღვანელმა შეცვალა → ვერ
 chk "ნორმების სიაში: 3 ნორმა, ვერსია 2" "$(api GET "/lab/norms?search=LAB_E2E_NORM_$S" "$LT" | jq -r "[.[]|select(.id==\"$AN\")][0]|\"\(.ranges|length):\(.norm_version)\"")" "3:2"
 
 step "4. ნაკადი: ორსული პაციენტი → ნორმის შერჩევა"
-PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"8$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ნორმები\",\"birth_date\":\"1994-03-10\",\"gender\":\"female\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$RC" -d "{\"personal_number\":\"8$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ნორმები\",\"birth_date\":\"1994-03-10\",\"gender\":\"female\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
 [ -n "$PAT" ] || die "პაციენტი ვერ შეიქმნა"
 E=$(api POST /lab-visits "$RC" -d "{\"patient_id\":\"$PAT\",\"items\":[{\"service_id\":\"$SVC\"}]}" | jq -r '.encounter_id // empty'); [ -n "$E" ] || die "ლაბ. ვიზიტი ვერ გაიხსნა"
 SHARE=$(api GET "/invoices/encounter/$E" "$RC" | jq -r .patient_share)

@@ -70,7 +70,7 @@ role() {
 [ "$(role e2e_or_coord 'ტესტ-E2E საოპერაციოს კოორდინატორი' '["or_schedule"]')" = e2e_or_coord ] && [ "$(role e2e_anesth 'ტესტ-E2E ანესთეზიოლოგი' '["anesthesiologist"]')" = e2e_anesth ] \
   && [ "$(role e2e_or_nurse 'ტესტ-E2E საოპერაციო ექთანი' '["or_nurse"]')" = e2e_or_nurse ] && [ "$(role e2e_manager 'ტესტ-E2E მენეჯერი' '["manager"]')" = e2e_manager ] || die "როლები ვერ შეიქმნა"
 mkuser() {
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.po.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"PO-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1${3:-}}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.po.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"PO-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1${3:-}}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" > "$TMP/u$2"
   local t; t=$(login "e2e.po.$2.$S@test.local" "$tmp")
@@ -83,7 +83,7 @@ NA1=$(mkuser '["nurse"]' 88 ",\"department_id\":\"$DS\""); NA2=$(mkuser '["nurse
 NI=$(mkuser '["nurse"]' 90 ",\"department_id\":\"$DI\""); DRI=$(mkuser '["doctor"]' 91 ",\"department_id\":\"$DI\""); MG=$(mkuser '["e2e_manager"]' 92)
 for t in RC BL SU1 CO AN ON1 ON2 NA1 NA2 NI DRI MG; do [ -n "${!t}" ] || die "მომხმარებელი $t ვერ შეიქმნა"; done
 ok "მომხმარებლები: რეგისტრატორი, ბილინგი, ქირურგი, კოორდინატორი, ანესთეზიოლოგი, საოპერაციო ექთანი ×2, ექთნები, რეანიმაცია (ექთანი + ექიმი), მენეჯერი"
-mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
+mkpat() { api POST /patients "$ADM" -d "{\"personal_number\":\"$1$(printf '%09d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"$2\",\"birth_date\":\"$3\",\"gender\":\"$4\",\"phone_number\":\"597$S\"}" | jq -r '.id // empty'; }
 P1=$(mkpat 93 "PO-ქოლე" 1960-01-01 female); P2=$(mkpat 94 "PO-კოლექტ" 1950-02-02 male); P3=$(mkpat 95 "PO-თიაქ" 1980-03-03 male); P4=$(mkpat 96 "PO-გაუქმ" 1990-04-04 female)
 ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"department_id\":\"$DS\",\"attending_doctor_id\":\"$(uid 83)\",\"source\":\"direct\",\"icd10_code\":\"K80.2\",\"chief_complaint\":\"ტესტ-E2E\",\"bed_id\":\"$2\"}" | jq -r '.encounter_id // empty'; }
 E1=$(ADMIT "$P1" "$(BED 0)"); E2=$(ADMIT "$P2" "$(BED 1)"); E3=$(ADMIT "$P3" "$(BED 2)"); E4=$(ADMIT "$P4" "$(BED 3)")

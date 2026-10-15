@@ -37,7 +37,7 @@ mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"n
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {   # <roles-json> <n> [department_id]
   local dep=""; [ -n "${3:-}" ] && dep=",\"department_id\":\"$3\""
-  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ops.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპერაცია-$2\",\"personal_number\":\"$2$(printf '%09d' "$S")\",\"roles\":$1$dep}")
+  local R; R=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ops.$2.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ოპერაცია-$2\",\"personal_number\":\"$2$(printf '%09d' "$((10#$S))")\",\"roles\":$1$dep}")
   local id tmp; id=$(echo "$R" | jq -r '.user.id // empty'); tmp=$(echo "$R" | jq -r '.temporaryPassword // empty')
   [ -n "$id" ] || return; echo "$id" >> "$TMP/users"
   local t; t=$(login "e2e.ops.$2.$S@test.local" "$tmp")
@@ -72,9 +72,9 @@ chk "საწყისი მარაგი ქვესაწყობში 
 lot() { api GET "/stock/items/$1/lots" "$SK" | jq -r ".[]|select(.lot_no==\"$2\" and ((.serial_no//\"\")==\"${3:-}\")).id"; }
 LK1=$(lot "$MED" "K1$S"); LK2=$(lot "$MED" "K2$S"); LM=$(lot "$CTL" "M$S"); LC=$(lot "$SUP" "C$S"); LS1=$(lot "$IMP" "I$S" "S1-$S"); LS2=$(lot "$IMP" "I$S" "S2-$S")
 TC=$(api POST /tariffs "$ADM" -d "{\"code\":\"E2E_OPS_$S\",\"title\":\"ტესტ-E2E კონსულტაცია\",\"base_price\":0}" | jq -r '.id // empty')
-DOC=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ops.doc.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ექიმი\",\"personal_number\":\"96$(printf '%09d' "$S")\",\"role\":\"doctor\",\"department_id\":\"$DEP\",\"specialty\":\"ქირურგი\",\"license_number\":\"MD-O$S\",\"consultation_tariff_id\":\"$TC\"}" | jq -r '.user.id // empty')
+DOC=$(api POST /users "$ADM" -d "{\"email\":\"e2e.ops.doc.$S@test.local\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ექიმი\",\"personal_number\":\"96$(printf '%09d' "$((10#$S))")\",\"role\":\"doctor\",\"department_id\":\"$DEP\",\"specialty\":\"ქირურგი\",\"license_number\":\"MD-O$S\",\"consultation_tariff_id\":\"$TC\"}" | jq -r '.user.id // empty')
 echo "$DOC" >> "$TMP/users"
-PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"6$(printf '%010d' "$S")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ხარჯი\",\"birth_date\":\"1975-03-03\",\"gender\":\"male\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
+PAT=$(api POST /patients "$ADM" -d "{\"personal_number\":\"6$(printf '%010d' "$((10#$S))")\",\"first_name\":\"ტესტ-E2E\",\"last_name\":\"ხარჯი\",\"birth_date\":\"1975-03-03\",\"gender\":\"male\",\"phone_number\":\"598$S\"}" | jq -r '.id // empty')
 ENC=$(api POST /encounters/walk-in "$ADM" -d "{\"patient_id\":\"$PAT\",\"doctor_id\":\"$DOC\"}" | jq -r '.encounter_id // empty')
 INV0=$(api GET "/invoices/encounter/$ENC" "$ADM" | jq -r '.total_amount|tonumber+0')
 [ -n "$PAT" ] && [ -n "$ENC" ] && ok "პაციენტი + ვიზიტი (ინვოისი: $INV0 ₾)" || die "პაციენტი / ვიზიტი ვერ შეიქმნა"
