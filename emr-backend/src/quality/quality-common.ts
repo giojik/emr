@@ -17,6 +17,10 @@ export interface QmRules {
   triage_hours: number; sentinel_triage_hours: number;
   alert_harm: 'moderate' | 'severe' | 'death' | 'off'; alert_user_ids: string[]; alert_sms: boolean; alert_email: boolean;
   event_prompts: boolean; author_feedback: boolean; anonymous_tracking: boolean;
+  // 0065
+  investigator_at_triage: boolean; rca_required_risk: 'medium' | 'high' | 'extreme' | 'off'; rca_required_harm: 'moderate' | 'severe' | 'death' | 'off';
+  review_days: number; rca_days: number; due_warn_days: number; analysis_approval: boolean; capa_effectiveness: boolean; effectiveness_days: number;
+  disclosure_required_harm: 'mild' | 'moderate' | 'severe' | 'death' | 'off'; closure_feedback: boolean; report_mask_patient: boolean;
 }
 
 export const IDENTITY_MODES = ['open', 'confidential', 'anonymous'] as const;
@@ -46,7 +50,14 @@ export const QM_DEPT: Role[] = ['quality_dept'];
 export const userName = (alias: string) => sql<string | null>`${sql.ref(`${alias}.first_name`)} || ' ' || ${sql.ref(`${alias}.last_name`)}`;
 
 /** ვინ რა ხედვით უყურებს ინციდენტს */
-export type Access = 'full' | 'dept' | 'own';
+export type Access = 'full' | 'inv' | 'dept' | 'own';
+const RISK_ORDER = ['low', 'medium', 'high', 'extreme'];
+/** ანალიზის დონე (0065): სენტინელური → rca; რისკი ≥ rca_required_risk ან ზიანი ≥ rca_required_harm → rca; სხვა → review */
+export const levelFor = (r: QmRules, i: { is_sentinel: boolean; risk_level: string | null; harm: string | null }): 'review' | 'rca' =>
+  i.is_sentinel || (r.rca_required_risk !== 'off' && RISK_ORDER.indexOf(i.risk_level ?? 'low') >= RISK_ORDER.indexOf(r.rca_required_risk))
+    || (r.rca_required_harm !== 'off' && harmRank(i.harm) >= harmRank(r.rca_required_harm)) ? 'rca' : 'review';
+export const LEVEL_KA: Record<string, string> = { review: 'მოკლე მიმოხილვა', rca: 'RCA (ძირეული მიზეზების ანალიზი)' };
+export const CAPA_STATUS_KA: Record<string, string> = { open: 'ღია', in_progress: 'შესრულებაში', done: 'შესრულებული', cancelled: 'გაუქმებული' };
 
 @Injectable()
 export class QmCommon {
@@ -81,8 +92,11 @@ export class QmCommon {
   }
 
   /** კონკრეტულ ინციდენტზე წვდომა; null — წვდომა არ არის */
-  async access(u: AuthUser, inc: { department_id: string; status: string; reporter_id: string | null }, ex: Ex = this.db): Promise<Access | null> {
+  async access(u: AuthUser, inc: { id: string; department_id: string; status: string; reporter_id: string | null; investigator_id?: string | null }, ex: Ex = this.db): Promise<Access | null> {
     if (has(u, ...QM_FULL)) return 'full';
+    // 0065: გამომძიებელი / RCA გუნდის წევრი — მინიჭებული ინციდენტი
+    if (!['submitted', 'rejected'].includes(inc.status) && (inc.investigator_id === u.id
+      || await ex.selectFrom('qm_analysis_team').select('user_id').where('incident_id', '=', inc.id).where('user_id', '=', u.id).executeTakeFirst())) return 'inv';
     if (has(u, ...QM_DEPT) && !['submitted', 'rejected'].includes(inc.status) && (await this.userDepts(u.id, ex)).includes(inc.department_id)) return 'dept';
     if (inc.reporter_id && inc.reporter_id === u.id) return 'own';
     return null;
@@ -115,11 +129,11 @@ export class QmCommon {
     } catch (e) { this.log.error(`გაფრთხილება: ${(e as Error).message}`); }
   }
 
-  async nextNo(trx: Trx) {
+  async nextNo(trx: Trx, prefix: 'INC' | 'CAPA' = 'INC') {
     const year = Number((await sql<{ y: number }>`SELECT extract(year FROM now())::int AS y`.execute(trx)).rows[0].y);
-    const { last_value } = await trx.insertInto('document_counters').values({ document_type: 'qm_INC', year, last_value: 1 })
+    const { last_value } = await trx.insertInto('document_counters').values({ document_type: `qm_${prefix}`, year, last_value: 1 })
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` }))
       .returning('last_value').executeTakeFirstOrThrow();
-    return `INC${String(year).slice(2)}-${String(last_value).padStart(6, '0')}`;
+    return `${prefix}${String(year).slice(2)}-${String(last_value).padStart(6, '0')}`;
   }
 }

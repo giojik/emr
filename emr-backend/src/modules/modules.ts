@@ -186,11 +186,17 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       alert_harm: (v) => oneOf(v, ['moderate', 'severe', 'death', 'off']),
       alert_user_ids: (v) => Array.isArray(v) && v.length <= 20 && v.every((x) => typeof x === 'string' && UUID.test(x)) && new Set(v).size === v.length,
       alert_sms: bool, alert_email: bool, event_prompts: bool, author_feedback: bool, anonymous_tracking: bool,
+      // 0065: გამოძიება / ანალიზი / CAPA / დახურვა
+      investigator_at_triage: bool, rca_required_risk: (v) => oneOf(v, ['medium', 'high', 'extreme', 'off']), rca_required_harm: (v) => oneOf(v, ['moderate', 'severe', 'death', 'off']),
+      review_days: (v) => int(v, 1, 180), rca_days: (v) => int(v, 1, 365), due_warn_days: (v) => int(v, 0, 30), analysis_approval: bool,
+      capa_effectiveness: bool, effectiveness_days: (v) => int(v, 7, 730), disclosure_required_harm: (v) => oneOf(v, ['mild', 'moderate', 'severe', 'death', 'off']),
+      closure_feedback: bool, report_mask_patient: bool,
     },
     extra: async (s, db) => {
       if (!(s.identity_modes as string[]).includes(s.identity_default as string)) return 'ნაგულისხმევი რეჟიმი დაშვებულთა შორის უნდა იყოს';
       if (!((s.risk_low_max as number) < (s.risk_medium_max as number) && (s.risk_medium_max as number) < (s.risk_high_max as number))) return 'რისკის ზღვრები: დაბალი < საშუალო < მაღალი';
       if ((s.sentinel_triage_hours as number) > (s.triage_hours as number)) return 'სენტინელური ტრიაჟის ვადა ჩვეულებრივზე მეტი ვერ იქნება';
+      if ((s.review_days as number) > (s.rca_days as number)) return 'მიმოხილვის ვადა RCA-ს ვადაზე მეტი ვერ იქნება';
       const ids = (s.alert_user_ids as string[]) ?? [];
       if (ids.length) {
         const n = (await db.selectFrom('users').select(sql<number>`count(*)::int`.as('n')).where('id', 'in', ids).where('is_active', '=', true).executeTakeFirstOrThrow()).n;

@@ -42,12 +42,56 @@ export const CONSEQUENCE_KA = ['', 'უმნიშვნელო', 'მცი�
 export const EVENT_LOG_KA: Record<string, string> = {
   submitted: 'შეტყობინება', edited: 'ავტორმა შეცვალა', author_note: 'ავტორის დამატებითი ინფორმაცია', accepted: 'ტრიაჟი: მიღებულია', rejected: 'ტრიაჟი: უარყოფილია',
   reopened: 'ხელახლა გაიხსნა', reclassified: 'კლასიფიკაცია შეიცვალა', comment: 'კომენტარი', files: 'ფაილი დაემატა',
+  // 0065
+  investigator: 'გამომძიებელი დაინიშნა', level: 'ანალიზის დონე შეიცვალა', team: 'RCA გუნდი შეიცვალა', analysis_submitted: 'ანალიზი გაიგზავნა დასამტკიცებლად',
+  analysis_approved: 'ანალიზი დამტკიცდა', analysis_returned: 'ანალიზი დაბრუნდა შესასწორებლად', disclosure: 'ინფორმირება აღირიცხა', closed: 'დაიხურა', capa: 'ქმედება (CAPA) დაემატა',
+};
+export const LEVEL_KA: Record<string, string> = { review: 'მოკლე მიმოხილვა', rca: 'RCA' };
+export const ANALYSIS_ST: Record<string, [string, string]> = { draft: ['', 'მონახაზი'], submitted: ['warn', 'დამტკიცებას ელოდება'], approved: ['ok', 'დამტკიცებული'], returned: ['danger', 'დაბრუნებული'] };
+export const CAPA_ST: Record<string, [string, string]> = { open: ['info', 'ღია'], in_progress: ['warn', 'შესრულებაში'], done: ['ok', 'შესრულებული'], cancelled: ['', 'გაუქმებული'] };
+export const CAPA_KIND_KA: Record<string, string> = { corrective: 'მაკორექტირებელი', preventive: 'პრევენციული' };
+export const METHOD_KA: Record<string, string> = { in_person: 'პირისპირ', phone: 'ტელეფონით', letter: 'წერილით', other: 'სხვა' };
+export const CAPA_EVENT_KA: Record<string, string> = {
+  created: 'შეიქმნა', updated: 'შეიცვალა', started: 'დაიწყო', done: 'შესრულდა', cancelled: 'გაუქმდა', due_requested: 'ვადის შეცვლის მოთხოვნა',
+  due_approved: 'ვადის შეცვლა დამტკიცდა', due_rejected: 'ვადის შეცვლა უარყოფილია', effectiveness: 'ეფექტიანობა შეფასდა', files: 'ფაილი დაემატა',
 };
 
 export interface QmMeta {
   identity_modes: IdentityMode[]; identity_default: IdentityMode; ncc_merp: boolean; anonymous_tracking: boolean; event_prompts: boolean;
   risk: { low_max: number; medium_max: number; high_max: number };
   can_lookup: boolean; my_department_id: string | null; access: 'full' | 'dept' | null; reports: boolean;
+  investigator_at_triage: boolean; analysis_approval: boolean; capa_effectiveness: boolean; closure_feedback: boolean; report_mask_patient: boolean;
+  disclosure_required_harm: Harm | 'off';
+}
+export interface Analysis {
+  incident_id: string; level: 'review' | 'rca'; level_label: string; status: 'draft' | 'submitted' | 'approved' | 'returned';
+  what_happened: string | null; root_cause: string | null; action_taken: string | null; whys: string[]; root_causes: string | null; conclusion: string | null;
+  submitted_at: string | null; submitted_by_name: string | null; approved_at: string | null; approved_by_name: string | null; return_reason: string | null; updated_at: string;
+  timeline: { id: string; at: string | null; text: string; sort_order: number }[];
+  factors: { factor_id: string; comment: string | null; name: string; group_name: string | null }[];
+  team: { user_id: string; role_text: string | null; name: string; department_name: string | null }[];
+}
+export interface CapaRow {
+  id: string; capa_no: string; title: string; kind: 'corrective' | 'preventive'; status: 'open' | 'in_progress' | 'done' | 'cancelled'; status_label: string; due_date: string;
+  done_at: string | null; effectiveness_due: string | null; effectiveness_result: 'effective' | 'ineffective' | null; owner_name: string; overdue: boolean;
+  incidents?: number | string; owner_id?: string; department_name?: string | null; effectiveness_pending?: boolean; due_request_pending?: boolean;
+}
+export interface Capa extends CapaRow {
+  description: string | null; department_id: string | null; department_name: string | null; created_by_name: string; created_at: string; started_at: string | null;
+  done_by_name: string | null; done_note: string | null; cancel_reason: string | null; effectiveness_note: string | null; effectiveness_at: string | null; effectiveness_by_name: string | null;
+  follow_up_of: string | null; follow_up_of_no: string | null; owner_id: string; access: 'full' | 'inv' | 'owner';
+}
+export interface CapaDetail extends Omit<Capa, 'incidents'> {
+  incidents: { id: string; inc_no: string; status: Status; category_name: string; department_name: string; occurred_at: string; root_cause: string | null }[];
+  files: { id: string; mime_type: string; size_bytes: number; original_name: string | null; created_at: string }[];
+  events: { id: string; at: string; kind: string; text: string | null; data: Record<string, unknown> | null; user_name: string | null }[];
+  requests: { id: string; old_due: string; new_due: string; reason: string; requested_by_name: string; requested_at: string; status: 'pending' | 'approved' | 'rejected'; decided_by_name: string | null; decision_note: string | null }[];
+  can: { edit: boolean; start: boolean; complete: boolean; cancel: boolean; request_due: boolean; decide_due: boolean; effectiveness: boolean; upload: boolean };
+}
+export interface MyWork {
+  incidents: { id: string; inc_no: string; status: Status; analysis_level: 'review' | 'rca' | null; level_label: string | null; analysis_due_at: string | null; category_name: string;
+    department_name: string; analysis_status: string | null; is_investigator: boolean; overdue: boolean }[];
+  capas: { id: string; capa_no: string; title: string; kind: string; status: string; due_date: string; department_name: string | null; overdue: boolean; due_request_pending: boolean }[];
 }
 export interface Classifier {
   id: string; kind: 'category' | 'factor'; parent_id: string | null; code: string; name: string; description: string | null;
@@ -67,7 +111,13 @@ export interface IncidentRow {
 export interface IncidentEvent { id: string; at: string; kind: string; text: string | null; data: Record<string, unknown> | null; internal: boolean; user_id: string | null; user_name: string | null }
 export interface IncidentFile { id: string; mime_type: string; size_bytes: number; original_name: string | null; created_at: string; uploaded_by: string | null }
 export interface Incident extends Omit<IncidentRow, 'summary' | 'files' | 'patient_name'> {
-  access: 'full' | 'dept' | 'own'; event_label: string; medication: boolean;
+  access: 'full' | 'inv' | 'dept' | 'own'; event_label: string; medication: boolean;
+  // 0065
+  investigator_id: string | null; investigator_name: string | null; analysis_level: 'review' | 'rca' | null; analysis_due_at: string | null; analysis_overdue: boolean;
+  disclosure_status: 'done' | 'not_disclosed' | null; disclosed_at: string | null; disclosure_by_name: string | null; disclosure_method: string | null; disclosure_to: string | null; disclosure_note: string | null;
+  closed_at: string | null; closed_by_name: string | null; closure_summary: string | null; feedback_text: string | null;
+  analysis: Analysis | null; capas: CapaRow[] | null;
+  can: { edit_analysis: boolean; edit_team?: boolean; submit: boolean; disclose: boolean; add_capa?: boolean };
   location_text: string | null; merp_category: string | null; description: string; immediate_actions: string | null;
   patient_first_name: string | null; patient_last_name: string | null; patient_personal_number: string | null; patient_birth_date: string | null;
   encounter_id: string | null; source_type: SourceType | null; source_id: string | null; reporter_id: string | null;
@@ -82,3 +132,8 @@ export interface MyReport { id: string; inc_no: string; status: Status; status_l
 /** რისკის დონე ქულით (კლინიკის ზღვრები) */
 export const riskOf = (score: number, r: QmMeta['risk']): RiskLevel => (score <= r.low_max ? 'low' : score <= r.medium_max ? 'medium' : score <= r.high_max ? 'high' : 'extreme');
 export const catLabel = (r: { category_name: string; category_parent_name: string | null }) => (r.category_parent_name ? `${r.category_parent_name} → ${r.category_name}` : r.category_name);
+
+const HARM_ORDER: Harm[] = ['none', 'mild', 'moderate', 'severe', 'death'];
+/** ინფორმირება სავალდებულოა? (პაციენტი + ზიანი ≥ ზღვარი) */
+export const disclosureRequired = (d: { affected: Affected; harm: Harm | null; harm_reported: Harm }, m: Pick<QmMeta, 'disclosure_required_harm'>) =>
+  d.affected === 'patient' && m.disclosure_required_harm !== 'off' && HARM_ORDER.indexOf(d.harm ?? d.harm_reported) >= HARM_ORDER.indexOf(m.disclosure_required_harm);

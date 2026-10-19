@@ -54,9 +54,9 @@ async function bootstrap() {
   const jobsTick = () => void jobs.tick().then((r) => { if (r && (r.schedules || r.attention)) log.log(`რეპორტინგი: გაგზავნილი ${r.schedules}, ყურადღება ${r.attention}`); })
     .catch((e) => log.error(`რეპორტინგის განრიგი: ${(e as Error).message}`));
   const jobsTimer = setInterval(jobsTick, 5 * 60_000); setTimeout(jobsTick, 60_000);
-  // 0064: ინციდენტები — ტრიაჟის ვადის გადაცილება (ერთხელ) — ყოველ 10 წუთში
+  // 0064–0065: ინციდენტები — ტრიაჟის / ანალიზის / CAPA-ს ვადები, ეფექტიანობა (ერთხელ) — ყოველ 10 წუთში
   const qm = app.get(QmJobsService);
-  const qmTick = () => void qm.tick().then((r) => { if (r.overdue) log.log(`ინციდენტები: ტრიაჟის ვადა გადაცილდა — ${r.overdue}`); })
+  const qmTick = () => void qm.tick().then((r) => { if (r.overdue || r.analysis || r.capa || r.effectiveness) log.log(`ინციდენტები: ტრიაჟი ${r.overdue}, ანალიზი ${r.analysis}, CAPA ${r.capa}, ეფექტიანობა ${r.effectiveness}`); })
     .catch((e) => log.error(`ინციდენტები: ${(e as Error).message}`));
   const qmTimer = setInterval(qmTick, 10 * 60_000); setTimeout(qmTick, 75_000);
   process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); });

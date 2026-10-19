@@ -681,6 +681,29 @@ function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Reco
         {q.trim().length >= 2 && <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{people.data?.filter((p) => !ids.includes(p.id)).slice(0, 10).map((p) =>
           <button key={p.id} className="btn sm" type="button" onClick={() => { setNames({ ...names, [p.id]: p.name }); upd('alert_user_ids', [...ids, p.id]); setQ(''); }}>+ {p.name}{p.department_name ? ` · ${p.department_name}` : ''}</button>)}</div>}
       </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ანალიზი, ქმედებები, დახურვა (0065)</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="RCA სავალდებულოა — რისკიდან" htmlFor="qm-rrr" hint="სენტინელური — ყოველთვის RCA">
+          <select id="qm-rrr" className="select" value={String(s.rca_required_risk ?? 'high')} onChange={(e) => upd('rca_required_risk', e.target.value)}>
+            <option value="medium">საშუალო და მეტი</option><option value="high">მაღალი და მეტი</option><option value="extreme">მხოლოდ ექსტრემალური</option><option value="off">რისკით — არა</option></select></Field>
+        <Field label="RCA სავალდებულოა — ზიანიდან" htmlFor="qm-rrh">
+          <select id="qm-rrh" className="select" value={String(s.rca_required_harm ?? 'severe')} onChange={(e) => upd('rca_required_harm', e.target.value)}>
+            <option value="moderate">საშუალო და მეტი</option><option value="severe">მძიმე და სიკვდილი</option><option value="death">მხოლოდ სიკვდილი</option><option value="off">ზიანით — არა</option></select></Field>
+        <Field label="ინფორმირება სავალდებულოა — ზიანიდან" htmlFor="qm-drh" hint="პაციენტზე, დახურვამდე">
+          <select id="qm-drh" className="select" value={String(s.disclosure_required_harm ?? 'moderate')} onChange={(e) => upd('disclosure_required_harm', e.target.value)}>
+            <option value="mild">მსუბუქი და მეტი</option><option value="moderate">საშუალო და მეტი</option><option value="severe">მძიმე და სიკვდილი</option><option value="death">მხოლოდ სიკვდილი</option><option value="off">არ არის სავალდებულო</option></select></Field>
+        <Field label="მოკლე მიმოხილვის ვადა (დღე)" htmlFor="qm-review_days" hint="1–180, ტრიაჟიდან">{int('review_days', 14, 1, 180)}</Field>
+        <Field label="RCA-ს ვადა (დღე)" htmlFor="qm-rca_days" hint="1–365, ტრიაჟიდან">{int('rca_days', 45, 1, 365)}</Field>
+        <Field label="ვადის შეხსენება (დღით ადრე)" htmlFor="qm-due_warn_days" hint="0 — გამორთული; ანალიზი და ქმედებები">{int('due_warn_days', 3, 0, 30)}</Field>
+        <Field label="ეფექტიანობის შემოწმება (დღე შესრულებიდან)" htmlFor="qm-effectiveness_days" hint="7–730">{int('effectiveness_days', 90, 7, 730)}</Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 2' }}>
+          {chk('investigator_at_triage', 'გამომძიებლის დანიშვნა ტრიაჟის ფორმაშივე')}
+          {chk('analysis_approval', 'ანალიზი — ხარისხის მენეჯერის დამტკიცებით (ორი საფეხური)', 'გამორთულზე გამომძიებლის გაგზავნა = დამტკიცება')}
+          {chk('capa_effectiveness', 'ქმედების ეფექტიანობის შემოწმება')}
+          {chk('closure_feedback', 'დახურვისას ავტორს — მოკლე უკუკავშირის ტექსტი')}
+          {chk('report_mask_patient', 'ანალიზის PDF — პაციენტი ნიღბით (ნაგულისხმევად)')}
+        </div>
+      </div>
       <span className="small muted">კატეგორიები, ქვეკატეგორიები (სენტინელური ნიშანი) და ხელშემწყობი ფაქტორები — „ხარისხი და ინციდენტები“ → „ცნობარები“ (ხარისხის მენეჯერი).</span>
     </div>
   );

@@ -10,10 +10,11 @@ import { useModuleEnabled, useModules } from '../../lib/modules';
 import QmCatalog from './Catalog';
 import {
   catLabel, EVENT_KA, HARM_CHIP, HARM_KA, QM_FULL, QM_READ, RISK_UI, STATUS_UI,
-  type Classifier, type EventType, type Harm, type IncidentRow, type MyReport, type QmSummary, type Status,
+  CAPA_KIND_KA, CAPA_ST, LEVEL_KA, ANALYSIS_ST,
+  type CapaRow, type Classifier, type EventType, type Harm, type IncidentRow, type MyReport, type MyWork, type QmSummary, type Status,
 } from './types';
 
-type Tab = 'registry' | 'mine' | 'catalog';
+type Tab = 'registry' | 'work' | 'capa' | 'mine' | 'catalog';
 
 /** ხარისხი და ინციდენტები (0064): რეესტრი (quality / quality_dept), ჩემი შეტყობინებები (ყველა), ცნობარები (quality) */
 export default function Quality() {
@@ -22,15 +23,20 @@ export default function Quality() {
   const mods = useModules(); const enabled = useModuleEnabled('quality');
   const reg = can(user, ...QM_READ);
   const sum = useQuery({ queryKey: ['qm-summary'], queryFn: () => api<QmSummary>('/quality/incidents/summary'), enabled: enabled && reg, refetchInterval: 60_000 });
+  const work = useQuery({ queryKey: ['qm-work'], queryFn: () => api<MyWork>('/quality/my-work'), enabled, refetchInterval: 120_000 });
+  const workN = (work.data?.incidents.length ?? 0) + (work.data?.capas.length ?? 0);
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „ხარისხი და ინციდენტები“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   const tabs: [Tab, string, boolean, number][] = [
     ['registry', 'ინციდენტების რეესტრი', reg, sum.data ? (can(user, ...QM_FULL) ? sum.data.submitted : sum.data.open) : 0],
+    ['work', 'ჩემი ქმედებები', true, workN],
+    ['capa', 'ქმედებები (CAPA)', can(user, ...QM_FULL), 0],
     ['mine', 'ჩემი შეტყობინებები', true, 0],
     ['catalog', 'ცნობარები', can(user, ...QM_FULL), 0],
   ];
   const allowed = tabs.filter((t) => t[2]);
-  const cur = (allowed.find((t) => t[0] === sp.get('tab'))?.[0] ?? allowed[0][0]) as Tab;
+  const def = reg ? 'registry' : workN ? 'work' : 'mine';
+  const cur = (allowed.find((t) => t[0] === sp.get('tab'))?.[0] ?? def) as Tab;
   return (
     <>
       <header className="topbar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingBottom: 0 }}>
@@ -42,6 +48,8 @@ export default function Quality() {
         </nav>
       </header>
       {cur === 'registry' && <Registry sum={sum.data} />}
+      {cur === 'work' && <Work data={work.data} loading={work.isLoading} error={work.error} />}
+      {cur === 'capa' && <CapaList />}
       {cur === 'mine' && <Mine />}
       {cur === 'catalog' && <QmCatalog />}
     </>
@@ -133,7 +141,7 @@ function Mine() {
   const meta = useQmMeta();
   const q = useQuery({ queryKey: ['qm-mine'], queryFn: () => api<MyReport[]>('/quality/incidents/mine') });
   const [code, setCode] = useState('');
-  const track = useMutation({ mutationFn: () => api<{ inc_no: string; status: Status; status_label: string; reported_at: string; reject_label: string | null }>('/quality/track', { query: { code } }) });
+  const track = useMutation({ mutationFn: () => api<{ inc_no: string; status: Status; status_label: string; reported_at: string; reject_label: string | null; feedback: string | null }>('/quality/track', { query: { code } }) });
   return (
     <div className="content">
       <span className="hint">თქვენ მიერ (ღია ან კონფიდენციალური რეჟიმით) გაგზავნილი შეტყობინებები და მათი სტატუსი. ანონიმური შეტყობინება აქ არ ჩანს — სტატუსი იხილეთ კოდით.</span>
@@ -159,8 +167,85 @@ function Mine() {
             <button className="btn" type="button" disabled={code.replace(/[^A-Z0-9]/g, '').length !== 16 || track.isPending} onClick={() => track.mutate()}>ნახვა</button></div>
           {track.data && <div className="row"><strong className="mono">{track.data.inc_no}</strong><span className={`chip ${STATUS_UI[track.data.status][0]}`}>{track.data.status_label}</span>
             {track.data.reject_label && <span className="small muted">{track.data.reject_label}</span>}<span className="small muted">გაიგზავნა {tsDate(track.data.reported_at)}</span></div>}
+          {track.data?.status === 'closed' && <div className="alert ok">განხილვა დასრულდა{track.data.feedback ? `: ${track.data.feedback}` : '.'}</div>}
           <ErrorBox error={track.error} />
         </section>)}
+    </div>
+  );
+}
+
+function Work({ data, loading, error }: { data?: MyWork; loading: boolean; error: unknown }) {
+  const nav = useNavigate();
+  if (loading) return <div className="content"><Loading /></div>;
+  return (
+    <div className="content">
+      <ErrorBox error={error} />
+      {(data?.incidents.length || !data?.capas.length) ? <>
+      <h2 style={{ margin: 0, fontSize: 16 }}>გამოძიება / ანალიზი</h2>
+      <div className="card">
+        <table className="table">
+          <thead><tr><th>№</th><th>კატეგორია</th><th>განყოფილება</th><th>როლი</th><th>დონე</th><th>ანალიზი</th><th>ვადა</th></tr></thead>
+          <tbody>{data?.incidents.map((i) => (
+            <tr key={i.id} className="clickable" onClick={() => nav(`/quality/incidents/${i.id}`)}>
+              <td className="mono">{i.inc_no}</td><td className="small">{i.category_name}</td><td className="small">{i.department_name}</td>
+              <td className="small">{i.is_investigator ? 'გამომძიებელი' : 'RCA გუნდი'}</td><td className="small">{i.analysis_level ? LEVEL_KA[i.analysis_level] : '—'}</td>
+              <td>{i.analysis_status ? <span className={`chip ${ANALYSIS_ST[i.analysis_status][0]}`}>{ANALYSIS_ST[i.analysis_status][1]}</span> : <span className={`chip ${STATUS_UI[i.status][0]}`}>{STATUS_UI[i.status][1]}</span>}</td>
+              <td className="mono small">{i.analysis_due_at ? tsDate(i.analysis_due_at) : '—'}{i.overdue && <span className="chip danger" style={{ marginLeft: 4 }}>ვადა</span>}</td>
+            </tr>))}
+            {!data?.incidents.length && <tr><td colSpan={7} className="muted">მინიჭებული ინციდენტი არ არის</td></tr>}
+          </tbody>
+        </table>
+      </div></> : null}
+      <h2 style={{ margin: 0, fontSize: 16 }}>ჩემი ქმედებები (CAPA)</h2>
+      <div className="card">
+        <table className="table">
+          <thead><tr><th>№</th><th>ქმედება</th><th>ტიპი</th><th>განყოფილება</th><th>ვადა</th><th>სტატუსი</th></tr></thead>
+          <tbody>{data?.capas.map((c) => (
+            <tr key={c.id} className="clickable" onClick={() => nav(`/quality/capas/${c.id}`)}>
+              <td className="mono">{c.capa_no}</td><td>{c.title}</td><td className="small">{CAPA_KIND_KA[c.kind]}</td><td className="small">{c.department_name ?? '—'}</td>
+              <td className="mono small">{tsDate(c.due_date)}{c.overdue && <span className="chip danger" style={{ marginLeft: 4 }}>ვადა</span>}{c.due_request_pending && <span className="chip warn" style={{ marginLeft: 4 }}>ვადის მოთხოვნა</span>}</td>
+              <td><span className={`chip ${CAPA_ST[c.status][0]}`}>{CAPA_ST[c.status][1]}</span></td>
+            </tr>))}
+            {!data?.capas.length && <tr><td colSpan={6} className="muted">ღია ქმედება არ არის</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+type CapaPreset = 'open' | 'overdue' | 'effectiveness' | 'done' | 'all';
+function CapaList() {
+  const nav = useNavigate();
+  const [p, setP] = useState<CapaPreset>('open'); const [search, setSearch] = useState(''); const ds = useDebounced(search.trim(), 300);
+  const query = { search: ds, ...(p === 'open' && { status: 'open,in_progress' }), ...(p === 'overdue' && { overdue: '1' }), ...(p === 'effectiveness' && { effectiveness: '1' }), ...(p === 'done' && { status: 'done,cancelled' }) };
+  const q = useQuery({ queryKey: ['qm-capas', query], queryFn: () => api<CapaRow[]>('/quality/capas', { query }) });
+  const presets: [CapaPreset, string][] = [['open', 'ღია'], ['overdue', 'ვადაგადაცილებული'], ['effectiveness', 'ეფექტიანობის შემოწმება'], ['done', 'დასრულებული / გაუქმებული'], ['all', 'ყველა']];
+  return (
+    <div className="content">
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="seg" role="group" aria-label="ფილტრი">{presets.map(([k, l]) => <button key={k} type="button" aria-pressed={p === k} onClick={() => setP(k)}>{l}</button>)}</div>
+        <input className="input" style={{ maxWidth: 240, height: 38 }} aria-label="ძებნა" placeholder="№ ან ქმედება" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <span className="small muted">ახალი ქმედება — ინციდენტის ბარათიდან.</span>
+      </div>
+      <ErrorBox error={q.error} />
+      {q.isLoading ? <Loading /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead><tr><th>№</th><th>ქმედება</th><th>ინციდენტ(ებ)ი</th><th>პასუხისმგებელი</th><th>ვადა</th><th>სტატუსი</th><th>ეფექტიანობა</th></tr></thead>
+            <tbody>{q.data?.map((c) => (
+              <tr key={c.id} className="clickable" onClick={() => nav(`/quality/capas/${c.id}`)}>
+                <td className="mono">{c.capa_no}</td><td>{c.title}<div className="small muted">{CAPA_KIND_KA[c.kind]}{c.department_name ? ` · ${c.department_name}` : ''}</div></td>
+                <td className="mono small">{c.incidents}</td><td className="small">{c.owner_name}</td>
+                <td className="mono small">{tsDate(c.due_date)}{c.overdue && <span className="chip danger" style={{ marginLeft: 4 }}>ვადა</span>}{c.due_request_pending && <span className="chip warn" style={{ marginLeft: 4 }}>მოთხოვნა</span>}</td>
+                <td><span className={`chip ${CAPA_ST[c.status][0]}`}>{CAPA_ST[c.status][1]}</span></td>
+                <td className="small">{c.effectiveness_result ? <span className={`chip ${c.effectiveness_result === 'effective' ? 'ok' : 'danger'}`}>{c.effectiveness_result === 'effective' ? 'ეფექტიანი' : 'არაეფექტიანი'}</span>
+                  : c.effectiveness_pending ? <span className="chip warn">შესამოწმებელი</span> : c.effectiveness_due ? `ვადა ${tsDate(c.effectiveness_due)}` : '—'}</td>
+              </tr>))}
+              {!q.data?.length && <tr><td colSpan={7} className="muted">ქმედება არ არის</td></tr>}
+            </tbody>
+          </table>
+        </div>)}
     </div>
   );
 }

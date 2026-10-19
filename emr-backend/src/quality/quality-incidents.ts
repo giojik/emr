@@ -16,7 +16,7 @@ import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
 import {
   AFFECTED, EVENT_KA, EVENT_TYPES, HARM_KA, HARMS, harmRank, IDENTITY_MODES, MERP, PATIENT_LOOKUP, QM_DEPT, QM_FULL, QmCommon, REJECT_KA, REJECT_REASONS,
-  SOURCE_TYPES, STATUS_KA, type Access, type Ex, type Harm, type QmRules, type SourceType, type Trx, userName,
+  SOURCE_TYPES, STATUS_KA, levelFor, LEVEL_KA, CAPA_STATUS_KA, type Access, type Ex, type Harm, type QmRules, type SourceType, type Trx, userName,
 } from './quality-common';
 import { QmSources } from './quality-sources';
 
@@ -68,6 +68,8 @@ export class TriageDto extends ClassifyDto {
   @IsIn(['accept', 'reject']) decision: 'accept' | 'reject';
   @IsOptional() @IsIn(REJECT_REASONS) reject_reason?: (typeof REJECT_REASONS)[number];
   @IsOptional() @IsUUID() duplicate_of?: string;
+  /** 0065: გამომძიებელი (არჩევითი) */
+  @IsOptional() @IsUUID() investigator_id?: string;
 }
 export class ReclassifyDto extends ClassifyDto { @IsString() @Length(3, 500) reason: string }
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
@@ -95,7 +97,11 @@ export class QmIncidentsService {
     const access = has(u, ...QM_FULL) ? 'full' : has(u, ...QM_DEPT) ? 'dept' : null;
     return { identity_modes: r.identity_modes, identity_default: r.identity_default, ncc_merp: r.ncc_merp, anonymous_tracking: r.anonymous_tracking,
       event_prompts: r.event_prompts, risk: { low_max: r.risk_low_max, medium_max: r.risk_medium_max, high_max: r.risk_high_max },
-      can_lookup: has(u, ...PATIENT_LOOKUP), my_department_id: me?.department_id ?? null, access, reports: has(u, ...QM_FULL, 'quality_view') };
+      can_lookup: has(u, ...PATIENT_LOOKUP), my_department_id: me?.department_id ?? null, access, reports: has(u, ...QM_FULL, 'quality_view'),
+      // 0065
+      investigator_at_triage: r.investigator_at_triage !== false, analysis_approval: r.analysis_approval !== false, capa_effectiveness: r.capa_effectiveness !== false,
+      closure_feedback: r.closure_feedback !== false, report_mask_patient: r.report_mask_patient !== false,
+      disclosure_required_harm: r.disclosure_required_harm ?? 'moderate' };
   }
 
   async people(search?: string) {
@@ -299,10 +305,13 @@ export class QmIncidentsService {
       .leftJoin('patients as p', 'p.id', 'i.patient_id')
       .leftJoin('users as ur', 'ur.id', 'i.reporter_id').leftJoin('users as ut', 'ut.id', 'i.triaged_by')
       .leftJoin('qm_incidents as dup', 'dup.id', 'i.duplicate_of')
+      .leftJoin('users as uinv', 'uinv.id', 'i.investigator_id').leftJoin('users as ucl', 'ucl.id', 'i.closed_by').leftJoin('users as udb', 'udb.id', 'i.disclosure_by')
       .selectAll('i')
       .select(['c.name as category_name', 'cp.name as category_parent_name', 'c.parent_id as category_parent_id', 'c.is_medication', 'cp.is_medication as parent_is_medication',
         'd.name as department_name', 'p.first_name as patient_first_name', 'p.last_name as patient_last_name', 'p.personal_number as patient_personal_number', 'p.birth_date as patient_birth_date',
         userName('ur').as('reporter_name'), userName('ut').as('triaged_by_name'), 'dup.inc_no as duplicate_inc_no',
+        userName('uinv').as('investigator_name'), userName('ucl').as('closed_by_name'), userName('udb').as('disclosure_by_name'),
+        sql<boolean>`i.status IN ('investigation', 'analysis') AND i.analysis_due_at < now()`.as('analysis_overdue'),
         sql<boolean>`i.status = 'submitted' AND i.triage_due_at < now()`.as('overdue')])
       .where('i.id', '=', id).executeTakeFirst();
     if (!i) throw new NotFoundException('ინციდენტი ვერ მოიძებნა');
@@ -315,13 +324,16 @@ export class QmIncidentsService {
     const base = { ...rest, status_label: STATUS_KA[i.status], event_label: EVENT_KA[i.event_type], access: a,
       medication: !!(i.is_medication || i.parent_is_medication) };
     if (a === 'full') return base;
-    if (a === 'dept') {
+    if (a === 'dept' || a === 'inv') {
       const showReporter = i.identity_mode === 'open';
       return { ...base, reporter_id: showReporter ? i.reporter_id : null, reporter_name: showReporter ? i.reporter_name : null, triaged_by: null, triaged_by_name: null };
     }
     // ავტორი: თავისი შეტყობინება + სტატუსი; ტრიაჟის შედეგები (რისკი, საბოლოო სიმძიმე, შენიშვნა) — არა
     return { ...base, harm: null, likelihood: null, consequence: null, risk_score: null, risk_level: null, triage_note: null, triaged_by: null, triaged_by_name: null,
-      is_sentinel: false, urgent: false, duplicate_of: null, duplicate_inc_no: null, overdue: false, overdue_notified_at: null };
+      is_sentinel: false, urgent: false, duplicate_of: null, duplicate_inc_no: null, overdue: false, overdue_notified_at: null,
+      investigator_id: null, investigator_name: null, analysis_level: null, analysis_due_at: null, analysis_overdue: false, closure_summary: null, closed_by: null, closed_by_name: null,
+      disclosure_status: null, disclosed_at: null, disclosure_by: null, disclosure_by_name: null, disclosure_method: null, disclosure_to: null, disclosure_note: null,
+      feedback_text: i.status === 'closed' ? i.feedback_text : null };
   }
 
   async get(id: string, u: AuthUser, req: Request, audit = true) {
@@ -333,20 +345,59 @@ export class QmIncidentsService {
       .where('incident_id', '=', id).where('is_active', '=', true).orderBy('created_at').execute();
     let ev = this.db.selectFrom('qm_incident_events as e').leftJoin('users as u', 'u.id', 'e.user_id')
       .select(['e.id', 'e.at', 'e.kind', 'e.text', 'e.data', 'e.internal', 'e.user_id', userName('u').as('user_name')]).where('e.incident_id', '=', id).orderBy('e.at').orderBy('e.id');
-    if (a === 'dept') ev = ev.where('e.internal', '=', false);
+    if (a === 'dept' || a === 'inv') ev = ev.where('e.internal', '=', false);
     if (a === 'own') ev = ev.where('e.kind', 'in', ['submitted', 'edited', 'author_note', 'accepted', 'rejected', 'reopened']).where('e.internal', '=', false);
     const events = (await ev.execute()).map((e) => {
       // ავტორის ხედვა: სხვისი სახელი / ტრიაჟის ტექსტი არ ჩანს; dept — ავტორის სახელი (თუ არ არის ღია) არ ჩანს
       if (a === 'own') return { ...e, user_name: e.user_id === u.id ? e.user_name : null, text: e.kind === 'author_note' ? e.text : null, data: e.kind === 'rejected' ? e.data : null };
-      if (a === 'dept' && e.user_id && e.user_id === i.reporter_id && i.identity_mode !== 'open') return { ...e, user_id: null, user_name: 'ავტორი' };
+      if ((a === 'dept' || a === 'inv') && e.user_id && e.user_id === i.reporter_id && i.identity_mode !== 'open') return { ...e, user_id: null, user_name: 'ავტორი' };
       return e;
     });
-    const people = a === 'full' ? await this.db.selectFrom('qm_incident_people as p').leftJoin('users as u', 'u.id', 'p.user_id').leftJoin('departments as d', 'd.id', 'u.department_id')
+    const people = a === 'full' || a === 'inv' ? await this.db.selectFrom('qm_incident_people as p').leftJoin('users as u', 'u.id', 'p.user_id').leftJoin('departments as d', 'd.id', 'u.department_id')
       .select(['p.id', 'p.role', 'p.user_id', 'p.name_text', 'p.note', userName('u').as('user_name'), 'd.name as department_name']).where('p.incident_id', '=', id).orderBy('p.created_at').execute()
       : a === 'own' ? await this.db.selectFrom('qm_incident_people as p').leftJoin('users as u', 'u.id', 'p.user_id')
         .select(['p.id', 'p.role', 'p.user_id', 'p.name_text', 'p.note', userName('u').as('user_name'), sql<null>`NULL`.as('department_name')]).where('p.incident_id', '=', id).execute() : null;
     if (audit) await this.audit.log(auditCtx(req), { action: 'QM_VIEW', entityName: 'qm_incidents', entityId: id, newData: { inc_no: i.inc_no, access: a } });
-    return { ...this.shape(i, a), files: files.map((f) => ({ ...f, uploaded_by: a === 'full' || f.uploaded_by === u.id ? f.uploaded_by : null })), events, people };
+    const extra = a === 'own' ? { analysis: null, capas: null, can: { edit_analysis: false, submit: false, disclose: false } } : await this.analysisBundle(i, a, u);
+    return { ...this.shape(i, a), files: files.map((f) => ({ ...f, uploaded_by: a === 'full' || f.uploaded_by === u.id ? f.uploaded_by : null })), events, people, ...extra };
+  }
+
+  /** 0065: ანალიზი (ქრონოლოგია, ფაქტორები, გუნდი), მიბმული CAPA-ები, მოქმედებების უფლებები */
+  async analysisBundle(i: { id: string; status: string; investigator_id: string | null }, a: Access, u: AuthUser, ex: Ex = this.db) {
+    const an = await ex.selectFrom('qm_analyses as x').leftJoin('users as us', 'us.id', 'x.submitted_by').leftJoin('users as ua', 'ua.id', 'x.approved_by')
+      .selectAll('x').select([userName('us').as('submitted_by_name'), userName('ua').as('approved_by_name')]).where('x.incident_id', '=', i.id).executeTakeFirst();
+    const timeline = an ? await ex.selectFrom('qm_analysis_timeline').select(['id', 'at', 'text', 'sort_order']).where('incident_id', '=', i.id).orderBy('sort_order').orderBy('at').execute() : [];
+    const factors = an ? await ex.selectFrom('qm_analysis_factors as f').innerJoin('qm_classifiers as c', 'c.id', 'f.factor_id').leftJoin('qm_classifiers as g', 'g.id', 'c.parent_id')
+      .select(['f.factor_id', 'f.comment', 'c.name', 'g.name as group_name']).where('f.incident_id', '=', i.id).orderBy('g.sort_order').orderBy('c.sort_order').execute() : [];
+    const team = an ? await ex.selectFrom('qm_analysis_team as t').innerJoin('users as tu', 'tu.id', 't.user_id').leftJoin('departments as d', 'd.id', 'tu.department_id')
+      .select(['t.user_id', 't.role_text', userName('tu').as('name'), 'd.name as department_name']).where('t.incident_id', '=', i.id).orderBy('t.added_at').execute() : [];
+    const capas = await ex.selectFrom('qm_capa_incidents as ci').innerJoin('qm_capas as c', 'c.id', 'ci.capa_id').innerJoin('users as uo', 'uo.id', 'c.owner_id')
+      .select(['c.id', 'c.capa_no', 'c.title', 'c.kind', 'c.status', 'c.due_date', 'c.done_at', 'c.effectiveness_due', 'c.effectiveness_result', userName('uo').as('owner_name'),
+        sql<boolean>`c.status IN ('open', 'in_progress') AND c.due_date < (now() AT TIME ZONE current_setting('TimeZone'))::date`.as('overdue'),
+        sql<number>`(SELECT count(*)::int FROM qm_capa_incidents x WHERE x.capa_id = c.id)`.as('incidents')])
+      .where('ci.incident_id', '=', i.id).orderBy('c.created_at').execute();
+    const isInv = i.investigator_id === u.id;
+    const editable = i.status === 'investigation' && (!an || ['draft', 'returned'].includes(an.status));
+    return {
+      analysis: an ? { ...an, level_label: LEVEL_KA[an.level], timeline, factors, team } : null,
+      capas: capas.map((c) => ({ ...c, status_label: CAPA_STATUS_KA[c.status] })),
+      can: {
+        edit_analysis: editable && (a === 'full' || a === 'inv'),
+        edit_team: editable && (a === 'full' || isInv),
+        submit: editable && (a === 'full' || isInv),
+        disclose: ['investigation', 'analysis', 'capa'].includes(i.status) && (a === 'full' || isInv),
+        add_capa: ['investigation', 'analysis', 'capa'].includes(i.status) && (a === 'full' || isInv),
+      },
+    };
+  }
+
+  /** აქტიური მომხმარებელი (გამომძიებელი / გუნდი / CAPA-ს პასუხისმგებელი) */
+  async activeUser(id: string, ex: Ex = this.db) {
+    const x = await ex.selectFrom('users').select(['id', 'is_active']).where('id', '=', id).executeTakeFirst();
+    if (!x?.is_active) throw new BadRequestException({ code: 'USER', message: 'თანამშრომელი ვერ მოიძებნა ან გათიშულია' });
+  }
+  async notifyInvestigator(userId: string, id: string, no: string) {
+    await this.c.bell([userId], { kind: 'qm_assign', title: `თქვენ ხართ გამომძიებელი: ${no}`, body: 'ინციდენტის ანალიზი — ხარისხი და ინციდენტები → ჩემი ქმედებები', link: `/quality/incidents/${id}`, entityId: id });
   }
 
   async list(u: AuthUser, q: ListQ) {
@@ -410,9 +461,10 @@ export class QmIncidentsService {
     await this.c.rules();
     const c = (code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (c.length !== 16) throw new BadRequestException({ code: 'TRACK_CODE', message: 'კოდი არასწორია (16 სიმბოლო)' });
-    const i = await this.db.selectFrom('qm_incidents').select(['inc_no', 'status', 'reported_at', 'reject_reason']).where('track_hash', '=', this.trackHash(c)).executeTakeFirst();
+    const i = await this.db.selectFrom('qm_incidents').select(['inc_no', 'status', 'reported_at', 'reject_reason', 'closed_at', 'feedback_text']).where('track_hash', '=', this.trackHash(c)).executeTakeFirst();
     if (!i) throw new NotFoundException('ასეთი კოდით შეტყობინება ვერ მოიძებნა');
-    return { inc_no: i.inc_no, status: i.status, status_label: STATUS_KA[i.status], reported_at: i.reported_at, reject_label: i.reject_reason ? REJECT_KA[i.reject_reason] : null };
+    return { inc_no: i.inc_no, status: i.status, status_label: STATUS_KA[i.status], reported_at: i.reported_at, reject_label: i.reject_reason ? REJECT_KA[i.reject_reason] : null,
+      closed_at: i.status === 'closed' ? i.closed_at : null, feedback: i.status === 'closed' ? i.feedback_text : null };
   }
 
   // ---------------------------------------------------------------- ტრიაჟი / კლასიფიკაცია
@@ -469,14 +521,23 @@ export class QmIncidentsService {
         return { inc, accepted: false, wasUrgent: inc.urgent, urgent: inc.urgent };
       }
       const v = await this.classify(trx, r, inc, d, true);
-      await trx.updateTable('qm_incidents').set({ ...v, status: 'investigation', triage_note: d.note?.trim() || null, triaged_at: sql`now()`, triaged_by: u.id }).where('id', '=', id).execute();
+      if (d.investigator_id) await this.activeUser(d.investigator_id, trx);
+      // 0065: ანალიზის დონე და ვადა; ანალიზის მონახაზი
+      const level = levelFor(r, { is_sentinel: v.is_sentinel, risk_level: v.risk_level, harm: v.harm });
+      const days = level === 'rca' ? r.rca_days : r.review_days;
+      await trx.updateTable('qm_incidents').set({ ...v, status: 'investigation', triage_note: d.note?.trim() || null, triaged_at: sql`now()`, triaged_by: u.id,
+        analysis_level: level, analysis_due_at: sql`now() + make_interval(days => ${days})`,
+        ...(d.investigator_id && { investigator_id: d.investigator_id, investigator_at: sql`now()` }) }).where('id', '=', id).execute();
+      await trx.insertInto('qm_analyses').values({ incident_id: id, level }).onConflict((oc) => oc.column('incident_id').doUpdateSet({ level, status: 'draft' })).execute();
       await trx.insertInto('qm_incident_events').values({ incident_id: id, user_id: u.id, kind: 'accepted', text: d.note?.trim() || null,
-        data: JSON.stringify({ harm: v.harm, risk: (v.likelihood ?? 0) * (v.consequence ?? 0), risk_level: v.risk_level, sentinel: v.is_sentinel }) }).execute();
+        data: JSON.stringify({ harm: v.harm, risk: (v.likelihood ?? 0) * (v.consequence ?? 0), risk_level: v.risk_level, sentinel: v.is_sentinel, level }) }).execute();
+      if (d.investigator_id) await trx.insertInto('qm_incident_events').values({ incident_id: id, user_id: u.id, kind: 'investigator', data: JSON.stringify({ user_id: d.investigator_id }) }).execute();
       await this.audit.log(auditCtx(req), { action: 'QM_TRIAGE', entityName: 'qm_incidents', entityId: id,
         oldData: { category_id: inc.category_id, department_id: inc.department_id, harm_reported: inc.harm_reported, is_sentinel: inc.is_sentinel }, newData: v }, trx);
       return { inc: { ...inc, ...v }, accepted: true, wasUrgent: inc.urgent, urgent: v.urgent };
     });
     await this.afterTriage(r, out.inc, out.accepted, d.reject_reason, out.wasUrgent, out.urgent);
+    if (out.accepted && d.investigator_id) await this.notifyInvestigator(d.investigator_id, id, out.inc.inc_no);
     return this.get(id, u, req, false);
   }
 
@@ -503,7 +564,11 @@ export class QmIncidentsService {
       const v = await this.classify(trx, r, inc, d, true);
       const changed = (Object.keys(v) as (keyof typeof v)[]).filter((k) => String(v[k] ?? '') !== String((inc as Record<string, unknown>)[k] ?? ''));
       if (!changed.length) throw new BadRequestException({ code: 'NO_CHANGE', message: 'ცვლილება არ არის' });
-      await trx.updateTable('qm_incidents').set(v).where('id', '=', id).execute();
+      // 0065: დონე ავტომატურად მხოლოდ მაღლა იწევს (review → rca), ვადა — ტრიაჟიდან rca_days
+      const raise = inc.analysis_level === 'review' && levelFor(r, { is_sentinel: v.is_sentinel, risk_level: v.risk_level, harm: v.harm }) === 'rca';
+      await trx.updateTable('qm_incidents').set({ ...v, ...(raise && { analysis_level: 'rca' as const, analysis_due_at: sql`coalesce(triaged_at, now()) + make_interval(days => ${r.rca_days})`,
+        analysis_warn_sent_at: null, analysis_overdue_sent_at: null }) }).where('id', '=', id).execute();
+      if (raise) await trx.updateTable('qm_analyses').set({ level: 'rca' }).where('incident_id', '=', id).execute();
       await trx.insertInto('qm_incident_events').values({ incident_id: id, user_id: u.id, kind: 'reclassified', text: d.reason.trim(), internal: true,
         data: JSON.stringify(Object.fromEntries(changed.map((k) => [k, { from: (inc as Record<string, unknown>)[k] ?? null, to: v[k] ?? null }]))) }).execute();
       await this.audit.log(auditCtx(req), { action: 'QM_RECLASSIFY', entityName: 'qm_incidents', entityId: id,
@@ -516,7 +581,15 @@ export class QmIncidentsService {
     const r = await this.c.rules();
     await this.db.transaction().execute(async (trx) => {
       const inc = await this.lockFull(trx, id, u);
-      if (inc.status !== 'rejected') throw new ConflictException({ code: 'NOT_REJECTED', message: 'ხელახლა იხსნება მხოლოდ უარყოფილი' });
+      if (inc.status === 'closed') {
+        // 0065: დახურული → გამოძიება (ანალიზი ხელახლა რედაქტირებადია)
+        await trx.updateTable('qm_incidents').set({ status: 'investigation', closed_at: null, closed_by: null }).where('id', '=', id).execute();
+        await trx.updateTable('qm_analyses').set({ status: 'returned', return_reason: d.reason.trim(), approved_at: null, approved_by: null }).where('incident_id', '=', id).execute();
+        await trx.insertInto('qm_incident_events').values({ incident_id: id, user_id: u.id, kind: 'reopened', text: d.reason.trim(), data: JSON.stringify({ from: 'closed' }) }).execute();
+        await this.audit.log(auditCtx(req), { action: 'QM_REOPEN', entityName: 'qm_incidents', entityId: id, oldData: { status: 'closed', closure_summary: inc.closure_summary }, newData: { reason: d.reason } }, trx);
+        return;
+      }
+      if (inc.status !== 'rejected') throw new ConflictException({ code: 'NOT_REJECTED', message: 'ხელახლა იხსნება მხოლოდ უარყოფილი ან დახურული' });
       await trx.updateTable('qm_incidents').set({ status: 'submitted', reject_reason: null, duplicate_of: null, triage_note: null, triaged_at: null, triaged_by: null, overdue_notified_at: null,
         triage_due_at: sql`now() + make_interval(hours => ${inc.is_sentinel ? r.sentinel_triage_hours : r.triage_hours})` }).where('id', '=', id).execute();
       await trx.insertInto('qm_incident_events').values({ incident_id: id, user_id: u.id, kind: 'reopened', text: d.reason.trim() }).execute();

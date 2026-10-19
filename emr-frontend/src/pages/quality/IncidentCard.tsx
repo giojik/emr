@@ -3,11 +3,12 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, apiUpload, openBlob } from '../../api/client';
 import { useQmMeta } from '../../components/IncidentReport';
+import { AnalysisSection, ApprovePanel, CapaPanel, ClosePanel, DisclosurePanel, InvestigationPanel, PersonPick } from './Investigation';
 import { ErrorBox, Field, Loading, useDebounced, useToast } from '../../components/ui';
 import { dateGe, hhmm, tsDate } from '../../lib/format';
 import {
   AFFECTED_KA, catLabel, CONSEQUENCE_KA, EVENT_KA, EVENT_LOG_KA, HARM_CHIP, HARM_KA, IDENTITY_KA, LIKELIHOOD_KA, MERP_KA, PERSON_ROLE_KA, REJECT_KA, RISK_UI, riskOf, STATUS_UI,
-  type Classifier, type EventType, type Harm, type Incident, type IncidentRow, type QmMeta,
+  disclosureRequired, LEVEL_KA, type Classifier, type EventType, type Harm, type Incident, type IncidentRow, type QmMeta,
 } from './types';
 
 const when = (ts: string) => `${tsDate(ts)} ${hhmm(ts)}`;
@@ -38,6 +39,8 @@ export default function IncidentCard() {
         {d.overdue && <span className="chip danger">ტრიაჟის ვადა გადაცილებულია</span>}
         <span className="grow" />
         {d.status === 'submitted' && d.access !== 'own' && <span className="small muted">ტრიაჟის ვადა: {when(d.triage_due_at)}</span>}
+        {d.analysis_overdue && <span className="chip danger">ანალიზის ვადა გადაცილებულია</span>}
+        {(d.access === 'full' || d.access === 'inv') && d.analysis && <PdfButton id={d.id} mask={meta.data?.report_mask_patient !== false} />}
       </header>
       <div className="content" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div className="stack">
@@ -59,12 +62,18 @@ export default function IncidentCard() {
               <Kv k="მიბმული მოვლენა" v={d.source_label ?? '—'} />
               <Kv k="ავტორი" v={d.identity_mode === 'anonymous' ? <span className="muted">ანონიმური</span> : d.access === 'own' ? 'თქვენ' : d.reporter_name ?? <span className="muted">{IDENTITY_KA[d.identity_mode][0]}</span>} />
               {d.triaged_at && d.access === 'full' && <Kv k="ტრიაჟი" v={`${when(d.triaged_at)} · ${d.triaged_by_name ?? ''}`} />}
+              {d.access !== 'own' && d.analysis_level && <Kv k="ანალიზი" v={`${LEVEL_KA[d.analysis_level]}${d.analysis_due_at ? ` · ვადა ${tsDate(d.analysis_due_at)}` : ''}`} />}
+              {d.access !== 'own' && d.investigator_name && <Kv k="გამომძიებელი" v={d.investigator_name} />}
+              {d.closed_at && d.access !== 'own' && <Kv k="დაიხურა" v={`${when(d.closed_at)} · ${d.closed_by_name ?? ''}`} />}
             </div>
             <div><div className="small muted">აღწერა</div><div style={{ whiteSpace: 'pre-wrap' }}>{d.description}</div></div>
             {d.immediate_actions && <div><div className="small muted">დაუყოვნებლივ მიღებული ზომები</div><div style={{ whiteSpace: 'pre-wrap' }}>{d.immediate_actions}</div></div>}
             {d.triage_note && <div><div className="small muted">ტრიაჟის შენიშვნა</div><div style={{ whiteSpace: 'pre-wrap' }}>{d.triage_note}</div></div>}
+            {d.closure_summary && <div><div className="small muted">დასკვნა (დახურვა)</div><div style={{ whiteSpace: 'pre-wrap' }}>{d.closure_summary}</div></div>}
+            {d.access === 'own' && d.status === 'closed' && <div className="alert ok">განხილვა დასრულდა{d.feedback_text ? `: ${d.feedback_text}` : '.'} გმადლობთ შეტყობინებისთვის.</div>}
             {d.status === 'rejected' && d.reject_reason && <div className="alert">უარყოფილია: {REJECT_KA[d.reject_reason]}{d.duplicate_inc_no && <> — ორიგინალი <Link to={`/quality/incidents/${d.duplicate_of}`} className="mono">{d.duplicate_inc_no}</Link></>}</div>}
           </section>
+          {d.access !== 'own' && !['submitted', 'rejected'].includes(d.status) && <AnalysisSection key={`${d.status}:${d.analysis?.updated_at ?? ''}`} d={d} onDone={done} />}
           {d.people && d.people.length > 0 && (
             <section className="card card-pad stack" style={{ gap: 6 }}>
               <strong className="small">მონაწილეები / მოწმეები</strong>
@@ -75,15 +84,25 @@ export default function IncidentCard() {
         </div>
         <div className="stack">
           {d.access === 'full' && d.status === 'submitted' && meta.data && <Triage d={d} meta={meta.data} onDone={(r) => done(r, 'ტრიაჟი შენახულია')} />}
+          {d.access === 'full' && d.status === 'analysis' && <ApprovePanel d={d} onDone={done} />}
+          {d.access === 'full' && !['submitted', 'rejected'].includes(d.status) && <InvestigationPanel d={d} onDone={done} />}
+          {d.access !== 'own' && !['submitted', 'rejected'].includes(d.status) && <CapaPanel d={d} onDone={refresh} />}
+          {d.access !== 'own' && !['submitted', 'rejected'].includes(d.status) && meta.data && <DisclosurePanel d={d} onDone={done} required={disclosureRequired(d, meta.data)} />}
+          {d.access === 'full' && d.status === 'capa' && meta.data && <ClosePanel d={d} meta={meta.data} onDone={done} />}
           {d.access === 'full' && ['investigation', 'analysis', 'capa'].includes(d.status) && meta.data && <Reclassify d={d} meta={meta.data} onDone={(r) => done(r, 'კლასიფიკაცია შეიცვალა')} />}
-          {d.access === 'full' && d.status === 'rejected' && <Reopen d={d} onDone={(r) => done(r, 'ხელახლა გაიხსნა')} />}
+          {d.access === 'full' && (d.status === 'rejected' || d.status === 'closed') && <Reopen d={d} onDone={(r) => done(r, 'ხელახლა გაიხსნა')} />}
           {d.access === 'own' && d.status === 'submitted' && <AuthorEdit d={d} onDone={(r) => done(r, 'შენახულია')} />}
-          {d.access !== 'own' && ['investigation', 'analysis', 'capa'].includes(d.status) && (
-            <div className="alert info">ანალიზი (RCA), მაკორექტირებელი ქმედებები და დახურვა — შემდეგ ეტაპზე (0065).</div>)}
         </div>
       </div>
     </>
   );
+}
+
+function PdfButton({ id, mask }: { id: string; mask: boolean }) {
+  const [m, setM] = useState(mask);
+  const open = useMutation({ mutationFn: () => openBlob(`/quality/incidents/${id}/report?mask=${m ? 1 : 0}`) });
+  return <span className="row small" style={{ gap: 6 }}><label className="row" style={{ gap: 4 }}><input type="checkbox" checked={m} onChange={(e) => setM(e.target.checked)} /> პაციენტი ნიღბით</label>
+    <button className="btn sm" type="button" disabled={open.isPending} onClick={() => open.mutate()}>ანალიზის ანგარიში (PDF)</button></span>;
 }
 
 const Kv = ({ k, v }: { k: string; v: React.ReactNode }) => <div><div className="muted">{k}</div><div>{v}</div></div>;
@@ -161,10 +180,11 @@ function Triage({ d, meta, onDone }: { d: Incident; meta: QmMeta; onDone: (r: In
   const [mode, setMode] = useState<'accept' | 'reject'>('accept');
   const [s, setS] = useState<ClassState>(() => initClass(d));
   const [reason, setReason] = useState('not_incident'); const [dup, setDup] = useState<{ id: string; inc_no: string } | null>(null);
+  const [inv, setInv] = useState<{ id: string; name: string } | null>(null);
   const [dq, setDq] = useState(''); const ddq = useDebounced(dq.trim(), 300);
   const dups = useQuery({ queryKey: ['qm-list', 'dup', ddq], queryFn: () => api<IncidentRow[]>('/quality/incidents', { query: { search: ddq } }), enabled: mode === 'reject' && reason === 'duplicate' && ddq.length >= 2 });
   const save = useMutation({
-    mutationFn: () => api<Incident>(`/quality/incidents/${d.id}/triage`, { body: mode === 'accept' ? { decision: 'accept', ...classBody(s), note: s.note.trim() || null }
+    mutationFn: () => api<Incident>(`/quality/incidents/${d.id}/triage`, { body: mode === 'accept' ? { decision: 'accept', ...classBody(s), note: s.note.trim() || null, ...(inv && { investigator_id: inv.id }) }
       : { decision: 'reject', reject_reason: reason, duplicate_of: reason === 'duplicate' ? dup?.id : undefined, note: s.note.trim() || null } }),
     onSuccess: onDone,
   });
@@ -174,7 +194,8 @@ function Triage({ d, meta, onDone }: { d: Incident; meta: QmMeta; onDone: (r: In
       <div className="row"><h2 className="grow" style={{ margin: 0, fontSize: 16 }}>ტრიაჟი</h2>
         <div className="seg" role="group" aria-label="გადაწყვეტილება"><button type="button" aria-pressed={mode === 'accept'} onClick={() => setMode('accept')}>მიღება</button>
           <button type="button" aria-pressed={mode === 'reject'} onClick={() => setMode('reject')}>უარყოფა</button></div></div>
-      {mode === 'accept' ? <ClassFields s={s} set={(p) => setS((x) => ({ ...x, ...p }))} meta={meta} d={d} /> : (
+      {mode === 'accept' ? <><ClassFields s={s} set={(p) => setS((x) => ({ ...x, ...p }))} meta={meta} d={d} />
+        {meta.investigator_at_triage && <Field label="გამომძიებელი (არჩევითი)" htmlFor="tr-inv" hint="შეიძლება შემდეგაც დაინიშნოს"><PersonPick value={inv} onChange={setInv} label="გამომძიებელი" /></Field>}</> : (
         <div className="stack" style={{ gap: 8 }}>
           <Field label="მიზეზი" htmlFor="tr-rr"><select id="tr-rr" className="select" value={reason} onChange={(e) => setReason(e.target.value)}>
             {Object.entries(REJECT_KA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
@@ -214,9 +235,9 @@ function Reopen({ d, onDone }: { d: Incident; onDone: (r: Incident) => void }) {
   const save = useMutation({ mutationFn: () => api<Incident>(`/quality/incidents/${d.id}/reopen`, { body: { reason: reason.trim() } }), onSuccess: onDone });
   return (
     <section className="card card-pad stack" style={{ gap: 8 }}>
-      <h2 style={{ margin: 0, fontSize: 16 }}>ხელახლა გახსნა</h2>
+      <h2 style={{ margin: 0, fontSize: 16 }}>ხელახლა გახსნა{d.status === 'closed' ? ' (→ გამოძიება)' : ''}</h2>
       <input className="input" aria-label="მიზეზი" placeholder="მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
-      <div className="row"><span className="grow" /><button className="btn" type="button" disabled={reason.trim().length < 3 || save.isPending} onClick={() => save.mutate()}>ტრიაჟზე დაბრუნება</button></div>
+      <div className="row"><span className="grow" /><button className="btn" type="button" disabled={reason.trim().length < 3 || save.isPending} onClick={() => save.mutate()}>{d.status === 'closed' ? 'ხელახლა გახსნა' : 'ტრიაჟზე დაბრუნება'}</button></div>
       <ErrorBox error={save.error} />
     </section>
   );
@@ -284,6 +305,8 @@ function Timeline({ d, onDone }: { d: Incident; onDone: () => void }) {
           {e.kind === 'rejected' && e.data && <span className="small">მიზეზი: {REJECT_KA[String(e.data.reason)] ?? String(e.data.reason)}</span>}
           {e.kind === 'accepted' && e.data && d.access !== 'own' && <span className="small muted">ზიანი: {HARM_KA[e.data.harm as Harm] ?? '—'} · რისკი: {String(e.data.risk ?? '—')}</span>}
           {e.kind === 'reclassified' && e.data && <span className="small muted">{Object.keys(e.data).join(', ')}</span>}
+          {e.kind === 'capa' && e.data && <span className="small muted">{String(e.data.capa_no)} · {String(e.data.title)}</span>}
+          {e.kind === 'level' && e.data && <span className="small muted">{LEVEL_KA[String(e.data.from)] ?? '—'} → {LEVEL_KA[String(e.data.to)]}</span>}
           {e.text && <span style={{ whiteSpace: 'pre-wrap' }}>{e.text}</span>}
         </div>))}
       {!events.length && <span className="small muted">ჩანაწერი არ არის</span>}

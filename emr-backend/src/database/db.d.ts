@@ -3192,6 +3192,121 @@ export interface ProcSupplierPrices {
   vat_rate: Generated<Numeric>;
 }
 
+export interface QmAnalyses {
+  action_taken: string | null;
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  conclusion: string | null;
+  created_at: Generated<Timestamp>;
+  incident_id: string;
+  level: string;
+  return_reason: string | null;
+  root_cause: string | null;
+  root_causes: string | null;
+  status: Generated<string>;
+  submitted_at: Timestamp | null;
+  submitted_by: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  what_happened: string | null;
+  whys: Generated<Json>;
+}
+
+export interface QmAnalysisFactors {
+  comment: string | null;
+  factor_id: string;
+  incident_id: string;
+}
+
+export interface QmAnalysisTeam {
+  added_at: Generated<Timestamp>;
+  incident_id: string;
+  role_text: string | null;
+  user_id: string;
+}
+
+export interface QmAnalysisTimeline {
+  at: Timestamp | null;
+  id: Generated<string>;
+  incident_id: string;
+  sort_order: Generated<number>;
+  text: string;
+}
+
+export interface QmCapaDueRequests {
+  capa_id: string;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  id: Generated<string>;
+  new_due: string;
+  old_due: string;
+  reason: string;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  status: Generated<string>;
+}
+
+export interface QmCapaEvents {
+  at: Generated<Timestamp>;
+  capa_id: string;
+  data: Json | null;
+  id: Generated<Int8>;
+  kind: string;
+  text: string | null;
+  user_id: string | null;
+}
+
+export interface QmCapaFiles {
+  capa_id: string;
+  created_at: Generated<Timestamp>;
+  file_path: string;
+  id: Generated<string>;
+  mime_type: string;
+  original_name: string | null;
+  sha256: string;
+  size_bytes: number;
+  uploaded_by: string;
+}
+
+export interface QmCapaIncidents {
+  capa_id: string;
+  incident_id: string;
+  linked_at: Generated<Timestamp>;
+  linked_by: string | null;
+}
+
+export interface QmCapas {
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  capa_no: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  description: string | null;
+  done_at: Timestamp | null;
+  done_by: string | null;
+  done_note: string | null;
+  due_date: string;
+  effectiveness_at: Timestamp | null;
+  effectiveness_by: string | null;
+  effectiveness_due: string | null;
+  effectiveness_note: string | null;
+  effectiveness_result: string | null;
+  effectiveness_sent_at: Timestamp | null;
+  follow_up_of: string | null;
+  id: Generated<string>;
+  kind: string;
+  overdue_sent_at: Timestamp | null;
+  owner_id: string;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  warn_sent_at: Timestamp | null;
+}
+
 export interface QmClassifiers {
   code: string;
   created_at: Generated<Timestamp>;
@@ -3243,20 +3358,38 @@ export interface QmIncidentPeople {
 
 export interface QmIncidents {
   affected: string;
+  analysis_due_at: Timestamp | null;
+  analysis_level: string | null;
+  analysis_overdue_sent_at: Timestamp | null;
+  analysis_warn_sent_at: Timestamp | null;
   category_id: string;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  closure_summary: string | null;
   consequence: number | null;
   created_at: Generated<Timestamp>;
   department_id: string;
   description: string;
+  disclosed_at: Timestamp | null;
+  disclosure_by: string | null;
+  disclosure_method: string | null;
+  disclosure_note: string | null;
+  disclosure_recorded_at: Timestamp | null;
+  disclosure_recorded_by: string | null;
+  disclosure_status: string | null;
+  disclosure_to: string | null;
   duplicate_of: string | null;
   encounter_id: string | null;
   event_type: string;
+  feedback_text: string | null;
   harm: string | null;
   harm_reported: string;
   id: Generated<string>;
   identity_mode: string;
   immediate_actions: string | null;
   inc_no: string;
+  investigator_at: Timestamp | null;
+  investigator_id: string | null;
   is_sentinel: Generated<boolean>;
   likelihood: number | null;
   location_text: string | null;
@@ -4511,6 +4644,15 @@ export interface DB {
   proc_requisition_lines: ProcRequisitionLines;
   proc_requisitions: ProcRequisitions;
   proc_supplier_prices: ProcSupplierPrices;
+  qm_analyses: QmAnalyses;
+  qm_analysis_factors: QmAnalysisFactors;
+  qm_analysis_team: QmAnalysisTeam;
+  qm_analysis_timeline: QmAnalysisTimeline;
+  qm_capa_due_requests: QmCapaDueRequests;
+  qm_capa_events: QmCapaEvents;
+  qm_capa_files: QmCapaFiles;
+  qm_capa_incidents: QmCapaIncidents;
+  qm_capas: QmCapas;
   qm_classifiers: QmClassifiers;
   qm_incident_events: QmIncidentEvents;
   qm_incident_files: QmIncidentFiles;
