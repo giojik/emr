@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router-dom';
 import { can, api, ApiError } from '../api/client';
 import type { EncounterDetail, EncounterListItem } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
+import { ReportIncidentButton } from '../components/IncidentReport';
 import AllergyBanner from '../components/AllergyBanner';
 import AllergyDialog from '../components/AllergyDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
@@ -41,6 +42,7 @@ export default function Encounter() {
           <StatusChip status={e.status} />
           {active && <span className="small muted">{hhmm(e.start_time)}-დან</span>}
           <div className="row" style={{ marginLeft: 'auto' }}>
+            <ReportIncidentButton className="btn" patient={{ id: e.patient.id, name: `${e.patient.first_name} ${e.patient.last_name}` }} source={{ type: 'encounter', id: e.id, label: 'ვიზიტი' }} />
             <button className="btn" type="button" onClick={() => setDlg('history')}>წინა ვიზიტები</button>
             <button className="btn" type="button" onClick={() => setDlg('consent')}>ინფორმირებული თანხმობა</button>
             {(isAttending && (active || e.status === 'discharged')) && <button className="btn" type="button" onClick={() => setDlg('form100')}>ფორმა №100/ა</button>}

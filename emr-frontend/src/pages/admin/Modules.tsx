@@ -49,6 +49,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'drg' && <DrgSettings s={s} set={setS} />}
       {m.code === 'scrubber' && <ScrubSettings s={s} set={setS} />}
       {m.code === 'reporting' && <ReportingSettings s={s} set={setS} />}
+      {m.code === 'quality' && <QualitySettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -627,6 +628,60 @@ function ReportingSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         <select id="rp-cd" className="select" value={String(s.compare_default ?? 'prev')} onChange={(e) => upd('compare_default', e.target.value)}>
           <option value="prev">წინა პერიოდთან</option><option value="yoy">შარშანდელ იმავე პერიოდთან</option><option value="none">შედარების გარეშე</option></select></Field>
       <span className="small muted" style={{ alignSelf: 'end' }}>KPI-ები, სამიზნეები, ხედვის არე — <Link to="/admin/reporting">ადმინისტრირება → რეპორტინგი</Link>.</span>
+    </div>
+  );
+}
+
+const ID_MODES: [string, string][] = [['open', 'ღია'], ['confidential', 'კონფიდენციალური (ავტორი — მხოლოდ ხარისხის მენეჯერთან)'], ['anonymous', 'ანონიმური (ავტორი არსად ინახება)']];
+/** ხარისხი და ინციდენტები (0064) */
+function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const num = (k: string, d: number) => Number(s[k] ?? d);
+  const int = (k: string, d: number, min: number, max: number) => (
+    <input id={`qm-${k}`} className="input mono" type="number" min={min} max={max} value={num(k, d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
+  const modes = (s.identity_modes as string[]) ?? ['open', 'confidential', 'anonymous'];
+  const ids = (s.alert_user_ids as string[]) ?? [];
+  const [q, setQ] = useState('');
+  const people = useQuery({ queryKey: ['qm-people', q], queryFn: () => api<Person[]>('/quality/people', { query: { search: q } }).catch(() => [] as Person[]), enabled: q.trim().length >= 2 });
+  const known = useQuery({ queryKey: ['qm-people', ''], queryFn: () => api<Person[]>('/quality/people').catch(() => [] as Person[]) });
+  const [names, setNames] = useState<Record<string, string>>({});
+  const chk = (k: string, label: string, hint?: string) => <label className="row small" title={hint}><input type="checkbox" checked={!!s[k]} onChange={(e) => upd(k, e.target.checked)} /> {label}</label>;
+  return (
+    <div className="stack">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <div className="stack" style={{ gap: 4 }}><strong className="small">ავტორის დაშვებული რეჟიმები</strong>
+          {ID_MODES.map(([k, l]) => <label key={k} className="row small"><input type="checkbox" checked={modes.includes(k)} disabled={modes.length === 1 && modes.includes(k)}
+            onChange={(e) => { const next = e.target.checked ? [...modes, k] : modes.filter((x) => x !== k); upd('identity_modes', next); if (!next.includes(String(s.identity_default))) set({ ...s, identity_modes: next, identity_default: next[0] }); }} /> {l}</label>)}</div>
+        <Field label="ნაგულისხმევი რეჟიმი" htmlFor="qm-idd">
+          <select id="qm-idd" className="select" value={String(s.identity_default ?? 'confidential')} onChange={(e) => upd('identity_default', e.target.value)}>
+            {ID_MODES.filter(([k]) => modes.includes(k)).map(([k, l]) => <option key={k} value={k}>{l.split(' (')[0]}</option>)}</select></Field>
+        <div className="stack" style={{ gap: 6 }}>
+          {chk('anonymous_tracking', 'ანონიმურს — სტატუსის კოდი', 'ერთჯერადი კოდი; ბაზაში მხოლოდ ჰეში')}
+          {chk('ncc_merp', 'მედიკამენტზე NCC MERP (A–I)')}
+          {chk('event_prompts', 'შეთავაზებები (MAR / დათვლის შეუსაბამობა)', 'მომხმარებელს სთავაზობს შეტყობინებას — ავტომატურად არ იქმნება')}
+          {chk('author_feedback', 'ავტორს — სტატუსის შეტყობინება')}
+        </div>
+        <Field label="ტრიაჟის ვადა (საათი)" htmlFor="qm-triage_hours" hint="1–720">{int('triage_hours', 72, 1, 720)}</Field>
+        <Field label="სენტინელური — ტრიაჟის ვადა (საათი)" htmlFor="qm-sentinel_triage_hours" hint="1–168; ჩვეულებრივზე მეტი ვერ იქნება">{int('sentinel_triage_hours', 24, 1, 168)}</Field>
+        <Field label="სასწრაფო გაფრთხილება — ზიანიდან" htmlFor="qm-ah" hint="სენტინელური — ყოველთვის">
+          <select id="qm-ah" className="select" value={String(s.alert_harm ?? 'severe')} onChange={(e) => upd('alert_harm', e.target.value)}>
+            <option value="moderate">საშუალო და მეტი</option><option value="severe">მძიმე და სიკვდილი</option><option value="death">მხოლოდ სიკვდილი</option><option value="off">მხოლოდ სენტინელური</option></select></Field>
+        <Field label="რისკი „დაბალი“ — ქულა ≤" htmlFor="qm-risk_low_max" hint="5×5 მატრიცა (1–25)">{int('risk_low_max', 3, 1, 23)}</Field>
+        <Field label="„საშუალო“ — ქულა ≤" htmlFor="qm-risk_medium_max">{int('risk_medium_max', 6, 2, 24)}</Field>
+        <Field label="„მაღალი“ — ქულა ≤ (ზემოთ — ექსტრემალური)" htmlFor="qm-risk_high_max">{int('risk_high_max', 12, 3, 24)}</Field>
+      </div>
+      <div className="card card-pad stack" style={{ gap: 8 }}>
+        <div className="row" style={{ flexWrap: 'wrap' }}><strong className="grow">სასწრაფო ინციდენტზე — დამატებით ეცნობოს</strong>
+          {chk('alert_sms', 'SMS')}{chk('alert_email', 'ელფოსტა')}</div>
+        <span className="small muted">ხარისხის მენეჯერები ყოველთვის იღებენ. აქ — მაგ. დირექტორი, სამედიცინო დირექტორი (ზარი; SMS / ელფოსტა — თუ ჩართულია). ტექსტში პაციენტის მონაცემები არ არის.</span>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{ids.map((id) => <span key={id} className="term">{names[id] ?? known.data?.find((x) => x.id === id)?.name ?? id.slice(0, 8)}
+          <button type="button" aria-label="მოხსნა" onClick={() => upd('alert_user_ids', ids.filter((x) => x !== id))}>×</button></span>)}
+          {!ids.length && <span className="small muted">დამატებითი მიმღები არ არის</span>}</div>
+        <input className="input" style={{ maxWidth: 360, height: 36 }} aria-label="თანამშრომლის ძებნა" placeholder="დაამატეთ: სახელი, გვარი" value={q} onChange={(e) => setQ(e.target.value)} />
+        {q.trim().length >= 2 && <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{people.data?.filter((p) => !ids.includes(p.id)).slice(0, 10).map((p) =>
+          <button key={p.id} className="btn sm" type="button" onClick={() => { setNames({ ...names, [p.id]: p.name }); upd('alert_user_ids', [...ids, p.id]); setQ(''); }}>+ {p.name}{p.department_name ? ` · ${p.department_name}` : ''}</button>)}</div>}
+      </div>
+      <span className="small muted">კატეგორიები, ქვეკატეგორიები (სენტინელური ნიშანი) და ხელშემწყობი ფაქტორები — „ხარისხი და ინციდენტები“ → „ცნობარები“ (ხარისხის მენეჯერი).</span>
     </div>
   );
 }

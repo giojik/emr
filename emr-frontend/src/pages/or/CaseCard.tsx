@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError, can } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { ReportIncidentButton } from '../../components/IncidentReport';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, genderShort, hhmm, localISO, todayISO } from '../../lib/format';
 import { CancelDialog, invalOr, ReasonPrompt, RequestDialog, ScheduleDialog } from './Dialogs';
@@ -45,6 +46,7 @@ export default function CaseCard() {
           <span className="mono">{c.case_no}</span>
           {c.status === 'in_progress' && c.phase ? <span className="chip accent">{PHASE_KA[c.phase]}</span> : chip(CASE_ST, c.status)}{chip(URGENCY, c.urgency)}
           <span className="grow" />
+          <ReportIncidentButton patient={{ id: c.patient_id, name: `${c.first_name} ${c.last_name}` }} source={{ type: 'or_case', id: c.id, label: `ოპერაცია ${c.case_no}` }} department_id={c.department_id} />
           {c.encounter_id ? <Link className="btn sm" to={`/inpatient/stay/${c.encounter_id}`}>ჰოსპიტალიზაცია {c.adm_no}</Link> : c.plan_no && <span className="chip info">გეგმიური რიგი {c.plan_no}</span>}
           <Link className="btn sm" to={`/or?tab=board&date=${c.scheduled_start ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tbilisi' }).format(new Date(c.scheduled_start)) : todayISO()}`}>დაფა</Link>
         </div>

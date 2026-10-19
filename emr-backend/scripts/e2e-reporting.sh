@@ -51,7 +51,7 @@ refresh() {
 }
 
 step "0. მოდული, უფლებები, პარამეტრები"
-chk "უფლებების კატალოგში 33 უფლება (0060: + reports, reports_all, reports_phi)" "$(api GET /roles/capabilities "$ADM" | jq length)" "33"
+chk "უფლებების კატალოგში 36 უფლება (0060: + reports, reports_all, reports_phi; 0064: + quality, quality_dept, quality_view)" "$(api GET /roles/capabilities "$ADM" | jq length)" "36"
 O_RPT=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="reporting")|{enabled, settings}')
 [ -n "$O_RPT" ] || die "მოდული reporting ვერ მოიძებნა"
 chk "ნაგულისხმევი: 15 წთ, 02 სთ, 35 დღე, საათებით, 30 / 7 დღე" "$(echo "$O_RPT" | jq -r '.settings|"\(.refresh_today_min):\(.nightly_hour):\(.recompute_days):\(.occupancy_basis):\(.stock_days_window):\(.stock_days_alert)"')" "15:2:35:hours:30:7"

@@ -6,6 +6,8 @@ import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dayTitle, hhmm, localISO, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { TaskDialog } from './Nursing';
 import { doseToMlH, UNIT_KA as RATE_KA } from './Icu';
+import { openIncidentReport } from '../../components/IncidentReport';
+import { useModuleEnabled } from '../../lib/modules';
 
 // ================================================================= ტიპები (0043 MAR)
 type MStatus = 'due' | 'given' | 'partial' | 'held' | 'refused' | 'not_given' | 'missed' | 'cancelled';
@@ -289,9 +291,12 @@ function EntryDialog({ order, entry: e, canVoid, onClose, onDone }: { order: Mar
     ['გაუქმდა', e.voided_at && `${tsDate(e.voided_at)} ${hhmm(e.voided_at)} — ${e.voided_by_name ?? ''}: ${e.void_reason ?? ''}`],
   ];
   const can = canVoid && !e.voided_at && !['due', 'missed', 'cancelled'].includes(e.status);
+  const qmOn = useModuleEnabled('quality');
   return (
     <Modal title={order?.title ?? 'MAR ჩანაწერი'} onClose={onClose} width={560}
       footer={<><button className="btn" type="button" onClick={onClose}>დახურვა</button>
+        {qmOn && !['due', 'cancelled'].includes(e.status) && <button className="btn" type="button" title="ინციდენტის / near-miss-ის შეტყობინება ამ ჩანაწერზე"
+          onClick={() => { onClose(); openIncidentReport({ source: { type: 'mar_entry', id: e.id, label: `MAR: ${order?.title ?? ''}` } }); }}>⚠ ინციდენტი</button>}
         {can && !voiding && <button className="btn danger" type="button" onClick={() => setVoiding(true)}>გაუქმება (შეცდომა)</button>}
         {voiding && <button className="btn danger" type="button" disabled={reason.trim().length < 3 || m.isPending} onClick={() => m.mutate()}>გაუქმების დადასტურება</button>}</>}>
       <div className="stack" style={{ gap: 8 }}>

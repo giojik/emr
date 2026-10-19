@@ -176,6 +176,29 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       attention_notify_hour: (v) => int(v, 0, 23), attention_notify_level: (v) => oneOf(v, ['red', 'all']),
     },
   },
+  // 0064: ხარისხი და ინციდენტები
+  quality: {
+    keys: {
+      identity_modes: (v) => Array.isArray(v) && v.length >= 1 && v.every((x) => ['open', 'confidential', 'anonymous'].includes(x as string)) && new Set(v).size === v.length,
+      identity_default: (v) => oneOf(v, ['open', 'confidential', 'anonymous']), ncc_merp: bool,
+      risk_low_max: (v) => int(v, 1, 23), risk_medium_max: (v) => int(v, 2, 24), risk_high_max: (v) => int(v, 3, 24),
+      triage_hours: (v) => int(v, 1, 720), sentinel_triage_hours: (v) => int(v, 1, 168),
+      alert_harm: (v) => oneOf(v, ['moderate', 'severe', 'death', 'off']),
+      alert_user_ids: (v) => Array.isArray(v) && v.length <= 20 && v.every((x) => typeof x === 'string' && UUID.test(x)) && new Set(v).size === v.length,
+      alert_sms: bool, alert_email: bool, event_prompts: bool, author_feedback: bool, anonymous_tracking: bool,
+    },
+    extra: async (s, db) => {
+      if (!(s.identity_modes as string[]).includes(s.identity_default as string)) return 'ნაგულისხმევი რეჟიმი დაშვებულთა შორის უნდა იყოს';
+      if (!((s.risk_low_max as number) < (s.risk_medium_max as number) && (s.risk_medium_max as number) < (s.risk_high_max as number))) return 'რისკის ზღვრები: დაბალი < საშუალო < მაღალი';
+      if ((s.sentinel_triage_hours as number) > (s.triage_hours as number)) return 'სენტინელური ტრიაჟის ვადა ჩვეულებრივზე მეტი ვერ იქნება';
+      const ids = (s.alert_user_ids as string[]) ?? [];
+      if (ids.length) {
+        const n = (await db.selectFrom('users').select(sql<number>`count(*)::int`.as('n')).where('id', 'in', ids).where('is_active', '=', true).executeTakeFirstOrThrow()).n;
+        if (n !== ids.length) return 'გაფრთხილების მიმღები ვერ მოიძებნა ან გათიშულია';
+      }
+      return null;
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError, can } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import { ReportIncidentButton } from '../../components/IncidentReport';
 import type { Doctor } from '../../api/types';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { age, dateGe, genderShort, tsDate } from '../../lib/format';
@@ -113,6 +114,7 @@ export default function Stay() {
         <span className="muted">{genderShort(s.gender)} · {age(s.birth_date)} · {dateGe(s.birth_date)} · {s.personal_number}</span>
         <span className="mono">{s.adm_no}</span>{chipOf(STAY_ST, s.status)}
         <span className="grow" />
+        <ReportIncidentButton patient={{ id: s.patient_id, name: `${s.first_name} ${s.last_name}` }} source={{ type: 'stay', id: s.encounter_id, label: `ჰოსპიტალიზაცია ${s.adm_no}` }} department_id={s.current?.department_id ?? s.department_id} />
         <Link className="btn sm" to={`/patients/${s.patient_id}`}>პაციენტის ბარათი</Link>
       </header>
       <div className="content">

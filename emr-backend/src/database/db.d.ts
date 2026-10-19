@@ -3192,6 +3192,104 @@ export interface ProcSupplierPrices {
   vat_rate: Generated<Numeric>;
 }
 
+export interface QmClassifiers {
+  code: string;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_medication: Generated<boolean>;
+  is_sentinel: Generated<boolean>;
+  kind: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface QmIncidentEvents {
+  at: Generated<Timestamp>;
+  data: Json | null;
+  id: Generated<Int8>;
+  incident_id: string;
+  internal: Generated<boolean>;
+  kind: string;
+  text: string | null;
+  user_id: string | null;
+}
+
+export interface QmIncidentFiles {
+  created_at: Generated<Timestamp>;
+  file_path: string;
+  id: Generated<string>;
+  incident_id: string;
+  is_active: Generated<boolean>;
+  mime_type: string;
+  original_name: string | null;
+  sha256: string;
+  size_bytes: number;
+  uploaded_by: string | null;
+}
+
+export interface QmIncidentPeople {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  incident_id: string;
+  name_text: string | null;
+  note: string | null;
+  role: string;
+  user_id: string | null;
+}
+
+export interface QmIncidents {
+  affected: string;
+  category_id: string;
+  consequence: number | null;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  description: string;
+  duplicate_of: string | null;
+  encounter_id: string | null;
+  event_type: string;
+  harm: string | null;
+  harm_reported: string;
+  id: Generated<string>;
+  identity_mode: string;
+  immediate_actions: string | null;
+  inc_no: string;
+  is_sentinel: Generated<boolean>;
+  likelihood: number | null;
+  location_text: string | null;
+  merp_category: string | null;
+  occurred_at: Timestamp;
+  overdue_notified_at: Timestamp | null;
+  patient_id: string | null;
+  patient_text: string | null;
+  reject_reason: string | null;
+  reported_at: Generated<Timestamp>;
+  reporter_id: string | null;
+  risk_level: string | null;
+  risk_score: Generated<number | null>;
+  source_id: string | null;
+  source_label: string | null;
+  source_type: string | null;
+  status: Generated<string>;
+  track_hash: string | null;
+  triage_due_at: Timestamp;
+  triage_note: string | null;
+  triaged_at: Timestamp | null;
+  triaged_by: string | null;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
+}
+
+export interface QmPromptDismissals {
+  at: Generated<Timestamp>;
+  source_id: string;
+  source_type: string;
+  user_id: string;
+}
+
 export interface Referrals {
   completed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -4413,6 +4511,12 @@ export interface DB {
   proc_requisition_lines: ProcRequisitionLines;
   proc_requisitions: ProcRequisitions;
   proc_supplier_prices: ProcSupplierPrices;
+  qm_classifiers: QmClassifiers;
+  qm_incident_events: QmIncidentEvents;
+  qm_incident_files: QmIncidentFiles;
+  qm_incident_people: QmIncidentPeople;
+  qm_incidents: QmIncidents;
+  qm_prompt_dismissals: QmPromptDismissals;
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;

@@ -31,8 +31,8 @@ gtin13() { local d=$1 s=0 i; for i in $(seq 0 11); do if [ $((i % 2)) -eq 0 ]; t
 EAN1=$(gtin13 "462$(printf '%09d' "$((10#$S))")"); EAN2=$(gtin13 "463$(printf '%09d' "$((10#$S))")"); EAN3=$(gtin13 "464$(printf '%09d' "$((10#$S))")"); EAN4=$(gtin13 "465$(printf '%09d' "$((10#$S))")")
 
 step "0. მომზადება"
-chk "უფლებების კატალოგში 33 უფლება (+ storekeeper, stock_manager; 0048: + საოპერაციო — 3; 0051: + შესყიდვები — 2; 0054: + ტარიფები — 2; 0055: + DRG — 2; 0060: + რეპორტინგი — 3)" \
-  "$(api GET /roles/capabilities "$ADM" | jq -r '"\(length):\([.[].code|select(.=="storekeeper" or .=="stock_manager")]|length)"')" "33:2"
+chk "უფლებების კატალოგში 36 უფლება (+ storekeeper, stock_manager; 0048: + საოპერაციო — 3; 0051: + შესყიდვები — 2; 0054: + ტარიფები — 2; 0055: + DRG — 2; 0060: + რეპორტინგი — 3; 0064: + ხარისხი — 3)" \
+  "$(api GET /roles/capabilities "$ADM" | jq -r '"\(length):\([.[].code|select(.=="storekeeper" or .=="stock_manager")]|length)"')" "36:2"
 mkrole() { local id; id=$(api POST /roles "$ADM" -d "{\"code\":\"e2e_$1_$S\",\"name\":\"ტესტ-E2E $2\",\"capabilities\":$3}" | jq -r '.id // empty')
   [ -n "$id" ] && { echo "$id" >> "$TMP/roles"; echo "e2e_$1_$S"; }; }
 mkuser() {

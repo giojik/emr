@@ -1,4 +1,5 @@
 import NotificationBell from './NotificationBell';
+import { IncidentReportHost } from './IncidentReport';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -25,6 +26,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },
   { to: '/cssd', label: 'სტერილიზაცია', module: 'cssd' },
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
+  { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
@@ -46,6 +48,7 @@ const HOME: Record<Role, string> = {
   tariffs: '/admin/tariffs', tariffs_approve: '/admin/tariffs?tab=changes',
   drg: '/inpatient?tab=billing', drg_admin: '/admin/drg',
   reports: '/dashboard', reports_all: '/dashboard', reports_phi: '/dashboard',
+  quality: '/quality', quality_dept: '/quality', quality_view: '/quality',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {
@@ -70,16 +73,19 @@ export default function Shell() {
         <nav className="nav" aria-label="მთავარი მენიუ">
           {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
         </nav>
-        <div className="me">
-          <div className="avatar" aria-hidden="true">{initials(user.name)}</div>
-          <div className="stack grow" style={{ gap: 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
-            <span className="small muted" title={user.roles.map((r) => r.name).join(', ')}>{user.roles[0]?.name ?? ROLE_KA[user.role] ?? user.role}{user.roles.length > 1 ? ` +${user.roles.length - 1}` : ''}</span>
+        <div className="stack" style={{ marginTop: 'auto', gap: 10 }}>
+          <IncidentReportHost />
+          <div className="me">
+            <div className="avatar" aria-hidden="true">{initials(user.name)}</div>
+            <div className="stack grow" style={{ gap: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
+              <span className="small muted" title={user.roles.map((r) => r.name).join(', ')}>{user.roles[0]?.name ?? ROLE_KA[user.role] ?? user.role}{user.roles.length > 1 ? ` +${user.roles.length - 1}` : ''}</span>
+            </div>
+            <NotificationBell />
+            <button type="button" className="icon-btn" aria-label="გასვლა" title="გასვლა" onClick={async () => { await logout(); nav('/login'); }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 4h4v16h-4" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></svg>
+            </button>
           </div>
-          <NotificationBell />
-          <button type="button" className="icon-btn" aria-label="გასვლა" title="გასვლა" onClick={async () => { await logout(); nav('/login'); }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 4h4v16h-4" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></svg>
-          </button>
         </div>
       </aside>
       <div className="main"><Outlet /></div>

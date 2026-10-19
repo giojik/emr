@@ -41,7 +41,7 @@ mkuser() {
 }
 
 step "0. მომზადება"
-chk "უფლებების კატალოგში 33 უფლება (0030: + storekeeper, stock_manager; 0048: + or_schedule, anesthesiologist, or_nurse; 0051: + procurement, procurement_approve; 0054: + tariffs, tariffs_approve; 0055: + drg, drg_admin; 0060: + reports, reports_all, reports_phi)" "$(api GET /roles/capabilities "$ADM" | jq length)" "33"
+chk "უფლებების კატალოგში 36 უფლება (0030: + storekeeper, stock_manager; 0048: + or_schedule, anesthesiologist, or_nurse; 0051: + procurement, procurement_approve; 0054: + tariffs, tariffs_approve; 0055: + drg, drg_admin; 0060: + reports, reports_all, reports_phi; 0064: + quality, quality_dept, quality_view)" "$(api GET /roles/capabilities "$ADM" | jq length)" "36"
 chk "ახალი უფლებები: accountant, manager, hr, med_engineer, viewer" \
   "$(api GET /roles/capabilities "$ADM" | jq -r '[.[].code|select(.=="accountant" or .=="manager" or .=="hr" or .=="med_engineer" or .=="viewer")]|length')" "5"
 DEPS=$(api GET /departments "$ADM"); DA=$(echo "$DEPS" | jq -r '.[0].id // empty'); DB=$(echo "$DEPS" | jq -r '.[1].id // empty')

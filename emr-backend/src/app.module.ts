@@ -47,13 +47,14 @@ import { ScrubModule } from './scrub/scrub';
 import { ConfigPackageModule } from './config-package/config-package';
 import { RptCommonModule } from './reporting/reporting-common';
 import { ReportingModule } from './reporting/reporting.module';
+import { QualityModule } from './quality/quality.module';
 import { APP_FILTER } from '@nestjs/core';
 import { PgLockFilter } from './common/pg-lock.filter';
 
 @Module({
   imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, IcuModule, OrAdminModule, OrModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule, DrgModule, ScrubModule, ConfigPackageModule, RptCommonModule, ReportingModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule, DrgModule, ScrubModule, ConfigPackageModule, RptCommonModule, ReportingModule, QualityModule],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: PgLockFilter }],
 })
