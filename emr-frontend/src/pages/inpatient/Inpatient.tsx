@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, can, openBlob } from '../../api/client';
 import type { Doctor, IcdCode, PatientListItem } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import PatientSearch from '../../components/PatientSearch';
+import IpcBanner from '../../components/IpcBanner';
+import { usePatientIpc } from '../ipc/types';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
@@ -307,11 +309,23 @@ function Admit({ planned, onDone }: { planned?: Planned; onDone?: () => void } =
   const refs = useQuery({ queryKey: ['ipd-refs', srcEnc], queryFn: () => api<{ referrals: { id: string; type: string; status: string; reason: string }[] }>(`/encounters/${srcEnc}`), enabled: !!srcEnc });
   const hospRefs = (refs.data?.referrals ?? []).filter((r) => r.type === 'hospitalization' && ['requested', 'in_progress'].includes(r.status));
   const canBed = board.data?.can_assign || !!planned?.bed_id;
+  // 0067: MDRO ფლაგი → იზოლაციის შეთავაზება (ტიპი წინასწარ ივსება, მიზეზი „MDRO“)
+  const ipc = usePatientIpc(patient?.id);
+  const ipcFlags = (ipc.data?.flags ?? []).filter((x) => x.status === 'active');
+  const [isoFlag, setIsoFlag] = useState('');
+  useEffect(() => {
+    const fl = ipcFlags[0];
+    if (fl && !f.isolation) { setF((v) => ({ ...v, isolation: fl.isolation_type })); setIsoFlag(fl.id); }
+    if (!fl) setIsoFlag('');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ipc.data]);
+  const isoFlagOk = !!isoFlag && ipcFlags.some((x) => x.id === isoFlag) && !!f.isolation;
   const m = useMutation({
     mutationFn: () => withConfirm((confirm) => api<{ encounter_id: string; adm_no: string; bed: string | null }>('/inpatient/admissions', { body: {
       patient_id: patient!.id, department_id: dep, attending_doctor_id: f.attending_doctor_id, source: f.source, icd10_code: icd!.code,
       source_encounter_id: srcEnc || undefined, referral_id: referral || undefined, planned_id: planned?.id, referring_institution: f.referring_institution || undefined,
-      chief_complaint: f.chief_complaint || undefined, severity: f.severity || undefined, isolation: f.isolation || undefined, bed_id: f.bed_id || undefined, confirm } })),
+      chief_complaint: f.chief_complaint || undefined, severity: f.severity || undefined, isolation: f.isolation || undefined, bed_id: f.bed_id || undefined,
+      isolation_flag_id: isoFlagOk ? isoFlag : undefined, confirm } })),
     onSuccess: (r) => { if (!r) return; inval(qc); onDone?.(); nav(`/inpatient/stay/${r.encounter_id}?new=1`); },
   });
   const freeBeds = (board.data?.wards ?? []).flatMap((w) => w.beds.filter((b) => b.status === 'free' && (!b.is_overflow || board.data!.settings.overflow_beds)).map((b) => ({ ...b, ward: w })));
@@ -322,6 +336,7 @@ function Admit({ planned, onDone }: { planned?: Planned; onDone?: () => void } =
           <strong className="grow">{patient.last_name} {patient.first_name} <span className="small muted">{genderShort(patient.gender)} · {age(patient.birth_date)} · {patient.personal_number}</span></strong>
           {!planned && <button className="btn sm" type="button" onClick={() => { setPatient(null); setSrcEnc(''); setReferral(''); }}>შეცვლა</button>}
         </div>)}
+      {patient && <IpcBanner patientId={patient.id} compact />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
         <Field label="განყოფილება" htmlFor="ad" required><select id="ad" className="select" value={dep} disabled={!!planned?.bed_id} onChange={(e) => setF({ ...f, department_id: e.target.value, bed_id: '' })}>
           {census.data?.departments.map((d) => <option key={d.id} value={d.id}>{d.name} — თავისუფალი {d.free}</option>)}</select></Field>
@@ -343,7 +358,8 @@ function Admit({ planned, onDone }: { planned?: Planned; onDone?: () => void } =
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
         <Field label="მდგომარეობა" htmlFor="asv"><select id="asv" className="select" value={f.severity} onChange={(e) => setF({ ...f, severity: e.target.value })}>
           <option value="">—</option>{Object.entries(SEVERITY_KA).map(([k, [, l]]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="იზოლაცია" htmlFor="ais"><select id="ais" className="select" value={f.isolation} onChange={(e) => setF({ ...f, isolation: e.target.value })}>
+        <Field label="იზოლაცია" htmlFor="ais" hint={isoFlagOk ? `მიზეზი: MDRO ${ipcFlags.find((x) => x.id === isoFlag)?.mdro_code.toUpperCase()}` : undefined}>
+          <select id="ais" className="select" value={f.isolation} onChange={(e) => setF({ ...f, isolation: e.target.value })}>
           <option value="">არ სჭირდება</option>{Object.entries(ISOLATION_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         {planned?.bed_id ? <Field label="საწოლი" htmlFor="ab"><input id="ab" className="input mono" disabled value={`${planned.bed_code} (დაჯავშნილი)`} /></Field>
           : canBed ? <Field label="საწოლი" htmlFor="ab" hint={direct ? undefined : 'შეგიძლიათ ახლავე, ან მოგვიანებით დაფიდან'}><select id="ab" className="select" value={f.bed_id} onChange={(e) => setF({ ...f, bed_id: e.target.value })}>

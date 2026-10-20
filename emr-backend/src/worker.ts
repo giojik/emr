@@ -13,6 +13,7 @@ import { RptRefreshService } from './reporting/reporting-refresh';
 import { RptJobsService } from './reporting/reporting-jobs';
 import { WorkerModule } from './worker.module';
 import { QmJobsService } from './quality/quality-jobs';
+import { IpcJobsService } from './ipc/ipc-jobs';
 
 const HEARTBEAT_MS = 60_000;
 
@@ -59,8 +60,13 @@ async function bootstrap() {
   const qmTick = () => void qm.tick().then((r) => { if (r.overdue || r.analysis || r.capa || r.effectiveness) log.log(`ინციდენტები: ტრიაჟი ${r.overdue}, ანალიზი ${r.analysis}, CAPA ${r.capa}, ეფექტიანობა ${r.effectiveness}`); })
     .catch((e) => log.error(`ინციდენტები: ${(e as Error).message}`));
   const qmTimer = setInterval(qmTick, 10 * 60_000); setTimeout(qmTick, 75_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); });
+  // 0067: ინფექციის კონტროლი — გამოტოვებული მიკრობიოლოგიის პასუხების MDRO შემოწმება, ფლაგის ვადა — ყოველ 5 წუთში
+  const ipc = app.get(IpcJobsService);
+  const ipcTick = () => void ipc.tick().then((r) => { if (r.scanned || r.expired) log.log(`ინფექციის კონტროლი: შემოწმდა ${r.scanned}, ვადა ${r.expired}`); })
+    .catch((e) => log.error(`ინფექციის კონტროლი: ${(e as Error).message}`));
+  const ipcTimer = setInterval(ipcTick, 5 * 60_000); setTimeout(ipcTick, 90_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

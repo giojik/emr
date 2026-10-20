@@ -14,14 +14,17 @@ import { d, dt, newDoc } from './diagnostics.pdf';
 import { DiagnosticsService } from './diagnostics.service';
 import { LabDeliveryService } from './lab-delivery';
 import { LabNotifyService } from './lab-notify';
+import { IpcMdroService } from '../ipc/ipc-mdro';
 
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
 const EDITABLE = ['collected', 'in_progress', 'resulted'];
 export interface MicroSnapshot {
   stage: string; gram_stain: string | null; growth_summary: string | null; comment: string | null;
-  isolates: { seq: number; organism: string | null; organism_code: string | null; quantity: string | null; comment: string | null;
+  isolates: { seq: number; organism: string | null; organism_code: string | null; quantity: string | null; comment: string | null; markers?: string[];
     ast: { code: string; name: string; mic: string | null; zone_mm: string | null; interp: string | null }[] }[];
 }
+/** 0067: იზოლატის მარკერები */
+export const MARKER_KA: Record<string, string> = { esbl: 'ESBL', carbapenemase: 'კარბაპენემაზა', ampc: 'AmpC', mlsb: 'MLSb (ინდუცირებადი)', pbp2a: 'PBP2a / mecA', van: 'vanA / vanB' };
 const STAGE_KA: Record<string, string> = { incubating: 'ინკუბაცია — ზრდა ჯერ არ შეფასებულა', no_growth: 'ზრდა არ აღინიშნა', growth: 'ზრდა', contaminated: 'კონტამინაცია (შერეული ფლორა) — გთხოვთ, ნიმუში განმეორებით' };
 
 /**
@@ -93,7 +96,7 @@ export class LabMicroService {
     const it = await this.item(itemId);
     const c = await this.culture(itemId);
     const isolates = await this.db.selectFrom('micro_isolates as i').leftJoin('micro_organisms as o', 'o.id', 'i.organism_id').leftJoin('micro_panels as p', 'p.id', 'i.panel_id')
-      .select(['i.id', 'i.seq', 'i.organism_id', 'o.name as organism', 'o.code as organism_code', 'o.gram', 'i.quantity', 'i.comment', 'i.panel_id', 'p.name as panel',
+      .select(['i.id', 'i.seq', 'i.organism_id', 'o.name as organism', 'o.code as organism_code', 'o.gram', 'i.quantity', 'i.comment', 'i.panel_id', 'p.name as panel', 'i.markers',
         (eb) => eb.selectFrom('micro_ast as a').innerJoin('micro_antibiotics as ab', 'ab.id', 'a.antibiotic_id')
           .select(sql<unknown>`coalesce(json_agg(json_build_object('antibiotic_id', ab.id, 'code', ab.code, 'name', ab.name, 'class', ab.class, 'mic', a.mic, 'zone_mm', a.zone_mm,
             'interp', a.interp, 'reported', a.reported, 'reserve', a.reserve) ORDER BY a.sort_order, ab.name), '[]')`.as('x')).whereRef('a.isolate_id', '=', 'i.id').as('ast')])
@@ -140,8 +143,9 @@ export class LabMicroService {
     if (!r) throw new NotFoundException('იზოლატი ვერ მოიძებნა');
     this.editable(r.status); return r;
   }
-  async updateIsolate(isolateId: string, dto: { organism_id?: string; quantity?: string | null; comment?: string | null }, ctx: AuditContext) {
+  async updateIsolate(isolateId: string, dto: { organism_id?: string; quantity?: string | null; comment?: string | null; markers?: string[] }, ctx: AuditContext) {
     const r = await this.isolate(isolateId);
+    if (dto.markers) dto = { ...dto, markers: [...new Set(dto.markers)] };
     await this.db.updateTable('micro_isolates').set(Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined))).where('id', '=', isolateId).execute();
     await this.audit.log(ctx, { action: 'MICRO_ISOLATE_UPDATE', entityName: 'dx_order_items', entityId: r.order_item_id, newData: dto });
     return this.detail(r.order_item_id);
@@ -177,7 +181,7 @@ export class LabMicroService {
       isolates: d0.isolates.map((i) => {
         const ast = (i.ast as Ast[]) ?? [];
         const firstLineR = ast.some((a) => !a.reserve && a.interp === 'R');
-        return { seq: i.seq, organism: i.organism, organism_code: i.organism_code, quantity: i.quantity, comment: i.comment,
+        return { seq: i.seq, organism: i.organism, organism_code: i.organism_code, quantity: i.quantity, comment: i.comment, markers: i.markers ?? [],
           ast: ast.filter((a) => a.interp && (a.reserve ? a.reported || firstLineR : a.reported)).map((a) => ({ code: a.code, name: a.name, mic: a.mic, zone_mm: a.zone_mm, interp: a.interp })) };
       }) };
   }
@@ -235,6 +239,7 @@ export class LabMicroService {
     doc.font('B').text('ზრდა: ', { continued: true }).font('R').text(rep.growth_summary || STAGE_KA[rep.stage] || rep.stage).moveDown(0.4);
     for (const i of rep.isolates) {
       doc.font('B').fontSize(11).text(`${i.seq}. ${i.organism ?? '—'}${i.quantity ? ` — ${i.quantity}` : ''}`); doc.font('R').fontSize(10);
+      if (i.markers?.length) doc.font('B').fontSize(10).fillColor('#B3261E').text(`მარკერები: ${i.markers.map((m) => MARKER_KA[m] ?? m).join(', ')}`).fillColor('black').font('R');
       if (i.comment) doc.fillColor('#555').text(i.comment).fillColor('black');
       if (i.ast.length) {
         let y = doc.y + 4; const L = 60; const cols = [220, 90, 70, 60];
@@ -268,7 +273,9 @@ class PanelDto { @IsArray() @ArrayMaxSize(80) @ValidateNested({ each: true }) @T
 class CultureDto { @IsOptional() @IsIn(['incubating', 'no_growth', 'growth', 'contaminated']) stage?: string; @IsOptional() @IsString() @MaxLength(1000) gram_stain?: string | null;
   @IsOptional() @IsString() @MaxLength(1000) growth_summary?: string | null; @IsOptional() @IsString() @MaxLength(2000) comment?: string | null }
 class IsolateDto { @IsOptional() @IsUUID() organism_id?: string; @IsOptional() @IsString() @MaxLength(100) quantity?: string | null; @IsOptional() @IsString() @MaxLength(500) comment?: string | null;
-  @IsOptional() @IsUUID() panel_id?: string | null }
+  @IsOptional() @IsUUID() panel_id?: string | null;
+  /** 0067: ფენოტიპის / რეზისტენტობის მარკერები (ESBL, კარბაპენემაზა, …) — MDRO-ს ამოცნობისთვის */
+  @IsOptional() @IsArray() @ArrayMaxSize(6) @IsIn(['esbl', 'carbapenemase', 'ampc', 'mlsb', 'pbp2a', 'van'], { each: true }) markers?: string[] }
 class AstRowDto { @IsUUID() antibiotic_id: string; @IsOptional() @IsString() @MaxLength(20) mic?: string | null; @IsOptional() @IsNumber() @Min(0) zone_mm?: number | null;
   @IsOptional() @IsIn(['S', 'I', 'R']) interp?: 'S' | 'I' | 'R' | null; @IsOptional() @IsBoolean() reported?: boolean }
 class AstDto { @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => AstRowDto) rows: AstRowDto[] }
@@ -277,7 +284,7 @@ void IsInt;
 @Controller('lab/micro')
 export class LabMicroController {
   constructor(private readonly m: LabMicroService, @Inject(forwardRef(() => LabDeliveryService)) private readonly delivery: LabDeliveryService,
-    private readonly labNotify: LabNotifyService) {}
+    private readonly labNotify: LabNotifyService, private readonly ipc: IpcMdroService) {}
   @Get('refs') @Roles(...LAB_STAFF, 'doctor') refs() { return this.m.refs(); }
   @Post('organisms') @Roles('admin', 'lab_doctor', 'lab_manager') addOrg(@Body() d: OrganismDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.saveOrganism(null, d, u, auditCtx(r)); }
   @Patch('organisms/:id') @Roles('admin', 'lab_doctor', 'lab_manager') updOrg(@Param('id', ParseUUIDPipe) id: string, @Body() d: OrganismDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.saveOrganism(id, d, u, auditCtx(r)); }
@@ -297,7 +304,9 @@ export class LabMicroController {
   @Post('items/:id/prelim') @HttpCode(200) @Roles('admin', 'lab_doctor') prelim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.m.prelim(id, u, auditCtx(r)).then((x) => { void this.labNotify.ready(id, u.id, 'lab_prelim').catch(() => undefined); return x; }); }
   @Post('items/:id/complete') @HttpCode(200) @Roles(...LAB_STAFF) complete(@Param('id', ParseUUIDPipe) id: string, @Req() r: Request) { return this.m.complete(id, auditCtx(r)); }
   @Post('items/:id/final') @HttpCode(200) @Roles('admin', 'lab_doctor') final(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) {
-    return this.m.final(id, u, auditCtx(r)).then((x) => { void this.delivery.afterValidate(id, auditCtx(r)); void this.labNotify.ready(id, u.id).catch(() => undefined); return x; });
+    return this.m.final(id, u, auditCtx(r)).then(async (x) => {
+      await this.ipc.afterMicroFinal(id);                                   // 0067: MDRO ფლაგი (შეცდომა ვალიდაციას არ აჩერებს)
+      void this.delivery.afterValidate(id, auditCtx(r)); void this.labNotify.ready(id, u.id).catch(() => undefined); return x; });
   }
   @Get('items/:id/view') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist') view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.m.view(id, u); }
   @Get('items/:id/report.pdf') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')

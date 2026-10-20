@@ -18,6 +18,8 @@ import { OrStayPanel } from '../or/CaseCard';
 import OrdersPanel from './Orders';
 import StayBillingPanel from './Billing';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
+import IpcBanner from '../../components/IpcBanner';
+import IsolationPanel from '../ipc/IsolationPanel';
 import { chipOf, DISCHARGE_KA, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, TRANSPORT_KA, type Board, type InpatientSettings, type Printer } from './types';
 
 interface StayDetail {
@@ -57,7 +59,8 @@ function evText(k: string, d: Record<string, unknown>) {
     case 'bed_changed': return `${x(d.from)} → ${x(d.to)} · ${x(d.reason)}`;
     case 'attending_changed': return `${x(d.to_name)} · ${x(d.reason)}`;
     case 'severity': return `${SEVERITY_KA[x(d.from)]?.[1] ?? '—'} → ${SEVERITY_KA[x(d.to)]?.[1] ?? '—'}`;
-    case 'isolation': return `${ISOLATION_KA[x(d.from)] ?? 'არა'} → ${ISOLATION_KA[x(d.to)] ?? 'არა'}`;
+    case 'isolation': return d.action ? `${d.action === 'start' ? 'დაწყება' : 'მოხსნა'}: ${ISOLATION_KA[x(d.type)] ?? x(d.type)}${d.reason ? ` — ${x(d.reason)}` : ''}${d.text ? ` (${x(d.text)})` : ''}`
+      : `${ISOLATION_KA[x(d.from)] ?? 'არა'} → ${ISOLATION_KA[x(d.to)] ?? 'არა'}`;
     case 'cancelled': return x(d.reason);
     case 'bed_released': return `${x(d.bed)}`;
     case 'wristband': return d.mode === 'zpl' ? `Zebra: ${x(d.printer)}` : 'PDF';
@@ -121,6 +124,7 @@ export default function Stay() {
         {toast.node}
         {sp.get('new') && active && <div className="alert info">ჰოსპიტალიზაცია გაფორმდა ({s.adm_no}). {!s.current?.bed_id && 'საწოლს მიანიჭებს განყოფილება.'} დაბეჭდეთ სამაჯური{s.consent !== 'granted' ? ' და გააფორმეთ ჰოსპიტალიზაციის თანხმობა (პაციენტის ბარათი → თანხმობები)' : ''}.</div>}
         {s.allergies.length > 0 && <div className="alert danger">ალერგია: {s.allergies.map((a) => a.substance).join(', ')}</div>}
+        <IpcBanner patientId={s.patient_id} compact hideIsolations />
         {s.status === 'cancelled' && <div className="alert warn">გაუქმებულია: {s.cancel_reason}</div>}
         <ErrorBox error={err} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
@@ -141,8 +145,9 @@ export default function Stay() {
             <h2 style={{ margin: 0 }}>მდგომარეობა</h2>
             <Field label="სიმძიმე" htmlFor="sv"><select id="sv" className="select" disabled={!active || !s.can.staff || patch.isPending} value={s.severity ?? ''} onChange={(e) => patch.mutate({ severity: e.target.value || null })}>
               <option value="">—</option>{Object.entries(SEVERITY_KA).map(([k, [, l]]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-            <Field label="იზოლაცია" htmlFor="is"><select id="is" className="select" disabled={!active || !s.can.staff || patch.isPending} value={s.isolation ?? ''} onChange={(e) => patch.mutate({ isolation: e.target.value || null })}>
-              <option value="">არ სჭირდება</option>{Object.entries(ISOLATION_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+            <div className="row"><span className="muted" style={{ width: 130 }}>იზოლაცია</span>
+              {s.isolation ? <span className="chip warn">{ISOLATION_KA[s.isolation] ?? s.isolation}</span> : <span className="muted">არ არის</span>}
+              <a className="small" href="#isolation">მართვა ↓</a></div>
             <div className="stack" style={{ gap: 4 }}><span className="label">დიაგნოზები</span>
               {s.diagnoses.map((d) => <span key={d.id} className="small"><span className="chip">{DX_KA[d.diagnosis_type] ?? d.diagnosis_type}</span> <span className="mono">{d.icd10_code}</span> {d.icd10_title}</span>)}</div>
             {s.chief_complaint && <div className="small"><span className="muted">ჩივილები: </span>{s.chief_complaint}</div>}
@@ -150,6 +155,7 @@ export default function Stay() {
               {s.consent === 'granted' ? <span className="chip ok">მოწერილია</span> : s.consent === 'refused' ? <span className="chip danger">უარი</span> : <span className="chip warn">{s.consent === 'revoked' ? 'გაუქმებულია' : 'არ არის'}</span>}
               {s.consent !== 'granted' && <Link className="small" to={`/patients/${s.patient_id}`}>გაფორმება →</Link>}</div>
           </section>
+          <IsolationPanel encounterId={s.encounter_id} patientId={s.patient_id} />
           {active && <section className="card card-pad stack" style={{ gap: 10 }}>
             <h2 style={{ margin: 0 }}>მოქმედებები</h2>
             {s.settings.wristband && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

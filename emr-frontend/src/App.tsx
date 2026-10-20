@@ -58,6 +58,8 @@ import Users from './pages/admin/Users';
 import Quality from './pages/quality/Quality';
 import IncidentCard from './pages/quality/IncidentCard';
 import CapaCard from './pages/quality/CapaCard';
+import Ipc from './pages/ipc/Ipc';
+import FlagCard from './pages/ipc/FlagCard';
 
 const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'];
 
@@ -123,6 +125,8 @@ export default function App() {
         <Route path="/quality" element={<Quality />} />
         <Route path="/quality/incidents/:id" element={<IncidentCard />} />
         <Route path="/quality/capas/:id" element={<CapaCard />} />
+        <Route path="/ipc" element={<Ipc />} />
+        <Route path="/ipc/flags/:id" element={<FlagCard />} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin', 'reports_all']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

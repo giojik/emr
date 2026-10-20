@@ -208,6 +208,14 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       return null;
     },
   },
+  // 0067: ინფექციის კონტროლი
+  ipc: {
+    keys: {
+      isolation_remove_mdro: (v) => oneOf(v, ['ipc', 'staff']), ward_conflict: (v) => oneOf(v, ['warn', 'block']),
+      wristband_symbol: bool, door_sign: bool, mdro_flag_mode: (v) => oneOf(v, ['auto', 'suggest']), mdro_clear_negatives: (v) => int(v, 0, 10),
+      mdro_suggest_isolation: bool, hospital_onset_day: (v) => int(v, 2, 7), alert_new_flag: bool, alert_sms: bool, alert_email: bool,
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

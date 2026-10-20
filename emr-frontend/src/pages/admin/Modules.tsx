@@ -50,6 +50,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'scrubber' && <ScrubSettings s={s} set={setS} />}
       {m.code === 'reporting' && <ReportingSettings s={s} set={setS} />}
       {m.code === 'quality' && <QualitySettings s={s} set={setS} />}
+      {m.code === 'ipc' && <IpcSettings s={s} set={setS} />}
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -718,6 +719,46 @@ function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Reco
         </div>
       </div>
       <span className="small muted">კატეგორიები, ქვეკატეგორიები (სენტინელური ნიშანი), ხელშემწყობი ფაქტორები და ინდიკატორები — „ხარისხი და ინციდენტები“ → „ცნობარები“ (ხარისხის მენეჯერი).</span>
+    </div>
+  );
+}
+
+/** ინფექციის კონტროლი (0067) */
+function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const int = (k: string, d: number, min: number, max: number) => (
+    <input id={`ipc-${k}`} className="input mono" type="number" min={min} max={max} value={Number(s[k] ?? d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
+  const chk = (k: string, label: string, hint?: string) => <label className="row small" title={hint}><input type="checkbox" checked={!!s[k]} onChange={(e) => upd(k, e.target.checked)} /> {label}</label>;
+  return (
+    <div className="stack">
+      <h3 style={{ margin: 0, fontSize: 15 }}>იზოლაცია</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="MDRO-ს გამო დადებული იზოლაციის მოხსნა" htmlFor="ipc-rm">
+          <select id="ipc-rm" className="select" value={String(s.isolation_remove_mdro ?? 'ipc')} onChange={(e) => upd('isolation_remove_mdro', e.target.value)}>
+            <option value="ipc">მხოლოდ ინფექციის კონტროლი</option><option value="staff">განყოფილების პერსონალიც</option></select></Field>
+        <Field label="პალატის კონფლიქტი (იზოლაცია / MDRO / დამცავი)" htmlFor="ipc-wc" hint="მრავალსაწოლიან პალატაში განთავსებისას; კოჰორტა (იგივე MDRO) — მხოლოდ გაფრთხილება">
+          <select id="ipc-wc" className="select" value={String(s.ward_conflict ?? 'warn')} onChange={(e) => upd('ward_conflict', e.target.value)}>
+            <option value="warn">გაფრთხილება (დადასტურებით)</option><option value="block">აკრძალვა (ინფექციის კონტროლი — გაფრთხილებით)</option></select></Field>
+        <div className="stack" style={{ gap: 6 }}>
+          {chk('door_sign', 'კარის ნიშანი (A4 PDF) — ტიპი, PPE, ინსტრუქცია')}
+          {chk('wristband_symbol', 'სამაჯურზე ზოგადი ნიშანი „იზოლაცია“', 'ტიპი / მიკროორგანიზმი სამაჯურზე არ იბეჭდება')}
+        </div>
+      </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>რეზისტენტული მიკროორგანიზმები (MDRO)</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="ფლაგი მიკრობიოლოგიიდან" htmlFor="ipc-fm" hint="საბოლოო პასუხისას, ამოცნობის წესებით">
+          <select id="ipc-fm" className="select" value={String(s.mdro_flag_mode ?? 'auto')} onChange={(e) => upd('mdro_flag_mode', e.target.value)}>
+            <option value="auto">ავტომატურად აქტიური (IPC გადახედავს)</option><option value="suggest">შეთავაზება — IPC ადასტურებს</option></select></Field>
+        <Field label="ფლაგის მოხსნა — მინ. უარყოფითი სკრინინგი" htmlFor="ipc-mdro_clear_negatives" hint="0 — არ მოითხოვება">{int('mdro_clear_negatives', 3, 0, 10)}</Field>
+        <Field label="ჰოსპიტალური შეძენა — ნიმუში დღიდან" htmlFor="ipc-hospital_onset_day" hint="მიღების დღე = 1; ECDC / NHSN — მე-3 დღე">{int('hospital_onset_day', 3, 2, 7)}</Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}>
+          {chk('mdro_suggest_isolation', 'ფლაგის მქონე პაციენტს — იზოლაციის შეთავაზება (ჰოსპიტალიზაცია, ბარათი)')}
+          {chk('alert_new_flag', 'ახალი ფლაგი → შეტყობინება (ინფექციის კონტროლი, განყოფილების IPC, მკურნალი ექიმი)')}
+          {chk('alert_sms', 'სასწრაფო MDRO (მაგ. CRE, C. difficile) → SMS ინფექციის კონტროლს', 'პაციენტის მონაცემების გარეშე')}
+          {chk('alert_email', 'სასწრაფო MDRO → ელფოსტა ინფექციის კონტროლს', 'პაციენტის მონაცემების გარეშე')}
+        </div>
+      </div>
+      <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>
   );
 }

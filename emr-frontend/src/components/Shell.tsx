@@ -27,6 +27,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/cssd', label: 'სტერილიზაცია', module: 'cssd' },
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
   { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
+  { to: '/ipc', label: 'ინფექციის კონტროლი', roles: ['infection', 'infection_dept'], module: 'ipc' },
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
@@ -49,6 +50,7 @@ const HOME: Record<Role, string> = {
   drg: '/inpatient?tab=billing', drg_admin: '/admin/drg',
   reports: '/dashboard', reports_all: '/dashboard', reports_phi: '/dashboard',
   quality: '/quality', quality_dept: '/quality', quality_view: '/quality',
+  infection: '/ipc', infection_dept: '/ipc', infection_view: '/dashboard',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

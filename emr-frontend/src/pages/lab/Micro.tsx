@@ -7,7 +7,9 @@ import { time, tsDate } from '../../lib/format';
 
 // ============================================================ ტიპები
 interface Ast { antibiotic_id: string; code: string; name: string; mic: string | null; zone_mm: string | null; interp: 'S' | 'I' | 'R' | null; reported: boolean; reserve: boolean }
-interface Isolate { id: string; seq: number; organism_id: string; organism: string; organism_code: string; quantity: string | null; comment: string | null; ast: Ast[] }
+interface Isolate { id: string; seq: number; organism_id: string; organism: string; organism_code: string; quantity: string | null; comment: string | null; ast: Ast[]; markers?: string[] }
+/** 0067: ფენოტიპის / რეზისტენტობის მარკერები (MDRO-ს ამოცნობა — ინფექციის კონტროლი) */
+const MARKERS: [string, string][] = [['esbl', 'ESBL'], ['carbapenemase', 'კარბაპენემაზა'], ['ampc', 'AmpC'], ['mlsb', 'MLSb'], ['pbp2a', 'PBP2a / mecA'], ['van', 'vanA / vanB']];
 interface Detail {
   item: { id: string; status: string; service_name?: string; first_name?: string; last_name?: string; barcode?: string | null };
   culture: { stage: 'incubating' | 'no_growth' | 'growth' | 'contaminated'; gram_stain: string | null; growth_summary: string | null; comment: string | null };
@@ -17,7 +19,7 @@ interface Refs { organisms: { id: string; code: string; name: string; gram: stri
   antibiotics: { id: string; code: string; name: string; class: string | null; is_active: boolean }[];
   panels: { id: string; code: string; name: string; group_code: string; is_active: boolean; items: { antibiotic_id: string; code: string; name: string; reserve: boolean; sort_order: number }[] }[] }
 interface Snapshot { stage: string; gram_stain: string | null; growth_summary: string | null; comment: string | null;
-  isolates: { seq: number; organism: string | null; organism_code: string | null; quantity: string | null; comment: string | null; ast: { code: string; name: string; mic: string | null; zone_mm: string | null; interp: string | null }[] }[] }
+  isolates: { seq: number; organism: string | null; organism_code: string | null; quantity: string | null; comment: string | null; markers?: string[]; ast: { code: string; name: string; mic: string | null; zone_mm: string | null; interp: string | null }[] }[] }
 
 export const STAGE: Record<string, string> = { incubating: 'ინკუბაცია — ზრდა ჯერ არ შეფასებულა', no_growth: 'ზრდა არ აღინიშნა', growth: 'ზრდა', contaminated: 'კონტამინაცია (შერეული ფლორა)' };
 const INTERP_COLOR: Record<string, string> = { S: 'var(--ok-ink, #067647)', I: 'var(--warn-ink)', R: 'var(--danger-ink)' };
@@ -97,12 +99,19 @@ function IsolateCard({ iso, refs, locked, onChanged }: { iso: Isolate; refs?: Re
   const save = useMutation({ mutationFn: () => api(`/lab/micro/isolates/${iso.id}/ast`, { method: 'PUT', body: { rows: rows.map((r) => ({ antibiotic_id: r.antibiotic_id, mic: r.mic || null,
     zone_mm: r.zone_mm === null || r.zone_mm === '' ? null : Number(r.zone_mm), interp: r.interp, reported: r.reported })) } }), onSuccess: onChanged });
   const del = useMutation({ mutationFn: () => api(`/lab/micro/isolates/${iso.id}`, { method: 'DELETE' }), onSuccess: onChanged });
+  const mk = useMutation({ mutationFn: (markers: string[]) => api(`/lab/micro/isolates/${iso.id}`, { method: 'PATCH', body: { markers } }), onSuccess: onChanged });
+  const cur = iso.markers ?? [];
   const upd = (i: number, p: Partial<Ast>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
   const firstLineR = rows.some((r) => !r.reserve && r.interp === 'R');
   return (
     <div className="card card-pad stack" style={{ gap: 6 }}>
       <div className="row"><strong className="grow">{iso.seq}. <i>{iso.organism}</i> <span className="small muted">{iso.quantity}</span></strong>
         {!locked && <button className="btn sm" type="button" onClick={() => { if (confirm('მიკროორგანიზმის წაშლა?')) del.mutate(); }}>წაშლა</button>}</div>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }} role="group" aria-label="მარკერები">
+        <span className="small muted">მარკერები:</span>
+        {MARKERS.map(([k, l]) => <button key={k} type="button" className={`chip${cur.includes(k) ? ' danger' : ''}`} disabled={locked || mk.isPending} aria-pressed={cur.includes(k)}
+          onClick={() => mk.mutate(cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k])}>{cur.includes(k) ? '✓ ' : ''}{l}</button>)}
+      </div>
       <table className="table">
         <thead><tr><th>ანტიბიოტიკი</th><th>MIC (mg/L)</th><th>ზონა (მმ)</th><th>შეფასება</th><th title="ექიმთან ჩვენება">ექიმთან</th></tr></thead>
         <tbody>{rows.map((r, i) => (
@@ -125,7 +134,7 @@ function IsolateCard({ iso, refs, locked, onChanged }: { iso: Isolate; refs?: Re
         <span className="grow" />
         {dirty && <button className="btn primary sm" type="button" disabled={save.isPending} onClick={() => save.mutate()}>ანტიბიოგრამის შენახვა</button>}
       </div>}
-      <ErrorBox error={save.error ?? del.error} />
+      <ErrorBox error={save.error ?? del.error ?? mk.error} />
     </div>
   );
 }
@@ -145,6 +154,7 @@ export function MicroView({ id, title, onClose }: { id: string; title: string; o
         {r.gram_stain && <div className="small">გრამის შეღებვა: {r.gram_stain}</div>}
         {r.isolates.map((i) => <div key={i.seq} className="card card-pad stack" style={{ gap: 4 }}>
           <strong>{i.seq}. <i>{i.organism}</i> <span className="small muted">{i.quantity}</span></strong>
+          {(i.markers?.length ?? 0) > 0 && <div className="row" style={{ gap: 4 }}>{i.markers!.map((m) => <span key={m} className="chip danger">{MARKERS.find((x) => x[0] === m)?.[1] ?? m}</span>)}</div>}
           {i.ast.length ? <table className="table"><thead><tr><th>ანტიბიოტიკი</th><th>MIC</th><th>ზონა</th><th>შეფასება</th></tr></thead>
             <tbody>{i.ast.map((a) => <tr key={a.code}><td>{a.name}</td><td className="mono small">{a.mic ?? ''}</td><td className="mono small">{a.zone_mm ?? ''}</td>
               <td><strong style={{ color: INTERP_COLOR[a.interp ?? ''] }}>{a.interp === 'S' ? 'S — მგრძნობიარე' : a.interp === 'I' ? 'I — შუალედური' : a.interp === 'R' ? 'R — რეზისტენტული' : ''}</strong></td></tr>)}</tbody></table>

@@ -105,7 +105,7 @@ export class TransfersService {
         let bed: Awaited<ReturnType<InpatientService['lockBed']>> | null = null;
         if (dto.bed_id) {
           const gender = (await trx.selectFrom('patients').select('gender').where('id', '=', st.patient_id).executeTakeFirstOrThrow()).gender;
-          bed = await this.ipd.lockBed(trx, dto.bed_id, { departmentId: to.id, gender, isolation: st.isolation, confirm: dto.confirm }, s);
+          bed = await this.ipd.lockBed(trx, dto.bed_id, { departmentId: to.id, gender, isolation: st.isolation, confirm: dto.confirm, patientId: st.patient_id, encounterId: t.encounter_id, user: u }, s);
         }
         // ძველი ეპიზოდი → დახურვა; ძველი საწოლი → დასალაგებელი / თავისუფალი
         await trx.updateTable('bed_assignments').set({ ended_at: sql`now()`, ended_by: u.id, end_kind: 'transfer' }).where('id', '=', cur.id).execute();

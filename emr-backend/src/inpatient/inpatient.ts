@@ -14,6 +14,7 @@ import type { DB } from '../database/db';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { probe, sendRaw, wristbandPdf, wristbandZpl, type WristbandData } from './wristband';
+import { ipcBedCheck, ipcRules, isoReplaceLegacy, isoStart } from '../ipc/ipc-common';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -42,10 +43,10 @@ export interface InpatientSettings {
   discharge_balance?: 'off' | 'warn' | 'block'; deposit_alert_amount?: number; billing_amounts_visible?: 'all' | 'heads' | 'billing_only'; staff_add_services?: boolean;
 }
 const SEVERITY = ['stable', 'moderate', 'severe', 'critical'] as const;
-const ISOLATION = ['contact', 'droplet', 'airborne', 'protective'] as const;
+const ISOLATION = ['contact', 'contact_plus', 'droplet', 'airborne', 'protective'] as const;   // 0067: + contact_plus
 const SOURCES = ['emergency', 'outpatient', 'planned', 'transfer_in', 'direct'] as const;
 const READ = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'] as const;   // 0055: drg — კოდირება (ნახვა)
-const ISO_KA: Record<string, string> = { contact: 'კონტაქტური', droplet: 'წვეთოვანი', airborne: 'საჰაერო', protective: 'დამცავი' };
+const ISO_KA: Record<string, string> = { contact: 'კონტაქტური', contact_plus: 'გაძლიერებული კონტაქტური', droplet: 'წვეთოვანი', airborne: 'საჰაერო', protective: 'დამცავი' };
 
 // ================================================================= DTO
 export class WardDto {
@@ -99,6 +100,7 @@ export class AdmitDto {
   @IsOptional() @IsString() @MaxLength(2000) chief_complaint?: string;
   @IsOptional() @IsIn(SEVERITY) severity?: string;
   @IsOptional() @IsIn(ISOLATION) isolation?: string;
+  @IsOptional() @IsUUID() isolation_flag_id?: string;                 // 0067: იზოლაცია MDRO ფლაგის გამო (მიზეზი „MDRO“)
   @IsOptional() @IsUUID() bed_id?: string;
   @IsOptional() @IsBoolean() confirm?: boolean;                       // გაფრთხილებების დადასტურება (სქესი, იზოლაცია)
 }
@@ -185,7 +187,8 @@ export class InpatientService {
   }
 
   /** საწოლი ბლოკით + შემოწმებები: აქტიური, განყოფილება, სტატუსი; გაფრთხილებები (სქესი, იზოლაცია) — confirm-ით */
-  async lockBed(trx: Trx, bedId: string, p: { departmentId: string; gender: string; isolation?: string | null; plannedId?: string | null; confirm?: boolean }, s: InpatientSettings) {
+  async lockBed(trx: Trx, bedId: string, p: { departmentId: string; gender: string; isolation?: string | null; plannedId?: string | null; confirm?: boolean;
+    patientId?: string | null; encounterId?: string | null; user?: AuthUser | null }, s: InpatientSettings) {
     const b = await trx.selectFrom('beds as b').innerJoin('wards as w', 'w.id', 'b.ward_id')
       .select(['b.id', 'b.code', 'b.status', 'b.is_active', 'b.is_overflow', 'w.id as ward_id', 'w.code as ward_code', 'w.department_id', 'w.sex', 'w.isolation_capable', 'w.is_active as ward_active'])
       .where('b.id', '=', bedId).forUpdate('b').executeTakeFirst();
@@ -205,6 +208,8 @@ export class InpatientService {
       warnings.push(msg);
     }
     if (p.isolation && !b.isolation_capable) warnings.push(`პაციენტს სჭირდება ${ISO_KA[p.isolation]} იზოლაცია; პალატა ${b.ward_code} იზოლაციისთვის არ არის მონიშნული`);
+    // 0067: ინფექციის კონტროლი — პალატაში სხვა პაციენტებთან კონფლიქტი (იზოლაცია / MDRO / დამცავი), კოჰორტა
+    warnings.push(...await ipcBedCheck(trx, { wardId: b.ward_id, wardCode: b.ward_code, patientId: p.patientId, encounterId: p.encounterId, isolation: p.isolation, user: p.user ?? null }));
     if (warnings.length && !p.confirm) throw new ConflictException({ code: 'CONFIRM_REQUIRED', message: warnings.join('; '), warnings });
     return { ...b, warnings };
   }
@@ -388,7 +393,11 @@ export class InpatientService {
         sql<{ label: string; level: string }[]>`(SELECT coalesce(json_agg(json_build_object('label', d.risk_label, 'level', x.level) ORDER BY d.sort_order), '[]'::json) FROM (
           SELECT DISTINCT ON (sa.scale_code) sa.scale_code, sa.level FROM scale_assessments sa WHERE sa.encounter_id = a.encounter_id AND sa.voided_at IS NULL
           ORDER BY sa.scale_code, sa.assessed_at DESC) x JOIN scale_defs d ON d.code = x.scale_code WHERE d.risk_label IS NOT NULL AND x.level IN ('medium', 'high'))`.as('risks'),
-        sql<number>`(SELECT count(*)::int FROM lines_drains ld WHERE ld.encounter_id = a.encounter_id AND ld.removed_at IS NULL AND ld.voided_at IS NULL)`.as('lines')])
+        sql<number>`(SELECT count(*)::int FROM lines_drains ld WHERE ld.encounter_id = a.encounter_id AND ld.removed_at IS NULL AND ld.voided_at IS NULL)`.as('lines'),
+        // 0067: აქტიური იზოლაციები (ტიპები) და MDRO ფლაგები (ipc მოდული ჩართულია)
+        sql<string[]>`ARRAY(SELECT i.type FROM ipc_isolations i JOIN ipc_isolation_types t ON t.code = i.type WHERE i.encounter_id = a.encounter_id AND i.ended_at IS NULL ORDER BY t.priority DESC)`.as('isolations'),
+        sql<string[]>`ARRAY(SELECT f.mdro_code FROM ipc_patient_flags f WHERE f.patient_id = p.id AND f.status = 'active'
+          AND EXISTS (SELECT 1 FROM system_modules m WHERE m.code = 'ipc' AND m.enabled) ORDER BY f.mdro_code)`.as('mdro')])
       .where('a.department_id', '=', departmentId).where('a.ended_at', 'is', null).orderBy('a.started_at').execute();
     const occ = occRaw.map((o) => ({ ...o, consent: o.consents_missing.length === 0 }));
     const reserved = await this.db.selectFrom('inpatient_planned as pl').innerJoin('patients as p', 'p.id', 'pl.patient_id')
@@ -453,7 +462,15 @@ export class InpatientService {
         if (dto.bed_id && !(await this.canAssign(u, dep.id, s, trx))) {
           throw new ForbiddenException('საწოლს ანიჭებს განყოფილება (ორეტაპიანი მინიჭება) — ჰოსპიტალიზაცია გააფორმეთ საწოლის გარეშე');
         }
-        const bed = bedId ? await this.lockBed(trx, bedId, { departmentId: dep.id, gender: patient.gender, isolation: dto.isolation, plannedId: planned?.id, confirm: dto.confirm }, s) : null;
+        let isoFlag: { id: string; mdro_code: string } | undefined;
+        if (dto.isolation_flag_id) {
+          if (!dto.isolation) throw new BadRequestException('MDRO ფლაგის გამო იზოლაციას სჭირდება ტიპი');
+          isoFlag = await trx.selectFrom('ipc_patient_flags').select(['id', 'mdro_code']).where('id', '=', dto.isolation_flag_id).where('patient_id', '=', patient.id)
+            .where('status', '=', 'active').executeTakeFirst();
+          if (!isoFlag) throw new BadRequestException('MDRO ფლაგი ვერ მოიძებნა ან აქტიური არ არის');
+        }
+        const bed = bedId ? await this.lockBed(trx, bedId, { departmentId: dep.id, gender: patient.gender, isolation: dto.isolation, plannedId: planned?.id, confirm: dto.confirm,
+          patientId: patient.id, user: u }, s) : null;
 
         const enc = await trx.insertInto('encounters').values({ patient_id: patient.id, attending_doctor_id: dto.attending_doctor_id, department_id: dep.id, type: 'inpatient', status: 'active',
           chief_complaint: dto.chief_complaint?.trim() || null, parent_encounter_id: dto.source_encounter_id ?? referral?.encounter_id ?? null }).returningAll().executeTakeFirstOrThrow();
@@ -465,6 +482,9 @@ export class InpatientService {
           severity: dto.severity ?? null, isolation: dto.isolation ?? null, admitted_by: u.id }).execute();
         await trx.insertInto('bed_assignments').values({ encounter_id: enc.id, department_id: dep.id, bed_id: bed?.id ?? null, bed_at: bed ? sql`now()` : null, assigned_by: u.id, bed_by: bed ? u.id : null }).execute();
         if (bed) await this.setBed(trx, bed.id, 'occupied', u);
+        // 0067: იზოლაციის ეპიზოდი (inpatient_stays.isolation — ტრიგერით)
+        if (dto.isolation) await isoStart(trx, { encounterId: enc.id, patientId: patient.id, type: dto.isolation, reason: isoFlag ? 'mdro' : 'other',
+          reasonText: isoFlag ? null : 'ჰოსპიტალიზაციისას', flagId: isoFlag?.id ?? null, userId: u.id });
         await trx.insertInto('encounter_diagnoses').values({ encounter_id: enc.id, icd10_code: icd.code, icd10_title: icd.title, diagnosis_type: 'admission', diagnosed_by: u.id }).execute();
         if (referral) await trx.updateTable('referrals').set({ status: 'completed', completed_at: sql`now()`, result_text: `ჰოსპიტალიზებულია: ${admNo}, ${dep.name}` }).where('id', '=', referral.id).execute();
         if (planned) await trx.updateTable('inpatient_planned').set({ status: 'admitted', encounter_id: enc.id }).where('id', '=', planned.id).execute();
@@ -509,7 +529,7 @@ export class InpatientService {
         if (!(await this.canAssign(u, cur.department_id, s, trx))) throw new ForbiddenException('საწოლს ანიჭებს განყოფილების თანამშრომელი');
         if (cur.bed_id === dto.bed_id) throw new ConflictException('პაციენტი უკვე ამ საწოლზეა');
         const gender = (await trx.selectFrom('patients').select('gender').where('id', '=', st.patient_id).executeTakeFirstOrThrow()).gender;
-        const bed = await this.lockBed(trx, dto.bed_id, { departmentId: cur.department_id, gender, isolation: st.isolation, confirm: dto.confirm }, s);
+        const bed = await this.lockBed(trx, dto.bed_id, { departmentId: cur.department_id, gender, isolation: st.isolation, confirm: dto.confirm, patientId: st.patient_id, encounterId, user: u }, s);
         if (!cur.bed_id) {
           await trx.updateTable('bed_assignments').set({ bed_id: bed.id, bed_at: sql`now()`, bed_by: u.id }).where('id', '=', cur.id).execute();
           await this.setBed(trx, bed.id, 'occupied', u);
@@ -551,7 +571,8 @@ export class InpatientService {
           await this.event(trx, { encounter_id: encounterId, kind: 'severity', data: { from: st.severity, to: dto.severity } }, u); changes.severity = dto.severity;
         }
         if (dto.isolation !== undefined && dto.isolation !== st.isolation) {
-          await trx.updateTable('inpatient_stays').set({ isolation: dto.isolation }).where('encounter_id', '=', encounterId).execute();
+          // 0067: ეპიზოდები (ipc_isolations); სვეტი — ტრიგერით
+          await isoReplaceLegacy(trx, { encounterId, patientId: st.patient_id, type: dto.isolation ?? null, reason: dto.reason, user: u });
           await this.event(trx, { encounter_id: encounterId, kind: 'isolation', data: { from: st.isolation, to: dto.isolation, reason: dto.reason ?? null } }, u); changes.isolation = dto.isolation;
         }
       }
@@ -767,7 +788,7 @@ export class InpatientService {
         if (!(await this.canAssign(u, pl.department_id, s, trx))) throw new ForbiddenException('საწოლს ჯავშნის განყოფილების თანამშრომელი');
         if (pl.bed_id === dto.bed_id) return { planned_id: id, bed_id: dto.bed_id };
         const gender = (await trx.selectFrom('patients').select('gender').where('id', '=', pl.patient_id).executeTakeFirstOrThrow()).gender;
-        const bed = await this.lockBed(trx, dto.bed_id, { departmentId: pl.department_id, gender, confirm: dto.confirm }, s);
+        const bed = await this.lockBed(trx, dto.bed_id, { departmentId: pl.department_id, gender, confirm: dto.confirm, patientId: pl.patient_id, user: u }, s);
         if (pl.bed_id) { await trx.selectFrom('beds').select('id').where('id', '=', pl.bed_id).forUpdate().execute(); await this.setBed(trx, pl.bed_id, 'free', u);
           await this.event(trx, { planned_id: id, bed_id: pl.bed_id, kind: 'bed_released', data: { plan_no: pl.plan_no } }, u); }
         await trx.updateTable('inpatient_planned').set({ bed_id: bed.id }).where('id', '=', id).execute();
@@ -811,7 +832,7 @@ export class InpatientService {
     const st = await this.db.selectFrom('inpatient_stays as st').innerJoin('encounters as e', 'e.id', 'st.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id')
       .innerJoin('departments as d', 'd.id', 'e.department_id')
       .leftJoin('bed_assignments as a', (j) => j.onRef('a.encounter_id', '=', 'st.encounter_id').on('a.ended_at', 'is', null)).leftJoin('beds as b', 'b.id', 'a.bed_id')
-      .select(['st.adm_no', 'st.status', 'st.admitted_at', 'st.patient_id', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender', 'p.personal_number', 'd.name as department', 'e.department_id', 'b.code as bed',
+      .select(['st.adm_no', 'st.status', 'st.admitted_at', 'st.patient_id', 'st.isolation', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender', 'p.personal_number', 'd.name as department', 'e.department_id', 'b.code as bed',
         sql<string>`age((now() AT TIME ZONE ${TZ})::date, p.birth_date)::text`.as('age_iv'),
         sql<number>`date_part('year', age((now() AT TIME ZONE ${TZ})::date, p.birth_date))::int`.as('years'),
         sql<number>`(date_part('year', age((now() AT TIME ZONE ${TZ})::date, p.birth_date)) * 12 + date_part('month', age((now() AT TIME ZONE ${TZ})::date, p.birth_date)))::int`.as('months'),
@@ -825,7 +846,8 @@ export class InpatientService {
     const age = st.years >= 2 ? `${st.years} წ` : st.months >= 1 ? `${st.months} თვ` : `${st.days} დღ`;
     return { departmentId: st.department_id, data: { adm_no: st.adm_no, last_name: st.last_name, first_name: st.first_name, birth_date: st.birth_date, age,
       sex: st.gender === 'male' ? 'მ' : st.gender === 'female' ? 'მდ' : '—', personal_number: st.personal_number, department: st.department, bed: st.bed, admitted_at: st.admitted_at,
-      allergies: allergies.map((a) => a.substance), clinic: clinic?.name ?? '' } };
+      allergies: allergies.map((a) => a.substance), clinic: clinic?.name ?? '',
+      isolation_mark: !!st.isolation && !!(await ipcRules(this.db))?.wristband_symbol } };
   }
 
   async wristbandPdf(encounterId: string, u: AuthUser) {

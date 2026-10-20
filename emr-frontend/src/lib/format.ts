@@ -34,6 +34,7 @@ export const ROLE_KA: Record<string, string> = {
   tariffs: 'ტარიფები', tariffs_approve: 'ტარიფების დამტკიცება', drg: 'DRG (კოდირება)', drg_admin: 'DRG კონფიგურაცია',
   reports: 'მენეჯერული დაფა (განყოფილება)', reports_all: 'მენეჯერული დაფა (მთელი კლინიკა)', reports_phi: 'რეპორტების პერსონალური მონაცემები',
   quality: 'ხარისხის მენეჯერი (ინციდენტები)', quality_dept: 'ინციდენტები (განყოფილება)', quality_view: 'ინციდენტების ანგარიშები',
+  infection: 'ინფექციის კონტროლი', infection_dept: 'ინფექციის კონტროლი (განყოფილება)', infection_view: 'ინფექციის კონტროლის ანგარიშები',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };

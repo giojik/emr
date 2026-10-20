@@ -6,6 +6,7 @@ import { can, api } from '../api/client';
 import type { Doctor, EncounterListItem, Patient } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
+import IpcBanner from '../components/IpcBanner';
 import AllergyDialog from '../components/AllergyDialog';
 import AddressFields, { addressPayload } from '../components/AddressFields';
 import AppointmentDialog from '../components/AppointmentDialog';
@@ -54,6 +55,7 @@ export default function PatientCard() {
       <div className="content">
         {x.is_deceased && <div className="alert danger">პაციენტი გარდაცვლილად არის მონიშნული.</div>}
         <AllergyBanner allergies={x.allergies} chronic={x.chronic_conditions} onAdd={front || clinical ? () => setDlg('allergy') : undefined} />
+        <IpcBanner patientId={id} />
 
         <section className="card card-pad" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '14px 20px' }}>
           <Info k="ტელეფონი" v={<span className="mono">{x.phone_number}</span>} />

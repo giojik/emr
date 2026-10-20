@@ -24,6 +24,8 @@ export interface Occupant {
   first_name: string; last_name: string; birth_date: string; gender: string; attending_doctor_id: string | null; doctor_name: string | null; day: number; diagnosis: string | null; allergies: number; consent: boolean;
   consents_missing: string[]; transfer_to: string | null; on_leave_until: string | null;
   news2?: { score: number; level: 'low' | 'low_red' | 'medium' | 'high'; at: string } | null; risks?: { label: string; level: string }[]; lines?: number;
+  /** 0067: აქტიური იზოლაციები (უმკაცრესი პირველი) და MDRO ფლაგები */
+  isolations?: string[]; mdro?: string[];
 }
 export interface IncomingTransfer { id: string; encounter_id: string; reason: string; requested_at: string; adm_no: string; severity: string | null; isolation: string | null; first_name: string; last_name: string; gender: string; from_department: string }
 export interface BoardBed extends Bed { occupant: Occupant | null; reservation: { id: string; plan_no: string; planned_date: string; patient_name: string } | null }
@@ -43,7 +45,7 @@ export interface Printer { id: string; name: string; kind: 'wristband' | 'label'
 
 export const BED_ST: Record<BedStatus, [string, string]> = { free: ['ok', 'თავისუფალი'], reserved: ['info', 'დაჯავშნილი'], occupied: ['', 'დაკავებული'], cleaning: ['warn', 'დასალაგებელი'], blocked: ['danger', 'დაბლოკილი'] };
 export const SEVERITY_KA: Record<string, [string, string]> = { stable: ['ok', 'სტაბილური'], moderate: ['info', 'საშუალო'], severe: ['warn', 'მძიმე'], critical: ['danger', 'კრიტიკული'] };
-export const ISOLATION_KA: Record<string, string> = { contact: 'კონტაქტური', droplet: 'წვეთოვანი', airborne: 'საჰაერო', protective: 'დამცავი' };
+export const ISOLATION_KA: Record<string, string> = { contact: 'კონტაქტური', contact_plus: 'გაძლიერებული კონტაქტური', droplet: 'წვეთოვანი', airborne: 'საჰაერო', protective: 'დამცავი' };
 export const SOURCE_KA: Record<string, string> = { emergency: 'სასწრაფო', outpatient: 'ამბულატორია', planned: 'გეგმიური', transfer_in: 'სხვა კლინიკიდან', direct: 'პირდაპირ' };
 export const SEX_KA: Record<string, string> = { male: 'მამაკაცის', female: 'ქალის', mixed: 'შერეული' };
 export const STAY_ST: Record<string, [string, string]> = { active: ['ok', 'სტაციონარში'], discharged: ['', 'გაწერილი'], cancelled: ['', 'გაუქმებული'] };
@@ -56,6 +58,8 @@ export const occupantChips = (o: Occupant) => <>
   {!o.consent && <span className="chip" title={`აკლია: ${(o.consents_missing ?? []).join(', ')}`}>თანხმობა —</span>}
   {o.news2 && o.news2.level !== 'low' && <span className={`chip ${o.news2.level === 'high' ? 'danger' : 'warn'}`} title="ბოლო NEWS2 (24 სთ)">⚠ NEWS2 {o.news2.score}</span>}
   {(o.risks ?? []).map((r) => <span key={r.label} className={`chip ${r.level === 'high' ? 'danger' : 'warn'}`} title={r.level === 'high' ? 'მაღალი' : 'საშუალო'}>{r.label}</span>)}
+  {(o.isolations?.length ?? 0) > 1 && <span className="chip warn" title={`იზოლაცია: ${o.isolations!.map((t) => ISOLATION_KA[t] ?? t).join(' + ')}`}>+{o.isolations!.length - 1} იზოლ.</span>}
+  {(o.mdro?.length ?? 0) > 0 && <span className="chip danger" title="რეზისტენტული მიკროორგანიზმი (MDRO) — პაციენტის ფლაგი">MDRO: {o.mdro!.map((x) => x.toUpperCase()).join(', ')}</span>}
 </>;
 
 export const useStructure = (all = false) => useQuery({ queryKey: ['ipd-structure', all], queryFn: () => api<Structure>('/inpatient/structure', { query: { all } }) });

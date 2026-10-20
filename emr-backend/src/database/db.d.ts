@@ -1608,6 +1608,99 @@ export interface Invoices {
   writeoff_amount: Generated<Numeric>;
 }
 
+export interface IpcFlagDetections {
+  detected_at: Generated<Timestamp>;
+  flag_id: string;
+  id: Generated<Int8>;
+  isolate_id: string | null;
+  order_item_id: string;
+  organism_id: string | null;
+  rule_id: string | null;
+  specimen_at: Timestamp | null;
+}
+
+export interface IpcIsolations {
+  auto_ended: Generated<boolean>;
+  encounter_id: string;
+  end_reason: string | null;
+  ended_at: Timestamp | null;
+  ended_by: string | null;
+  flag_id: string | null;
+  id: Generated<string>;
+  patient_id: string;
+  reason: string;
+  reason_text: string | null;
+  started_at: Generated<Timestamp>;
+  started_by: string | null;
+  type: string;
+}
+
+export interface IpcIsolationTypes {
+  code: string;
+  color: string;
+  door_text: Generated<string>;
+  name: string;
+  ppe: Generated<string>;
+  priority: number;
+  short_name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IpcMdroRules {
+  abx_codes: Generated<string[]>;
+  created_at: Generated<Timestamp>;
+  group_codes: Generated<string[]>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  marker: string | null;
+  mdro_code: string;
+  note: string | null;
+  organism_codes: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IpcMdroTypes {
+  code: string;
+  created_at: Generated<Timestamp>;
+  expiry_days: number | null;
+  is_active: Generated<boolean>;
+  isolation_type: string;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
+}
+
+export interface IpcMicroScans {
+  flags: Generated<number>;
+  report_id: string;
+  scanned_at: Generated<Timestamp>;
+}
+
+export interface IpcPatientFlags {
+  clear_negatives: number | null;
+  clear_reason: string | null;
+  cleared_at: Timestamp | null;
+  cleared_by: string | null;
+  created_by: string | null;
+  detected_at: Generated<Timestamp>;
+  encounter_id: string | null;
+  expires_at: Timestamp | null;
+  id: Generated<string>;
+  mdro_code: string;
+  note: string | null;
+  onset: string | null;
+  order_item_id: string | null;
+  organism_id: string | null;
+  patient_id: string;
+  reviewed_at: Timestamp | null;
+  reviewed_by: string | null;
+  source: string;
+  specimen_at: Timestamp | null;
+  status: string;
+}
+
 export interface IpdReminders {
   created_at: Generated<Timestamp>;
   encounter_id: string;
@@ -2325,6 +2418,7 @@ export interface MicroIsolates {
   comment: string | null;
   culture_id: string;
   id: Generated<string>;
+  markers: Generated<string[]>;
   organism_id: string | null;
   panel_id: string | null;
   quantity: string | null;
@@ -4584,6 +4678,13 @@ export interface DB {
   invoice_line_reprices: InvoiceLineReprices;
   invoice_line_shares: InvoiceLineShares;
   invoices: Invoices;
+  ipc_flag_detections: IpcFlagDetections;
+  ipc_isolation_types: IpcIsolationTypes;
+  ipc_isolations: IpcIsolations;
+  ipc_mdro_rules: IpcMdroRules;
+  ipc_mdro_types: IpcMdroTypes;
+  ipc_micro_scans: IpcMicroScans;
+  ipc_patient_flags: IpcPatientFlags;
   ipd_reminders: IpdReminders;
   lab_analytes: LabAnalytes;
   lab_blank_group_assignments: LabBlankGroupAssignments;

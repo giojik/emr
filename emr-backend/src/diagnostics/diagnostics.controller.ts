@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Module, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile } from '@nestjs/common';
+import { IpcModule } from '../ipc/ipc.module';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { Request, Response } from 'express';
@@ -204,7 +205,7 @@ export class DiagnosticsController {
 }
 
 @Module({
-  imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule],
+  imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule, IpcModule],
   controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController, LabDeliveryController],
   providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService, LabDeliveryService, LabNotifyService], exports: [DiagnosticsService, LabIngestService],
 })

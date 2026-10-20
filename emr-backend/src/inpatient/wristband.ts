@@ -18,6 +18,8 @@ import { d, dt, newDoc } from '../diagnostics/diagnostics.pdf';
 export interface WristbandData {
   adm_no: string; last_name: string; first_name: string; birth_date: string; age: string; sex: string; personal_number: string | null;
   department: string; bed: string | null; admitted_at: Date | string; allergies: string[]; clinic: string;
+  /** 0067: აქტიური იზოლაცია + ipc.wristband_symbol */
+  isolation_mark?: boolean;
 }
 export interface BandSize { width_mm: number; length_mm: number; offset_mm: number }
 
@@ -52,7 +54,8 @@ function drawText(doc: PDFKit.PDFDocument, w: WristbandData, b: BandSize) {
   line('B', 6.6, `${w.adm_no} · ${dt(w.admitted_at).slice(0, 10)}`, 10.3);
   line('R', 6.2, `${w.department}${w.bed ? ` · საწოლი ${w.bed}` : ''}`, 13.6);
   line(w.allergies.length ? 'B' : 'R', 6.6, w.allergies.length ? `! ალერგია: ${w.allergies.join(', ')}` : 'ალერგია: არ არის აღრიცხული', 16.9);
-  line('R', 5, w.clinic, 20.6);
+  // 0067: იზოლაციის ზოგადი ნიშანი (ipc.wristband_symbol) — ტიპის / მიკროორგანიზმის გარეშე
+  if (w.isolation_mark) line('B', 5, `! იზოლაცია · ${w.clinic}`, 20.6); else line('R', 5, w.clinic, 20.6);
   return L;
 }
 

@@ -8,6 +8,7 @@ import type { EncounterDetail, EncounterListItem } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { ReportIncidentButton } from '../components/IncidentReport';
 import AllergyBanner from '../components/AllergyBanner';
+import IpcBanner from '../components/IpcBanner';
 import AllergyDialog from '../components/AllergyDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
 import { CloseButton, ErrorBox, Loading, Modal, StatusChip } from '../components/ui';
@@ -51,6 +52,7 @@ export default function Encounter() {
           </div>
         </div>
         <AllergyBanner allergies={e.patient.allergies} chronic={e.patient.chronic_conditions} onAdd={active ? () => setDlg('allergy') : undefined} />
+        <IpcBanner patientId={e.patient.id} />
       </header>
 
       <div className="content" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 16 }}>

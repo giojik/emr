@@ -327,7 +327,7 @@ export class DischargeService {
         // საწოლი: მითითებული → შემოწმებით; არადა ძველი, თუ თავისუფალი / დასალაგებელი / (გარდაცვალება) ჩვენ მიერ დაბლოკილი; სხვაგვარად — „ელოდება საწოლს“
         let bedId: string | null = null; let bedCode: string | null = null; let warnings: string[] = [];
         if (dto.bed_id) {
-          const b = await this.ipd.lockBed(trx, dto.bed_id, { departmentId: last.department_id, gender, isolation: st.isolation, confirm: dto.confirm }, s as InpatientSettings);
+          const b = await this.ipd.lockBed(trx, dto.bed_id, { departmentId: last.department_id, gender, isolation: st.isolation, confirm: dto.confirm, patientId: st.patient_id, encounterId, user: u }, s as InpatientSettings);
           bedId = b.id; bedCode = b.code; warnings = b.warnings;
         } else if (last.bed_id) {
           const b = await trx.selectFrom('beds').select(['id', 'code', 'status', 'status_reason', 'is_active']).where('id', '=', last.bed_id).forUpdate().executeTakeFirstOrThrow();
