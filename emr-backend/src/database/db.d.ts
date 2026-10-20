@@ -3403,6 +3403,7 @@ export interface QmIncidents {
   reporter_id: string | null;
   risk_level: string | null;
   risk_score: Generated<number | null>;
+  service_type: string;
   source_id: string | null;
   source_label: string | null;
   source_type: string | null;
@@ -3414,6 +3415,25 @@ export interface QmIncidents {
   triaged_by: string | null;
   updated_at: Generated<Timestamp>;
   urgent: Generated<boolean>;
+}
+
+export interface QmIndicators {
+  category_ids: string[];
+  code: string;
+  created_at: Generated<Timestamp>;
+  denominator: Generated<string>;
+  description: string | null;
+  event_types: Generated<string[]>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  min_harm: string | null;
+  name: string;
+  patient_only: Generated<boolean>;
+  per: Generated<number>;
+  service_types: Generated<string[]>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
 }
 
 export interface QmPromptDismissals {
@@ -3646,6 +3666,22 @@ export interface RptFactPayer {
   payer_id: string | null;
 }
 
+export interface RptFactQuality {
+  affected: string;
+  anonymous: Generated<number>;
+  category_id: string;
+  day: string;
+  department_id: string;
+  event_type: string;
+  harm: string;
+  is_sentinel: boolean;
+  n: Generated<number>;
+  service_type: string;
+  triage_hist: Generated<number[]>;
+  triage_on_time: Generated<number>;
+  triaged: Generated<number>;
+}
+
 export interface RptFactStock {
   consumption: Generated<Numeric>;
   day: string;
@@ -3682,6 +3718,15 @@ export interface RptKpiTargets {
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
   warn: Numeric | null;
+}
+
+export interface RptQualitySnapshot {
+  analysis_overdue: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  department_id: string | null;
+  open_capa: Generated<number>;
+  overdue_capa: Generated<number>;
+  triage_overdue: Generated<number>;
 }
 
 export interface RptRefreshRuns {
@@ -4658,6 +4703,7 @@ export interface DB {
   qm_incident_files: QmIncidentFiles;
   qm_incident_people: QmIncidentPeople;
   qm_incidents: QmIncidents;
+  qm_indicators: QmIndicators;
   qm_prompt_dismissals: QmPromptDismissals;
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
@@ -4677,9 +4723,11 @@ export interface DB {
   rpt_fact_or: RptFactOr;
   rpt_fact_or_room: RptFactOrRoom;
   rpt_fact_payer: RptFactPayer;
+  rpt_fact_quality: RptFactQuality;
   rpt_fact_stock: RptFactStock;
   rpt_kpi_targets: RptKpiTargets;
   rpt_kpis: RptKpis;
+  rpt_quality_snapshot: RptQualitySnapshot;
   rpt_refresh_runs: RptRefreshRuns;
   rpt_schedules: RptSchedules;
   rpt_stock_snapshot: RptStockSnapshot;

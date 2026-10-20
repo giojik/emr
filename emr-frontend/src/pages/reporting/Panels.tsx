@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from '../../api/client';
@@ -14,7 +15,7 @@ export interface LiveDept { department_id: string; department_name: string; beds
   or_completed: number; or_cancelled: number; lab_overdue: number; ext_overdue: number; dx_overdue: number }
 export interface Live { generated_at: string; cached: boolean; thresholds: { lab_overdue_min: number; dx_overdue_hours: number }; totals: Omit<LiveDept, 'department_id' | 'department_name'> & { occupancy_now_pct: number | null };
   departments: LiveDept[] }
-export interface Attention { from: string; to: string; stock_computed_at: string | null; items: { kind: string; severity: 'red' | 'yellow'; title: string; detail: string; value: number | null; code?: string; unit?: string }[] }
+export interface Attention { from: string; to: string; stock_computed_at: string | null; items: { kind: string; severity: 'red' | 'yellow'; title: string; detail: string; value: number | null; code?: string; unit?: string; link?: string }[] }
 export interface Trend { kpi: string; name: string; unit: string; direction: string; data_from: string | null; points: { month: string; from: string; to: string; partial: boolean; value: number | null; prev_year: number | null }[] }
 
 /** დაჭერადი ფილა — ღილაკი; სხვაგან (TV) — ჩვეულებრივი ბარათი (disabled ღილაკი ტექსტს აფერმკრთალებს) */
@@ -109,7 +110,7 @@ export function AttentionPanel({ dept, refetchMs, big }: { dept: string; refetch
       {q.data.items.map((it, i) => (
         <div key={i} className="row" style={{ gap: 10, alignItems: 'baseline', fontSize: big ? 17 : undefined }}>
           <span style={{ color: STATUS_TONE[it.severity === 'red' ? 'red' : 'yellow'] }}>●</span>
-          <span className="grow"><strong>{it.title}</strong> <span className="small muted">{it.detail}</span></span>
+          <span className="grow"><strong>{it.link && !big ? <Link to={it.link}>{it.title}</Link> : it.title}</strong> <span className="small muted">{it.detail}</span></span>
           <span className="mono"><strong>{it.value === null ? '—' : it.unit ? fmtVal(it.value, it.unit) : KIND_UNIT[it.kind] ? fmtVal(it.value, 'gel') : it.value}</strong></span>
         </div>))}
     </section>

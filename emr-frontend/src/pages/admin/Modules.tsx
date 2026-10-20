@@ -704,7 +704,20 @@ function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Reco
           {chk('report_mask_patient', 'ანალიზის PDF — პაციენტი ნიღბით (ნაგულისხმევად)')}
         </div>
       </div>
-      <span className="small muted">კატეგორიები, ქვეკატეგორიები (სენტინელური ნიშანი) და ხელშემწყობი ფაქტორები — „ხარისხი და ინციდენტები“ → „ცნობარები“ (ხარისხის მენეჯერი).</span>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ანგარიშები და დაფა (0066)</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="ანგარიშის თარიღი" htmlFor="qm-rdb" hint="რომელი დღით ითვლება ინციდენტი ანგარიშებსა და დაფაზე">
+          <select id="qm-rdb" className="select" value={String(s.report_date_basis ?? 'occurred')} onChange={(e) => upd('report_date_basis', e.target.value)}>
+            <option value="occurred">მოვლენის თარიღით</option><option value="reported">შეტყობინების თარიღით</option></select></Field>
+        <Field label="მცირე რიცხვის დამალვა (quality_view)" htmlFor="qm-view_min_cell" hint="0 — გამორთული; N-ზე ნაკლები რაოდენობა ჩანს როგორც „< N“">{int('view_min_cell', 0, 0, 20)}</Field>
+        <Field label="ხარისხის KPI-ები მენეჯერულ დაფაზე" htmlFor="qm-dv" hint="მხოლოდ აგრეგატები; ჩაღრმავების გარეშე">
+          <select id="qm-dv" className="select" value={String(s.dashboard_visibility ?? 'report_users')} onChange={(e) => upd('dashboard_visibility', e.target.value)}>
+            <option value="report_users">დაფის ყველა მომხმარებელს (ხედვის არით)</option><option value="quality_only">მხოლოდ ხარისხის უფლებით</option></select></Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}>
+          {chk('monthly_section', 'მენეჯერულ (თვიურ) ანგარიშში — სექცია „ხარისხი“', 'მიმღების ხედვის არით; გამორთულზე ხარისხის KPI-ებიც არ შედის')}
+        </div>
+      </div>
+      <span className="small muted">კატეგორიები, ქვეკატეგორიები (სენტინელური ნიშანი), ხელშემწყობი ფაქტორები და ინდიკატორები — „ხარისხი და ინციდენტები“ → „ცნობარები“ (ხარისხის მენეჯერი).</span>
     </div>
   );
 }

@@ -8,15 +8,16 @@ import { ErrorBox, Loading, useDebounced } from '../../components/ui';
 import { hhmm, tsDate } from '../../lib/format';
 import { useModuleEnabled, useModules } from '../../lib/modules';
 import QmCatalog from './Catalog';
+import QmReports from './Reports';
 import {
-  catLabel, EVENT_KA, HARM_CHIP, HARM_KA, QM_FULL, QM_READ, RISK_UI, STATUS_UI,
+  catLabel, EVENT_KA, HARM_CHIP, HARM_KA, QM_FULL, QM_READ, QM_REPORTS, RISK_UI, SERVICE_KA, STATUS_UI,
   CAPA_KIND_KA, CAPA_ST, LEVEL_KA, ANALYSIS_ST,
   type CapaRow, type Classifier, type EventType, type Harm, type IncidentRow, type MyReport, type MyWork, type QmSummary, type Status,
 } from './types';
 
-type Tab = 'registry' | 'work' | 'capa' | 'mine' | 'catalog';
+type Tab = 'registry' | 'reports' | 'work' | 'capa' | 'mine' | 'catalog';
 
-/** ხარისხი და ინციდენტები (0064): რეესტრი (quality / quality_dept), ჩემი შეტყობინებები (ყველა), ცნობარები (quality) */
+/** ხარისხი და ინციდენტები (0064–0066): რეესტრი (quality / quality_dept), ანგარიშები (+ quality_view), ჩემი შეტყობინებები (ყველა), ცნობარები (quality) */
 export default function Quality() {
   const { user } = useAuth();
   const [sp] = useSearchParams();
@@ -29,13 +30,14 @@ export default function Quality() {
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „ხარისხი და ინციდენტები“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   const tabs: [Tab, string, boolean, number][] = [
     ['registry', 'ინციდენტების რეესტრი', reg, sum.data ? (can(user, ...QM_FULL) ? sum.data.submitted : sum.data.open) : 0],
+    ['reports', 'ანგარიშები', can(user, ...QM_REPORTS), 0],
     ['work', 'ჩემი ქმედებები', true, workN],
     ['capa', 'ქმედებები (CAPA)', can(user, ...QM_FULL), 0],
     ['mine', 'ჩემი შეტყობინებები', true, 0],
     ['catalog', 'ცნობარები', can(user, ...QM_FULL), 0],
   ];
   const allowed = tabs.filter((t) => t[2]);
-  const def = reg ? 'registry' : workN ? 'work' : 'mine';
+  const def = reg ? 'registry' : can(user, ...QM_REPORTS) ? 'reports' : workN ? 'work' : 'mine';
   const cur = (allowed.find((t) => t[0] === sp.get('tab'))?.[0] ?? def) as Tab;
   return (
     <>
@@ -48,6 +50,7 @@ export default function Quality() {
         </nav>
       </header>
       {cur === 'registry' && <Registry sum={sum.data} />}
+      {cur === 'reports' && <QmReports />}
       {cur === 'work' && <Work data={work.data} loading={work.isLoading} error={work.error} />}
       {cur === 'capa' && <CapaList />}
       {cur === 'mine' && <Mine />}
@@ -59,13 +62,18 @@ export default function Quality() {
 type Preset = 'triage' | 'open' | 'all' | 'urgent' | 'closed';
 function Registry({ sum }: { sum?: QmSummary }) {
   const { user } = useAuth(); const nav = useNavigate();
+  const [sp] = useSearchParams();
   const full = can(user, ...QM_FULL);
-  const [preset, setPreset] = useState<Preset>(full ? 'triage' : 'open');
-  const [dept, setDept] = useState(''); const [cat, setCat] = useState(''); const [harm, setHarm] = useState(''); const [et, setEt] = useState('');
-  const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [search, setSearch] = useState(''); const ds = useDebounced(search.trim(), 300);
+  // 0066: ანგარიშიდან / „ყურადღებიდან“ — ფილტრები URL-ით
+  const p0 = (k: string) => sp.get(k) ?? '';
+  const fromUrl = ['department_id', 'category_id', 'harm', 'event_type', 'service_type', 'from', 'to', 'sentinel', 'overdue'].some((k) => sp.get(k));
+  const [preset, setPreset] = useState<Preset>(sp.get('overdue') ? 'triage' : fromUrl ? (full ? 'all' : 'open') : full ? 'triage' : 'open');
+  const [dept, setDept] = useState(p0('department_id')); const [cat, setCat] = useState(p0('category_id')); const [harm, setHarm] = useState(p0('harm')); const [et, setEt] = useState(p0('event_type'));
+  const [svc, setSvc] = useState(p0('service_type')); const [sentinel, setSentinel] = useState(sp.get('sentinel') === '1'); const [overdue, setOverdue] = useState(sp.get('overdue') === '1');
+  const [from, setFrom] = useState(p0('from')); const [to, setTo] = useState(p0('to')); const [search, setSearch] = useState(''); const ds = useDebounced(search.trim(), 300);
   const depts = useQuery({ queryKey: ['departments'], queryFn: () => api<{ id: string; name: string }[]>('/departments'), staleTime: 5 * 60_000 });
   const cats = useQuery({ queryKey: ['qm-classifiers', 'category'], queryFn: () => api<Classifier[]>('/quality/classifiers', { query: { kind: 'category' } }), staleTime: 5 * 60_000 });
-  const query = { department_id: dept, category_id: cat, harm, event_type: et, from, to, search: ds,
+  const query = { department_id: dept, category_id: cat, harm, event_type: et, service_type: svc, from, to, search: ds, ...(sentinel && { sentinel: '1' }), ...(overdue && { overdue: '1' }),
     ...(preset === 'triage' && { status: 'submitted' }), ...(preset === 'open' && { status: 'investigation,analysis,capa' }),
     ...(preset === 'urgent' && { urgent: '1', status: 'submitted,investigation,analysis,capa' }), ...(preset === 'closed' && { status: 'closed,rejected' }) };
   const q = useQuery({ queryKey: ['qm-list', query], queryFn: () => api<IncidentRow[]>('/quality/incidents', { query }) });
@@ -92,9 +100,13 @@ function Registry({ sum }: { sum?: QmSummary }) {
           <option value="">ნებისმიერი ზიანი</option>{(Object.keys(HARM_KA) as Harm[]).map((k) => <option key={k} value={k}>{HARM_KA[k]}</option>)}</select>
         <select className="select" style={{ maxWidth: 190, height: 38 }} aria-label="ტიპი" value={et} onChange={(e) => setEt(e.target.value)}>
           <option value="">ნებისმიერი ტიპი</option>{(Object.keys(EVENT_KA) as EventType[]).map((k) => <option key={k} value={k}>{EVENT_KA[k][0]}</option>)}</select>
+        <select className="select" style={{ maxWidth: 180, height: 38 }} aria-label="მომსახურების ტიპი" value={svc} onChange={(e) => setSvc(e.target.value)}>
+          <option value="">ყველა მომსახურება</option>{Object.entries(SERVICE_KA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <input className="input" type="date" style={{ maxWidth: 150, height: 38 }} aria-label="თარიღიდან" value={from} onChange={(e) => setFrom(e.target.value)} />
         <input className="input" type="date" style={{ maxWidth: 150, height: 38 }} aria-label="თარიღამდე" value={to} onChange={(e) => setTo(e.target.value)} />
         <input className="input" style={{ maxWidth: 220, height: 38 }} aria-label="ძებნა" placeholder="№, აღწერა, პაციენტი" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {sentinel && <button type="button" className="chip danger" onClick={() => setSentinel(false)} title="ფილტრის მოხსნა">⚑ სენტინელური ✕</button>}
+        {overdue && <button type="button" className="chip danger" onClick={() => setOverdue(false)} title="ფილტრის მოხსნა">ტრიაჟის ვადა გადაცილებულია ✕</button>}
       </div>
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (

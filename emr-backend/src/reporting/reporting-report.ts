@@ -13,6 +13,7 @@ import { DATE_RE, daysBetween, RPT_READ, RptCommon } from './reporting-common';
 import { ReportingFinService } from './reporting-fin';
 import { RptKpiService } from './reporting-kpi';
 import { ReportingOpsService } from './reporting-ops';
+import { QmReportsService } from '../quality/quality-reports';
 
 /**
  * მენეჯერული ანგარიში (0063): პერიოდი (ჩვეულებრივ — თვე) → xlsx (რამდენიმე ფურცელი) და PDF (1–2 გვერდი: KPI-ები + 13 თვე).
@@ -23,7 +24,7 @@ import { ReportingOpsService } from './reporting-ops';
 type Q = Record<string, string | undefined>;
 const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
 const MONTH_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
-const CAT_ORDER: Record<string, string> = { flow: 'პაციენტების ნაკადი', beds: 'საწოლები', or: 'საოპერაციო', dx: 'ინსტრუმენტული კვლევები', lab: 'ლაბორატორია', stock: 'მარაგი', finance: 'შემოსავალი / ხარჯი' };
+const CAT_ORDER: Record<string, string> = { flow: 'პაციენტების ნაკადი', beds: 'საწოლები', or: 'საოპერაციო', dx: 'ინსტრუმენტული კვლევები', lab: 'ლაბორატორია', stock: 'მარაგი', finance: 'შემოსავალი / ხარჯი', quality: 'ხარისხი და ინციდენტები' };
 const STATUS_KA: Record<string, string> = { green: 'შესრულებულია', yellow: 'გაფრთხილება', red: 'არ სრულდება' };
 const UNIT_SFX: Record<string, string> = { count: '', pct: '%', days: ' დღე', hours: ' სთ', min: ' წთ', gel: ' ₾', ratio: '' };
 const TREND_KPIS = ['enc_total', 'admissions', 'occupancy_pct', 'alos', 'or_cases', 'lab_orders', 'dx_orders', 'stock_consumption', 'rev_net', 'costs_total', 'result'];
@@ -52,7 +53,7 @@ const sheet = (name: string, header: string[], rows: Cell[][], pre: Cell[][] = [
 @Injectable()
 export class RptReportService {
   constructor(private readonly c: RptCommon, private readonly k: RptKpiService, private readonly rep: ReportingService, private readonly ops: ReportingOpsService,
-              private readonly fin: ReportingFinService, private readonly audit: AuditService) {}
+              private readonly fin: ReportingFinService, private readonly audit: AuditService, private readonly qm: QmReportsService) {}
 
   validate(o: ReportOpts) {
     if (!DATE_RE.test(o.from) || !DATE_RE.test(o.to) || o.from > o.to) throw new BadRequestException('პერიოდი: from ≤ to (YYYY-MM-DD)');
@@ -103,9 +104,12 @@ export class RptReportService {
       validator: await soft(() => this.ops.doctors(u, { ...q, role: 'validator' }, undefined as unknown as Request, false)),
       revenue: await soft(() => this.fin.doctors(u, { ...q, basis: 'performer' }, null)),
     } : null;
+    // 0066: ხარისხი — მიმღების ხედვის არით (dashboard_visibility / monthly_section); გამორთულზე ხარისხის KPI-ებიც არ შედის
+    const quality = scope.quality ? await this.qm.monthlySection(u, o.from, o.to, scope.all, scope.depts) : null;
+    if (!quality) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'quality');
     const closedOpen = finance?.open_months.length ? `ფინანსური პერიოდი ჯერ არ არის დახურული (${finance.open_months.join(', ')}) — ფინანსური ციფრები შეიძლება შეიცვალოს` : null;
     return { o, title: `მენეჯერული ანგარიში — ${periodLabel(o.from, o.to)}`, clinic: clinic?.name ?? '', scope_label: deptName, generated_at: new Date(),
-      data_as_of: prev.data_as_of, prev, yoy, months, trend, flow, beds, or, imaging, lab, stock, finance, balances, doctors, note: closedOpen, min_cases: s.min_cases };
+      data_as_of: prev.data_as_of, prev, yoy, months, trend, flow, beds, or, imaging, lab, stock, finance, balances, doctors, quality, note: closedOpen, min_cases: s.min_cases };
   }
 
   // ------------------------------------------------------------------------------------ xlsx
@@ -149,6 +153,8 @@ export class RptReportService {
       sheets.push(sheet('დებიტორები', H, [...rows(b.ar_payer), ...rows(b.ar_patient)], [[`მდგომარეობა: ${b.snapshot_day ?? '—'}`]]));
       sheets.push(sheet('კრედიტორები', H, rows(b.ap), [[`მდგომარეობა: ${b.snapshot_day ?? '—'}`]]));
     }
+    if (d.quality) for (const q of this.qm.xlsxSheets(d.quality, false).filter((x) => ['შეჯამება', 'კატეგორია × ზიანი', 'ინდიკატორები', 'ვადები', 'CAPA'].includes(x.name)))
+      sheets.push({ ...q, name: `ხარისხი — ${q.name}`.slice(0, 31) });
     if (d.doctors) {
       const D = d.doctors; const sm = (x: { small: boolean }) => (x.small ? `< ${d.min_cases}` : '');
       if (D.surgeon) sheets.push(sheet('ექიმები — ქირურგი', ['ექიმი', 'დაგეგმილი', 'დასრულებული', 'გაუქმებული', 'გაუქმება %', 'პირველი დროული %', 'საშ. ხანგრძლივობა წთ', 'მცირე ნიმუში'],
@@ -238,6 +244,17 @@ export class RptReportService {
         doc.text(`დებიტორები (${b.snapshot_day ?? '—'}): გადამხდელები ${fmt(b.ar_payer.totals.total, 'gel')}, აქედან 90+ ${fmt(b.ar_payer.totals.d90, 'gel')} · პაციენტები ${fmt(b.ar_patient.totals.total, 'gel')} · `
           + `კრედიტორები: ${fmt(b.ap.totals.total, 'gel')}, ვადაგადაცილებული ${fmt(b.ap.totals.d1_30 + b.ap.totals.d31_60 + b.ap.totals.d61_90 + b.ap.totals.d90, 'gel')}`, { width: W });
       }
+    }
+    // 0066: ხარისხი — მოკლედ
+    if (d.quality) {
+      const q = d.quality; const T = q.summary.totals; const mc = q.scope.minCell;
+      const v = (x: number | null | undefined, sfx = '') => (x === null || x === undefined ? (mc ? `< ${mc}` : '—') : `${x}${sfx}`);
+      if (doc.y + 60 > bottom()) doc.addPage(); else doc.moveDown(0.6);
+      doc.font('B').fontSize(10).fillColor('black').text('ხარისხი და ინციდენტები', L, doc.y, { width: W });
+      doc.font('R').fontSize(8.5).text([`ინციდენტები: ${v(T.n)} (ზიანით ${v(T.harm)}, near-miss ${v(T.near_miss)}, სენტინელური ${v(T.sentinel)})`,
+        `near-miss თანაფარდობა: ${v(T.near_miss_ratio)}`, `ტრიაჟი ვადაში: ${v(T.triage_on_time_pct, '%')}`].join(' · '), L, doc.y + 2, { width: W });
+      doc.text(q.indicators.rows.map((r) => `${r.name}: ${v(r.value)}`).join(' · '), { width: W });
+      doc.text(`CAPA: ღია ${v(q.capa.snapshot.open)}, ვადაგადაცილებული ${v(q.capa.snapshot.overdue)} · პერიოდში შესრულდა ${v(q.capa.period.done)} (ვადაში ${v(q.capa.period.on_time_pct, '%')})`, { width: W });
     }
     // ძირი: გვერდი / წყარო
     const range = doc.bufferedPageRange();

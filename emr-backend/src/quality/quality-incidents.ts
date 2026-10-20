@@ -18,6 +18,7 @@ import {
   AFFECTED, EVENT_KA, EVENT_TYPES, HARM_KA, HARMS, harmRank, IDENTITY_MODES, MERP, PATIENT_LOOKUP, QM_DEPT, QM_FULL, QmCommon, REJECT_KA, REJECT_REASONS,
   SOURCE_TYPES, STATUS_KA, levelFor, LEVEL_KA, CAPA_STATUS_KA, type Access, type Ex, type Harm, type QmRules, type SourceType, type Trx, userName,
 } from './quality-common';
+import { SERVICE_TYPES } from './quality-metrics';
 import { QmSources } from './quality-sources';
 
 const MAX_FILE = 10 * 1024 * 1024;
@@ -62,6 +63,8 @@ class ClassifyDto {
   @IsOptional() @IsBoolean() is_sentinel?: boolean;
   @IsOptional() @IsUUID() patient_id?: string | null;
   @IsOptional() @IsIn(EVENT_TYPES) event_type?: (typeof EVENT_TYPES)[number];
+  /** 0066: მომსახურების ტიპი (შესწორება; ნაგულისხმევად — წყაროდან) */
+  @IsOptional() @IsIn(SERVICE_TYPES) service_type?: (typeof SERVICE_TYPES)[number];
   @IsOptional() @IsString() @MaxLength(4000) note?: string | null;
 }
 export class TriageDto extends ClassifyDto {
@@ -76,7 +79,7 @@ class ReasonDto { @IsString() @Length(3, 500) reason: string }
 class CommentDto { @IsString() @Length(2, 4000) text: string; @IsOptional() @IsBoolean() internal?: boolean }
 class DismissDto { @IsIn(SOURCE_TYPES) source_type: SourceType; @IsUUID() source_id: string }
 interface ListQ { status?: string; department_id?: string; category_id?: string; harm?: string; event_type?: string; from?: string; to?: string; search?: string;
-  sentinel?: string; urgent?: string; overdue?: string; risk_level?: string }
+  sentinel?: string; urgent?: string; overdue?: string; risk_level?: string; service_type?: string }
 
 type Inc = Awaited<ReturnType<QmIncidentsService['row']>>;
 
@@ -184,12 +187,15 @@ export class QmIncidentsService {
       if (n !== uids.length) throw new BadRequestException({ code: 'PERSON', message: 'მონაწილე თანამშრომელი ვერ მოიძებნა' });
     }
     for (const p of people) if (!p.user_id && (p.name_text?.trim() ?? '').length < 2) throw new BadRequestException({ code: 'PERSON', message: 'მონაწილე: აირჩიეთ თანამშრომელი ან ჩაწერეთ სახელი' });
+    // 0066: მომსახურების ტიპი — წყაროდან / ვიზიტიდან / განყოფილებიდან (ხარისხის მენეჯერი ტრიაჟზე ასწორებს)
+    const svc = (await sql<{ t: string }>`SELECT qm_service_type(${source?.type ?? null}, ${source?.id ?? null}::uuid, ${encounterId}::uuid, ${patientId}::uuid, ${dto.affected},
+      ${dept.id}::uuid) AS t`.execute(ex)).rows[0].t;
     return {
       values: {
         event_type: dto.event_type, affected: dto.affected, occurred_at: new Date(t).toISOString(), department_id: dept.id, location_text: dto.location_text?.trim() || null,
         category_id: cat.id, harm_reported: dto.harm_reported, merp_category: merp, description: dto.description.trim(), immediate_actions: dto.immediate_actions?.trim() || null,
         patient_id: patientId, patient_text: patientId ? null : patientText, encounter_id: encounterId,
-        source_type: source?.type ?? null, source_id: source?.id ?? null, source_label: source?.label ?? null,
+        source_type: source?.type ?? null, source_id: source?.id ?? null, source_label: source?.label ?? null, service_type: svc,
       },
       people: people.map((p) => ({ role: p.role, user_id: p.user_id || null, name_text: p.user_id ? null : p.name_text!.trim(), note: p.note?.trim() || null })),
       cat, dept,
@@ -408,7 +414,7 @@ export class QmIncidentsService {
       .innerJoin('departments as d', 'd.id', 'i.department_id').leftJoin('patients as p', 'p.id', 'i.patient_id').leftJoin('users as ur', 'ur.id', 'i.reporter_id')
       .select(['i.id', 'i.inc_no', 'i.status', 'i.event_type', 'i.affected', 'i.occurred_at', 'i.reported_at', 'i.department_id', 'd.name as department_name',
         'i.category_id', 'c.name as category_name', 'cp.name as category_parent_name', 'i.harm_reported', 'i.harm', 'i.risk_score', 'i.risk_level', 'i.is_sentinel', 'i.urgent',
-        'i.identity_mode', 'i.triage_due_at', 'i.source_label', 'i.patient_text', 'i.patient_id', userName('p').as('patient_name'),
+        'i.identity_mode', 'i.triage_due_at', 'i.source_label', 'i.patient_text', 'i.patient_id', 'i.service_type', userName('p').as('patient_name'),
         (scope.full ? userName('ur') : sql<string | null>`CASE WHEN i.identity_mode = 'open' THEN ${userName('ur')} END`).as('reporter_name'),
         sql<string>`left(i.description, 160)`.as('summary'),
         sql<boolean>`i.status = 'submitted' AND i.triage_due_at < now()`.as('overdue'),
@@ -421,6 +427,7 @@ export class QmIncidentsService {
     if (q.harm) x = x.where(sql`coalesce(i.harm, i.harm_reported)`, 'in', q.harm.split(','));
     if (q.event_type) x = x.where('i.event_type', 'in', q.event_type.split(','));
     if (q.risk_level) x = x.where('i.risk_level', 'in', q.risk_level.split(','));
+    if (q.service_type) x = x.where('i.service_type', 'in', q.service_type.split(','));
     if (q.from) x = x.where(sql`(i.occurred_at AT TIME ZONE current_setting('TimeZone'))::date`, '>=', q.from);
     if (q.to) x = x.where(sql`(i.occurred_at AT TIME ZONE current_setting('TimeZone'))::date`, '<=', q.to);
     if (q.sentinel === '1') x = x.where('i.is_sentinel', '=', true);
@@ -495,6 +502,7 @@ export class QmIncidentsService {
     return {
       ...(d.category_id && { category_id: d.category_id }), ...(d.department_id && { department_id: d.department_id }),
       ...(d.patient_id !== undefined && d.patient_id !== null && { patient_id: d.patient_id, patient_text: null }),
+      ...(d.service_type && { service_type: d.service_type }),
       event_type: eventType, harm: harm ?? null, merp_category: merp, likelihood: likelihood ?? null, consequence: consequence ?? null,
       risk_level: score ? this.c.riskLevel(r, score) : null, is_sentinel: sentinel, urgent: this.urgentFor(r, harm ?? inc.harm_reported, sentinel),
     };

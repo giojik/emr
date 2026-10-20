@@ -21,6 +21,8 @@ export interface QmRules {
   investigator_at_triage: boolean; rca_required_risk: 'medium' | 'high' | 'extreme' | 'off'; rca_required_harm: 'moderate' | 'severe' | 'death' | 'off';
   review_days: number; rca_days: number; due_warn_days: number; analysis_approval: boolean; capa_effectiveness: boolean; effectiveness_days: number;
   disclosure_required_harm: 'mild' | 'moderate' | 'severe' | 'death' | 'off'; closure_feedback: boolean; report_mask_patient: boolean;
+  // 0066
+  report_date_basis: 'occurred' | 'reported'; view_min_cell: number; dashboard_visibility: 'report_users' | 'quality_only'; monthly_section: boolean;
 }
 
 export const IDENTITY_MODES = ['open', 'confidential', 'anonymous'] as const;

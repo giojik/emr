@@ -157,3 +157,7 @@ pre.json { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pr
 .consent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
 .consent-row:last-child { border-bottom: 0; }
 .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+
+/* 0066: ბმულის სახის ღილაკი (ცხრილში ჩაღრმავება) */
+.linklike { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.linklike:hover { color: var(--accent); }

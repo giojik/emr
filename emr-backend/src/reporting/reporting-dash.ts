@@ -6,6 +6,8 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
+import { has } from '../auth/roles';
+import { qmAttentionCounts } from '../quality/quality-metrics';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
@@ -222,7 +224,7 @@ export class ReportingDashService {
     const today = await this.c.today();
     const from = q.from ?? `${today.slice(0, 8)}01`; const to = q.to ?? today;
     const ov = await this.r.overview(u, { from, to, department_id: q.department_id, compare: 'none' });
-    const items: { kind: string; severity: 'red' | 'yellow'; title: string; detail: string; value: number | null; code?: string; unit?: string }[] = [];
+    const items: { kind: string; severity: 'red' | 'yellow'; title: string; detail: string; value: number | null; code?: string; unit?: string; link?: string }[] = [];
     for (const k of ov.kpis.filter((x) => x.status === 'red' || x.status === 'yellow'))
       items.push({ kind: 'kpi', severity: k.status as 'red' | 'yellow', code: k.code, unit: k.unit, title: k.name, value: k.value,
         detail: `სამიზნე ${k.target}${k.warn !== null ? ` (გაფრთხილება ${k.warn})` : ''} · ${from} — ${to}` });
@@ -245,6 +247,19 @@ export class ReportingDashService {
     if (L.ext_overdue) items.push({ kind: 'ext_overdue', severity: 'yellow', title: 'გარე ლაბორატორია აგვიანებს', value: L.ext_overdue, detail: 'მოსალოდნელი ვადა გავიდა' });
     if (L.dx_overdue) items.push({ kind: 'dx_overdue', severity: 'red', title: 'კვლევის დასკვნა აგვიანებს', value: L.dx_overdue, detail: `ჩატარებიდან ${s.dx_overdue_hours} საათზე მეტი, ხელმოწერის გარეშე` });
     if (L.no_bed) items.push({ kind: 'no_bed', severity: 'yellow', title: 'პაციენტი საწოლის გარეშე', value: L.no_bed, detail: 'აქტიური ჰოსპიტალიზაცია, საწოლი არ არის მინიჭებული' });
+    // 0066: ხარისხი — მხოლოდ რაოდენობები (ინციდენტის № / ბმული — მხოლოდ ხარისხის მენეჯერს)
+    if (scope.quality) {
+      const Q = await qmAttentionCounts(this.c.db, scope.all ? null : scope.depts, TZ);
+      const qm = has(u, 'quality');
+      if (Q.sentinel_month) items.push({ kind: 'qm_sentinel', severity: 'red', title: 'სენტინელური მოვლენა ამ თვეში', value: Q.sentinel_month, detail: 'ხარისხი და ინციდენტები',
+        ...(qm && { link: '/quality?tab=registry&sentinel=1' }) });
+      if (Q.triage_overdue) items.push({ kind: 'qm_triage_overdue', severity: 'red', title: 'ინციდენტის ტრიაჟი ვადაგადაცილებულია', value: Q.triage_overdue,
+        detail: 'შეტყობინება ტრიაჟის ვადაში არ განხილულა', ...(qm && { link: '/quality?tab=registry&overdue=1' }) });
+      if (Q.analysis_overdue) items.push({ kind: 'qm_analysis_overdue', severity: 'yellow', title: 'ინციდენტის ანალიზი ვადაგადაცილებულია', value: Q.analysis_overdue,
+        detail: 'მიმოხილვა / RCA ვადაში არ დასრულდა', ...(qm && { link: '/quality?tab=registry' }) });
+      if (Q.capa_overdue) items.push({ kind: 'qm_capa_overdue', severity: 'yellow', title: 'მაკორექტირებელი ქმედება (CAPA) ვადაგადაცილებულია', value: Q.capa_overdue,
+        detail: 'ღია / შესრულებაში, ვადა გავიდა', ...(qm && { link: '/quality?tab=capa' }) });
+    }
     items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'red' ? -1 : 1));
     return { from, to, stock_computed_at: st.computed_at, items };
   }

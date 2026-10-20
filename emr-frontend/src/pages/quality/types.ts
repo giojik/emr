@@ -3,6 +3,11 @@ import type { Role } from '../../api/client';
 /** ხარისხი და ინციდენტები (0064) */
 export const QM_FULL: Role[] = ['quality'];
 export const QM_READ: Role[] = ['quality', 'quality_dept'];
+/** 0066: ანგარიშები — quality / quality_dept / quality_view */
+export const QM_REPORTS: Role[] = ['quality', 'quality_dept', 'quality_view'];
+export const SERVICE_KA: Record<string, string> = {
+  inpatient: 'სტაციონარი', outpatient: 'ამბულატორია', emergency: 'გადაუდებელი', or: 'საოპერაციო', diagnostic: 'დიაგნოსტიკა', lab: 'ლაბორატორია', non_clinical: 'არაკლინიკური',
+};
 
 export type IdentityMode = 'open' | 'confidential' | 'anonymous';
 export type Harm = 'none' | 'mild' | 'moderate' | 'severe' | 'death';
@@ -106,7 +111,7 @@ export interface IncidentRow {
   department_id: string; department_name: string; category_id: string; category_name: string; category_parent_name: string | null;
   harm_reported: Harm; harm: Harm | null; risk_score: number | null; risk_level: RiskLevel | null; is_sentinel: boolean; urgent: boolean; identity_mode: IdentityMode;
   triage_due_at: string; source_label: string | null; patient_text: string | null; patient_id: string | null; patient_name: string | null; reporter_name: string | null;
-  summary: string; overdue: boolean; files: number;
+  summary: string; overdue: boolean; files: number; service_type: string;
 }
 export interface IncidentEvent { id: string; at: string; kind: string; text: string | null; data: Record<string, unknown> | null; internal: boolean; user_id: string | null; user_name: string | null }
 export interface IncidentFile { id: string; mime_type: string; size_bytes: number; original_name: string | null; created_at: string; uploaded_by: string | null }
@@ -137,3 +142,40 @@ const HARM_ORDER: Harm[] = ['none', 'mild', 'moderate', 'severe', 'death'];
 /** ინფორმირება სავალდებულოა? (პაციენტი + ზიანი ≥ ზღვარი) */
 export const disclosureRequired = (d: { affected: Affected; harm: Harm | null; harm_reported: Harm }, m: Pick<QmMeta, 'disclosure_required_harm'>) =>
   d.affected === 'patient' && m.disclosure_required_harm !== 'off' && HARM_ORDER.indexOf(d.harm ?? d.harm_reported) >= HARM_ORDER.indexOf(m.disclosure_required_harm);
+
+// ---------------------------------------------------------------- 0066: ანგარიშები
+/** null — „< N“ (quality_view, view_min_cell) */
+export type Cnt = number | null;
+export interface QrMeta {
+  access: 'full' | 'dept' | 'view'; scope_all: boolean; min_cell: number; date_basis: 'occurred' | 'reported'; today: string; data_as_of: string | null; reporting_enabled: boolean;
+  departments: { id: string; name: string; is_active: boolean }[]; service_types: { code: string; name: string }[]; event_types: { code: string; name: string }[];
+  harms: { code: string; name: string }[]; categories: { id: string; parent_id: string | null; name: string; is_active: boolean }[]; dims: { code: string; name: string }[];
+  can_registry: boolean; can_drill: boolean;
+}
+export interface QrTotals { n: Cnt; harm: Cnt; no_harm: Cnt; near_miss: Cnt; hazard: Cnt; sentinel: Cnt; anonymous: Cnt; severe: Cnt; near_miss_ratio: number | null;
+  anonymous_pct: number | null; report_rate: number | null; triage_on_time_pct: number | null }
+export interface QrSummary { from: string; to: string; compare: { from: string; to: string }; scope_all: boolean; min_cell: number; data_as_of: string | null; totals: QrTotals; prev: QrTotals;
+  bed_days: number; pending_triage: { n: number; overdue: number } | null;
+  trend: { months: string[]; series: Record<EventType, Cnt[]>; total: Cnt[]; prev_year: Cnt[] } }
+export interface QrPivot { rows_dim: string; cols_dim: string; from: string; to: string; min_cell: number; can_drill: boolean;
+  rows: { key: string; label: string; total: Cnt; pct: number | null }[]; cols: { key: string; label: string; total: Cnt }[]; cells: Cnt[][]; total: Cnt }
+export interface QrIndicator { code: string; kpi_code: string; name: string; description: string | null; denominator: string; denominator_ka: string; per: number; numerator: Cnt;
+  denominator_value: number; value: number | null; target: number | null; warn: number | null; status: 'green' | 'yellow' | 'red' | null;
+  by_department: { department_id: string; department_name: string; numerator: Cnt; denominator_value: number; value: number | null; status: string | null }[]; trend: (number | null)[] }
+export interface QrIndicators { from: string; to: string; months: string[]; occupancy_basis: string; min_cell: number; rows: QrIndicator[] }
+export interface QrTimeliness { from: string; to: string; min_cell: number; n: number;
+  triage: { triaged: number; median_h: number | null; p90_h: number | null; avg_h: number | null; on_time_pct: number | null; sentinel: { triaged: number; median_h: number | null; on_time_pct: number | null } };
+  closure: { closed: number; open: number; closed_pct: number | null; median_d: number | null; p90_d: number | null; avg_d: number | null };
+  analysis: { review: { n: number; submitted: number; approved: number; on_time_pct: number | null };
+    rca: { n: number; submitted: number; approved: number; completion_pct: number | null; on_time_pct: number | null; median_d: number | null }; overdue_now: number };
+  by_department: { department_id: string; department_name: string; n: Cnt; triage_median_h: number | null; triage_on_time_pct: number | null; closed_pct: number | null; close_median_d: number | null;
+    analysis_on_time_pct: number | null; rca_completion_pct: number | null }[] }
+export interface QrCapa { from: string; to: string; min_cell: number;
+  snapshot: { open: Cnt; in_progress: Cnt; overdue: Cnt; age: { d1_30: Cnt; d31_60: Cnt; d60: Cnt }; due_requests: Cnt; effectiveness_due: Cnt };
+  period: { created: Cnt; corrective: Cnt; preventive: Cnt; done: Cnt; done_on_time: Cnt; on_time_pct: number | null; cancelled: Cnt; checked: Cnt; effective: Cnt; effective_pct: number | null };
+  by_department: { department_id: string | null; department_name: string; open: Cnt; overdue: Cnt; done: Cnt; on_time_pct: number | null; effective_pct: number | null }[] }
+export interface QrFactors { from: string; to: string; min_cell: number; analyses: Cnt;
+  groups: { id: string; name: string; n: Cnt; pct: number | null; factors: { id: string; name: string; n: Cnt; pct: number | null }[] }[] }
+export interface QmIndicatorDef { id: string; code: string; kpi_code: string; name: string; description: string | null; category_ids: string[]; categories: { id: string; name: string }[];
+  event_types: EventType[]; min_harm: Harm | null; patient_only: boolean; service_types: string[]; denominator: 'bed_days' | 'admissions' | 'visits'; denominator_ka: string; per: number;
+  is_active: boolean; sort_order: number; formula: string }

@@ -2,30 +2,35 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { ErrorBox, Loading, useToast } from '../../components/ui';
+import QmIndicators from './Indicators';
 import type { Classifier } from './types';
 
 type Kind = 'category' | 'factor';
-const KIND_KA: Record<Kind, [string, string]> = {
+type Tab = Kind | 'indicator';
+const KIND_KA: Record<Tab, [string, string]> = {
   category: ['კატეგორიები', 'კატეგორია → ქვეკატეგორია. ⚑ სენტინელური ქვეკატეგორია — ინციდენტი ავტომატურად სასწრაფოა; „მედიკამენტი“ — NCC MERP ველი.'],
-  factor: ['ხელშემწყობი ფაქტორები', 'London Protocol: ჯგუფი → ფაქტორი. გამოიყენება ანალიზში (RCA, შემდეგი ეტაპი).'],
+  factor: ['ხელშემწყობი ფაქტორები', 'London Protocol: ჯგუფი → ფაქტორი. გამოიყენება ანალიზში (მიმოხილვა / RCA) და ანგარიშში.'],
+  indicator: ['ინდიკატორები', ''],
 };
 
 /** ცნობარები (quality): დამატება, სახელის / ნიშნების / რიგის შეცვლა, გათიშვა (ისტორია რჩება — წაშლა არ არის) */
 export default function QmCatalog() {
-  const [kind, setKind] = useState<Kind>('category');
-  const q = useQuery({ queryKey: ['qm-classifiers', kind, 'all'], queryFn: () => api<Classifier[]>('/quality/classifiers', { query: { kind, all: 'true' } }) });
+  const [tab, setTab] = useState<Tab>('category');
+  const kind: Kind = tab === 'indicator' ? 'category' : tab;
+  const q = useQuery({ queryKey: ['qm-classifiers', kind, 'all'], queryFn: () => api<Classifier[]>('/quality/classifiers', { query: { kind, all: 'true' } }), enabled: tab !== 'indicator' });
   const roots = (q.data ?? []).filter((c) => !c.parent_id);
   return (
     <div className="content">
-      <div className="row"><div className="seg" role="group" aria-label="ცნობარი">{(Object.keys(KIND_KA) as Kind[]).map((k) =>
-        <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>{KIND_KA[k][0]}</button>)}</div>
-        <span className="small muted grow">{KIND_KA[kind][1]}</span></div>
+      <div className="row"><div className="seg" role="group" aria-label="ცნობარი">{(Object.keys(KIND_KA) as Tab[]).map((k) =>
+        <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)}>{KIND_KA[k][0]}</button>)}</div>
+        <span className="small muted grow">{KIND_KA[tab][1]}</span></div>
+      {tab === 'indicator' ? <QmIndicators /> : <>
       <ErrorBox error={q.error} />
       {q.isLoading ? <Loading /> : (
         <div className="stack">
           {roots.map((r) => <Group key={r.id} root={r} kind={kind} items={(q.data ?? []).filter((c) => c.parent_id === r.id)} />)}
           <AddRow kind={kind} parent={null} />
-        </div>)}
+        </div>)}</>}
     </div>
   );
 }

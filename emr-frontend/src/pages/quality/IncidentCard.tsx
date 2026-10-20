@@ -8,7 +8,7 @@ import { ErrorBox, Field, Loading, useDebounced, useToast } from '../../componen
 import { dateGe, hhmm, tsDate } from '../../lib/format';
 import {
   AFFECTED_KA, catLabel, CONSEQUENCE_KA, EVENT_KA, EVENT_LOG_KA, HARM_CHIP, HARM_KA, IDENTITY_KA, LIKELIHOOD_KA, MERP_KA, PERSON_ROLE_KA, REJECT_KA, RISK_UI, riskOf, STATUS_UI,
-  disclosureRequired, LEVEL_KA, type Classifier, type EventType, type Harm, type Incident, type IncidentRow, type QmMeta,
+  disclosureRequired, LEVEL_KA, SERVICE_KA, type Classifier, type EventType, type Harm, type Incident, type IncidentRow, type QmMeta,
 } from './types';
 
 const when = (ts: string) => `${tsDate(ts)} ${hhmm(ts)}`;
@@ -51,6 +51,7 @@ export default function IncidentCard() {
               <Kv k="მოხდა" v={when(d.occurred_at)} />
               <Kv k="გაიგზავნა" v={when(d.reported_at)} />
               <Kv k="განყოფილება" v={d.department_name} />
+              {d.access !== 'own' && d.service_type && <Kv k="მომსახურების ტიპი" v={SERVICE_KA[d.service_type] ?? d.service_type} />}
               <Kv k="ადგილი" v={d.location_text ?? '—'} />
               <Kv k="კატეგორია" v={catLabel(d)} />
               <Kv k="ზიანი" v={<>{HARM_KA[d.harm_reported]} <span className="muted">(ავტორი)</span>{d.harm && <> → <span className={`chip ${HARM_CHIP[d.harm]}`} style={{ height: 20 }}>{HARM_KA[d.harm]}</span></>}</>} />
@@ -129,10 +130,12 @@ function RiskMatrix({ l, c, set, risk }: { l: number; c: number; set: (l: number
   );
 }
 
-interface ClassState { event_type: EventType; harm: Harm | ''; merp: string; l: number; c: number; category: string; sub: string; department_id: string; sentinel: boolean; patient: { id: string; name: string } | null; note: string }
+interface ClassState { event_type: EventType; harm: Harm | ''; merp: string; l: number; c: number; category: string; sub: string; department_id: string; sentinel: boolean; patient: { id: string; name: string } | null; note: string;
+  service_type: string }
 const initClass = (d: Incident): ClassState => ({
   event_type: d.event_type, harm: (d.harm ?? (d.status === 'submitted' ? d.harm_reported : '')) as Harm | '', merp: d.merp_category ?? '', l: d.likelihood ?? 0, c: d.consequence ?? 0,
   category: d.category_parent_id ?? d.category_id, sub: d.category_parent_id ? d.category_id : '', department_id: d.department_id, sentinel: d.is_sentinel, patient: null, note: '',
+  service_type: d.service_type ?? '',
 });
 
 function ClassFields({ s, set, meta, d }: { s: ClassState; set: (p: Partial<ClassState>) => void; meta: QmMeta; d: Incident }) {
@@ -156,6 +159,8 @@ function ClassFields({ s, set, meta, d }: { s: ClassState; set: (p: Partial<Clas
           <option value="">—</option>{subs.map((c) => <option key={c.id} value={c.id}>{c.name}{c.is_sentinel ? ' ⚑' : ''}</option>)}</select></Field>
         <Field label="განყოფილება" htmlFor="tr-dept"><select id="tr-dept" className="select" value={s.department_id} onChange={(e) => set({ department_id: e.target.value })}>
           {depts.data?.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+        <Field label="მომსახურების ტიპი" htmlFor="tr-svc" hint="ავტომატურად — მიბმული მოვლენიდან / განყოფილებიდან"><select id="tr-svc" className="select" value={s.service_type} onChange={(e) => set({ service_type: e.target.value })}>
+          {Object.entries(SERVICE_KA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         {root?.is_medication && meta.ncc_merp ? (
           <Field label="NCC MERP" htmlFor="tr-merp"><select id="tr-merp" className="select" value={s.merp} onChange={(e) => set({ merp: e.target.value })}>
             <option value="">—</option>{Object.entries(MERP_KA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>) : <span />}
@@ -174,7 +179,7 @@ function ClassFields({ s, set, meta, d }: { s: ClassState; set: (p: Partial<Clas
   );
 }
 const classBody = (s: ClassState) => ({ event_type: s.event_type, harm: s.harm || undefined, merp_category: s.merp || null, likelihood: s.l || undefined, consequence: s.c || undefined,
-  category_id: s.sub || s.category, department_id: s.department_id, is_sentinel: s.sentinel, ...(s.patient && { patient_id: s.patient.id }) });
+  category_id: s.sub || s.category, department_id: s.department_id, is_sentinel: s.sentinel, ...(s.patient && { patient_id: s.patient.id }), ...(s.service_type && { service_type: s.service_type }) });
 
 function Triage({ d, meta, onDone }: { d: Incident; meta: QmMeta; onDone: (r: Incident) => void }) {
   const [mode, setMode] = useState<'accept' | 'reject'>('accept');

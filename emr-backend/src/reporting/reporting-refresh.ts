@@ -6,6 +6,7 @@ import { finRules } from '../finance/finance-rules';
 import { revenueCte } from '../finance/finance-reports';
 import { balanceSnapshot, finExtraFacts } from './reporting-refresh-fin';
 import { opsFacts } from './reporting-refresh-ops';
+import { qualityFacts } from './reporting-refresh-quality';
 import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type RptSettings, TZ } from './reporting-common';
 
 /**
@@ -15,6 +16,7 @@ import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type R
  *  • დახურული ფინანსური თვე (freeze_closed_periods) — rpt_fact_finance არ იცვლება.
  *  • მარაგის სურათი — მხოლოდ მაშინ, როცა პერიოდი დღევანდელ დღეს მოიცავს.
  *  • 0063: rpt_fact_payer / rpt_fact_doctor_rev (finance-სთან ერთად, დახურული თვე — გაყინული), დებიტორები / კრედიტორები (rpt_balance_snapshot — დღევანდელ დღეზე).
+ *  • 0066: rpt_fact_quality (მთელი ისტორია) და rpt_quality_snapshot — reporting-refresh-quality.
  */
 type Trx = Transaction<DB>;
 const LOCK_KEY = 60_060;
@@ -124,6 +126,7 @@ export class RptRefreshService {
     Object.assign(out, ops);
     if (to >= today) out.stock_snapshot = await this.snapshot(trx, today, s);
     if (to >= today && (await finRules(this.rdb)).enabled) out.balance_snapshot = await balanceSnapshot(this.rdb, trx, today);   // 0063
+    Object.assign(out, await qualityFacts(this.rdb, trx));   // 0066: მთელი ისტორია (მცირე მოცულობა), ყოველ გადათვლაზე
     return out;
   }
 

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { addDays, daysBetween, n, r1, r2, RptCommon, type RptScope, type RptSettings } from './reporting-common';
 import { TAT_EDGES } from './reporting-refresh';
+import { bedDays, categoryExpander, type Indicator, indicatorMatch, loadIndicators, rate } from '../quality/quality-metrics';
 
 /**
  * KPI-ების გამოთვლა მხოლოდ rpt_* ცხრილებიდან (READ_DB). თითო KPI-ის ფორმულა — აქ (ტექსტი — rpt_kpis.formula).
@@ -30,11 +31,20 @@ export function histPercentile(hist: number[], p: number): number | null {
 }
 const pct = (a: number, b: number) => (b > 0 ? r1((a / b) * 100) : null);
 const div = (a: number, b: number, d = 1) => (b > 0 ? Math.round((a / b) * 10 ** d) / 10 ** d : null);
+export type Snap = { stock_low: number; stock_exp90: number; qm_capa_overdue?: number };
 
 @Injectable()
 export class RptKpiService {
   constructor(private readonly c: RptCommon) {}
   private get rdb() { return this.c.rdb; }
+
+  /** 0066: ინდიკატორები (qm_indicators) + კატეგორიების ხე — ყოველ totals-ზე (2 პატარა ცხრილი; ცნობარის ცვლილება მაშინვე აისახება) */
+  private ind: { list: Indicator[]; cats: Map<string, Set<string>> } | null = null;
+  private async indicators() {
+    const [list, expand] = await Promise.all([loadIndicators(this.c.db, false), categoryExpander(this.c.db)]);
+    this.ind = { list, cats: new Map(list.map((i) => [i.code, expand(i.category_ids)])) };
+    return this.ind;
+  }
 
   /** განყოფილების ფილტრი (alias-ის department_id) */
   private where(scope: RptScope, alias: string) {
@@ -44,7 +54,7 @@ export class RptKpiService {
   /** პერიოდის ჯამები ყველა ფაქტიდან — ერთი გასაღებით (flow_*, beds_*, …) */
   async totals(scope: RptScope, from: string, to: string): Promise<Totals> {
     const t: Record<string, number> = {};
-    const [flow, beds, or, room, dx, stock, fin, hist] = await Promise.all([
+    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind] = await Promise.all([
       sql<{ enc_type: string; visit_kind: string; encounters: number; cancelled: number; new_patients: number }>`
         SELECT f.enc_type, f.visit_kind, sum(f.encounters)::int AS encounters, sum(f.cancelled)::int AS cancelled, sum(f.new_patients)::int AS new_patients
           FROM rpt_fact_flow f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2`.execute(this.rdb),
@@ -79,6 +89,15 @@ export class RptKpiService {
         SELECT (f.section = 'lab') AS lab, k, coalesce(sum(f.tat_hist[k]), 0)::int AS c
           FROM rpt_fact_dx f CROSS JOIN generate_series(1, 12) k
          WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2`.execute(this.rdb),
+      // 0066: ხარისხი
+      sql<{ category_id: string; event_type: string; harm: string; service_type: string; affected: string; is_sentinel: boolean; n: number; anonymous: number; triaged: number; on_time: number }>`
+        SELECT f.category_id, f.event_type, f.harm, f.service_type, f.affected, f.is_sentinel, sum(f.n)::int AS n, sum(f.anonymous)::int AS anonymous,
+               sum(f.triaged)::int AS triaged, sum(f.triage_on_time)::int AS on_time
+          FROM rpt_fact_quality f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2, 3, 4, 5, 6`.execute(this.rdb),
+      sql<{ k: number; c: number }>`
+        SELECT k, coalesce(sum(f.triage_hist[k]), 0)::int AS c FROM rpt_fact_quality f CROSS JOIN generate_series(1, 12) k
+         WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1`.execute(this.rdb),
+      this.indicators(),
     ]);
     t.days = daysBetween(from, to);
     for (const k of ['enc_all', 'enc_out', 'enc_lab', 'enc_emg', 'enc_cancelled', 'new_patients']) t[k] = 0;
@@ -101,20 +120,41 @@ export class RptKpiService {
     t.lab_tat_p50 = histPercentile(hists.lab, 0.5) ?? NaN; t.lab_tat_p90 = histPercentile(hists.lab, 0.9) ?? NaN; t.dx_tat_p50 = histPercentile(hists.dx, 0.5) ?? NaN;
     for (const [k, v] of Object.entries(stock.rows[0] ?? {})) t[`stock_${k}`] = n(v);
     for (const [k, v] of Object.entries(fin.rows[0] ?? {})) t[`fin_${k}`] = n(v);
+    // 0066: ხარისხი — ჯამები და ინდიკატორების მრიცხველები (qmi_<code>)
+    for (const k of ['qm_n', 'qm_harm', 'qm_no_harm', 'qm_near_miss', 'qm_hazard', 'qm_sentinel', 'qm_anonymous', 'qm_inpatient', 'qm_triaged', 'qm_on_time']) t[k] = 0;
+    for (const i of ind.list) t[`qmi_${i.code}`] = 0;
+    for (const r of qm.rows) {
+      t.qm_n += r.n; t[`qm_${r.event_type}`] += r.n; t.qm_anonymous += r.anonymous; t.qm_triaged += r.triaged; t.qm_on_time += r.on_time;
+      if (r.is_sentinel) t.qm_sentinel += r.n;
+      if (r.service_type === 'inpatient') t.qm_inpatient += r.n;
+      for (const i of ind.list) if (indicatorMatch(i, ind.cats.get(i.code)!, r)) t[`qmi_${i.code}`] += r.n;
+    }
+    const qh = Array(12).fill(0); for (const h of qmHist.rows) qh[h.k - 1] = h.c;
+    t.qm_triage_p50 = histPercentile(qh, 0.5) ?? NaN;
     return t;
   }
 
+  /** 0066: ინდიკატორის მნიშვნელობა ჯამებიდან (null — მნიშვნელი 0 ან ინდიკატორი არ არსებობს) */
+  indicatorValue(code: string, t: Totals, s: RptSettings): number | null {
+    const i = this.ind?.list.find((x) => x.code === code);
+    if (!i) return null;
+    const den = i.denominator === 'bed_days' ? bedDays(s.occupancy_basis, t.beds_occupied_hours ?? 0, t.beds_midnight_census ?? 0)
+      : i.denominator === 'admissions' ? (t.beds_admissions ?? 0) : (t.enc_all ?? 0);
+    return rate(t[`qmi_${code}`] ?? 0, den, i.per);
+  }
+
   /** მომენტალური (snapshot) ჯამები */
-  async snapshotTotals(scope: RptScope, s: RptSettings) {
-    const r = (await sql<{ low: number; exp90: string }>`
+  async snapshotTotals(scope: RptScope, s: RptSettings): Promise<Snap> {
+    const [r, q] = await Promise.all([sql<{ low: number; exp90: string }>`
       SELECT count(*) FILTER (WHERE f.days_of_supply IS NOT NULL AND f.days_of_supply < ${s.stock_days_alert})::int AS low,
              coalesce(sum(f.expiring_value_90), 0)::text AS exp90
-        FROM rpt_stock_snapshot f WHERE ${this.where(scope, 'f')}`.execute(this.rdb)).rows[0];
-    return { stock_low: r.low, stock_exp90: r2(n(r.exp90)) };
+        FROM rpt_stock_snapshot f WHERE ${this.where(scope, 'f')}`.execute(this.rdb),
+      sql<{ overdue: number }>`SELECT coalesce(sum(f.overdue_capa), 0)::int AS overdue FROM rpt_quality_snapshot f WHERE ${this.where(scope, 'f')}`.execute(this.rdb)]);
+    return { stock_low: r.rows[0].low, stock_exp90: r2(n(r.rows[0].exp90)), qm_capa_overdue: q.rows[0].overdue };
   }
 
   /** KPI-ის მნიშვნელობა ჯამებიდან; null — მნიშვნელი 0 / მონაცემი არ არის */
-  value(code: string, t: Totals, snap: { stock_low: number; stock_exp90: number } | null, s: RptSettings): number | null {
+  value(code: string, t: Totals, snap: Snap | null, s: RptSettings): number | null {
     const nan = (x: number) => (Number.isNaN(x) ? null : x);
     const revNet = (t.fin_rev_patient ?? 0) + (t.fin_rev_insurance ?? 0) + (t.fin_rev_state ?? 0) + (t.fin_rev_other ?? 0) + (t.fin_rev_undetermined ?? 0);
     const costs = (t.fin_expenses ?? 0) + (t.fin_stock_cost ?? 0);
@@ -163,7 +203,16 @@ export class RptKpiService {
       case 'result': return r2(revNet - costs);
       case 'margin_pct': return revNet > 0 ? r1(((revNet - costs) / revNet) * 100) : null;
       case 'denied_amount': return r2(t.fin_rev_denied);
-      default: return null;
+      // 0066: ხარისხი
+      case 'qm_reported': return t.qm_n ?? 0;
+      case 'qm_harm': return t.qm_harm ?? 0;
+      case 'qm_sentinel': return t.qm_sentinel ?? 0;
+      case 'qm_near_miss_ratio': return div(t.qm_near_miss ?? 0, (t.qm_harm ?? 0) + (t.qm_no_harm ?? 0), 2);
+      case 'qm_report_rate': return rate(t.qm_inpatient ?? 0, bedDays(s.occupancy_basis, t.beds_occupied_hours ?? 0, t.beds_midnight_census ?? 0), 1000);
+      case 'qm_triage_median_h': return t.qm_triage_p50 === undefined || Number.isNaN(t.qm_triage_p50) ? null : r1(t.qm_triage_p50 / 60);
+      case 'qm_triage_on_time': return pct(t.qm_on_time ?? 0, t.qm_triaged ?? 0);
+      case 'qm_capa_overdue': return snap?.qm_capa_overdue ?? null;
+      default: return code.startsWith('qm_ind_') ? this.indicatorValue(code.slice(7), t, s) : null;
     }
   }
 
@@ -197,7 +246,7 @@ export class RptKpiService {
     let q = this.c.db.selectFrom('rpt_kpis').select(['code', 'category', 'name', 'unit', 'direction', 'definition', 'formula', 'source', 'finance', 'snapshot', 'drill', 'sort_order']);
     if (onlyActive) q = q.where('is_active', '=', true);
     const rows = await q.orderBy('sort_order').orderBy('code').execute();
-    return rows.filter((k) => scope.finance || !k.finance);
+    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality));
   }
 
   /** დროის მწკრივი: grain = day / week / month (KPI ითვლება თითო ინტერვალზე) */

@@ -191,6 +191,9 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       review_days: (v) => int(v, 1, 180), rca_days: (v) => int(v, 1, 365), due_warn_days: (v) => int(v, 0, 30), analysis_approval: bool,
       capa_effectiveness: bool, effectiveness_days: (v) => int(v, 7, 730), disclosure_required_harm: (v) => oneOf(v, ['mild', 'moderate', 'severe', 'death', 'off']),
       closure_feedback: bool, report_mask_patient: bool,
+      // 0066: ანგარიშები / დაფა
+      report_date_basis: (v) => oneOf(v, ['occurred', 'reported']), view_min_cell: (v) => int(v, 0, 20),
+      dashboard_visibility: (v) => oneOf(v, ['report_users', 'quality_only']), monthly_section: bool,
     },
     extra: async (s, db) => {
       if (!(s.identity_modes as string[]).includes(s.identity_default as string)) return 'ნაგულისხმევი რეჟიმი დაშვებულთა შორის უნდა იყოს';
