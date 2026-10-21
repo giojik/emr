@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import PatientSearch from '../../components/PatientSearch';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, todayISO, tsDate } from '../../lib/format';
+import BmeAlerts from '../../components/BmeAlerts';
 import { useModules } from '../../lib/modules';
 import ItemSearch from '../stock/ItemSearch';
 
@@ -54,6 +55,7 @@ export default function Cssd() {
           {visible.map(([k, l]) => <Link key={k} to={`/cssd?tab=${k}`} className={`admin-tab${tab === k ? ' active' : ''}`}>{l}</Link>)}
         </nav>
       </header>
+      {enabled && (tab === 'work' || tab === 'cycles') && <BmeAlerts area="cssd" pad />}
       {!enabled ? <div className="content"><div className="card empty">მოდული „სტერილიზაცია (CSSD)“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
         : refs.error ? <div className="content"><ErrorBox error={refs.error} /></div>
           : tab === 'work' ? <Work /> : tab === 'storage' ? <Storage /> : tab === 'cycles' ? <Cycles openId={sp.get('cycle')} /> : tab === 'sets' ? <Sets /> : tab === 'refs' ? <RefsPage /> : tab === 'report' ? <Report /> : <Dept />}

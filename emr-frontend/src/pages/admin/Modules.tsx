@@ -39,6 +39,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
           : <label className="row"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> <strong>{enabled ? 'ჩართულია' : 'გამორთულია'}</strong></label>}</div>
       {m.description && <span className="small muted">{m.description}</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
+      {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
@@ -60,6 +61,46 @@ function ModuleCard({ m }: { m: SystemModule }) {
       </div>
       <ErrorBox error={save.error} />
     </section>
+  );
+}
+
+/** ბიომედ-აპარატურა (0073): ნომერი, გადაადგილება, სტატუსის ასახვა დაგეგმვაზე, ეტიკეტი */
+const AREA_MODE: [string, string][] = [['block', 'დაბლოკვა (გაუმართავზე / გამოყვანილზე)'], ['warn', 'მხოლოდ გაფრთხილება'], ['off', 'გამორთული']];
+function BmeSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const example = [v<string>('inv_prefix'), v<boolean>('inv_year') ? String(new Date().getFullYear()).slice(2) : '', '1'.padStart(v<number>('inv_digits') ?? 5, '0')].filter(Boolean).join('-');
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 } as const;
+  const area = (k: string, label: string, hint: string, modes = AREA_MODE) => (
+    <Field label={label} htmlFor={`ba-${k}`} hint={hint}><select id={`ba-${k}`} className="select" value={v<string>(k)} onChange={(e) => upd(k, e.target.value)}>
+      {modes.map(([m, l]) => <option key={m} value={m}>{l}</option>)}</select></Field>);
+  return (
+    <div className="stack">
+      <div style={grid}>
+        <Field label="ნომრის პრეფიქსი" htmlFor="bip" hint="დიდი ლათ. ასოები / ციფრები, ≤ 8"><input id="bip" className="input mono" maxLength={8} value={v<string>('inv_prefix') ?? ''} onChange={(e) => upd('inv_prefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} /></Field>
+        <Field label="ციფრების რაოდენობა" htmlFor="bid"><input id="bid" className="input mono" type="number" min={3} max={9} value={v<number>('inv_digits') ?? 5} onChange={(e) => upd('inv_digits', Number(e.target.value))} /></Field>
+        <div className="stack" style={{ gap: 4 }}><label className="row" style={{ marginTop: 26 }}><input type="checkbox" checked={!!v<boolean>('inv_year')} onChange={(e) => upd('inv_year', e.target.checked)} /> წელი ნომერში</label>
+          <span className="small">მაგალითი: <strong className="mono">{example}</strong></span></div>
+        <label className="row"><input type="checkbox" checked={!!v<boolean>('require_department')} onChange={(e) => upd('require_department', e.target.checked)} /> განყოფილება სავალდებულოა</label>
+        <Field label="გადაადგილება სხვა განყოფილებაში" htmlFor="bmm"><select id="bmm" className="select" value={v<string>('move_mode')} onChange={(e) => upd('move_mode', e.target.value)}>
+          <option value="direct">პირდაპირ (ინჟინერი)</option><option value="confirm">მიმღები განყოფილების დადასტურებით</option></select></Field>
+        <Field label="ეტიკეტი" htmlFor="blb"><div className="row" style={{ gap: 6 }}>
+          <select id="blb" className="select" value={v<string>('label_size')} onChange={(e) => upd('label_size', e.target.value)}><option value="50x25">50×25 მმ</option><option value="40x20">40×20 მმ</option><option value="70x35">70×35 მმ</option></select>
+          <select className="select" aria-label="კოდის ტიპი" value={v<string>('label_code')} onChange={(e) => upd('label_code', e.target.value)}><option value="qr">QR (ბმული პასპორტზე)</option><option value="code128">შტრიხკოდი (Code128)</option></select></div></Field>
+      </div>
+      <strong className="small">აპარატის სტატუსის ასახვა დაგეგმვაზე (მიბმული ჩანაწერები)</strong>
+      <div style={grid}>
+        {area('area_radiology', 'რადიოლოგიის ჩაწერა', 'გაუმართავ აპარატზე ახალი ჩაწერა')}
+        {area('area_endoscopy', 'ენდოსკოპიის ჩაწერა (ოთახი / სისტემა)', 'გაუმართავ სისტემაზე ჩაწერა')}
+        {area('area_scopes', 'ენდოსკოპის არჩევა', 'გაუმართავი ენდოსკოპი პროცედურაში')}
+        {area('area_cssd', 'CSSD რეცხვა / სტერილიზაცია', 'Bowie-Dick ტესტი ყოველთვის დაშვებულია')}
+        {area('area_lab', 'ლაბ. ანალიზატორი', 'სამუშაო სიაში გაფრთხილება (gateway არ ჩერდება)', AREA_MODE.slice(1))}
+        {area('area_or', 'საოპერაციოს აპარატურა', 'ბლოკის დაფაზე გაფრთხილება', AREA_MODE.slice(1))}
+        <Field label="საოპერაციოს გაფრთხილება — კრიტიკულობიდან" htmlFor="boc"><select id="boc" className="select" value={v<string>('or_alert_criticality')} onChange={(e) => upd('or_alert_criticality', e.target.value)}>
+          <option value="life_support">სიცოცხლის შემანარჩუნებელი</option><option value="high">მაღალი და ზემოთ</option><option value="medium">საშუალო და ზემოთ</option><option value="low">ყველა</option></select></Field>
+      </div>
+      <span className="hint">„შეზღუდულად მუშა“ არასდროს ბლოკავს — მხოლოდ გაფრთხილება. მოდულის გამორთვისას დაგეგმვა არ ჩერდება.</span>
+    </div>
   );
 }
 

@@ -75,7 +75,7 @@ qmset '{"report_date_basis":"occurred","view_min_cell":0,"dashboard_visibility":
 KP=$(api GET /reporting/kpis "$ADM")
 chk "KPI ცნობარი: ჯგუფი quality — 11 (+ მომხმარებლის ინდიკატორები), ჩაღრმავების გარეშე; qm_capa_overdue — მომენტალური" \
   "$(echo "$KP" | jq -r '[.[]|select(.category=="quality" and (.code|test("^qm_ind_e2e")|not))]|"\(length):\([.[]|select(.drill!=null)]|length):\(.[]|select(.code=="qm_capa_overdue")|.snapshot)"')" "11:0:true"
-chk "39 უფლება (0066 — ახალი უფლება არ არის; 0067: + infection, infection_dept, infection_view)" "$(api GET /roles/capabilities "$ADM" | jq length)" "39"
+chk "41 უფლება (0066 — ახალი უფლება არ არის; 0067: + infection, infection_dept, infection_view; 0073: + bme_dept, bme_view)" "$(api GET /roles/capabilities "$ADM" | jq length)" "41"
 
 step "1. მომზადება: განყოფილებები, საწოლი, მომხმარებლები, პაციენტი"
 DA=$(api POST /departments "$ADM" -d "{\"name\":\"ტესტ-E2E QR თერაპია $S\",\"code\":\"E2EQRA$S\",\"type\":\"inpatient\"}" | jq -r '.id // empty')

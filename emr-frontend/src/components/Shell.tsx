@@ -24,6 +24,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting
   { to: '/stock/requests', label: 'მარაგი / მოთხოვნები', roles: ['nurse'] },
   { to: '/stock/lab', label: 'ლაბ. მარაგი', roles: ['lab_doctor', 'lab_manager', 'diagnostic'] },
   { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },
+  { to: '/bme', label: 'ბიომედ-აპარატურა', module: 'bme' },
   { to: '/cssd', label: 'სტერილიზაცია', module: 'cssd' },
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
   { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
@@ -44,7 +45,7 @@ const HOME: Record<Role, string> = {
   doctor: '/doctor', admin: '/reception', receptionist: '/reception', billing: '/cashier', nurse: '/visits', pharmacist: '/stock/verification',
   diagnostic: '/diagnostics/lab', lab_doctor: '/diagnostics/lab', lab_manager: '/admin/catalog', phlebotomist: '/collection',
   radiographer: '/diagnostics/radiology', radiologist: '/diagnostics/radiology', endoscopist: '/diagnostics/endoscopy', endoscopy_nurse: '/diagnostics/endoscopy',
-  accountant: '/reports', viewer: '/dashboard', manager: '/reception', hr: '/admin/users', med_engineer: '/admin/devices',
+  accountant: '/reports', viewer: '/dashboard', manager: '/reception', hr: '/admin/users', med_engineer: '/bme',
   storekeeper: '/stock/balances', stock_manager: '/stock/balances',
   or_schedule: '/or?tab=board', anesthesiologist: '/or?tab=my', or_nurse: '/or?tab=board',
   procurement: '/procurement/requisitions', procurement_approve: '/procurement/requisitions?to_approve=1',
@@ -53,6 +54,7 @@ const HOME: Record<Role, string> = {
   reports: '/dashboard', reports_all: '/dashboard', reports_phi: '/dashboard',
   quality: '/quality', quality_dept: '/quality', quality_view: '/quality',
   infection: '/ipc', infection_dept: '/ipc', infection_view: '/dashboard',
+  bme_dept: '/bme', bme_view: '/bme',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

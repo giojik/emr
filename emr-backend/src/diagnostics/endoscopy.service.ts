@@ -9,6 +9,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
+import { BmeGuard } from '../bme/bme-common';
 import { DiagnosticsService } from './diagnostics.service';
 
 type Trx = Transaction<DB>;
@@ -31,7 +32,8 @@ export interface PathInput { external_lab?: string | null; clinical_info?: strin
 /** ენდოსკოპია: ენდოსკოპები/დეზინფექცია, პროცედურის ჩანაწერი, სურათები (ზოგადი), გარე პათოლოგია */
 @Injectable()
 export class EndoscopyService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly storage: StorageService, private readonly dx: DiagnosticsService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly storage: StorageService, private readonly dx: DiagnosticsService,
+    private readonly bme: BmeGuard) {}
 
   // =============================================================== ენდოსკოპები
   /** სტატუსი: ready — ბოლო გამოყენების შემდეგ დეზინფიცირებულია; dirty — საჭიროებს დეზინფექციას; failed — ბოლო ციკლი ჩავარდა */
@@ -116,6 +118,8 @@ export class EndoscopyService {
       if (!['ordered', 'scheduled', 'arrived', 'performed', 'in_progress'].includes(it.status)) throw new ConflictException('პროცედურის ჩანაწერი ჩაკეტილია (ხელმოწერილია)');
       const exists = await trx.selectFrom('endo_procedures').select(['order_item_id', 'scope_id', 'scope_used_at']).where('order_item_id', '=', itemId).executeTakeFirst();
       if (exists?.scope_used_at && dto.scope_id !== undefined && dto.scope_id !== exists.scope_id) throw new ConflictException('ენდოსკოპის შეცვლა პროცედურის დასრულების შემდეგ შეუძლებელია (მიკვლევადობა)');
+      // 0073: ბიომედ-აპარატურა — გაუმართავი / გამოყვანილი ენდოსკოპის არჩევა (block → 409 BME_DOWN); იგივე ენდოსკოპის ხელახლა შენახვა — თავისუფლად
+      if (dto.scope_id && dto.scope_id !== exists?.scope_id) await this.bme.check(trx, 'scopes', dto.scope_id);
       try {
         if (exists) await trx.updateTable('endo_procedures').set(this.procValues(dto, user)).where('order_item_id', '=', itemId).execute();
         else await trx.insertInto('endo_procedures').values({ order_item_id: itemId, ...this.procValues(dto, user, 'insert') }).execute();
@@ -150,6 +154,7 @@ export class EndoscopyService {
       // ენდოსკოპის მზადყოფნა — row lock: ორი პროცედურა ერთდროულად ერთ ენდოსკოპს ვერ „დაიკავებს“
       const scope = await trx.selectFrom('endo_scopes').select(['id', 'name', 'is_active']).where('id', '=', m.scope_id as string).forUpdate().executeTakeFirst();
       if (!scope?.is_active) throw new BadRequestException('ენდოსკოპი ვერ მოიძებნა ან გათიშულია');
+      await this.bme.check(trx, 'scopes', scope.id);
       const { rows: [st] } = await sql<{ last_used_at: Date | null; last_reproc_at: Date | null; last_reproc_result: string | null }>`
         SELECT (SELECT max(p.scope_used_at) FROM endo_procedures p WHERE p.scope_id = ${scope.id} AND p.order_item_id <> ${itemId}) AS last_used_at,
                (SELECT r.performed_at FROM endo_reprocessing r WHERE r.scope_id = ${scope.id} ORDER BY r.performed_at DESC LIMIT 1) AS last_reproc_at,

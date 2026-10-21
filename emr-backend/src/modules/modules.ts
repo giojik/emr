@@ -247,6 +247,17 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       return null;
     },
   },
+  // 0073: ბიომედ-აპარატურა — რეესტრი, სტატუსის ასახვა დაგეგმვაზე
+  bme: {
+    keys: {
+      inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v), inv_year: bool, inv_digits: (v) => int(v, 3, 9), require_department: bool,
+      move_mode: (v) => oneOf(v, ['direct', 'confirm']),
+      area_radiology: (v) => oneOf(v, ['block', 'warn', 'off']), area_endoscopy: (v) => oneOf(v, ['block', 'warn', 'off']), area_scopes: (v) => oneOf(v, ['block', 'warn', 'off']),
+      area_cssd: (v) => oneOf(v, ['block', 'warn', 'off']), area_lab: (v) => oneOf(v, ['warn', 'off']), area_or: (v) => oneOf(v, ['warn', 'off']),
+      or_alert_criticality: (v) => oneOf(v, ['life_support', 'high', 'medium', 'low']),
+      label_size: (v) => oneOf(v, ['50x25', '40x20', '70x35']), label_code: (v) => oneOf(v, ['qr', 'code128']),
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, can } from '../../api/client';
+import BmeAlerts from '../../components/BmeAlerts';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Loading } from '../../components/ui';
 import { dateGe, dayTitle, hhmm, shiftDay, todayISO } from '../../lib/format';
@@ -50,6 +51,7 @@ function BoardView() {
   const blocks = setup.data?.blocks ?? [];
   return (
     <div className="content">
+      <BmeAlerts area="or" />
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <div className="seg" role="group" aria-label="ხედი"><button type="button" aria-pressed={days === 1} onClick={() => upd('view', '')}>დღე</button>
           <button type="button" aria-pressed={days === 7} onClick={() => upd('view', 'week')}>კვირა</button></div>

@@ -345,6 +345,116 @@ export interface BillingPackages {
   updated_at: Generated<Timestamp>;
 }
 
+export interface BmeDevices {
+  asset_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  criticality: Generated<string>;
+  cssd_machine_id: string | null;
+  department_id: string | null;
+  dx_device_id: string | null;
+  endo_scope_id: string | null;
+  gmdn_code: string | null;
+  id: Generated<string>;
+  install_date: string | null;
+  inv_no: string;
+  lab_method_id: string | null;
+  manufacture_year: number | null;
+  manufacturer: string | null;
+  model: string | null;
+  name: string;
+  needs_review: Generated<boolean>;
+  notes: string | null;
+  or_room_id: string | null;
+  purchase_date: string | null;
+  purchase_value: Numeric | null;
+  responsible_user_id: string | null;
+  risk_class: string | null;
+  room: string | null;
+  serial_no: string | null;
+  status: Generated<string>;
+  status_reason: string | null;
+  status_since: Generated<Timestamp>;
+  supplier_id: string | null;
+  type_id: string;
+  updated_at: Generated<Timestamp>;
+  warranty_until: string | null;
+}
+
+export interface BmeDeviceTypes {
+  calibration_months: number | null;
+  code: string;
+  created_at: Generated<Timestamp>;
+  default_criticality: Generated<string>;
+  default_risk_class: string | null;
+  grp: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  pm_months: number | null;
+  safety_months: number | null;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface BmeDocuments {
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  file_path: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  mime_type: string;
+  original_name: string | null;
+  remove_reason: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  sha256: string;
+  size_bytes: number;
+  title: string;
+  uploaded_by: string;
+  valid_until: string | null;
+}
+
+export interface BmeEvents {
+  created_at: Generated<Timestamp>;
+  data: Generated<Json>;
+  device_id: string;
+  id: Generated<Int8>;
+  kind: string;
+  user_id: string | null;
+}
+
+export interface BmeMoves {
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  device_id: string;
+  from_department_id: string | null;
+  from_or_room_id: string | null;
+  from_room: string | null;
+  id: Generated<string>;
+  reason: string | null;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  status: string;
+  to_department_id: string;
+  to_or_room_id: string | null;
+  to_responsible_id: string | null;
+  to_room: string | null;
+}
+
+export interface BmeStatusPeriods {
+  device_id: string;
+  ended_at: Timestamp | null;
+  ended_by: string | null;
+  id: Generated<Int8>;
+  reason: string | null;
+  started_at: Generated<Timestamp>;
+  started_by: string | null;
+  status: string;
+}
+
 export interface ClaimTemplates {
   code: string;
   config: Generated<Json>;
@@ -4914,6 +5024,12 @@ export interface DB {
   beds: Beds;
   billing_package_items: BillingPackageItems;
   billing_packages: BillingPackages;
+  bme_device_types: BmeDeviceTypes;
+  bme_devices: BmeDevices;
+  bme_documents: BmeDocuments;
+  bme_events: BmeEvents;
+  bme_moves: BmeMoves;
+  bme_status_periods: BmeStatusPeriods;
   claim_templates: ClaimTemplates;
   clinic_settings: ClinicSettings;
   consultations: Consultations;

@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { AuditModule } from './audit/audit.service';
 import { loadEnv } from './config/env';
 import { DatabaseModule } from './database/database.module';
+import { BmeCoreModule } from './bme/bme-common';
 import { DiagnosticsModule } from './diagnostics/diagnostics.controller';
 import { GatewayManager } from './lab-gateway/gateway.manager';
 import { LabAlertsService } from './lab-gateway/lab-alerts.service';
@@ -16,7 +17,7 @@ import { StorageModule } from './storage/storage.service';
  * კონფიგურაცია ბაზიდან (lab_instruments), ცვლილებები 5 წამში მოქმედებს; HTTP-ს არ ისმენს.
  * NotificationsModule — DiagnosticsModule-ის LabNotifyService-ს სჭირდება (0029-დან; მის გარეშე პროცესი არ ეშვებოდა).
  */
-@Module({ imports: [DatabaseModule, AuditModule, NotificationsModule, StorageModule, NotifyModule, DiagnosticsModule], providers: [GatewayManager, LabAlertsService] })
+@Module({ imports: [DatabaseModule, AuditModule, NotificationsModule, StorageModule, NotifyModule, BmeCoreModule, DiagnosticsModule], providers: [GatewayManager, LabAlertsService] })
 class LabGatewayModule {}
 
 async function bootstrap() {

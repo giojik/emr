@@ -5,6 +5,7 @@ import { can, type Role, api, apiUpload, openBlob } from '../api/client';
 import type { Allergy, DxItem, LabAnalyteForm, LabItemDetail } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import AllergyBanner from '../components/AllergyBanner';
+import BmeAlerts from '../components/BmeAlerts';
 import { DxStatusChip, FlagBadge } from '../components/DxStatusChip';
 import { ErrorBox, Loading, useToast } from '../components/ui';
 import { age, genderShort, hhmm, refRange, tsDate, unitFmt } from '../lib/format';
@@ -137,6 +138,7 @@ function LabWorkspace() {
         </div>
         {inboxOpen && <InstrumentInbox onClose={() => setInboxOpen(false)} />}
         {status === 'ext' ? <ExternalLab /> : status === 'stats' ? <LabStats /> : status === 'qc' ? <Qc /> : status === 'micro' ? <MicroRefs /> : <>
+        <BmeAlerts area="lab" />
         <ErrorBox error={q.error} />
         {q.isLoading ? <Loading /> : !items.length ? <div className="card empty">სია ცარიელია.</div> : (
           <div className="card">
@@ -327,6 +329,8 @@ function ImagingWorkspace({ section }: { section: 'radiology' | 'endoscopy' }) {
   if (!view) return <div className="content"><div className="card empty">წვდომა არ გაქვთ.</div></div>;
   return (
     <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      <BmeAlerts area={section} pad />
+      {section === 'endoscopy' && <BmeAlerts area="scopes" pad />}
       {views.length > 1 && <div className="row" style={{ padding: '10px 28px 0', gap: 6 }}>
         <div className="seg" role="group" aria-label="ხედი">{views.map((v) => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setSp({ view: v.key }, { replace: true })}>{v.label}</button>)}</div>
       </div>}

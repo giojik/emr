@@ -8,6 +8,7 @@ import { mapPgError } from '../common/pg-errors';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
+import { BmeGuard } from '../bme/bme-common';
 import { DiagnosticsService } from './diagnostics.service';
 
 type Trx = Transaction<DB>;
@@ -49,7 +50,7 @@ export function composeReport(r: ReportInput) {
 @Injectable()
 export class RadiologyService {
   private readonly tz = loadEnv().CLINIC_TZ;
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly dx: DiagnosticsService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly dx: DiagnosticsService, private readonly bme: BmeGuard) {}
 
   // =============================================================== უფლებები
   private isReporter(user: AuthUser, section: ImagingSection) {
@@ -126,6 +127,8 @@ export class RadiologyService {
         const dev = await trx.selectFrom('dx_devices').selectAll().where('id', '=', dto.device_id).executeTakeFirst();
         if (!dev || !dev.is_active || dev.section !== it.section) throw new BadRequestException('აპარატი / ოთახი ვერ მოიძებნა ან გათიშულია');
         if (!it.modality || !dev.modalities.includes(it.modality)) throw new BadRequestException(`აპარატზე „${dev.name}“ ${it.modality ?? '—'} კვლევა არ სრულდება`);
+        // 0073: ბიომედ-აპარატურა — გაუმართავ / გამოყვანილ აპარატზე ჩაწერა (block რეჟიმში → 409 BME_DOWN)
+        await this.bme.check(trx, it.section === 'endoscopy' ? 'endoscopy' : 'radiology', dev.id);
         const start = new Date(dto.start);
         if (Number.isNaN(start.getTime())) throw new BadRequestException('არასწორი დრო');
         const minutes = it.duration_minutes ?? dev.slot_minutes;

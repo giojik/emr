@@ -15,6 +15,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { dt, newDoc } from '../diagnostics/diagnostics.pdf';
+import { BmeGuard } from '../bme/bme-common';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { StorageService } from '../storage/storage.service';
@@ -38,7 +39,7 @@ interface Unit { id: string; name: string; department_id: string | null; kind: s
 @Injectable()
 export class CssdService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService,
-    private readonly notifications: NotificationsService, private readonly storage: StorageService) {}
+    private readonly notifications: NotificationsService, private readonly storage: StorageService, private readonly bme: BmeGuard) {}
 
   settings() { return this.modules.require<CssdSettings>('cssd'); }
   private me(u: AuthUser) { return this.db.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
@@ -277,6 +278,7 @@ export class CssdService {
         if (!dto.machine_id) throw new BadRequestException('რეცხვის აპარატი სავალდებულოა (პარამეტრი)');
         const m = await trx.selectFrom('cssd_machines').selectAll().where('id', '=', dto.machine_id).executeTakeFirst();
         if (!m || m.kind !== 'washer' || m.location_id !== l.id || !m.is_active) throw new BadRequestException('რეცხვის აპარატი ამ ერთეულს არ ეკუთვნის');
+        await this.bme.check(trx, 'cssd', m.id);   // 0073: გაუმართავი / გამოყვანილი აპარატი (block → 409 BME_DOWN)
         const no = dto.cycle_no?.trim() || String((await trx.selectFrom('cssd_cycles').select(sql<number>`count(*)::int`.as('n')).where('machine_id', '=', m.id).executeTakeFirstOrThrow()).n + 1);
         cycleId = (await trx.insertInto('cssd_cycles').values({ cycle_no: no, machine_id: m.id, kind: 'wash', program: dto.program ?? null, result: dto.result ?? 'pass', notes: dto.notes ?? null, operator_id: u.id })
           .returning('id').executeTakeFirstOrThrow()).id;
@@ -371,6 +373,8 @@ export class CssdService {
     if (!m || !m.is_active || m.kind === 'washer') throw new BadRequestException('სტერილიზატორი ვერ მოიძებნა');
     const l = await this.unit(m.location_id); await this.requireProcess(u, l);
     if (dto.kind === 'bowie_dick' && m.kind !== 'steam') throw new BadRequestException('Bowie-Dick — მხოლოდ ორთქლის სტერილიზატორზე');
+    // 0073: ბიომედ-აპარატურა — სტერილიზაცია გაუმართავ / გამოყვანილ აპარატზე (block → 409); Bowie-Dick — შეკეთების შემდეგ შემოწმებისთვის დაშვებულია
+    if (dto.kind === 'sterilize') await this.bme.check(this.db, 'cssd', m.id);
     let id = '';
     const recalled: string[] = [];
     try {

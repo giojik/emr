@@ -27,7 +27,8 @@ export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | '
   | 'drg' | 'drg_admin'
   | 'reports' | 'reports_all' | 'reports_phi'
   | 'quality' | 'quality_dept' | 'quality_view'
-  | 'infection' | 'infection_dept' | 'infection_view';
+  | 'infection' | 'infection_dept' | 'infection_view'
+  | 'bme_dept' | 'bme_view';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;
