@@ -9,16 +9,18 @@ import { age, genderShort, tsDate } from '../../lib/format';
 import { useModuleEnabled, useModules } from '../../lib/modules';
 import IpcCatalogTab from './Catalog';
 import { DeviceDays, HaiList, Signals } from './Surveillance';
+import SsiTab from './Ssi';
 import { FLAG_ST, IPC_ANY, IPC_FULL, ISO_KA, ONSET_KA, SOURCE_KA, useIpcCatalog, type FlagRow, type IpcPatientRow } from './types';
 import type { PatientListItem } from '../../api/types';
 
-type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'rates' | 'catalog';
+type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'rates' | 'catalog';
 
 /** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები, ცნობარები; 0068: სიგნალები, HAI შემთხვევები, device-days მაჩვენებლები */
 export default function Ipc() {
   const { user } = useAuth();
   const [sp] = useSearchParams();
   const mods = useModules(); const enabled = useModuleEnabled('ipc');
+  const ipcSet = mods.data?.find((m) => m.code === 'ipc')?.settings as { ssi_surveillance?: boolean } | undefined;
   const full = can(user, ...IPC_FULL);
   const pending = useQuery({ queryKey: ['ipc-flags', 'pending'], queryFn: () => api<FlagRow[]>('/ipc/flags', { query: { review: 'pending' } }), enabled: enabled && full, refetchInterval: 60_000 });
   const openSig = useQuery({ queryKey: ['ipc-signals', 'open', ''], queryFn: () => api<unknown[]>('/ipc/signals', { query: { status: 'open', kind: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
@@ -30,6 +32,7 @@ export default function Ipc() {
     ['flags', 'MDRO ფლაგები', true, pending.data?.length ?? 0],
     ['signals', 'სიგნალები', true, openSig.data?.length ?? 0],
     ['hai', 'HAI შემთხვევები', true, 0],
+    ['ssi', 'SSI', !!ipcSet?.ssi_surveillance, 0],
     ['rates', 'მაჩვენებლები', true, 0],
     ['catalog', 'ცნობარები', full, 0],
   ];
@@ -48,6 +51,7 @@ export default function Ipc() {
       {cur === 'flags' && <Flags />}
       {cur === 'signals' && <Signals />}
       {cur === 'hai' && <HaiList />}
+      {cur === 'ssi' && <SsiTab />}
       {cur === 'rates' && <DeviceDays />}
       {cur === 'catalog' && <IpcCatalogTab />}
     </>

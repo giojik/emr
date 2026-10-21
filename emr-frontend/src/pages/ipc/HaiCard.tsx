@@ -7,7 +7,7 @@ import { ErrorBox, Field, Loading, Modal } from '../../components/ui';
 import { age, genderShort, tsDate } from '../../lib/format';
 import { useModuleEnabled } from '../../lib/modules';
 import { ContextBox } from './Surveillance';
-import { BSI_SRC_KA, CONTRIB_KA, HAI_ST, OUTCOME_KA, SIGNAL_KA, SSI_KA, useHaiCatalog, type HaiDetail } from './types';
+import { BSI_SRC_KA, CONTRIB_KA, HAI_ST, OUTCOME_KA, SIGNAL_KA, SSI_KA, useHaiCatalog, type HaiDetail, type PatientOp } from './types';
 
 const t = (v: string | null | undefined) => (v ? `${tsDate(v)} ${new Date(v).toLocaleTimeString('ka-GE', { timeZone: 'Asia/Tbilisi', hour: '2-digit', minute: '2-digit', hour12: false })}` : '—');
 const EV_KA: Record<string, string> = { created: 'შეიქმნა', updated: 'შეიცვალა', review: 'განხილვა', confirm: 'დადასტურდა', reject: 'უარყოფილია', reopen: 'ხელახლა გაიხსნა' };
@@ -19,6 +19,8 @@ export default function HaiCard() {
   const { id = '' } = useParams(); const nav = useNavigate(); const qc = useQueryClient();
   const q = useQuery({ queryKey: ['ipc-hai-card', id], queryFn: () => api<HaiDetail>(`/ipc/hai/${id}`) });
   const cat = useHaiCatalog(); const qmOn = useModuleEnabled('quality');
+  const ops = useQuery({ queryKey: ['ipc-patient-ops', q.data?.patient_id], queryFn: () => api<PatientOp[]>(`/ipc/ssi/patients/${q.data!.patient_id}/ops`),
+    enabled: q.data?.hai_type === 'ssi' });
   const [dlg, setDlg] = useState<null | 'reject' | 'reopen' | 'device' | 'attribution'>(null);
   const inval = () => { void qc.invalidateQueries({ queryKey: ['ipc-hai-card', id] }); void qc.invalidateQueries({ queryKey: ['ipc-hai'] }); };
   const patch = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/ipc/hai/${id}`, { method: 'PATCH', body }), onSuccess: inval });
@@ -67,6 +69,9 @@ export default function HaiCard() {
                 <option value="">—</option>{Object.entries(SSI_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
               {h.hai_type === 'bsi' && <Field label="წყარო" htmlFor="hd-b"><select id="hd-b" className="select" disabled={!ed} value={h.bsi_source ?? ''} onChange={(e) => patch.mutate({ bsi_source: e.target.value || null })}>
                 <option value="">—</option>{Object.entries(BSI_SRC_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
+              {h.hai_type === 'ssi' && <Field label="ოპერაცია" htmlFor="hd-o"><select id="hd-o" className="select" disabled={!ed} value={h.or_case_id ?? ''}
+                onChange={(e) => patch.mutate({ or_case_id: e.target.value || null })}>
+                <option value="">ავტომატურად</option>{ops.data?.map((o) => <option key={o.id} value={o.id}>{o.case_no} · {o.op_at ? tsDate(o.op_at) : '—'} · {o.procedures ?? ''}</option>)}</select></Field>}
             </div>
             {h.context && <ContextBox c={{ ...h.context, department: h.department, department_id: h.department_id, attribution: h.attribution, device_assoc: h.device_assoc }}
               override={{ device: h.device_override, attribution: h.attribution === 'manual' }} />}

@@ -13,6 +13,13 @@ import { OrService } from './or';
 import { NOTE_FIELDS, noteMissing, orEvent, syncCaseBilling, type Ex, type Trx } from './or-shared';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? value === '' ? null : value : Number(value));
+const WOUND_LABEL = 'ჭრილობის კლასი';
+/** 0069: ჭრილობის კლასის რეჟიმი (ინფექციის კონტროლის პარამეტრი; მოდულის გამორთვისასაც — ოქმის ნაწილია) */
+async function woundMode(ex: Ex): Promise<'optional' | 'required' | 'off'> {
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'ipc').executeTakeFirst();
+  const v = (m?.settings as { wound_class_mode?: string } | undefined)?.wound_class_mode;
+  return v === 'required' || v === 'off' ? v : 'optional';
+}
 const LINE_KINDS = ['drain', 'urinary', 'ng_tube', 'cvc', 'arterial', 'pvc', 'picc', 'dialysis', 'trach', 'other'] as const;
 
 export class NoteProcDto { @IsUUID() procedure_id: string; @IsOptional() @IsIn(['left', 'right', 'bilateral', 'na']) side?: string; @IsOptional() @IsBoolean() is_primary?: boolean }
@@ -43,6 +50,8 @@ export class NoteDto {
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(300) path_lab?: string | null;
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(2000) path_clinical_info?: string | null;
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsUUID() template_id?: string | null;
+  /** 0069: ჭრილობის კლასი (CDC I–IV) — სავალდებულოობა: ipc.wound_class_mode */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(1) @Max(4) wound_class?: number | null;
 }
 export class AmendDto { @IsString() @Length(3, 1000) reason: string }
 export class NoteTemplateDto {
@@ -110,9 +119,13 @@ export class OrNoteService {
     const draft = notes.find((n) => n.status === 'draft') ?? null;
     const current = notes.find((n) => n.status === 'signed' && !n.superseded_at) ?? null;
     const latest = draft ?? current;
+    const wm = await woundMode(this.db);
+    const missing = noteMissing(latest, s.note_required ?? []);
+    if (wm === 'required' && !latest?.wound_class) missing.push(WOUND_LABEL);
     return {
       case_id: id, case_no: c.case_no, status: c.status, locked_at: c.locked_at, notes, draft, current,
-      required: (s.note_required ?? []).map((k) => ({ key: k, label: NOTE_FIELDS[k] ?? k })), missing: noteMissing(latest, s.note_required ?? []),
+      required: [...(s.note_required ?? []).map((k) => ({ key: k, label: NOTE_FIELDS[k] ?? k })), ...(wm === 'required' ? [{ key: 'wound_class', label: WOUND_LABEL }] : [])],
+      missing, wound_class_mode: wm,
       defaults: { preop_icd10_code: c.icd10_code, preop_icd10_title: c.icd10_title, procedures: procs },
       implants, pathology: path ? { ...path, specimens } : null, lines, templates,
       can: { edit: p.note && (!current || !!draft), sign: p.note_sign && !!draft, amend: p.note_sign && !!current && !draft },
@@ -157,6 +170,7 @@ export class OrNoteService {
         ...(dto.specimens !== undefined && { specimens: JSON.stringify(dto.specimens.map((x) => ({ jar_no: x.jar_no, site: x.site.trim(), pieces: x.pieces ?? 1, description: x.description?.trim() || null }))) }),
         ...(dto.path_lab !== undefined && { path_lab: dto.path_lab?.trim() || null }), ...(dto.path_clinical_info !== undefined && { path_clinical_info: dto.path_clinical_info?.trim() || null }),
         ...(dto.template_id !== undefined && { template_id: dto.template_id }),
+        ...(dto.wound_class !== undefined && await woundMode(trx) !== 'off' && { wound_class: dto.wound_class }),
       };
       if (Object.keys(v).length) await trx.updateTable('or_op_notes').set(v).where('id', '=', draft.id).execute();
       await this.audit.log(ctx, { action: 'OR_NOTE_SAVE', entityName: 'or_op_notes', entityId: draft.id, newData: dto }, trx);
@@ -174,6 +188,7 @@ export class OrNoteService {
       const times = new Map((await trx.selectFrom('or_case_times').select(['kind', 'at']).where('case_id', '=', c.id).where('superseded_by', 'is', null).execute()).map((t) => [t.kind, new Date(t.at)]));
       if (!times.has('closure')) throw new ConflictException({ code: 'NOTE_TOO_EARLY', message: 'ოქმის ხელმოწერა — „ნაკერის“ ნიშნულის შემდეგ' });
       const miss = noteMissing(d, s.note_required ?? []);
+      if (await woundMode(trx) === 'required' && !d.wound_class) miss.push(WOUND_LABEL);
       if (miss.length) throw new BadRequestException({ code: 'NOTE_INCOMPLETE', message: `ოქმი: სავალდებულო ველები შესავსებია — ${miss.join(', ')}`, missing: miss });
       const events: Record<string, unknown> = { version: d.version };
       // დრენაჟები → ხაზები / დრენაჟები (0044)
@@ -232,7 +247,7 @@ export class OrNoteService {
         preop_icd10_code: cur.preop_icd10_code, preop_icd10_title: cur.preop_icd10_title, postop_icd10_code: cur.postop_icd10_code, postop_icd10_title: cur.postop_icd10_title,
         procedures: JSON.stringify(cur.procedures), description: cur.description, findings: cur.findings, complications: cur.complications, complications_none: cur.complications_none,
         blood_loss_ml: cur.blood_loss_ml, drains: JSON.stringify(cur.drains), specimens: JSON.stringify(cur.specimens), path_lab: cur.path_lab, path_clinical_info: cur.path_clinical_info,
-        template_id: cur.template_id, author_id: u.id }).returning('id').executeTakeFirstOrThrow();
+        template_id: cur.template_id, wound_class: cur.wound_class, author_id: u.id }).returning('id').executeTakeFirstOrThrow();
       await orEvent(trx, c, 'note_amend', { version: cur.version + 1, reason }, u.id);
       await this.audit.log(ctx, { action: 'OR_NOTE_AMEND', entityName: 'or_op_notes', entityId: n.id, newData: { reason } }, trx);
     });

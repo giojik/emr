@@ -293,7 +293,7 @@ interface NoteRow { id: string; version: number; status: string; superseded_at: 
   description: string | null; findings: string | null; complications: string | null; complications_none: boolean; blood_loss_ml: number | null;
   drains: { kind: string; site: string | null; size: string | null; details: string | null; line_id: string | null }[]; specimens: { jar_no: number; site: string; pieces: number; description: string | null }[];
   path_lab: string | null; path_clinical_info: string | null; implants: { name: string; lot_no: string; serial_no: string; site: string | null }[]; author_name: string; signed_by_name: string | null;
-  signed_at: string | null; created_at: string; template_id: string | null }
+  signed_at: string | null; created_at: string; template_id: string | null; wound_class: number | null }
 interface NoteView {
   case_id: string; status: string; locked_at: string | null; notes: NoteRow[]; draft: NoteRow | null; current: NoteRow | null; required: { key: string; label: string }[]; missing: string[];
   defaults: { preop_icd10_code: string | null; preop_icd10_title: string | null; procedures: NoteRow['procedures'] };
@@ -301,8 +301,11 @@ interface NoteView {
   pathology: null | { id: string; request_no: string; status: string; external_lab: string | null; result_text: string | null; specimens: NoteRow['specimens'] };
   lines: { id: string; kind: string; site: string | null; size: string | null; inserted_at: string; removed_at: string | null }[];
   templates: { id: string; name: string; procedure_id: string | null; procedure_name: string | null; owner_id: string | null; description: string | null; findings: string | null }[];
-  can: { edit: boolean; sign: boolean; amend: boolean };
+  can: { edit: boolean; sign: boolean; amend: boolean }; wound_class_mode: 'optional' | 'required' | 'off';
 }
+/** ჭრილობის კლასი (CDC) — 0069 */
+const WOUND_KA: Record<number, string> = { 1: 'I — სუფთა', 2: 'II — პირობით სუფთა', 3: 'III — დაბინძურებული', 4: 'IV — ჩირქოვანი / ინფიცირებული' };
+const WOUND_HINT = 'I — ღრუ არ იხსნება (სასუნთქი / საჭმლის მომნელებელი / შარდსასქესო); II — იხსნება კონტროლირებად; III — ახალი ტრავმა, სტერილობის დარღვევა, ნაწლავის შიგთავსის გაჟონვა; IV — ჩირქი, პერფორაცია, ძველი ტრავმა';
 
 export function NoteTab({ c }: { c: CaseDetail }) {
   const q = useQuery({ queryKey: ['or-note', c.id], queryFn: () => api<NoteView>(`/or/cases/${c.id}/note`) });
@@ -351,6 +354,7 @@ function NoteView({ n, x }: { n: NoteView; x: NoteRow }) {
         {row('აღმოჩენები', x.findings ?? '—')}
         {row('გართულებები', x.complications_none ? 'არ ყოფილა' : x.complications ?? '—')}
         {row('სისხლის დაკარგვა', x.blood_loss_ml !== null ? `${x.blood_loss_ml} მლ` : '—')}
+        {n.wound_class_mode !== 'off' && row('ჭრილობის კლასი', x.wound_class ? WOUND_KA[x.wound_class] : '—')}
         {row('დრენაჟები', x.drains.length ? x.drains.map((d) => `${LINE_KA[d.kind] ?? d.kind}${d.site ? ` — ${d.site}` : ''}${d.size ? ` (${d.size})` : ''}`).join('; ') : '—')}
         {row('ბიოფსია', x.specimens.length ? <>{x.specimens.map((s) => `№${s.jar_no} ${s.site}`).join('; ')}{n.pathology && <span className="chip info" style={{ marginLeft: 6 }}>{n.pathology.request_no} · {n.pathology.status}</span>}</> : '—')}
         {row('იმპლანტები', (x.status === 'signed' ? x.implants : n.implants).map((i) => `${i.name} — ლოტი ${i.lot_no}, სერია ${i.serial_no}${i.site ? `, ${i.site}` : ''}`).join('; ') || '—')}
@@ -367,7 +371,7 @@ function NoteForm({ n, d, canSign }: { n: NoteView; d: NoteRow | null; canSign: 
     postop: d?.postop_icd10_code ? { code: d.postop_icd10_code, title: d.postop_icd10_title ?? '' } : null,
     procedures: d?.procedures ?? n.defaults.procedures, description: d?.description ?? '', findings: d?.findings ?? '', complications: d?.complications ?? '', complications_none: d?.complications_none ?? false,
     blood_loss_ml: d?.blood_loss_ml !== null && d?.blood_loss_ml !== undefined ? String(d.blood_loss_ml) : '', drains: d?.drains ?? [], specimens: d?.specimens ?? [], path_lab: d?.path_lab ?? '',
-    path_clinical_info: d?.path_clinical_info ?? '', template_id: d?.template_id ?? null as string | null,
+    path_clinical_info: d?.path_clinical_info ?? '', template_id: d?.template_id ?? null as string | null, wound_class: d?.wound_class ? String(d.wound_class) : '',
   });
   const [dx, setDx] = useState<'pre' | 'post' | null>(null);
   const upd = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -375,7 +379,8 @@ function NoteForm({ n, d, canSign }: { n: NoteView; d: NoteRow | null; canSign: 
     description: f.description || null, findings: f.findings || null, complications: f.complications_none ? null : f.complications || null, complications_none: f.complications_none,
     blood_loss_ml: f.blood_loss_ml === '' ? null : Number(f.blood_loss_ml), drains: f.drains.map(({ kind, site, size, details, line_id }) => ({ kind, site: site || undefined, size: size || undefined,
       details: details || undefined, ...(line_id && { line_id }) })), specimens: f.specimens.map((s, i) => ({ jar_no: i + 1, site: s.site, pieces: s.pieces || 1, description: s.description || undefined })),
-    path_lab: f.path_lab || null, path_clinical_info: f.path_clinical_info || null, template_id: f.template_id });
+    path_lab: f.path_lab || null, path_clinical_info: f.path_clinical_info || null, template_id: f.template_id,
+    ...(n.wound_class_mode !== 'off' && { wound_class: f.wound_class ? Number(f.wound_class) : null }) });
   const save = useMutation({
     mutationFn: async (sign: boolean) => { await api(`/or/cases/${n.case_id}/note`, { method: 'PUT', body: body() }); if (sign) await api(`/or/cases/${n.case_id}/note/sign`, { body: {} }); },
     onSuccess: (_, sign) => { toast.show(sign ? 'ოქმი ხელმოწერილია' : 'შენახულია'); invalOr(qc); },
@@ -408,7 +413,12 @@ function NoteForm({ n, d, canSign }: { n: NoteView; d: NoteRow | null; canSign: 
           <Field label="გართულებები" htmlFor="nt-c"><input id="nt-c" className="input" disabled={f.complications_none} value={f.complications_none ? '' : f.complications} onChange={(e) => upd('complications', e.target.value)} /></Field>
           <label className="row" style={{ height: 40 }}><input type="checkbox" checked={f.complications_none} onChange={(e) => upd('complications_none', e.target.checked)} /> გართულება არ ყოფილა</label>
         </div>
-        <Field label="სისხლის დაკარგვა (მლ)" htmlFor="nt-b"><input id="nt-b" className="input mono" type="number" style={{ maxWidth: 160 }} value={f.blood_loss_ml} onChange={(e) => upd('blood_loss_ml', e.target.value)} /></Field>
+        <div className="row" style={{ gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <Field label="სისხლის დაკარგვა (მლ)" htmlFor="nt-b"><input id="nt-b" className="input mono" type="number" style={{ maxWidth: 160 }} value={f.blood_loss_ml} onChange={(e) => upd('blood_loss_ml', e.target.value)} /></Field>
+          {n.wound_class_mode !== 'off' && <Field label="ჭრილობის კლასი (CDC)" htmlFor="nt-w" required={n.wound_class_mode === 'required'} hint={WOUND_HINT}>
+            <select id="nt-w" className="select" style={{ minWidth: 280 }} value={f.wound_class} onChange={(e) => upd('wound_class', e.target.value)}>
+              <option value="">—</option>{[1, 2, 3, 4].map((k) => <option key={k} value={k}>{WOUND_KA[k]}</option>)}</select></Field>}
+        </div>
         <div className="stack" style={{ gap: 6 }}><div className="row"><span className="label grow">დრენაჟები / კათეტერები (ხელმოწერისას → „ხაზები / დრენაჟები“)</span>
           <button className="btn sm" type="button" onClick={() => upd('drains', [...f.drains, { kind: 'drain', site: '', size: '', details: '', line_id: null }])}>+ დრენაჟი</button></div>
           {f.drains.map((dr, i) => (

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal } from '../../components/ui';
+import { SsiCatalogSection } from './Ssi';
 import { DEVICE_KA, ISO_KA, ISO_TYPES, MARKER_KA, useHaiCatalog, useIpcCatalog, type IsoType, type MdroRule, type MdroType } from './types';
 
 /** ცნობარები (0067, infection): იზოლაციის ტიპები (PPE / კარის ნიშნის ტექსტი, ფერი), MDRO ტიპები, ამოცნობის წესები */
@@ -51,6 +52,7 @@ export default function IpcCatalogTab() {
         </table>
       </section>
       <HaiCriteria />
+      <SsiCatalogSection />
       {iso && <IsoDialog t={iso} onClose={() => setIso(null)} />}
       {mt && <MdroTypeDialog t={mt === 'new' ? null : mt} onClose={() => setMt(null)} />}
       {rule && <RuleDialog r={rule === 'new' ? null : rule} onClose={() => setRule(null)} />}

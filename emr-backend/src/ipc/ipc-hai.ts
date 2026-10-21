@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IPC_STATUS_READ, IpcCommon, ipcRules, type Ex, type IpcRules, type Trx } from './ipc-common';
+import { ssiSyncOp } from './ipc-ssi';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,8 +25,12 @@ class CaseCreateDto {
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsUUID('all', { each: true }) organism_ids?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsUUID('all', { each: true }) order_item_ids?: string[];
   @IsOptional() @IsString() @MaxLength(4000) description?: string | null;
+  /** 0069: SSI — ოპერაცია (ცარიელი — ავტომატურად: ბოლო ოპერაცია დაკვირვების პერიოდში) */
+  @IsOptional() @IsUUID() or_case_id?: string | null;
+  @IsOptional() @IsBoolean() post_discharge?: boolean;
 }
 class CasePatchDto {
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsUUID() or_case_id?: string | null;
   @IsOptional() @IsString() @Length(2, 12) hai_type?: string;
   @IsOptional() @Matches(DATE) onset_date?: string;
   @IsOptional() @IsUUID() encounter_id?: string;
@@ -49,8 +54,10 @@ class ReasonDto { @IsString() @Length(3, 500) reason: string }
 
 export interface HaiContext {
   encounter_id: string | null; adm_no: string | null; admitted_at: string | null; onset_day: number | null;
-  department_id: string | null; department: string | null; attribution: 'current' | 'transfer' | 'readmission'; readmission: boolean; previous_adm_no: string | null;
+  department_id: string | null; department: string | null; attribution: 'current' | 'transfer' | 'readmission' | 'operation'; readmission: boolean; previous_adm_no: string | null;
   device_kind: string | null; device_name: string | null; device_days: number | null; device_assoc: boolean; device_detail: string | null;
+  /** 0069: SSI — ოპერაცია, დღე ოპერაციიდან (POD; ოპერაციის დღე = 0), დაკვირვების ვადა, გაწერის შემდეგ */
+  or_case_id: string | null; or_case_no: string | null; op_date: string | null; pod: number | null; followup_until: string | null; post_discharge: boolean;
   warnings: { code: string; message: string }[];
 }
 
@@ -65,10 +72,15 @@ export class IpcHaiService {
   private get db() { return this.c.db; }
 
   // =============================================================== კონტექსტი
-  async context(ex: Ex, r: IpcRules, p: { patient_id: string; encounter_id?: string | null; onset_date: string; hai_type: string }): Promise<HaiContext> {
+  async context(ex: Ex, r: IpcRules, p: { patient_id: string; encounter_id?: string | null; onset_date: string; hai_type: string; or_case_id?: string | null }): Promise<HaiContext> {
     const warnings: HaiContext['warnings'] = [];
     const t = await ex.selectFrom('ipc_hai_types').select(['code', 'device_kind', 'device_name', 'is_active']).where('code', '=', p.hai_type).executeTakeFirst();
     if (!t?.is_active) throw new BadRequestException({ code: 'HAI_TYPE', message: 'HAI ტიპი ვერ მოიძებნა ან გათიშულია' });
+    if (p.hai_type === 'ssi') {
+      const op = await this.ssiOp(ex, p.patient_id, p.onset_date, p.or_case_id);
+      if (op) return this.ssiContext(ex, op, p.onset_date, t);
+      warnings.push({ code: 'NO_OPERATION', message: 'SSI: ინფექციის დღემდე დასრულებული ოპერაცია ვერ მოიძებნა — მიუთითეთ ოპერაცია' });
+    }
     const stayQ = ex.selectFrom('inpatient_stays as st').select(['st.encounter_id', 'st.adm_no', 'st.admitted_at', 'st.ended_at', 'st.status', 'st.patient_id']).where('st.patient_id', '=', p.patient_id)
       .where('st.status', '<>', 'cancelled');
     const stay = p.encounter_id
@@ -78,7 +90,8 @@ export class IpcHaiService {
     if (p.encounter_id && !stay) throw new BadRequestException({ code: 'STAY', message: 'ჰოსპიტალიზაცია ვერ მოიძებნა (ან სხვა პაციენტისაა)' });
     const ctx: HaiContext = { encounter_id: stay?.encounter_id ?? null, adm_no: stay?.adm_no ?? null, admitted_at: stay ? String(stay.admitted_at) : null, onset_day: null,
       department_id: null, department: null, attribution: 'current', readmission: false, previous_adm_no: null,
-      device_kind: t.device_kind, device_name: t.device_name, device_days: null, device_assoc: false, device_detail: null, warnings };
+      device_kind: t.device_kind, device_name: t.device_name, device_days: null, device_assoc: false, device_detail: null,
+      or_case_id: null, or_case_no: null, op_date: null, pod: null, followup_until: null, post_discharge: false, warnings };
     if (!stay) { warnings.push({ code: 'NO_STAY', message: 'ინფექციის დღეს პაციენტი სტაციონარში არ ყოფილა — მიუთითეთ ჰოსპიტალიზაცია ან მიკუთვნება ხელით' }); return ctx; }
     ctx.onset_day = Number((await sql<{ d: number }>`SELECT (${p.onset_date}::date - (${stay.admitted_at}::timestamptz AT TIME ZONE ${TZ})::date + 1)::int AS d`.execute(ex)).rows[0].d);
     if (ctx.onset_day < 1) throw new BadRequestException({ code: 'ONSET_BEFORE_ADMISSION', message: 'ინფექციის დღე ჰოსპიტალიზაციამდეა' });
@@ -130,7 +143,47 @@ export class IpcHaiService {
     return ctx;
   }
 
-  async preview(q: { patient_id: string; encounter_id?: string; onset_date: string; hai_type: string }) {
+  /** SSI: ოპერაცია — მითითებული (პაციენტის, დასრულებული) ან ბოლო ოპერაცია, რომლის დაკვირვების ვადაშიცაა ინფექციის დღე */
+  private async ssiOp(ex: Ex, patientId: string, onset: string, orCaseId?: string | null) {
+    const base = ex.selectFrom('or_cases as oc').innerJoin('departments as d', 'd.id', 'oc.department_id').leftJoin('ipc_ssi_ops as o', 'o.case_id', 'oc.id')
+      .select(['oc.id', 'oc.case_no', 'oc.encounter_id', 'oc.department_id', 'd.name as department', 'oc.patient_id', 'oc.status', 'o.followup_days',
+        sql<string | null>`(SELECT to_char((t.at AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') FROM or_case_times t WHERE t.case_id = oc.id AND t.kind IN ('incision', 'in_room') AND t.superseded_by IS NULL
+          ORDER BY t.kind = 'incision' DESC LIMIT 1)`.as('op_date')]);
+    if (orCaseId) {
+      const op = await base.where('oc.id', '=', orCaseId).executeTakeFirst();
+      if (!op || op.patient_id !== patientId) throw new BadRequestException({ code: 'OR_CASE', message: 'ოპერაცია ვერ მოიძებნა (ან სხვა პაციენტისაა)' });
+      if (op.status !== 'completed' || !op.op_date) throw new BadRequestException({ code: 'OR_CASE', message: 'ოპერაცია დასრულებული არ არის' });
+      if (op.op_date > onset) throw new BadRequestException({ code: 'ONSET_BEFORE_OPERATION', message: 'ინფექციის დღე ოპერაციამდეა' });
+      return op;
+    }
+    const rows = await base.where('oc.patient_id', '=', patientId).where('oc.status', '=', 'completed').orderBy('oc.requested_at', 'desc').limit(20).execute();
+    return rows.filter((o) => o.op_date && o.op_date <= onset)
+      .sort((a, b) => (a.op_date! < b.op_date! ? 1 : -1))
+      .find((o) => Number((new Date(onset).getTime() - new Date(o.op_date!).getTime()) / 86400000) <= (o.followup_days ?? 90));
+  }
+
+  private async ssiContext(ex: Ex, op: { id: string; case_no: string; encounter_id: string | null; department_id: string; department: string; followup_days: number | null; op_date: string | null },
+                           onset: string, t: { device_kind: string | null; device_name: string | null }): Promise<HaiContext> {
+    const warnings: HaiContext['warnings'] = [];
+    const pod = Math.round((new Date(onset).getTime() - new Date(op.op_date!).getTime()) / 86400000);
+    const fu = op.followup_days ?? 30;
+    const until = new Date(new Date(op.op_date!).getTime() + fu * 86400000).toISOString().slice(0, 10);
+    const stay = op.encounter_id ? await ex.selectFrom('inpatient_stays').select(['encounter_id', 'adm_no', 'admitted_at', 'ended_at', 'status']).where('encounter_id', '=', op.encounter_id).executeTakeFirst() : undefined;
+    let onsetDay: number | null = null; let post = false;
+    if (stay) {
+      const r = (await sql<{ d: number; post: boolean }>`SELECT (${onset}::date - (${stay.admitted_at}::timestamptz AT TIME ZONE ${TZ})::date + 1)::int AS d,
+        (${stay.ended_at}::timestamptz IS NOT NULL AND ${onset}::date >= (${stay.ended_at}::timestamptz AT TIME ZONE ${TZ})::date) AS post`.execute(ex)).rows[0];
+      post = r.post; onsetDay = post ? null : r.d;
+    }
+    if (pod > fu) warnings.push({ code: 'SSI_WINDOW', message: `ინფექცია ოპერაციიდან ${pod}-ე დღეს — დაკვირვების ვადის (${fu} დღე) მიღმა` });
+    if (post) warnings.push({ code: 'POST_DISCHARGE', message: 'გამოვლინდა გაწერის შემდეგ' });
+    return { encounter_id: op.encounter_id, adm_no: stay?.adm_no ?? null, admitted_at: stay ? String(stay.admitted_at) : null, onset_day: onsetDay,
+      department_id: op.department_id, department: op.department, attribution: 'operation', readmission: false, previous_adm_no: null,
+      device_kind: t.device_kind, device_name: t.device_name, device_days: null, device_assoc: false, device_detail: null,
+      or_case_id: op.id, or_case_no: op.case_no, op_date: op.op_date, pod, followup_until: until, post_discharge: post, warnings };
+  }
+
+  async preview(q: { patient_id: string; encounter_id?: string; onset_date: string; hai_type: string; or_case_id?: string }) {
     const r = await this.c.rules();
     if (!q.patient_id || !DATE.test(q.onset_date ?? '') || !q.hai_type) throw new BadRequestException('patient_id, onset_date, hai_type სავალდებულოა');
     return this.context(this.db, r, q);
@@ -151,7 +204,8 @@ export class IpcHaiService {
   }
   private ctxValues(ctx: HaiContext) {
     return { encounter_id: ctx.encounter_id, onset_day: ctx.onset_day, department_id: ctx.department_id, attribution: ctx.attribution, readmission: ctx.readmission,
-      device_kind: ctx.device_kind as 'central_line' | 'urinary' | 'ventilator' | null, device_assoc: ctx.device_assoc, device_days: ctx.device_days };
+      device_kind: ctx.device_kind as 'central_line' | 'urinary' | 'ventilator' | null, device_assoc: ctx.device_assoc, device_days: ctx.device_days,
+      or_case_id: ctx.or_case_id, post_discharge: ctx.post_discharge };
   }
 
   async create(d: CaseCreateDto, u: AuthUser, req: Request) {
@@ -166,7 +220,9 @@ export class IpcHaiService {
         if (s.patient_id && s.patient_id !== d.patient_id) throw new BadRequestException({ code: 'SIGNAL_PATIENT', message: 'სიგნალი სხვა პაციენტისაა' });
         if (s.status === 'case') throw new ConflictException({ code: 'SIGNAL_CASE', message: 'სიგნალი უკვე მიბმულია შემთხვევაზე' });
       }
-      const ctx = await this.context(trx, r, d);
+      const sigOp = sigs.map((s) => (s.data as { or_case_id?: string } | null)?.or_case_id).find((x) => !!x);
+      const ctx = await this.context(trx, r, { ...d, or_case_id: d.or_case_id ?? (d.hai_type === 'ssi' ? sigOp : null) });
+      if (d.post_discharge) ctx.post_discharge = true;
       const sc = await this.c.scope(u);
       if (!sc.full && (!ctx.department_id || !sc.depts.includes(ctx.department_id))) throw new ForbiddenException({ code: 'OUT_OF_SCOPE', message: 'შემთხვევა თქვენს განყოფილებას არ მიეკუთვნება' });
       const orgs = [...new Set([...(d.organism_ids ?? []), ...sigs.map((s) => s.organism_id).filter((x): x is string => !!x)])];
@@ -176,7 +232,8 @@ export class IpcHaiService {
         onset_date: d.onset_date, ...this.ctxValues(ctx), criteria_set_id: set?.id ?? null, organism_ids: orgs, order_item_ids: items,
         description: d.description?.trim() || null, created_by: u.id }).returning(['id', 'case_no']).executeTakeFirstOrThrow();
       if (sigs.length) await trx.updateTable('ipc_signals').set({ status: 'case', case_id: row.id, handled_by: u.id, handled_at: sql`now()` }).where('id', 'in', sigs.map((s) => s.id)).execute();
-      await this.event(trx, row.id, u.id, 'created', null, { signals: sigs.length, warnings: ctx.warnings.map((w) => w.code) });
+      await ssiSyncOp(trx, ctx.or_case_id);
+      await this.event(trx, row.id, u.id, 'created', null, { signals: sigs.length, warnings: ctx.warnings.map((w) => w.code), or_case: ctx.or_case_no });
       await this.audit.log(auditCtx(req), { action: 'IPC_HAI_CREATE', entityName: 'ipc_hai_cases', entityId: row.id, newData: { ...d, case_no: row.case_no } }, trx);
       return row.id;
     });
@@ -205,7 +262,8 @@ export class IpcHaiService {
       if (d.description !== undefined) vals.description = d.description?.trim() || null;
       if (d.organism_ids) vals.organism_ids = [...new Set(d.organism_ids)];
       if (d.order_item_ids) vals.order_item_ids = [...new Set(d.order_item_ids)];
-      if (d.hai_type && d.hai_type !== x.hai_type) { vals.hai_type = d.hai_type; vals.criteria_met = []; if (d.hai_type !== 'ssi') vals.ssi_depth = null; if (d.hai_type !== 'bsi') vals.bsi_source = null; }
+      if (d.hai_type && d.hai_type !== x.hai_type) { vals.hai_type = d.hai_type; vals.criteria_met = []; if (d.hai_type !== 'ssi') { vals.ssi_depth = null; vals.or_case_id = null; } if (d.hai_type !== 'bsi') vals.bsi_source = null; }
+      if (d.or_case_id && type !== 'ssi') throw new BadRequestException({ code: 'OR_CASE', message: 'ოპერაცია — მხოლოდ SSI-ზე' });
       if (d.criteria_met) {
         const ok = await trx.selectFrom('ipc_criteria_items').select('id').where('id', 'in', d.criteria_met.length ? d.criteria_met : ['00000000-0000-0000-0000-000000000000'])
           .where('hai_type', '=', type).where('set_id', '=', x.criteria_set_id ?? '00000000-0000-0000-0000-000000000000').execute();
@@ -213,17 +271,20 @@ export class IpcHaiService {
         vals.criteria_met = [...new Set(d.criteria_met)];
       }
       // კონტექსტის გადათვლა: ტიპი / დღე / ჰოსპიტალიზაცია შეიცვალა
-      if (d.hai_type || d.onset_date || d.encounter_id) {
-        const ctx = await this.context(trx, r, { patient_id: x.patient_id, encounter_id: d.encounter_id ?? x.encounter_id, onset_date: d.onset_date ?? String(x.onset_date).slice(0, 10), hai_type: type });
+      if (d.hai_type || d.onset_date || d.encounter_id || d.or_case_id !== undefined) {
+        const ctx = await this.context(trx, r, { patient_id: x.patient_id, encounter_id: d.encounter_id ?? x.encounter_id, onset_date: d.onset_date ?? String(x.onset_date).slice(0, 10), hai_type: type,
+          or_case_id: type === 'ssi' ? (d.or_case_id !== undefined ? d.or_case_id : x.or_case_id) : null });
         const cv = this.ctxValues(ctx);
         if (d.onset_date) vals.onset_date = d.onset_date;
+        if (x.post_discharge) cv.post_discharge = true;
         Object.assign(vals, cv);
         if (x.attribution === 'manual') { delete vals.department_id; delete vals.attribution; }
         if (x.device_override) { delete vals.device_assoc; }
       }
       if (d.department_id !== undefined) {
         if (d.department_id === null) {
-          const ctx = await this.context(trx, r, { patient_id: x.patient_id, encounter_id: x.encounter_id, onset_date: String(vals.onset_date ?? x.onset_date).slice(0, 10), hai_type: type });
+          const ctx = await this.context(trx, r, { patient_id: x.patient_id, encounter_id: x.encounter_id, onset_date: String(vals.onset_date ?? x.onset_date).slice(0, 10), hai_type: type,
+            or_case_id: type === 'ssi' ? (vals.or_case_id as string | null | undefined) ?? x.or_case_id : null });
           Object.assign(vals, { department_id: ctx.department_id, attribution: ctx.attribution, attribution_note: null });
         } else {
           if ((d.attribution_note?.trim().length ?? 0) < 3) throw new BadRequestException({ code: 'ATTRIBUTION_NOTE', message: 'მიკუთვნების ხელით შეცვლას სჭირდება მიზეზი' });
@@ -243,6 +304,8 @@ export class IpcHaiService {
       }
       if (!Object.keys(vals).length) throw new BadRequestException({ code: 'NO_CHANGE', message: 'ცვლილება არ არის' });
       await trx.updateTable('ipc_hai_cases').set(vals).where('id', '=', id).execute();
+      await ssiSyncOp(trx, x.or_case_id);
+      if (vals.or_case_id && vals.or_case_id !== x.or_case_id) await ssiSyncOp(trx, vals.or_case_id as string);
       await this.event(trx, id, u.id, 'updated', null, { fields: Object.keys(vals) });
       await this.audit.log(auditCtx(req), { action: 'IPC_HAI_UPDATE', entityName: 'ipc_hai_cases', entityId: id, oldData: Object.fromEntries(Object.keys(vals).map((k) => [k, (x as Record<string, unknown>)[k]])), newData: vals }, trx);
     });
@@ -259,7 +322,14 @@ export class IpcHaiService {
         await trx.updateTable('ipc_hai_cases').set({ status: 'review' }).where('id', '=', id).execute();
       } else if (to === 'confirm') {
         if (!['suspected', 'review'].includes(x.status)) throw new ConflictException({ code: 'STATE', message: 'შემთხვევა უკვე დასრულებულია' });
-        if (x.onset_day !== null && x.onset_day < r.hospital_onset_day && !x.readmission && x.attribution !== 'manual')
+        if (x.hai_type === 'ssi') {
+          if (!x.or_case_id) throw new BadRequestException({ code: 'SSI_OP', message: 'SSI — მიუთითეთ ოპერაცია' });
+          const op = await this.ssiOp(trx, x.patient_id, String(x.onset_date).slice(0, 10), x.or_case_id);
+          const fu = op?.followup_days ?? 30;
+          const pod = op?.op_date ? Math.round((new Date(String(x.onset_date).slice(0, 10)).getTime() - new Date(op.op_date).getTime()) / 86400000) : 0;
+          if (pod > fu) throw new ConflictException({ code: 'SSI_WINDOW', message: `ინფექცია ოპერაციიდან ${pod}-ე დღეს — დაკვირვების ვადის (${fu} დღე) მიღმა` });
+        }
+        if (x.attribution !== 'operation' && x.onset_day !== null && x.onset_day < r.hospital_onset_day && !x.readmission && x.attribution !== 'manual')
           throw new ConflictException({ code: 'ONSET_EARLY', message: `ინფექცია ${x.onset_day}-ე დღეს (< ${r.hospital_onset_day}) — ჰოსპიტალური არ არის. საჭიროებისას მიუთითეთ მიკუთვნება ხელით (მიზეზით)` });
         if (!x.department_id) throw new ConflictException({ code: 'NO_DEPARTMENT', message: 'მიკუთვნებული განყოფილება არ არის' });
         if (x.hai_type === 'ssi' && !x.ssi_depth) throw new BadRequestException({ code: 'SSI_DEPTH', message: 'SSI — მიუთითეთ სიღრმე' });
@@ -278,6 +348,7 @@ export class IpcHaiService {
         if (!['confirmed', 'rejected'].includes(x.status)) throw new ConflictException({ code: 'STATE', message: 'გაიხსნება მხოლოდ დასრულებული' });
         await trx.updateTable('ipc_hai_cases').set({ status: 'review', confirmed_by: null, confirmed_at: null, rejected_reason: null }).where('id', '=', id).execute();
       }
+      await ssiSyncOp(trx, x.or_case_id);
       await this.event(trx, id, u.id, to, reason);
       await this.audit.log(auditCtx(req), { action: `IPC_HAI_${to.toUpperCase()}`, entityName: 'ipc_hai_cases', entityId: id, oldData: { status: x.status }, newData: { reason } }, trx);
       return to === 'confirm' ? x : null;
@@ -300,6 +371,7 @@ export class IpcHaiService {
       .leftJoin('departments as d', 'd.id', 'h.department_id').leftJoin('inpatient_stays as st', 'st.encounter_id', 'h.encounter_id')
       .select(['h.id', 'h.case_no', 'h.patient_id', 'h.hai_type', 't.short_name', 't.device_name', 'h.ssi_depth', 'h.status', 'h.onset_date', 'h.onset_day', 'h.department_id', 'd.name as department',
         'h.attribution', 'h.readmission', 'h.device_assoc', 'h.device_days', 'h.device_kind', 'h.created_at', 'h.confirmed_at', 'p.first_name', 'p.last_name', 'p.personal_number', 'st.adm_no',
+        'h.or_case_id', 'h.post_discharge', sql<string | null>`(SELECT oc.case_no FROM or_cases oc WHERE oc.id = h.or_case_id)`.as('or_case_no'),
         sql<string[]>`ARRAY(SELECT o.name FROM micro_organisms o WHERE o.id = ANY(h.organism_ids) ORDER BY o.name)`.as('organisms')])
       .orderBy('h.onset_date', 'desc').orderBy('h.created_at', 'desc').limit(500);
     if (q.status) x = x.where('h.status', 'in', q.status.split(','));
@@ -320,6 +392,7 @@ export class IpcHaiService {
       .leftJoin('users as cu', 'cu.id', 'h.created_by').leftJoin('users as fu', 'fu.id', 'h.confirmed_by').leftJoin('ipc_criteria_sets as cs', 'cs.id', 'h.criteria_set_id')
       .selectAll('h').select(['t.name as type_name', 't.short_name', 't.device_name', 'd.name as department', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'p.gender',
         'st.adm_no', 'st.admitted_at', 'st.status as stay_status', 'cs.name as criteria_set', 'cs.version as criteria_version',
+        sql<string | null>`(SELECT oc.case_no FROM or_cases oc WHERE oc.id = h.or_case_id)`.as('or_case_no'),
         sql<string | null>`cu.first_name || ' ' || cu.last_name`.as('created_by_name'), sql<string | null>`fu.first_name || ' ' || fu.last_name`.as('confirmed_by_name')])
       .where('h.id', '=', id).executeTakeFirst();
     if (!x) throw new NotFoundException('HAI შემთხვევა ვერ მოიძებნა');
@@ -343,7 +416,7 @@ export class IpcHaiService {
            AND EXISTS (SELECT 1 FROM micro_cultures c JOIN micro_isolates mi ON mi.culture_id = c.id WHERE c.order_item_id = i.id AND mi.organism_id IS NOT NULL)
          ORDER BY collected_at`.execute(this.db).then((q) => q.rows),
       this.db.selectFrom('qm_incidents').select(['inc_no', 'status', 'reported_at']).where('source_type', '=', 'hai_case').where('source_id', '=', id).orderBy('reported_at').execute(),
-      this.context(this.db, r, { patient_id: x.patient_id, encounter_id: x.encounter_id, onset_date: onset, hai_type: x.hai_type }).catch(() => null),
+      this.context(this.db, r, { patient_id: x.patient_id, encounter_id: x.encounter_id, onset_date: onset, hai_type: x.hai_type, or_case_id: x.or_case_id }).catch(() => null),
     ]);
     return { ...x, onset_date: onset, status_ka: HAI_STATUS_KA[x.status], criteria, organisms, signals, events, cultures, incidents, context: ctx,
       can: { edit: !['confirmed', 'rejected'].includes(x.status), decide: has(u, ...IPC_FULL), quality: !!x.encounter_id } };
@@ -374,8 +447,9 @@ export class IpcHaiController {
   constructor(private readonly s: IpcHaiService) {}
   @Get('hai') @Roles(...IPC_ANY) list(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('hai_type') hai_type?: string, @Query('department_id') department_id?: string,
     @Query('from') from?: string, @Query('to') to?: string, @Query('device') device?: string, @Query('q') q?: string) { return this.s.list(u, { status, hai_type, department_id, from, to, device, q }); }
-  @Get('hai/context') @Roles(...IPC_ANY) context(@Query('patient_id') patient_id: string, @Query('encounter_id') encounter_id: string, @Query('onset_date') onset_date: string, @Query('hai_type') hai_type: string) {
-    return this.s.preview({ patient_id, encounter_id: encounter_id || undefined, onset_date, hai_type });
+  @Get('hai/context') @Roles(...IPC_ANY) context(@Query('patient_id') patient_id: string, @Query('encounter_id') encounter_id: string, @Query('onset_date') onset_date: string, @Query('hai_type') hai_type: string,
+    @Query('or_case_id') or_case_id?: string) {
+    return this.s.preview({ patient_id, encounter_id: encounter_id || undefined, onset_date, hai_type, or_case_id: or_case_id || undefined });
   }
   @Get('hai-catalog') @Roles(...IPC_ANY, 'infection_view', 'admin') catalog() { return this.s.catalog(); }
   @Get('hai/:id') @Roles(...IPC_ANY) detail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.detail(id, u); }

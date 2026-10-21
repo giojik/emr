@@ -9,7 +9,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced } from '../../components/
 import { tsDate } from '../../lib/format';
 import {
   ATTR_KA, DEVICE_KA, HAI_ST, IPC_FULL, SIGNAL_KA, SIGNAL_ST, SSI_KA, typeForSignal, useHaiCatalog,
-  type HaiContext, type HaiDetail, type HaiRow, type Rates, type SignalRow,
+  type HaiContext, type HaiDetail, type HaiRow, type PatientOp, type Rates, type SignalRow,
 } from './types';
 
 const time = (v: string) => new Date(v).toLocaleTimeString('ka-GE', { timeZone: 'Asia/Tbilisi', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -91,17 +91,22 @@ function DismissDialog({ s, onClose, onDone }: { s: SignalRow; onClose: () => vo
 
 // ================================================================ HAI შემთხვევის შექმნა
 export function CreateCase({ preset, onClose, onDone }: {
-  preset?: { patient?: { id: string; name: string }; encounter_id?: string | null; signal?: SignalRow; hai_type?: string; onset_date?: string };
+  preset?: { patient?: { id: string; name: string }; encounter_id?: string | null; signal?: SignalRow; hai_type?: string; onset_date?: string; or_case_id?: string | null };
   onClose: () => void; onDone: (id: string) => void;
 }) {
   const qc = useQueryClient(); const cat = useHaiCatalog();
   const [patient, setPatient] = useState<{ id: string; name: string } | null>(preset?.patient ?? null);
-  const [f, setF] = useState({ hai_type: preset?.hai_type ?? 'bsi', onset_date: preset?.onset_date ?? todayTb(), ssi_depth: '', description: '' });
-  const ctx = useQuery({ queryKey: ['ipc-hai-ctx', patient?.id, preset?.encounter_id, f.onset_date, f.hai_type],
-    queryFn: () => api<HaiContext>('/ipc/hai/context', { query: { patient_id: patient!.id, encounter_id: preset?.encounter_id ?? '', onset_date: f.onset_date, hai_type: f.hai_type } }),
+  const sigOp = (preset?.signal?.data?.or_case_id as string | undefined) ?? null;
+  const [f, setF] = useState({ hai_type: preset?.hai_type ?? 'bsi', onset_date: preset?.onset_date ?? todayTb(), ssi_depth: '', description: '', or_case_id: preset?.or_case_id ?? sigOp ?? '' });
+  const ssi = f.hai_type === 'ssi';
+  const ops = useQuery({ queryKey: ['ipc-patient-ops', patient?.id], queryFn: () => api<PatientOp[]>(`/ipc/ssi/patients/${patient!.id}/ops`), enabled: !!patient && ssi });
+  const ctx = useQuery({ queryKey: ['ipc-hai-ctx', patient?.id, preset?.encounter_id, f.onset_date, f.hai_type, ssi ? f.or_case_id : ''],
+    queryFn: () => api<HaiContext>('/ipc/hai/context', { query: { patient_id: patient!.id, encounter_id: preset?.encounter_id ?? '', onset_date: f.onset_date, hai_type: f.hai_type,
+      or_case_id: ssi ? f.or_case_id : '' } }),
     enabled: !!patient && /^\d{4}-\d{2}-\d{2}$/.test(f.onset_date), retry: false });
   const m = useMutation({ mutationFn: () => api<HaiDetail>('/ipc/hai', { body: { patient_id: patient!.id, encounter_id: preset?.encounter_id ?? undefined, hai_type: f.hai_type, onset_date: f.onset_date,
-    ssi_depth: f.hai_type === 'ssi' && f.ssi_depth ? f.ssi_depth : undefined, signal_ids: preset?.signal ? [preset.signal.id] : undefined, description: f.description.trim() || undefined } }),
+    ssi_depth: ssi && f.ssi_depth ? f.ssi_depth : undefined, signal_ids: preset?.signal ? [preset.signal.id] : undefined, description: f.description.trim() || undefined,
+    or_case_id: ssi && f.or_case_id ? f.or_case_id : undefined } }),
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['ipc-signals'] }); void qc.invalidateQueries({ queryKey: ['ipc-hai'] }); onDone(r.id); } });
   const c = ctx.data;
   return (
@@ -120,6 +125,10 @@ export function CreateCase({ preset, onClose, onDone }: {
           {f.hai_type === 'ssi' && <Field label="სიღრმე" htmlFor="hc-s"><select id="hc-s" className="select" value={f.ssi_depth} onChange={(e) => setF({ ...f, ssi_depth: e.target.value })}>
             <option value="">—</option>{Object.entries(SSI_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
         </div>
+        {ssi && patient && <Field label="ოპერაცია" htmlFor="hc-o" hint="ცარიელი — ბოლო ოპერაცია, რომლის დაკვირვების ვადაშიცაა ინფექციის დღე">
+          <select id="hc-o" className="select" value={f.or_case_id} onChange={(e) => setF({ ...f, or_case_id: e.target.value })}>
+            <option value="">ავტომატურად</option>
+            {ops.data?.map((o) => <option key={o.id} value={o.id}>{o.case_no} · {o.op_at ? tsDate(o.op_at) : '—'} · {o.procedures ?? ''}{o.category ? ` (${o.category})` : ''}</option>)}</select></Field>}
         <ErrorBox error={ctx.error} />
         {c && <ContextBox c={c} />}
         <Field label="აღწერა" htmlFor="hc-n"><textarea id="hc-n" className="textarea" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
@@ -131,7 +140,9 @@ export function CreateCase({ preset, onClose, onDone }: {
 export function ContextBox({ c, override }: { c: HaiContext; override?: { device?: boolean; attribution?: boolean } }) {
   return (
     <div className="card card-pad stack small" style={{ gap: 4, background: 'var(--bg)' }}>
-      <div><span className="muted">ჰოსპიტალიზაცია:</span> {c.adm_no ? <><span className="mono">{c.adm_no}</span> · დღე <strong>{c.onset_day}</strong></> : '—'}</div>
+      {c.or_case_id && <div><span className="muted">ოპერაცია:</span> <Link to={`/or/case/${c.or_case_id}`} className="mono">{c.or_case_no}</Link> · {c.op_date ? tsDate(c.op_date) : '—'}
+        · POD <strong>{c.pod}</strong> · დაკვირვება {c.followup_until ? `${tsDate(c.followup_until)}-მდე` : '—'}{c.post_discharge && <span className="chip warn" style={{ marginLeft: 6 }}>გაწერის შემდეგ</span>}</div>}
+      <div><span className="muted">ჰოსპიტალიზაცია:</span> {c.adm_no ? <><span className="mono">{c.adm_no}</span>{c.onset_day !== null && <> · დღე <strong>{c.onset_day}</strong></>}</> : '—'}</div>
       <div><span className="muted">მიკუთვნება:</span> <strong>{c.department ?? '—'}</strong> · {ATTR_KA[c.attribution]}{c.previous_adm_no ? ` (${c.previous_adm_no})` : ''}{override?.attribution ? ' · ხელით შეცვლილია' : ''}</div>
       {c.device_kind && <div><span className="muted">მოწყობილობა:</span> {c.device_detail}
         {c.device_assoc ? <span className="chip danger" style={{ marginLeft: 6 }}>{c.device_name}</span> : <span className="chip" style={{ marginLeft: 6 }}>{c.device_name} — არა</span>}
@@ -169,6 +180,7 @@ export function HaiList() {
                 <td><span className="mono">{h.case_no}</span><div className="small muted mono">{tsDate(h.onset_date)}{h.onset_day ? ` · დღე ${h.onset_day}` : ''}</div></td>
                 <td><strong>{h.last_name} {h.first_name}</strong><div className="small muted mono">{h.adm_no ?? ''}</div></td>
                 <td>{h.device_assoc && h.device_name ? <span className="chip danger">{h.device_name}</span> : <span className="chip">{h.short_name}</span>}
+                  {h.or_case_no && <span className="small mono muted"> {h.or_case_no}</span>}{h.post_discharge && <span className="chip warn" style={{ marginLeft: 4 }}>გაწერის შემდეგ</span>}
                   {h.ssi_depth && <span className="small muted"> {SSI_KA[h.ssi_depth]}</span>}{h.device_assoc && <div className="small muted">მოწყობილობა: დღე {h.device_days}</div>}</td>
                 <td className="small">{h.department ?? '—'}{h.attribution !== 'current' && <div className="muted">{ATTR_KA[h.attribution]}</div>}</td>
                 <td className="small"><i>{h.organisms.join(', ') || '—'}</i></td>

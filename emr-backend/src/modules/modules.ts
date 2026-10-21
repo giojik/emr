@@ -221,6 +221,9 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       hai_criteria_set: (v) => typeof v === 'string' && /^[a-z][a-z0-9_]{1,15}$/.test(v), hai_transfer_days: (v) => int(v, 0, 3), hai_readmit_days: (v) => int(v, 0, 90),
       device_min_days: (v) => int(v, 1, 3), device_days_basis: (v) => oneOf(v, ['calendar_day', 'census']), census_hour: (v) => int(v, 0, 23),
       central_line_kinds: (v) => Array.isArray(v) && v.length >= 1 && v.every((x) => ['cvc', 'picc', 'dialysis', 'arterial'].includes(x as string)) && new Set(v).size === v.length,
+      // 0069: SSI
+      wound_class_mode: (v) => oneOf(v, ['optional', 'required', 'off']), ssi_surveillance: bool, ssi_pd_calls: bool, ssi_pd_attempts: (v) => int(v, 1, 5), ssi_pd_sms: bool,
+      sig_ssi_postop: bool, prophylaxis_window_min: (v) => int(v, 30, 180),
     },
     extra: async (s, db) => {
       const c = s.hai_criteria_set as string | undefined;

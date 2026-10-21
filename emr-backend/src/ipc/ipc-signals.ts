@@ -12,8 +12,10 @@ import { IPC_ANY, IPC_FULL, IpcCommon, ipcRules, type IpcRules } from './ipc-com
 const TZ = loadEnv().CLINIC_TZ;
 export const SIGNAL_KA: Record<string, string> = {
   blood_culture: 'დადებითი ჰემოკულტურა', hospital_culture: 'ჰოსპიტალური დადებითი კულტურა', fever_device: 'ცხელება (მოწყობილობა / ოპერაცია)',
-  antibiotic_start: 'ანტიბიოტიკის დაწყება', cluster: 'შესაძლო კლასტერი',
+  antibiotic_start: 'ანტიბიოტიკის დაწყება', cluster: 'შესაძლო კლასტერი', ssi_postop: 'SSI ეჭვი (ოპერაციის შემდეგ)',
 };
+/** ჭრილობის / იმპლანტის ინფექციის ICD-10 (0069) */
+const SSI_DX = ['T81.4', 'T84.5', 'T84.6', 'T84.7', 'T82.6', 'T82.7', 'O86.0'];
 
 class WatchDto { @IsInt() @Min(1) @Max(30) days: number; @IsOptional() @IsString() @MaxLength(500) note?: string }
 class DismissDto { @IsString() @Length(3, 500) reason: string }
@@ -47,6 +49,7 @@ export class IpcSignalsService {
     if (r.sig_blood_culture || r.sig_hospital_culture || r.sig_cluster) cand.push(...await this.cultures(r, look));
     if (r.sig_fever_device) cand.push(...await this.fever(r, look));
     if (r.sig_antibiotic_start) cand.push(...await this.antibiotics(r, look));
+    if (r.sig_ssi_postop && r.ssi_surveillance) cand.push(...await this.ssiPostop(look));
     const created: NewSignal[] = [];
     for (const s of cand) {
       if (s.patient_id) {
@@ -178,6 +181,41 @@ export class IpcSignalsService {
                             AND p.start_at < o.start_at AND p.start_at >= o.start_at - interval '2 days')`.execute(this.db)).rows;
     return rows.map((x) => ({ kind: 'antibiotic_start', ref_key: `order:${x.id}`, patient_id: x.patient_id, encounter_id: x.encounter_id, department_id: x.department_id,
       summary: `${x.inn} (${x.atc}) · დღე ${x.day}`, data: { inn: x.inn, atc: x.atc, day: x.day, order_id: x.id }, event_at: x.at }));
+  }
+
+  /**
+   * ssi_postop (0069): ზედამხედველობის ოპერაციის დაკვირვების პერიოდში (ss_ops: active, გაწერილი) —
+   *   ხელახალი ჰოსპიტალიზაცია; ჭრილობის / იმპლანტის ინფექციის დიაგნოზი (T81.4, T84.5–7, T82.6–7, O86.0) ნებისმიერ ვიზიტზე;
+   *   დადებითი კულტურა ჭრილობიდან / ქსოვილიდან / პუნქტატიდან გაწერის შემდეგ (ამბულატორია). განყოფილება — ქირურგიული.
+   */
+  private async ssiPostop(look: number): Promise<NewSignal[]> {
+    const rows = (await sql<{ ref: string; reason: string; patient_id: string; encounter_id: string | null; department_id: string; case_id: string; case_no: string; category: string;
+      at: string; pod: number; detail: string; order_item_id: string | null }>`
+      WITH o AS (SELECT o.*, oc.case_no FROM ipc_ssi_ops o JOIN or_cases oc ON oc.id = o.case_id WHERE o.status = 'active' AND o.discharged_at IS NOT NULL)
+      SELECT 'ssi:readm:' || st.encounter_id AS ref, 'readmission' AS reason, o.patient_id, st.encounter_id, o.department_id, o.case_id, o.case_no, o.category,
+             st.admitted_at AS at, ((st.admitted_at AT TIME ZONE ${TZ})::date - o.op_date)::int AS pod, 'ხელახალი ჰოსპიტალიზაცია ' || st.adm_no AS detail, NULL::uuid AS order_item_id
+        FROM o JOIN inpatient_stays st ON st.patient_id = o.patient_id AND st.admitted_at > o.discharged_at AND st.status <> 'cancelled'
+       WHERE (st.admitted_at AT TIME ZONE ${TZ})::date <= o.followup_until AND st.admitted_at > now() - make_interval(days => ${look})
+      UNION ALL
+      SELECT 'ssi:dx:' || ed.id, 'diagnosis', o.patient_id, NULL::uuid, o.department_id, o.case_id, o.case_no, o.category,
+             ed.created_at, ((ed.created_at AT TIME ZONE ${TZ})::date - o.op_date)::int, ed.icd10_code || ' ' || ed.icd10_title, NULL::uuid
+        FROM o JOIN encounters e ON e.patient_id = o.patient_id JOIN encounter_diagnoses ed ON ed.encounter_id = e.id
+       WHERE ed.icd10_code = ANY(${sql.val(SSI_DX)}::text[]) AND ed.created_at > o.op_at AND (ed.created_at AT TIME ZONE ${TZ})::date <= o.followup_until
+         AND ed.created_at > now() - make_interval(days => ${look})
+      UNION ALL
+      SELECT 'ssi:cult:' || i.id, 'culture', o.patient_id, NULL::uuid, o.department_id, o.case_id, o.case_no, o.category,
+             coalesce(sp.collected_at, i.ordered_at), ((coalesce(sp.collected_at, i.ordered_at) AT TIME ZONE ${TZ})::date - o.op_date)::int,
+             s.specimen_type || ': ' || (SELECT string_agg(DISTINCT mo.name, ', ') FROM micro_cultures c JOIN micro_isolates mi ON mi.culture_id = c.id JOIN micro_organisms mo ON mo.id = mi.organism_id
+                                         WHERE c.order_item_id = i.id), i.id
+        FROM o JOIN dx_order_items i ON i.patient_id = o.patient_id JOIN dx_services s ON s.id = i.service_id AND s.is_micro AND s.specimen_type IN ('wound', 'tissue', 'fluid')
+        LEFT JOIN lab_specimens sp ON sp.id = i.specimen_id
+       WHERE coalesce(sp.collected_at, i.ordered_at) > o.discharged_at AND (coalesce(sp.collected_at, i.ordered_at) AT TIME ZONE ${TZ})::date <= o.followup_until
+         AND EXISTS (SELECT 1 FROM micro_reports mr WHERE mr.order_item_id = i.id AND mr.issued_at > now() - make_interval(days => ${look}))
+         AND EXISTS (SELECT 1 FROM micro_cultures c JOIN micro_isolates mi ON mi.culture_id = c.id WHERE c.order_item_id = i.id AND mi.organism_id IS NOT NULL)`.execute(this.db)).rows;
+    const RK: Record<string, string> = { readmission: 'ხელახალი ჰოსპიტალიზაცია', diagnosis: 'დიაგნოზი', culture: 'ჭრილობის კულტურა' };
+    return rows.map((x) => ({ kind: 'ssi_postop', ref_key: x.ref, patient_id: x.patient_id, encounter_id: x.encounter_id, department_id: x.department_id, order_item_id: x.order_item_id,
+      summary: `${x.case_no} (${x.category}) · POD ${x.pod} · ${RK[x.reason]}: ${x.detail}`,
+      data: { reason: x.reason, or_case_id: x.case_id, case_no: x.case_no, category: x.category, pod: x.pod, specimen: x.reason === 'culture' ? 'wound' : null }, event_at: x.at }));
   }
 
   // =============================================================== სია / მოქმედებები

@@ -793,6 +793,20 @@ function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
             const cur = (s.central_line_kinds as string[] | undefined) ?? ['cvc', 'picc', 'dialysis'];
             return <label key={k} className="row small"><input type="checkbox" checked={cur.includes(k)} onChange={() => upd('central_line_kinds', cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k])} /> {l}</label>; })}</div></div>
       </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ოპერაციის ადგილის ინფექცია (SSI)</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="ჭრილობის კლასი ოპერაციის ოქმში" htmlFor="ipc-wc2" hint="CDC I–IV; რისკის ინდექსისთვის">
+          <select id="ipc-wc2" className="select" value={String(s.wound_class_mode ?? 'optional')} onChange={(e) => upd('wound_class_mode', e.target.value)}>
+            <option value="optional">არასავალდებულო</option><option value="required">სავალდებულო (ხელმოწერამდე)</option><option value="off">გამორთული</option></select></Field>
+        <Field label="ანტიბიოტიკური პროფილაქტიკა — ფანჯარა, წთ" htmlFor="ipc-prophylaxis_window_min" hint="ჭრილობამდე (WHO / ECDC — 60)">{int('prophylaxis_window_min', 60, 30, 180)}</Field>
+        <Field label="კონტაქტი — მაქს. ცდა" htmlFor="ipc-ssi_pd_attempts" hint="შემდეგ — „ვერ დავუკავშირდით“">{int('ssi_pd_attempts', 3, 1, 5)}</Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}>
+          {chk('ssi_surveillance', 'SSI ზედამხედველობა (ოპერაციები SSI კატეგორიებით, რისკის ინდექსი, დაკვირვება)')}
+          {chk('ssi_pd_calls', 'გაწერის შემდგომი კონტაქტი — IPC-ის სამუშაო სია დაკვირვების ვადის ბოლოს')}
+          {chk('sig_ssi_postop', 'სიგნალი: ხელახალი ჰოსპიტალიზაცია / ჭრილობის ინფექციის დიაგნოზი / ჭრილობის კულტურა დაკვირვების პერიოდში')}
+          {chk('ssi_pd_sms', 'SMS შეხსენება პაციენტს ვადის დღეს (SMS თანხმობით)', 'ტექსტში — მხოლოდ ზოგადი შეხსენება და კლინიკის ტელეფონი')}
+        </div>
+      </div>
       <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>
   );

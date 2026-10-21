@@ -1664,10 +1664,12 @@ export interface IpcHaiCases {
   id: Generated<string>;
   onset_date: string;
   onset_day: number | null;
+  or_case_id: string | null;
   order_item_ids: Generated<string[]>;
   organism_ids: Generated<string[]>;
   outcome: string | null;
   patient_id: string;
+  post_discharge: Generated<boolean>;
   readmission: Generated<boolean>;
   rejected_reason: string | null;
   ssi_depth: string | null;
@@ -1796,6 +1798,65 @@ export interface IpcSignals {
   status: Generated<string>;
   summary: string;
   watch_until: Timestamp | null;
+}
+
+export interface IpcSsiCategories {
+  code: string;
+  followup_days: Generated<number>;
+  implant_followup_days: number | null;
+  is_active: Generated<boolean>;
+  name: string;
+  ncsp_prefixes: Generated<string[]>;
+  sort_order: Generated<number>;
+  t_point_min: number | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IpcSsiFollowups {
+  answers: Generated<Json>;
+  attempts: Generated<number>;
+  cancel_reason: string | null;
+  case_id: string;
+  contacted_at: Timestamp | null;
+  contacted_by: string | null;
+  created_at: Generated<Timestamp>;
+  due_date: string;
+  hai_case_id: string | null;
+  id: Generated<string>;
+  last_attempt_at: Timestamp | null;
+  note: string | null;
+  outcome: string | null;
+  sms_sent_at: Timestamp | null;
+  status: Generated<string>;
+}
+
+export interface IpcSsiOps {
+  asa: number | null;
+  case_id: string;
+  category: string;
+  category_manual: Generated<boolean>;
+  computed_at: Generated<Timestamp>;
+  department_id: string;
+  discharged_at: Timestamp | null;
+  duration_min: number | null;
+  emergency: Generated<boolean>;
+  encounter_id: string | null;
+  excluded_reason: string | null;
+  followup_days: number;
+  followup_until: string;
+  implant: Generated<boolean>;
+  op_at: Timestamp;
+  op_date: string;
+  patient_id: string;
+  prophylaxis: Generated<string>;
+  prophylaxis_at: Timestamp | null;
+  prophylaxis_drug: string | null;
+  risk_index: number | null;
+  ssi_case_id: string | null;
+  status: Generated<string>;
+  wound_class: number | null;
+  wound_class_ipc: number | null;
+  wound_class_note: string | null;
 }
 
 export interface IpdReminders {
@@ -2843,6 +2904,7 @@ export interface OrOpNotes {
   template_id: string | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+  wound_class: number | null;
 }
 
 export interface OrPacu {
@@ -2945,6 +3007,7 @@ export interface OrProcedures {
   name: string;
   ncsp_code: string | null;
   specialty_code: string | null;
+  ssi_category: string | null;
   tariff_id: string | null;
   updated_at: Generated<Timestamp>;
 }
@@ -4799,6 +4862,9 @@ export interface DB {
   ipc_micro_scans: IpcMicroScans;
   ipc_patient_flags: IpcPatientFlags;
   ipc_signals: IpcSignals;
+  ipc_ssi_categories: IpcSsiCategories;
+  ipc_ssi_followups: IpcSsiFollowups;
+  ipc_ssi_ops: IpcSsiOps;
   ipd_reminders: IpdReminders;
   lab_analytes: LabAnalytes;
   lab_blank_group_assignments: LabBlankGroupAssignments;

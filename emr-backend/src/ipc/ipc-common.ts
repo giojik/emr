@@ -19,6 +19,8 @@ export interface IpcRules {
   fever_threshold: number; commensal_window_hours: number; cluster_count: number; cluster_days: number; signal_dedupe_days: number; postop_fever_days: number;
   hai_criteria_set: string; hai_transfer_days: number; hai_readmit_days: number; device_min_days: number;
   device_days_basis: 'calendar_day' | 'census'; census_hour: number; central_line_kinds: string[];
+  wound_class_mode: 'optional' | 'required' | 'off'; ssi_surveillance: boolean; ssi_pd_calls: boolean; ssi_pd_attempts: number; ssi_pd_sms: boolean;
+  sig_ssi_postop: boolean; prophylaxis_window_min: number;
 }
 export const IPC_DEFAULTS: IpcRules = {
   isolation_remove_mdro: 'ipc', ward_conflict: 'warn', wristband_symbol: false, door_sign: true, mdro_flag_mode: 'auto', mdro_clear_negatives: 3,
@@ -27,6 +29,7 @@ export const IPC_DEFAULTS: IpcRules = {
   fever_threshold: 38.0, commensal_window_hours: 48, cluster_count: 3, cluster_days: 14, signal_dedupe_days: 7, postop_fever_days: 30,
   hai_criteria_set: 'ecdc', hai_transfer_days: 2, hai_readmit_days: 30, device_min_days: 3, device_days_basis: 'calendar_day', census_hour: 0,
   central_line_kinds: ['cvc', 'picc', 'dialysis'],
+  wound_class_mode: 'optional', ssi_surveillance: true, ssi_pd_calls: true, ssi_pd_attempts: 3, ssi_pd_sms: false, sig_ssi_postop: true, prophylaxis_window_min: 60,
 };
 
 export const ISO_TYPES = ['contact', 'contact_plus', 'droplet', 'airborne', 'protective'] as const;
