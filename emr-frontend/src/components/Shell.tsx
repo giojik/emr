@@ -7,7 +7,7 @@ import { initials, ROLE_KA } from '../lib/format';
 import { useModules } from '../lib/modules';
 
 /** roles — ვის ჩანს (ცარიელი — ყველა უფლებიანს); module — მხოლოდ ჩართული მოდულისას (0037) */
-const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
+const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting?: [string, string]; not?: Role[] }[] = [
   { to: '/reception', label: 'რეგისტრატურა', roles: ['admin', 'receptionist', 'manager', 'viewer'] },
   { to: '/patients', label: 'პაციენტები', roles: ['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'manager'] },
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
@@ -27,7 +27,8 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/cssd', label: 'სტერილიზაცია', module: 'cssd' },
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
   { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
-  { to: '/ipc', label: 'ინფექციის კონტროლი', roles: ['infection', 'infection_dept'], module: 'ipc' },
+  { to: '/ipc', label: 'ინფექციის კონტროლი', roles: ['infection', 'infection_dept', 'infection_view'], module: 'ipc' },
+  { to: '/ipc?tab=audits', label: 'IPC ჩეკლისტები', roles: ['doctor', 'nurse'], module: 'ipc', setting: ['ipc', 'audit_by_dept_head'], not: ['infection', 'infection_dept', 'infection_view'] },
   { to: '/antibiogram', label: 'ანტიბიოგრამა', roles: ['doctor', 'pharmacist', 'anesthesiologist', 'lab_doctor', 'lab_manager'], module: 'ipc' },
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
@@ -66,6 +67,7 @@ export default function Shell() {
   const mods = useModules();
   if (!user) return null;
   const on = (code?: string) => !code || !!mods.data?.find((m) => m.code === code)?.enabled;
+  const set = (x?: [string, string]) => !x || !!(mods.data?.find((m) => m.code === x[0])?.settings as Record<string, unknown> | undefined)?.[x[1]];
   return (
     <div className="app">
       <aside className="side">
@@ -74,7 +76,7 @@ export default function Shell() {
           <div className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 14 }}>ინოვა მედიკალი</strong><span className="small muted">ამბულატორია</span></div>
         </div>
         <nav className="nav" aria-label="მთავარი მენიუ">
-          {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module)).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
+          {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module) && set(n.setting) && !(n.not && can(user, ...n.not))).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
         </nav>
         <div className="stack" style={{ marginTop: 'auto', gap: 10 }}>
           <IncidentReportHost />

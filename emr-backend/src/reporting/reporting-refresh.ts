@@ -7,6 +7,7 @@ import { revenueCte } from '../finance/finance-reports';
 import { balanceSnapshot, finExtraFacts } from './reporting-refresh-fin';
 import { opsFacts } from './reporting-refresh-ops';
 import { qualityFacts } from './reporting-refresh-quality';
+import { ipcFacts } from '../ipc/ipc-facts';
 import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type RptSettings, TZ } from './reporting-common';
 
 /**
@@ -127,6 +128,7 @@ export class RptRefreshService {
     if (to >= today) out.stock_snapshot = await this.snapshot(trx, today, s);
     if (to >= today && (await finRules(this.rdb)).enabled) out.balance_snapshot = await balanceSnapshot(this.rdb, trx, today);   // 0063
     Object.assign(out, await qualityFacts(this.rdb, trx));   // 0066: მთელი ისტორია (მცირე მოცულობა), ყოველ გადათვლაზე
+    Object.assign(out, await ipcFacts(this.rdb, trx, from, to));   // 0072: ინფექციის კონტროლი (ფანჯარა)
     return out;
   }
 

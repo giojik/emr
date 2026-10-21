@@ -7,8 +7,9 @@ export const RPT_CONFIG: Role[] = ['admin', 'reports_all'];
 export const CATEGORY_KA: Record<string, string> = {
   flow: 'პაციენტების ნაკადი', beds: 'საწოლები', or: 'საოპერაციო', dx: 'ინსტრუმენტული კვლევები', lab: 'ლაბორატორია', stock: 'მარაგი', finance: 'შემოსავალი / ხარჯი',
   quality: 'ხარისხი და ინციდენტები',   // 0066
+  ipc: 'ინფექციის კონტროლი',   // 0072
 };
-export const CATEGORIES = ['flow', 'beds', 'or', 'dx', 'lab', 'stock', 'finance', 'quality'];
+export const CATEGORIES = ['flow', 'beds', 'or', 'dx', 'lab', 'stock', 'finance', 'quality', 'ipc'];
 export const STATUS_TONE: Record<string, string> = { green: 'var(--ok-ink)', yellow: 'var(--warn-ink)', red: 'var(--danger-ink)' };
 export const STATUS_KA: Record<string, string> = { green: 'სამიზნე შესრულებულია', yellow: 'გაფრთხილება', red: 'სამიზნე არ სრულდება' };
 export const DIR_KA: Record<string, string> = { up: 'უკეთესია მეტი ↑', down: 'უკეთესია ნაკლები ↓', none: 'მიმართულების გარეშე' };

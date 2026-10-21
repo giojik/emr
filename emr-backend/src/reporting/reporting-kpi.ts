@@ -54,7 +54,7 @@ export class RptKpiService {
   /** პერიოდის ჯამები ყველა ფაქტიდან — ერთი გასაღებით (flow_*, beds_*, …) */
   async totals(scope: RptScope, from: string, to: string): Promise<Totals> {
     const t: Record<string, number> = {};
-    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind] = await Promise.all([
+    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind, ipc, ipcd] = await Promise.all([
       sql<{ enc_type: string; visit_kind: string; encounters: number; cancelled: number; new_patients: number }>`
         SELECT f.enc_type, f.visit_kind, sum(f.encounters)::int AS encounters, sum(f.cancelled)::int AS cancelled, sum(f.new_patients)::int AS new_patients
           FROM rpt_fact_flow f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2`.execute(this.rdb),
@@ -98,6 +98,17 @@ export class RptKpiService {
         SELECT k, coalesce(sum(f.triage_hist[k]), 0)::int AS c FROM rpt_fact_quality f CROSS JOIN generate_series(1, 12) k
          WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1`.execute(this.rdb),
       this.indicators(),
+      // 0072: ინფექციის კონტროლი
+      sql<Record<string, string>>`
+        SELECT coalesce(sum(hai), 0)::text AS hai, coalesce(sum(clabsi), 0)::text AS clabsi, coalesce(sum(cauti), 0)::text AS cauti, coalesce(sum(vap), 0)::text AS vap,
+               coalesce(sum(ssi_ops), 0)::text AS ssi_ops, coalesce(sum(ssi), 0)::text AS ssi, coalesce(sum(mdro_hosp), 0)::text AS mdro_hosp, coalesce(sum(mdro_all), 0)::text AS mdro_all,
+               coalesce(sum(ddd), 0)::text AS ddd, coalesce(sum(ddd_access), 0)::text AS ddd_access, coalesce(sum(dot), 0)::text AS dot,
+               coalesce(sum(hh_opps), 0)::text AS hh_opps, coalesce(sum(hh_done), 0)::text AS hh_done, coalesce(sum(handrub_l), 0)::text AS handrub_l
+          FROM rpt_fact_ipc f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
+      sql<Record<string, string>>`
+        SELECT coalesce(sum(patient_days), 0)::text AS pd, coalesce(sum(central_line_days), 0)::text AS cl, coalesce(sum(urinary_days), 0)::text AS uc,
+               coalesce(sum(vent_days), 0)::text AS vent
+          FROM rpt_fact_ipc_daily f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
     ]);
     t.days = daysBetween(from, to);
     for (const k of ['enc_all', 'enc_out', 'enc_lab', 'enc_emg', 'enc_cancelled', 'new_patients']) t[k] = 0;
@@ -131,6 +142,8 @@ export class RptKpiService {
     }
     const qh = Array(12).fill(0); for (const h of qmHist.rows) qh[h.k - 1] = h.c;
     t.qm_triage_p50 = histPercentile(qh, 0.5) ?? NaN;
+    for (const [k, v] of Object.entries(ipc.rows[0] ?? {})) t[`ipc_${k}`] = n(v);
+    for (const [k, v] of Object.entries(ipcd.rows[0] ?? {})) t[`ipcd_${k}`] = n(v);
     return t;
   }
 
@@ -212,6 +225,17 @@ export class RptKpiService {
       case 'qm_triage_median_h': return t.qm_triage_p50 === undefined || Number.isNaN(t.qm_triage_p50) ? null : r1(t.qm_triage_p50 / 60);
       case 'qm_triage_on_time': return pct(t.qm_on_time ?? 0, t.qm_triaged ?? 0);
       case 'qm_capa_overdue': return snap?.qm_capa_overdue ?? null;
+      // 0072: ინფექციის კონტროლი
+      case 'ipc_hai_rate': return rate(t.ipc_hai ?? 0, t.ipcd_pd ?? 0, 1000);
+      case 'ipc_clabsi_rate': return rate(t.ipc_clabsi ?? 0, t.ipcd_cl ?? 0, 1000);
+      case 'ipc_cauti_rate': return rate(t.ipc_cauti ?? 0, t.ipcd_uc ?? 0, 1000);
+      case 'ipc_vap_rate': return rate(t.ipc_vap ?? 0, t.ipcd_vent ?? 0, 1000);
+      case 'ipc_ssi_pct': return pct(t.ipc_ssi ?? 0, t.ipc_ssi_ops ?? 0);
+      case 'ipc_mdro_rate': return rate(t.ipc_mdro_hosp ?? 0, t.ipcd_pd ?? 0, 1000);
+      case 'ipc_ddd_100': return rate(t.ipc_ddd ?? 0, t.ipcd_pd ?? 0, 100);
+      case 'ipc_access_pct': return pct(t.ipc_ddd_access ?? 0, t.ipc_ddd ?? 0);
+      case 'ipc_hh_pct': return pct(t.ipc_hh_done ?? 0, t.ipc_hh_opps ?? 0);
+      case 'ipc_handrub_l': return rate(t.ipc_handrub_l ?? 0, t.ipcd_pd ?? 0, 1000);
       default: return code.startsWith('qm_ind_') ? this.indicatorValue(code.slice(7), t, s) : null;
     }
   }
@@ -246,7 +270,7 @@ export class RptKpiService {
     let q = this.c.db.selectFrom('rpt_kpis').select(['code', 'category', 'name', 'unit', 'direction', 'definition', 'formula', 'source', 'finance', 'snapshot', 'drill', 'sort_order']);
     if (onlyActive) q = q.where('is_active', '=', true);
     const rows = await q.orderBy('sort_order').orderBy('code').execute();
-    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality));
+    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc));
   }
 
   /** დროის მწკრივი: grain = day / week / month (KPI ითვლება თითო ინტერვალზე) */

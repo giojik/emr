@@ -843,6 +843,19 @@ function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
             return <label key={x.id} className="row small"><input type="checkbox" checked={cur.includes(x.id)} onChange={() => upd('abg_exclude_services', cur.includes(x.id) ? cur.filter((y) => y !== x.id) : [...cur, x.id])} /> {x.name}</label>; })}
             {!abg.data?.services.length && <span className="small muted">მიკრობიოლოგიური ანალიზი ჯერ არ ყოფილა (ან მოდული გამორთულია)</span>}</div></div>
       </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ჩეკლისტები და ანგარიშები</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="ხელის ჰიგიენის სამიზნე, %" htmlFor="ipc-hh_target" hint="„ყურადღება“ — დაბალზე">{int('hh_target', 80, 0, 100)}</Field>
+        <Field label="მინ. შესაძლებლობა თვეში (განყოფილება)" htmlFor="ipc-hh_min_obs" hint="WHO — 200; 0 — გამორთული">{int('hh_min_obs', 200, 0, 1000)}</Field>
+        <Field label="ღია სიგნალი „ყურადღებაში“, დღე" htmlFor="ipc-signal_overdue_days">{int('signal_overdue_days', 3, 1, 30)}</Field>
+        <Field label="KPI-ები მენეჯერულ დაფაზე" htmlFor="ipc-dv">
+          <select id="ipc-dv" className="select" value={String(s.dashboard_visibility ?? 'report_users')} onChange={(e) => upd('dashboard_visibility', e.target.value)}>
+            <option value="report_users">დაფის ყველა მომხმარებელს</option><option value="ipc_only">მხოლოდ ინფექციის კონტროლს</option></select></Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 2' }}>
+          {chk('audit_by_dept_head', 'აუდიტს ავსებს განყოფილების ხელმძღვანელიც (ექიმი / ექთანი, თავის განყოფილებაში)')}
+          {chk('monthly_section', 'თვიურ მენეჯერულ ანგარიშში — სექცია „ინფექციის კონტროლი“')}
+        </div>
+      </div>
       <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>
   );

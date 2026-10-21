@@ -232,6 +232,9 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       abg_dedup: (v) => oneOf(v, ['first_patient', 'all']), abg_min_n: (v) => int(v, 1, 100),
       abg_exclude_services: (v) => Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)) && new Set(v).size === v.length,
       material_source: (v) => oneOf(v, ['issue', 'consumption']),
+      // 0072: აუდიტები, ანგარიშები
+      audit_by_dept_head: bool, hh_target: (v) => int(v, 0, 100), hh_min_obs: (v) => int(v, 0, 1000), signal_overdue_days: (v) => int(v, 1, 30),
+      dashboard_visibility: (v) => oneOf(v, ['report_users', 'ipc_only']), monthly_section: bool,
     },
     extra: async (s, db) => {
       const c = s.hai_criteria_set as string | undefined;

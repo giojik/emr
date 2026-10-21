@@ -59,7 +59,15 @@ export async function rptModule(db: Database) {
 
 /** ხედვის არე: all — მთელი კლინიკა; depts — დაშვებული განყოფილებები; finance — ფინანსური KPI-ები ჩანს;
  *  quality (0066) — ხარისხის KPI-ები / „ყურადღება“ / თვიური სექცია ჩანს (მოდული ჩართულია და dashboard_visibility-ის წესი) */
-export interface RptScope { all: boolean; depts: string[]; finance: boolean; phi: boolean; quality?: boolean }
+export interface RptScope { all: boolean; depts: string[]; finance: boolean; phi: boolean; quality?: boolean; ipc?: boolean }
+/** 0072: ინფექციის კონტროლის KPI / „ყურადღება“ / თვიური სექცია (მოდული ჩართულია და dashboard_visibility-ის წესი) */
+export const IPC_REPORT_CAPS: Role[] = ['infection', 'infection_dept', 'infection_view'];
+export async function ipcVisibility(db: Database, u: AuthUser) {
+  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'ipc').executeTakeFirst();
+  if (!m?.enabled) return false;
+  const st = (m.settings ?? {}) as { dashboard_visibility?: string };
+  return st.dashboard_visibility === 'ipc_only' ? has(u, ...IPC_REPORT_CAPS) : true;
+}
 /** 0066: ხარისხის უფლებები (dashboard_visibility = quality_only) */
 export const QM_REPORT_CAPS: Role[] = ['quality', 'quality_dept', 'quality_view'];
 export async function qmVisibility(db: Database, u: AuthUser) {
@@ -92,10 +100,11 @@ export class RptCommon {
     const fr = await finRules(this.db);
     const phi = has(u, ...RPT_PHI);
     const quality = await qmVisibility(this.db, u);
-    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.enabled && has(u, ...FIN_FULL, 'reports_all'), phi, quality };
+    const ipc = await ipcVisibility(this.db, u);
+    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.enabled && has(u, ...FIN_FULL, 'reports_all'), phi, quality, ipc };
     const depts = await this.userDepts(u.id);
     if (!depts.length) throw new ForbiddenException({ code: 'NO_SCOPE', message: 'განყოფილება არ გაქვთ მინიჭებული — მენეჯერული დაფა ვერ გამოჩნდება (ადმინისტრირება → რეპორტინგი → ხედვის არე)' });
-    return { all: false, depts, finance: fr.enabled && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality };
+    return { all: false, depts, finance: fr.enabled && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality, ipc };
   }
   /** მოთხოვნილი განყოფილება ხედვის არეშია? (null — მთელი არე) */
   narrow(scope: RptScope, dept?: string | null): RptScope {

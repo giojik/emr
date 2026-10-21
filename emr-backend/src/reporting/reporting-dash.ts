@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { has } from '../auth/roles';
 import { qmAttentionCounts } from '../quality/quality-metrics';
+import { ipcAttentionCounts } from '../ipc/ipc-facts';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
@@ -259,6 +260,19 @@ export class ReportingDashService {
         detail: 'მიმოხილვა / RCA ვადაში არ დასრულდა', ...(qm && { link: '/quality?tab=registry' }) });
       if (Q.capa_overdue) items.push({ kind: 'qm_capa_overdue', severity: 'yellow', title: 'მაკორექტირებელი ქმედება (CAPA) ვადაგადაცილებულია', value: Q.capa_overdue,
         detail: 'ღია / შესრულებაში, ვადა გავიდა', ...(qm && { link: '/quality?tab=capa' }) });
+    }
+    // 0072: ინფექციის კონტროლი — რაოდენობები (ბმული — მხოლოდ IPC-ს)
+    if (scope.ipc) {
+      const I = await ipcAttentionCounts(this.c.db, scope.all ? null : scope.depts);
+      const ipc = has(u, 'infection', 'infection_dept');
+      if (I?.mdro_no_isolation) items.push({ kind: 'ipc_mdro_no_isolation', severity: 'red', title: 'MDRO ფლაგი — იზოლაციის გარეშე', value: I.mdro_no_isolation,
+        detail: 'სტაციონარში მყოფი პაციენტი აქტიური MDRO ფლაგით, აქტიური იზოლაცია არ აქვს', ...(ipc && { link: '/ipc?tab=patients' }) });
+      if (I?.abx_timeout) items.push({ kind: 'ipc_abx_timeout', severity: 'yellow', title: 'ანტიბიოტიკის გადახედვა (time-out) ვადაგადაცილებულია', value: I.abx_timeout,
+        detail: 'აქტიური დანიშნულება, გადახედვის ვადა გავიდა', ...(ipc && { link: '/ipc?tab=abx' }) });
+      if (I?.signals_old) items.push({ kind: 'ipc_signals_old', severity: 'yellow', title: 'IPC სიგნალი დიდხანს ღიაა', value: I.signals_old,
+        detail: `ღია ${I.signal_days} დღეზე მეტი`, ...(ipc && { link: '/ipc?tab=signals' }) });
+      if (I && I.hh_pct !== null && I.hh_pct < I.hh_target) items.push({ kind: 'ipc_hh_low', severity: 'yellow', title: 'ხელის ჰიგიენა სამიზნეზე დაბალია', value: I.hh_pct, unit: 'pct',
+        detail: `ამ თვეში ${I.hh_pct}% (${I.hh_opps} შესაძლებლობა), სამიზნე ${I.hh_target}%`, ...(ipc && { link: '/ipc?tab=audits' }) });
     }
     items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'red' ? -1 : 1));
     return { from, to, stock_computed_at: st.computed_at, items };

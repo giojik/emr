@@ -1637,6 +1637,55 @@ export interface IpcAntibiograms {
   withdrawn_by: string | null;
 }
 
+export interface IpcAuditAnswers {
+  answer: string;
+  audit_id: string;
+  comment: string | null;
+  item_id: string;
+}
+
+export interface IpcAuditItems {
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  section: string | null;
+  sort_order: Generated<number>;
+  template_id: string;
+  text: string;
+}
+
+export interface IpcAudits {
+  audited_at: Generated<Timestamp>;
+  auditor_id: string;
+  completed_at: Timestamp | null;
+  compliance: Numeric | null;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  done_n: number | null;
+  id: Generated<string>;
+  location: string | null;
+  na_n: number | null;
+  no_n: number | null;
+  note: string | null;
+  opps_n: number | null;
+  status: Generated<string>;
+  template_id: string;
+  updated_at: Generated<Timestamp>;
+  yes_n: number | null;
+}
+
+export interface IpcAuditTemplates {
+  code: string;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  sort_order: Generated<number>;
+  target: Numeric | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface IpcCriteriaItems {
   grp: string | null;
   hai_type: string;
@@ -1724,6 +1773,17 @@ export interface IpcHaiTypes {
   name: string;
   short_name: string;
   sort_order: Generated<number>;
+}
+
+export interface IpcHhObservations {
+  action: string;
+  audit_id: string;
+  comment: string | null;
+  created_at: Generated<Timestamp>;
+  gloves: Generated<boolean>;
+  id: Generated<string>;
+  moments: number[];
+  profession: string;
 }
 
 export interface IpcIsolations {
@@ -3950,6 +4010,26 @@ export interface RptFactHourly {
   sub: Generated<string>;
 }
 
+export interface RptFactIpc {
+  cauti: Generated<number>;
+  clabsi: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  day: string;
+  ddd: Generated<Numeric>;
+  ddd_access: Generated<Numeric>;
+  department_id: string | null;
+  dot: Generated<number>;
+  hai: Generated<number>;
+  handrub_l: Generated<Numeric>;
+  hh_done: Generated<number>;
+  hh_opps: Generated<number>;
+  mdro_all: Generated<number>;
+  mdro_hosp: Generated<number>;
+  ssi: Generated<number>;
+  ssi_ops: Generated<number>;
+  vap: Generated<number>;
+}
+
 export interface RptFactIpcDaily {
   central_line_days: Generated<number>;
   computed_at: Generated<Timestamp>;
@@ -4911,12 +4991,17 @@ export interface DB {
   invoices: Invoices;
   ipc_abx_reference: IpcAbxReference;
   ipc_antibiograms: IpcAntibiograms;
+  ipc_audit_answers: IpcAuditAnswers;
+  ipc_audit_items: IpcAuditItems;
+  ipc_audit_templates: IpcAuditTemplates;
+  ipc_audits: IpcAudits;
   ipc_criteria_items: IpcCriteriaItems;
   ipc_criteria_sets: IpcCriteriaSets;
   ipc_flag_detections: IpcFlagDetections;
   ipc_hai_cases: IpcHaiCases;
   ipc_hai_events: IpcHaiEvents;
   ipc_hai_types: IpcHaiTypes;
+  ipc_hh_observations: IpcHhObservations;
   ipc_isolation_types: IpcIsolationTypes;
   ipc_isolations: IpcIsolations;
   ipc_material_groups: IpcMaterialGroups;
@@ -5065,6 +5150,7 @@ export interface DB {
   rpt_fact_finance: RptFactFinance;
   rpt_fact_flow: RptFactFlow;
   rpt_fact_hourly: RptFactHourly;
+  rpt_fact_ipc: RptFactIpc;
   rpt_fact_ipc_daily: RptFactIpcDaily;
   rpt_fact_or: RptFactOr;
   rpt_fact_or_room: RptFactOrRoom;

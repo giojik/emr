@@ -25,6 +25,8 @@ export interface IpcRules {
   abx_approver: 'department' | 'ipc' | 'any'; abx_timeout_hours: number; aware_access_target: number;
   // 0071: ანტიბიოგრამა, მასალები
   abg_dedup: 'first_patient' | 'all'; abg_min_n: number; abg_exclude_services: string[]; material_source: 'issue' | 'consumption';
+  // 0072: აუდიტები, ანგარიშები
+  audit_by_dept_head: boolean; hh_target: number; hh_min_obs: number; signal_overdue_days: number; dashboard_visibility: 'report_users' | 'ipc_only'; monthly_section: boolean;
 }
 export const IPC_DEFAULTS: IpcRules = {
   isolation_remove_mdro: 'ipc', ward_conflict: 'warn', wristband_symbol: false, door_sign: true, mdro_flag_mode: 'auto', mdro_clear_negatives: 3,
@@ -37,7 +39,10 @@ export const IPC_DEFAULTS: IpcRules = {
   abx_atc_prefixes: ['J01'], abx_indication_required: true, abx_restrict_mode: 'approve', abx_restrict_reserve: true, abx_approver: 'any', abx_timeout_hours: 72,
   aware_access_target: 60,
   abg_dedup: 'first_patient', abg_min_n: 30, abg_exclude_services: [], material_source: 'issue',
+  audit_by_dept_head: false, hh_target: 80, hh_min_obs: 200, signal_overdue_days: 3, dashboard_visibility: 'report_users', monthly_section: true,
 };
+/** 0072: აგრეგატები (ანგარიშები / KPI) — infection_view-იც */
+export const IPC_AGG: Role[] = ['infection', 'infection_dept', 'infection_view'];
 
 /**
  * 0070: ანტიბიოტიკების პოლიტიკა (დანიშნულებები / MAR / worker). მოდული გამორთულია → 0042-ის ქცევა:
@@ -196,6 +201,12 @@ export class IpcCommon {
       return { full: false, depts };
     }
     throw new ForbiddenException('ინფექციის კონტროლის სიაზე წვდომა არ გაქვთ');
+  }
+
+  /** 0072: აგრეგატების ხედვა — infection / infection_view: მთელი კლინიკა; infection_dept: თავისი განყოფილებები */
+  async aggScope(u: AuthUser): Promise<{ full: true } | { full: false; depts: string[] }> {
+    if (has(u, 'infection', 'infection_view')) return { full: true };
+    return this.scope(u);
   }
 
   async usersWith(caps: Role[], ex: Ex = this.db) {

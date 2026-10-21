@@ -13,10 +13,12 @@ import SsiTab from './Ssi';
 import AbxTab from './Abx';
 import AbgTab from './Abg';
 import MaterialsTab from './Materials';
+import AuditsTab from './Audits';
+import ReportsTab from './Reports';
 import { FLAG_ST, IPC_ANY, IPC_FULL, ISO_KA, ONSET_KA, SOURCE_KA, useIpcCatalog, type FlagRow, type IpcPatientRow } from './types';
 import type { PatientListItem } from '../../api/types';
 
-type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'abx' | 'abg' | 'materials' | 'rates' | 'catalog';
+type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'abx' | 'abg' | 'materials' | 'audits' | 'rates' | 'reports' | 'catalog';
 
 /** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები, ცნობარები; 0068: სიგნალები, HAI შემთხვევები, device-days მაჩვენებლები */
 export default function Ipc() {
@@ -25,26 +27,31 @@ export default function Ipc() {
   const mods = useModules(); const enabled = useModuleEnabled('ipc');
   const ipcSet = mods.data?.find((m) => m.code === 'ipc')?.settings as { ssi_surveillance?: boolean } | undefined;
   const full = can(user, ...IPC_FULL);
+  const ipcAny = can(user, ...IPC_ANY);
+  const viewOnly = !ipcAny && can(user, 'infection_view');
+  const headAudits = !ipcAny && !!(ipcSet as { audit_by_dept_head?: boolean } | undefined)?.audit_by_dept_head && can(user, 'doctor', 'nurse');
   const pending = useQuery({ queryKey: ['ipc-flags', 'pending'], queryFn: () => api<FlagRow[]>('/ipc/flags', { query: { review: 'pending' } }), enabled: enabled && full, refetchInterval: 60_000 });
-  const openSig = useQuery({ queryKey: ['ipc-signals', 'open', ''], queryFn: () => api<unknown[]>('/ipc/signals', { query: { status: 'open', kind: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
-  const abxPending = useQuery({ queryKey: ['ipc-abx-orders', 'pending', ''], queryFn: () => api<unknown[]>('/ipc/abx/orders', { query: { view: 'pending', q: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
+  const openSig = useQuery({ queryKey: ['ipc-signals', 'open', ''], queryFn: () => api<unknown[]>('/ipc/signals', { query: { status: 'open', kind: '' } }), enabled: enabled && ipcAny, refetchInterval: 60_000 });
+  const abxPending = useQuery({ queryKey: ['ipc-abx-orders', 'pending', ''], queryFn: () => api<unknown[]>('/ipc/abx/orders', { query: { view: 'pending', q: '' } }), enabled: enabled && ipcAny, refetchInterval: 60_000 });
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „ინფექციის კონტროლი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
-  if (!can(user, ...IPC_ANY)) return <div className="content"><div className="alert warn">ინფექციის კონტროლის გვერდზე წვდომა არ გაქვთ.</div></div>;
+  if (!ipcAny && !viewOnly && !headAudits) return <div className="content"><div className="alert warn">ინფექციის კონტროლის გვერდზე წვდომა არ გაქვთ.</div></div>;
   const tabs: [Tab, string, boolean, number][] = [
-    ['patients', 'პაციენტები', true, 0],
-    ['flags', 'MDRO ფლაგები', true, pending.data?.length ?? 0],
-    ['signals', 'სიგნალები', true, openSig.data?.length ?? 0],
-    ['hai', 'HAI შემთხვევები', true, 0],
-    ['ssi', 'SSI', !!ipcSet?.ssi_surveillance, 0],
-    ['abx', 'ანტიბიოტიკები', true, abxPending.data?.length ?? 0],
-    ['abg', 'ანტიბიოგრამა', true, 0],
-    ['materials', 'მასალები', true, 0],
-    ['rates', 'მაჩვენებლები', true, 0],
+    ['patients', 'პაციენტები', ipcAny, 0],
+    ['flags', 'MDRO ფლაგები', ipcAny, pending.data?.length ?? 0],
+    ['signals', 'სიგნალები', ipcAny, openSig.data?.length ?? 0],
+    ['hai', 'HAI შემთხვევები', ipcAny, 0],
+    ['ssi', 'SSI', ipcAny && !!ipcSet?.ssi_surveillance, 0],
+    ['abx', 'ანტიბიოტიკები', ipcAny, abxPending.data?.length ?? 0],
+    ['abg', 'ანტიბიოგრამა', ipcAny, 0],
+    ['materials', 'მასალები', ipcAny, 0],
+    ['audits', 'ჩეკლისტები', ipcAny || headAudits, 0],
+    ['rates', 'მაჩვენებლები', ipcAny, 0],
+    ['reports', 'ანგარიშები', ipcAny || viewOnly, 0],
     ['catalog', 'ცნობარები', full, 0],
   ];
   const allowed = tabs.filter((t) => t[2]);
-  const cur = (allowed.find((t) => t[0] === sp.get('tab'))?.[0] ?? 'patients') as Tab;
+  const cur = (allowed.find((t) => t[0] === sp.get('tab'))?.[0] ?? allowed[0][0]) as Tab;
   return (
     <>
       <header className="topbar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingBottom: 0 }}>
@@ -62,7 +69,9 @@ export default function Ipc() {
       {cur === 'abx' && <AbxTab />}
       {cur === 'abg' && <AbgTab />}
       {cur === 'materials' && <MaterialsTab />}
+      {cur === 'audits' && <AuditsTab />}
       {cur === 'rates' && <DeviceDays />}
+      {cur === 'reports' && <ReportsTab />}
       {cur === 'catalog' && <IpcCatalogTab />}
     </>
   );
