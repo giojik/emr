@@ -1,5 +1,7 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Module, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { IpcModule } from '../ipc/ipc.module';
+/** 0068: + ნახველი, BAL, ჭრილობა, ლიქვორი, კათეტერის წვერი, ქსოვილი, პუნქტატი (ინფექციის კონტროლი — სიგნალები / HAI) */
+const SPECIMEN_TYPES = ['blood', 'serum', 'plasma', 'urine', 'stool', 'swab', 'other', 'sputum', 'bal', 'wound', 'csf', 'catheter_tip', 'tissue', 'fluid'];
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { Request, Response } from 'express';
@@ -69,7 +71,7 @@ class ServiceCreateDto {
   @IsString() @Length(2, 50) @Matches(/^[A-Za-z0-9_]+$/, { message: 'კოდი: ლათინური ასოები, ციფრები, _' }) code: string;
   @IsString() @Length(2, 300) name: string;
   @IsString() @Length(2, 100) group_name: string;
-  @IsOptional() @IsIn(['blood', 'serum', 'plasma', 'urine', 'stool', 'swab', 'other']) specimen_type?: string;
+  @IsOptional() @IsIn(SPECIMEN_TYPES) specimen_type?: string;
   @IsOptional() @IsString() @MaxLength(60) container?: string;
   @IsOptional() @IsString() @MaxLength(10) modality?: string;
   @IsOptional() @IsString() @MaxLength(100) body_part?: string;
@@ -81,7 +83,7 @@ class ServiceCreateDto {
 class ServiceUpdateDto {
   @IsOptional() @IsString() @Length(2, 300) name?: string;
   @IsOptional() @IsString() @Length(2, 100) group_name?: string;
-  @IsOptional() @IsIn(['blood', 'serum', 'plasma', 'urine', 'stool', 'swab', 'other']) specimen_type?: string;
+  @IsOptional() @IsIn(SPECIMEN_TYPES) specimen_type?: string;
   @IsOptional() @IsString() @MaxLength(60) container?: string | null;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) base_price?: number;
   @IsOptional() @IsIn(['internal', 'external']) performed_by?: 'internal' | 'external';

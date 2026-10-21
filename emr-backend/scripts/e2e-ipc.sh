@@ -45,8 +45,8 @@ O_IPC=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="ipc")|{enabled, sett
 O_IPD=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|{enabled, settings}')
 chk "ნაგულისხმევი: MDRO-ს მოხსნა ipc, კონფლიქტი warn, ფლაგი auto, 3 სკრინინგი, მე-3 დღე, სამაჯური — არა, კარის ნიშანი — კი" \
   "$(echo "$O_IPC" | jq -r '.settings|"\(.isolation_remove_mdro):\(.ward_conflict):\(.mdro_flag_mode):\(.mdro_clear_negatives):\(.hospital_onset_day):\(.wristband_symbol):\(.door_sign)"')" "ipc:warn:auto:3:3:false:true"
-chk "ვალიდაცია: უცნობი გასაღები / ward_conflict / onset 1 / სკრინინგი 11 → 400" \
-  "$(code PUT /modules/ipc "$ADM" -d '{"settings":{"x":1},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"ward_conflict":"x"},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"hospital_onset_day":1},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"mdro_clear_negatives":11},"reason":"ტესტ-E2E"}')" "400:400:400:400"
+chk "ვალიდაცია: უცნობი გასაღები / ward_conflict / onset 0 / სკრინინგი 11 → 400" \
+  "$(code PUT /modules/ipc "$ADM" -d '{"settings":{"x":1},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"ward_conflict":"x"},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"hospital_onset_day":0},"reason":"ტესტ-E2E"}'):$(code PUT /modules/ipc "$ADM" -d '{"settings":{"mdro_clear_negatives":11},"reason":"ტესტ-E2E"}')" "400:400:400:400"
 ipcset '{"isolation_remove_mdro":"ipc","ward_conflict":"warn","wristband_symbol":false,"door_sign":true,"mdro_flag_mode":"auto","mdro_clear_negatives":3,"mdro_suggest_isolation":true,"hospital_onset_day":3,"alert_new_flag":true,"alert_sms":false,"alert_email":false}'
 api PUT /modules/inpatient "$ADM" -d '{"enabled":true,"settings":{"bed_assign_mode":"two_step","sex_rule":"warn","cleaning_required":true},"reason":"ტესტ-E2E"}' >/dev/null
 chk "39 უფლება (0067: + infection, infection_dept, infection_view)" "$(api GET /roles/capabilities "$ADM" | jq length)" "39"

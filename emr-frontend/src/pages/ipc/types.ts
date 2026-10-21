@@ -59,3 +59,53 @@ export interface FlagDetail extends Omit<FlagRow, 'stay_id' | 'adm_no' | 'depart
   isolations_ended?: number;
 }
 export const mdroShort = (code: string) => code.toUpperCase();
+
+// ================================================================ 0068: სიგნალები, HAI, device-days
+export const SIGNAL_KA: Record<string, string> = { blood_culture: 'ჰემოკულტურა', hospital_culture: 'ჰოსპიტალური კულტურა', fever_device: 'ცხელება (მოწყობილობა / ოპერაცია)',
+  antibiotic_start: 'ანტიბიოტიკის დაწყება', cluster: 'კლასტერი' };
+export const SIGNAL_ST: Record<string, [string, string]> = { open: ['danger', 'ღია'], watch: ['warn', 'დაკვირვება'], dismissed: ['', 'უარყოფილი'], case: ['info', 'შემთხვევა'] };
+export const HAI_ST: Record<string, [string, string]> = { suspected: ['warn', 'ეჭვი'], review: ['info', 'განხილვაში'], confirmed: ['danger', 'დადასტურებული'], rejected: ['', 'უარყოფილი'] };
+export const ATTR_KA: Record<string, string> = { current: 'განყოფილება ინფექციის დღეს', transfer: 'წინა განყოფილება (გადაყვანიდან < N დღე)', readmission: 'წინა ჰოსპიტალიზაცია (ხელახალი)', manual: 'ხელით' };
+export const SSI_KA: Record<string, string> = { superficial: 'ზედაპირული', deep: 'ღრმა', organ: 'ორგანო / სივრცე' };
+export const BSI_SRC_KA: Record<string, string> = { catheter: 'კათეტერი (CRI)', secondary: 'მეორადი (სხვა ადგილიდან)', unknown: 'უცნობი' };
+export const OUTCOME_KA: Record<string, string> = { ongoing: 'მიმდინარე', recovered: 'გამოჯანმრთელდა', transferred: 'გადაიყვანეს', died: 'გარდაიცვალა' };
+export const CONTRIB_KA: Record<string, string> = { yes: 'კი', no: 'არა', unknown: 'უცნობია' };
+export const DEVICE_KA: Record<string, string> = { central_line: 'ცენტრალური ხაზი', urinary: 'შარდის კათეტერი', ventilator: 'ინვაზიური ვენტილაცია' };
+/** სიგნალიდან შემთხვევის ტიპის შეთავაზება */
+export const typeForSignal = (kind: string, specimen?: string | null) => kind === 'blood_culture' ? 'bsi'
+  : kind === 'hospital_culture' ? (specimen === 'urine' ? 'uti' : specimen && ['sputum', 'bal'].includes(specimen) ? 'pn' : specimen === 'wound' ? 'ssi' : specimen === 'stool' ? 'cdi' : 'other') : 'other';
+
+export interface SignalRow {
+  id: string; kind: string; kind_ka: string; patient_id: string | null; encounter_id: string | null; department_id: string | null; department: string | null; summary: string;
+  data: Record<string, unknown>; event_at: string; detected_at: string; status: string; watch_until: string | null; dismiss_reason: string | null; case_id: string | null; case_no: string | null;
+  first_name: string | null; last_name: string | null; personal_number: string | null; adm_no: string | null; handled_by_name: string | null;
+}
+export interface HaiType { code: string; name: string; short_name: string; device_kind: string | null; device_name: string | null; is_active: boolean; sort_order: number }
+export interface HaiCatalog { types: HaiType[]; sets: { id: string; code: string; version: string; name: string; note: string | null; is_active: boolean; active_for_clinic: boolean }[];
+  items: { id: string; set_id: string; hai_type: string; grp: string | null; text: string; required: boolean; sort_order: number; is_active: boolean }[] }
+export const useHaiCatalog = (enabled = true) => useQuery({ queryKey: ['ipc-hai-catalog'], queryFn: () => api<HaiCatalog>('/ipc/hai-catalog'), staleTime: 5 * 60_000, enabled });
+export interface HaiContext {
+  encounter_id: string | null; adm_no: string | null; admitted_at: string | null; onset_day: number | null; department_id: string | null; department: string | null;
+  attribution: string; readmission: boolean; previous_adm_no: string | null; device_kind: string | null; device_name: string | null; device_days: number | null; device_assoc: boolean;
+  device_detail: string | null; warnings: { code: string; message: string }[];
+}
+export interface HaiRow {
+  id: string; case_no: string; patient_id: string; hai_type: string; short_name: string; device_name: string | null; ssi_depth: string | null; status: string; status_ka: string;
+  onset_date: string; onset_day: number | null; department_id: string | null; department: string | null; attribution: string; readmission: boolean; device_assoc: boolean;
+  device_days: number | null; first_name: string; last_name: string; personal_number: string | null; adm_no: string | null; organisms: string[];
+}
+export interface HaiDetail extends Omit<HaiRow, 'organisms'> {
+  type_name: string; encounter_id: string | null; ssi_depth: string | null; device_kind: string | null; device_override: boolean; device_note: string | null; attribution_note: string | null;
+  criteria_set_id: string | null; criteria_met: string[]; organism_ids: string[]; order_item_ids: string[]; bsi_source: string | null; description: string | null; outcome: string | null;
+  hai_contributed: string | null; birth_date: string; gender: string; admitted_at: string | null; stay_status: string | null; criteria_set: string | null; criteria_version: string | null;
+  created_by_name: string | null; confirmed_by_name: string | null; confirmed_at: string | null; rejected_reason: string | null; created_at: string;
+  criteria: { id: string; grp: string | null; text: string; required: boolean }[]; organisms: { id: string; name: string; code: string }[];
+  signals: { id: string; kind: string; summary: string; event_at: string }[];
+  events: { id: number; at: string; kind: string; text: string | null; data: Record<string, unknown> | null; user_name: string | null }[];
+  cultures: { id: string; service: string; specimen_type: string | null; collected_at: string; organisms: { id: string; name: string }[] }[];
+  incidents: { inc_no: string; status: string; reported_at: string }[];
+  context: HaiContext | null; can: { edit: boolean; decide: boolean; quality: boolean };
+}
+export interface RateRow { department_id: string; department: string; patient_days: number; cl: number; uc: number; vent: number; hai: number; clabsi: number; cauti: number; vap: number;
+  dur_cl: number | null; dur_uc: number | null; dur_vent: number | null; clabsi_rate: number | null; cauti_rate: number | null; vap_rate: number | null; hai_rate: number | null }
+export interface Rates { from: string; to: string; basis: string; central_line_kinds: string[]; computed_at: string | null; rows: RateRow[]; total: Omit<RateRow, 'department_id' | 'department'> }

@@ -824,7 +824,7 @@ export class IcuService {
       .orderBy('window_to', 'desc').limit(2).execute();
     const lines = await this.db.selectFrom('lines_drains').select(['kind', 'site', 'inserted_at']).where('encounter_id', '=', encounterId).where('removed_at', 'is', null).where('voided_at', 'is', null).execute();
     const abg = (await this.abgList(c.patient_id, encounterId, from, new Date(now.getTime() + 1), s)).pop();
-    const LK: Record<string, string> = { pvc: 'პერიფ. ვენა', cvc: 'ცენტრ. ვენა', picc: 'PICC', arterial: 'არტერიული', urinary: 'შარდის კათეტერი', ng_tube: 'NG ზონდი', drain: 'დრენაჟი', trach: 'ტრაქეოსტომა', other: 'სხვა' };
+    const LK: Record<string, string> = { pvc: 'პერიფ. ვენა', cvc: 'ცენტრ. ვენა', picc: 'PICC', dialysis: 'დიალიზის კათ.', arterial: 'არტერიული', urinary: 'შარდის კათეტერი', ng_tube: 'NG ზონდი', drain: 'დრენაჟი', trach: 'ტრაქეოსტომა', other: 'სხვა' };
     const a = vent ? `${vent.airway === 'trach' ? 'ტრაქეოსტომა' : vent.airway === 'ett' ? `ენდოტრაქეული მილი${vent.ett_size ? ` №${Number(vent.ett_size)}` : ''}${vent.ett_depth_cm ? `, ${Number(vent.ett_depth_cm)} სმ` : ''}` : 'თავისუფალი (NIV / HFNC)'}` : 'თავისუფალი';
     const b = [vent ? `${VENT_KA[vent.kind]} ${fmt(vent.started_at)}-დან${vs ? ` · ${vs.mode}${vs.fio2 ? `, FiO₂ ${vs.fio2}%` : ''}${vs.peep ? `, PEEP ${Number(vs.peep)}` : ''}${vs.vt_ml ? `, Vt ${vs.vt_ml}` : ''}${vs.rate_set ? `, f ${vs.rate_set}` : ''}${vs.ppeak ? `, Ppeak ${vs.ppeak}` : ''}` : ''}` : 'სპონტანური სუნთქვა',
       v?.spo2 ? `SpO₂ ${v.spo2}%` : '', v?.respiratory_rate ? `სუნთქვა ${v.respiratory_rate}/წთ` : '', v?.etco2 ? `EtCO₂ ${v.etco2}` : '',

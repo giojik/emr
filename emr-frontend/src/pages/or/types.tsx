@@ -63,7 +63,7 @@ export const FLUID_KA: Record<string, string> = { iv: 'ინფუზია (�
   drain: 'დრენაჟი', other_out: 'სხვა (გამოყოფა)' };
 export const COUNT_PHASE_KA: Record<string, string> = { initial: 'დაწყებისას', pre_closure: 'დახურვამდე', final: 'ბოლოს' };
 export const LINE_KA: Record<string, string> = { drain: 'დრენაჟი', urinary: 'შარდის კათეტერი', ng_tube: 'ნაზოგასტრული ზონდი', cvc: 'ცენტრალური ვენა', arterial: 'არტერიული ხაზი', pvc: 'პერიფერიული ვენა',
-  picc: 'PICC', trach: 'ტრაქეოსტომა', other: 'სხვა' };
+  picc: 'PICC', dialysis: 'დიალიზის კათეტერი', trach: 'ტრაქეოსტომა', other: 'სხვა' };
 export const PACK_ST: Record<string, [string, string]> = { sterile: ['ok', 'სტერილური'], issued: ['info', 'გაცემული'], used: ['', 'გამოყენებული'], packed: ['warn', 'შეფუთული'],
   quarantine: ['warn', 'ქარანტინი'], failed: ['danger', 'ჩავარდა'], expired: ['danger', 'ვადაგასული'], recalled: ['danger', 'გაწვეული'], reprocess: ['warn', 'ხელახალი დამუშავება'] };
 

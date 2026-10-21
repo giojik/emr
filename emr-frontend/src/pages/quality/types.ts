@@ -13,7 +13,7 @@ export type IdentityMode = 'open' | 'confidential' | 'anonymous';
 export type Harm = 'none' | 'mild' | 'moderate' | 'severe' | 'death';
 export type EventType = 'harm' | 'no_harm' | 'near_miss' | 'hazard';
 export type Affected = 'patient' | 'staff' | 'visitor' | 'none';
-export type SourceType = 'encounter' | 'stay' | 'med_order' | 'mar_entry' | 'or_case' | 'dx_order_item' | 'lab_specimen' | 'asset' | 'dx_device';
+export type SourceType = 'encounter' | 'stay' | 'med_order' | 'mar_entry' | 'or_case' | 'dx_order_item' | 'lab_specimen' | 'asset' | 'dx_device' | 'hai_case';
 export type Status = 'submitted' | 'rejected' | 'investigation' | 'analysis' | 'capa' | 'closed';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
 

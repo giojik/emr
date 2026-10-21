@@ -56,6 +56,9 @@ export class QmSources {
         return ex.selectFrom('assets as src')
           .select([sql<string>`'ინვენტარი ' || src.inv_no || ' · ' || src.name`.as('label'), sql<string | null>`NULL`.as('at'), sql<string | null>`NULL::uuid`.as('patient_id'),
             sql<string | null>`NULL::uuid`.as('encounter_id'), 'src.department_id', 'src.id']);
+      case 'hai_case':   // 0068: HAI შემთხვევა (ინფექციის კონტროლი → „ხარისხს გადაცემა“)
+        return ex.selectFrom('ipc_hai_cases as src').innerJoin('ipc_hai_types as t', 't.code', 'src.hai_type')
+          .select([sql<string>`'HAI ' || src.case_no || ' · ' || t.short_name`.as('label'), sql<string>`src.onset_date::text`.as('at'), 'src.patient_id', 'src.encounter_id', 'src.department_id', 'src.id']);
       case 'dx_device':
         return ex.selectFrom('dx_devices as src')
           .select([sql<string>`'აპარატი: ' || src.name`.as('label'), sql<string | null>`NULL`.as('at'), sql<string | null>`NULL::uuid`.as('patient_id'),

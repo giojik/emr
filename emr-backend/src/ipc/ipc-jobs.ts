@@ -2,16 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { IPC_FULL, IpcCommon, ipcRules } from './ipc-common';
 import { IpcMdroService } from './ipc-mdro';
+import { IpcDeviceDaysService } from './ipc-device-days';
+import { IpcSignalsService } from './ipc-signals';
 
 /**
  * worker (ყოველ 5 წუთში, 0067):
  *  • მიკრობიოლოგიის საბოლოო პასუხები (ბოლო 30 დღე), რომლებიც MDRO-ს წესებით ჯერ არ შემოწმდა (მაგ. API-ს შეცდომა) → შემოწმება;
  *  • ფლაგის ვადა (ipc_mdro_types.expiry_days) ამოიწურა → მოიხსნა („ვადა ამოიწურა“), ინფექციის კონტროლს — შეტყობინება.
+ * 0068: სიგნალები (signals.scan — 15 წთ), device-days (deviceDays.tick — საათში ერთხელ) — worker.ts-იდან.
  */
 @Injectable()
 export class IpcJobsService {
   private readonly log = new Logger('IPC-jobs');
-  constructor(private readonly c: IpcCommon, private readonly mdro: IpcMdroService) {}
+  constructor(private readonly c: IpcCommon, private readonly mdro: IpcMdroService, readonly signals: IpcSignalsService, readonly deviceDays: IpcDeviceDaysService) {}
 
   async tick() {
     if (!(await ipcRules(this.c.db))) return { scanned: 0, expired: 0 };

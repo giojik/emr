@@ -15,7 +15,7 @@ interface Detail {
   culture: { stage: 'incubating' | 'no_growth' | 'growth' | 'contaminated'; gram_stain: string | null; growth_summary: string | null; comment: string | null };
   isolates: Isolate[]; reports: { id: string; kind: 'prelim' | 'final'; issued_at: string; issued_by_name: string | null }[];
 }
-interface Refs { organisms: { id: string; code: string; name: string; gram: string; group_code: string; is_active: boolean }[];
+interface Refs { organisms: { id: string; code: string; name: string; gram: string; group_code: string; is_active: boolean; is_commensal?: boolean }[];
   antibiotics: { id: string; code: string; name: string; class: string | null; is_active: boolean }[];
   panels: { id: string; code: string; name: string; group_code: string; is_active: boolean; items: { antibiotic_id: string; code: string; name: string; reserve: boolean; sort_order: number }[] }[] }
 interface Snapshot { stage: string; gram_stain: string | null; growth_summary: string | null; comment: string | null;
@@ -177,6 +177,7 @@ export function MicroRefs() {
   const inv = () => void qc.invalidateQueries({ queryKey: ['micro-refs'] });
   const addOrg = useMutation({ mutationFn: () => api('/lab/micro/organisms', { body: { code: f.code.trim(), name: f.name.trim(), gram: f.gram, group_code: f.group_code } }), onSuccess: () => { setF({ ...f, code: '', name: '' }); inv(); } });
   const addAb = useMutation({ mutationFn: () => api('/lab/micro/antibiotics', { body: { code: f.code.trim(), name: f.name.trim(), class: f.cls.trim() || null } }), onSuccess: () => { setF({ ...f, code: '', name: '', cls: '' }); inv(); } });
+  const commensal = useMutation({ mutationFn: ({ id, v }: { id: string; v: boolean }) => api(`/lab/micro/organisms/${id}`, { method: 'PATCH', body: { is_commensal: v } }), onSuccess: inv });
   const toggle = useMutation({ mutationFn: ({ kind, id, active }: { kind: 'organisms' | 'antibiotics'; id: string; active: boolean }) => api(`/lab/micro/${kind}/${id}`, { method: 'PATCH', body: { is_active: active } }), onSuccess: inv });
   const panel = refs.data?.panels.find((p) => p.id === panelId);
   const setPanel = useMutation({ mutationFn: (items: { antibiotic_id: string; reserve: boolean }[]) => api(`/lab/micro/panels/${panelId}/items`, { method: 'PUT', body: { items } }), onSuccess: inv });
@@ -199,6 +200,8 @@ export function MicroRefs() {
       <ErrorBox error={addOrg.error ?? addAb.error ?? toggle.error ?? setPanel.error} />
       {tab === 'org' && <div className="card" style={{ maxHeight: 500, overflowY: 'auto' }}><table className="table"><tbody>{refs.data.organisms.map((o) => <tr key={o.id} style={o.is_active ? undefined : { opacity: 0.5 }}>
         <td className="mono small">{o.code}</td><td><i>{o.name}</i></td><td className="small">{o.gram === 'neg' ? 'გრამ (−)' : o.gram === 'pos' ? 'გრამ (+)' : o.gram === 'fungus' ? 'სოკო' : 'სხვა'}</td><td className="small mono">{o.group_code}</td>
+        <td>{canEdit ? <label className="row small" title="კანის ფლორა — ჰემოკულტურაში სიგნალი მხოლოდ 2 ნიმუშზე (ინფექციის კონტროლი)"><input type="checkbox" checked={!!o.is_commensal}
+          onChange={(e) => commensal.mutate({ id: o.id, v: e.target.checked })} /> კომენსალი</label> : o.is_commensal && <span className="chip">კომენსალი</span>}</td>
         <td>{canEdit && <label className="row small"><input type="checkbox" checked={o.is_active} onChange={(e) => toggle.mutate({ kind: 'organisms', id: o.id, active: e.target.checked })} /> აქტიური</label>}</td></tr>)}</tbody></table></div>}
       {tab === 'ab' && <div className="card" style={{ maxHeight: 500, overflowY: 'auto' }}><table className="table"><tbody>{refs.data.antibiotics.map((a) => <tr key={a.id} style={a.is_active ? undefined : { opacity: 0.5 }}>
         <td className="mono small">{a.code}</td><td>{a.name}</td><td className="small muted">{a.class}</td>

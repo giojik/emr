@@ -18,8 +18,8 @@ step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 die()  { printf '\n\033[31mშეწყდა:\033[0m %s\n' "$1"; exit 1; }
 command -v jq >/dev/null || die "jq არ არის დაყენებული: sudo apt install -y jq"
 
-read -rp  "admin ელ-ფოსტა: " ADMIN_EMAIL
-read -rsp "admin პაროლი: " ADMIN_PW; echo
+[ -n "${ADMIN_EMAIL:-}" ] || read -rp  "admin ელ-ფოსტა: " ADMIN_EMAIL
+[ -n "${ADMIN_PW:-}" ]    || { read -rsp "admin პაროლი: " ADMIN_PW; echo; }
 login() { curl -s -X POST "$B/auth/login" -H "$J" -d "$(jq -nc --arg u "$1" --arg p "$2" '{username:$u,password:$p}')" | jq -r '.accessToken // empty'; }
 ADM=$(login "$ADMIN_EMAIL" "$ADMIN_PW"); [ -n "$ADM" ] || die "admin-ით შესვლა ვერ მოხერხდა ($B)"
 api()  { local m=$1 p=$2 t=$3; shift 3; curl -s -X "$m" "$B$p" -H "authorization: Bearer $t" -H "$J" "$@"; }

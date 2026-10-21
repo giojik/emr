@@ -14,10 +14,19 @@ export interface IpcRules {
   isolation_remove_mdro: 'ipc' | 'staff'; ward_conflict: 'warn' | 'block'; wristband_symbol: boolean; door_sign: boolean;
   mdro_flag_mode: 'auto' | 'suggest'; mdro_clear_negatives: number; mdro_suggest_isolation: boolean; hospital_onset_day: number;
   alert_new_flag: boolean; alert_sms: boolean; alert_email: boolean;
+  // 0068: სიგნალები, HAI, device-days
+  sig_blood_culture: boolean; sig_hospital_culture: boolean; sig_fever_device: boolean; sig_antibiotic_start: boolean; sig_cluster: boolean;
+  fever_threshold: number; commensal_window_hours: number; cluster_count: number; cluster_days: number; signal_dedupe_days: number; postop_fever_days: number;
+  hai_criteria_set: string; hai_transfer_days: number; hai_readmit_days: number; device_min_days: number;
+  device_days_basis: 'calendar_day' | 'census'; census_hour: number; central_line_kinds: string[];
 }
 export const IPC_DEFAULTS: IpcRules = {
   isolation_remove_mdro: 'ipc', ward_conflict: 'warn', wristband_symbol: false, door_sign: true, mdro_flag_mode: 'auto', mdro_clear_negatives: 3,
   mdro_suggest_isolation: true, hospital_onset_day: 3, alert_new_flag: true, alert_sms: false, alert_email: false,
+  sig_blood_culture: true, sig_hospital_culture: true, sig_fever_device: true, sig_antibiotic_start: true, sig_cluster: true,
+  fever_threshold: 38.0, commensal_window_hours: 48, cluster_count: 3, cluster_days: 14, signal_dedupe_days: 7, postop_fever_days: 30,
+  hai_criteria_set: 'ecdc', hai_transfer_days: 2, hai_readmit_days: 30, device_min_days: 3, device_days_basis: 'calendar_day', census_hour: 0,
+  central_line_kinds: ['cvc', 'picc', 'dialysis'],
 };
 
 export const ISO_TYPES = ['contact', 'contact_plus', 'droplet', 'airborne', 'protective'] as const;

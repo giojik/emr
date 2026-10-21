@@ -13,7 +13,7 @@ import { OrService } from './or';
 import { NOTE_FIELDS, noteMissing, orEvent, syncCaseBilling, type Ex, type Trx } from './or-shared';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? value === '' ? null : value : Number(value));
-const LINE_KINDS = ['drain', 'urinary', 'ng_tube', 'cvc', 'arterial', 'pvc', 'picc', 'trach', 'other'] as const;
+const LINE_KINDS = ['drain', 'urinary', 'ng_tube', 'cvc', 'arterial', 'pvc', 'picc', 'dialysis', 'trach', 'other'] as const;
 
 export class NoteProcDto { @IsUUID() procedure_id: string; @IsOptional() @IsIn(['left', 'right', 'bilateral', 'na']) side?: string; @IsOptional() @IsBoolean() is_primary?: boolean }
 export class DrainDto {

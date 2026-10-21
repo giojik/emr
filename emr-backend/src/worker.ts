@@ -65,8 +65,15 @@ async function bootstrap() {
   const ipcTick = () => void ipc.tick().then((r) => { if (r.scanned || r.expired) log.log(`ინფექციის კონტროლი: შემოწმდა ${r.scanned}, ვადა ${r.expired}`); })
     .catch((e) => log.error(`ინფექციის კონტროლი: ${(e as Error).message}`));
   const ipcTimer = setInterval(ipcTick, 5 * 60_000); setTimeout(ipcTick, 90_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); });
+  // 0068: სიგნალები (15 წთ), device-days (საათში)
+  const sigTick = () => void ipc.signals.scan().then((r) => { if (r.created || r.reopened) log.log(`IPC სიგნალები: ახალი ${r.created}, დაბრუნდა ${r.reopened}`); })
+    .catch((e) => log.error(`IPC სიგნალები: ${(e as Error).message}`));
+  const sigTimer = setInterval(sigTick, 15 * 60_000); setTimeout(sigTick, 120_000);
+  const ddTick = () => void ipc.deviceDays.tick().then((r) => { if (r.rows) log.log(`IPC device-days: ${r.days} დღე, ${r.rows} ხაზი`); })
+    .catch((e) => log.error(`IPC device-days: ${(e as Error).message}`));
+  const ddTimer = setInterval(ddTick, 60 * 60_000); setTimeout(ddTick, 150_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

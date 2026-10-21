@@ -5,7 +5,7 @@ import type { CollectedSpecimen, CollectionDetail, PendingCollection } from '../
 import { ErrorBox, Loading, WarnIcon, useDebounced, useToast } from '../components/ui';
 import { age, dateGe, hhmm } from '../lib/format';
 
-const SPECIMEN_KA: Record<string, string> = { blood: 'სისხლი', serum: 'შრატი', plasma: 'პლაზმა', urine: 'შარდი', stool: 'განავალი', swab: 'ნაცხი', other: 'სხვა' };
+const SPECIMEN_KA: Record<string, string> = { blood: 'სისხლი', serum: 'შრატი', plasma: 'პლაზმა', urine: 'შარდი', stool: 'განავალი', swab: 'ნაცხი', sputum: 'ნახველი', bal: 'BAL', wound: 'ჭრილობა', csf: 'ლიქვორი', catheter_tip: 'კათეტერის წვერი', tissue: 'ქსოვილი', fluid: 'პუნქტატი', other: 'სხვა' };
 /** საცობის ფერი — ვიზუალური მინიშნება; ფაქტობრივი ფერი მწარმოებლის სტანდარტზეა დამოკიდებული */
 const CAP: Record<string, string> = { citrate: '#5DA9E9', serum: '#E4B429', heparin: '#3FA66B', edta: '#9B59B6', fluoride: '#8E9AA6' };
 const capColor = (c: string | null) => { const k = Object.keys(CAP).find((x) => (c ?? '').toLowerCase().includes(x)); return k ? CAP[k] : '#C9C6BC'; };

@@ -52,7 +52,7 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       consult_due_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && ['routine', 'urgent', 'emergency'].every((k) => typeof (v as Record<string, unknown>)[k] === 'number'
         && ((v as Record<string, number>)[k]) > 0 && ((v as Record<string, number>)[k]) <= 168) && Object.keys(v as object).length === 3,
       line_alert_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) =>
-        ['pvc', 'cvc', 'picc', 'arterial', 'urinary', 'ng_tube', 'drain', 'trach', 'other'].includes(k) && typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 8760),
+        ['pvc', 'cvc', 'picc', 'dialysis', 'arterial', 'urinary', 'ng_tube', 'drain', 'trach', 'other'].includes(k) && typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 8760),
     },
     extra: async (s) => ((s.wristband_length_mm as number) - (s.wristband_offset_mm as number) < 90 ? 'სამაჯურის ბეჭდვის ზონა (სიგრძე − საკეტის ზონა) მინიმუმ 90 მმ უნდა იყოს'
       : (s.news2_urgent as number) < (s.news2_alert as number) ? 'NEWS2: სასწრაფო ზღვარი შეტყობინების ზღვარზე ნაკლები ვერ იქნება'
@@ -213,7 +213,19 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
     keys: {
       isolation_remove_mdro: (v) => oneOf(v, ['ipc', 'staff']), ward_conflict: (v) => oneOf(v, ['warn', 'block']),
       wristband_symbol: bool, door_sign: bool, mdro_flag_mode: (v) => oneOf(v, ['auto', 'suggest']), mdro_clear_negatives: (v) => int(v, 0, 10),
-      mdro_suggest_isolation: bool, hospital_onset_day: (v) => int(v, 2, 7), alert_new_flag: bool, alert_sms: bool, alert_email: bool,
+      mdro_suggest_isolation: bool, hospital_onset_day: (v) => int(v, 1, 7), alert_new_flag: bool, alert_sms: bool, alert_email: bool,
+      // 0068: სიგნალები, HAI, device-days
+      sig_blood_culture: bool, sig_hospital_culture: bool, sig_fever_device: bool, sig_antibiotic_start: bool, sig_cluster: bool,
+      fever_threshold: (v) => typeof v === 'number' && v >= 37.5 && v <= 39.5, commensal_window_hours: (v) => int(v, 12, 96),
+      cluster_count: (v) => int(v, 2, 20), cluster_days: (v) => int(v, 3, 60), signal_dedupe_days: (v) => int(v, 1, 30), postop_fever_days: (v) => int(v, 0, 90),
+      hai_criteria_set: (v) => typeof v === 'string' && /^[a-z][a-z0-9_]{1,15}$/.test(v), hai_transfer_days: (v) => int(v, 0, 3), hai_readmit_days: (v) => int(v, 0, 90),
+      device_min_days: (v) => int(v, 1, 3), device_days_basis: (v) => oneOf(v, ['calendar_day', 'census']), census_hour: (v) => int(v, 0, 23),
+      central_line_kinds: (v) => Array.isArray(v) && v.length >= 1 && v.every((x) => ['cvc', 'picc', 'dialysis', 'arterial'].includes(x as string)) && new Set(v).size === v.length,
+    },
+    extra: async (s, db) => {
+      const c = s.hai_criteria_set as string | undefined;
+      if (c && !(await db.selectFrom('ipc_criteria_sets').select('id').where('code', '=', c).where('is_active', '=', true).executeTakeFirst())) return 'კრიტერიუმების ნაკრები ვერ მოიძებნა ან გათიშულია';
+      return null;
     },
   },
   asset_register: {

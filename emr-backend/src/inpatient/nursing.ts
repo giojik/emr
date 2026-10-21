@@ -23,7 +23,7 @@ const num = ({ value }: { value: unknown }) => (value === '' || value === null |
 const READ = ['admin', 'doctor', 'nurse', 'manager', 'pharmacist'] as const;
 const WRITE = ['admin', 'doctor', 'nurse'] as const;
 export const LINE_KA: Record<string, string> = {
-  pvc: 'პერიფერიული ვენური კათეტერი', cvc: 'ცენტრალური ვენური კათეტერი', picc: 'PICC', arterial: 'არტერიული კათეტერი', urinary: 'შარდის კათეტერი',
+  pvc: 'პერიფერიული ვენური კათეტერი', cvc: 'ცენტრალური ვენური კათეტერი', picc: 'PICC', dialysis: 'დიალიზის კათეტერი', arterial: 'არტერიული კათეტერი', urinary: 'შარდის კათეტერი',
   ng_tube: 'ნაზოგასტრული ზონდი', drain: 'დრენაჟი', trach: 'ტრაქეოსტომა', other: 'სხვა',
 };
 const FLUID_IN = ['po', 'iv', 'tube', 'blood', 'other_in'] as const;

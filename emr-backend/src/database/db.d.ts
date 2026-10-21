@@ -1608,6 +1608,27 @@ export interface Invoices {
   writeoff_amount: Generated<Numeric>;
 }
 
+export interface IpcCriteriaItems {
+  grp: string | null;
+  hai_type: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  required: Generated<boolean>;
+  set_id: string;
+  sort_order: Generated<number>;
+  text: string;
+}
+
+export interface IpcCriteriaSets {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  note: string | null;
+  version: string;
+}
+
 export interface IpcFlagDetections {
   detected_at: Generated<Timestamp>;
   flag_id: string;
@@ -1617,6 +1638,61 @@ export interface IpcFlagDetections {
   organism_id: string | null;
   rule_id: string | null;
   specimen_at: Timestamp | null;
+}
+
+export interface IpcHaiCases {
+  attribution: Generated<string>;
+  attribution_note: string | null;
+  bsi_source: string | null;
+  case_no: string;
+  confirmed_at: Timestamp | null;
+  confirmed_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  criteria_met: Generated<string[]>;
+  criteria_set_id: string | null;
+  department_id: string | null;
+  description: string | null;
+  device_assoc: Generated<boolean>;
+  device_days: number | null;
+  device_kind: string | null;
+  device_note: string | null;
+  device_override: Generated<boolean>;
+  encounter_id: string | null;
+  hai_contributed: string | null;
+  hai_type: string;
+  id: Generated<string>;
+  onset_date: string;
+  onset_day: number | null;
+  order_item_ids: Generated<string[]>;
+  organism_ids: Generated<string[]>;
+  outcome: string | null;
+  patient_id: string;
+  readmission: Generated<boolean>;
+  rejected_reason: string | null;
+  ssi_depth: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IpcHaiEvents {
+  at: Generated<Timestamp>;
+  case_id: string;
+  data: Json | null;
+  id: Generated<Int8>;
+  kind: string;
+  text: string | null;
+  user_id: string | null;
+}
+
+export interface IpcHaiTypes {
+  code: string;
+  device_kind: string | null;
+  device_name: string | null;
+  is_active: Generated<boolean>;
+  name: string;
+  short_name: string;
+  sort_order: Generated<number>;
 }
 
 export interface IpcIsolations {
@@ -1699,6 +1775,27 @@ export interface IpcPatientFlags {
   source: string;
   specimen_at: Timestamp | null;
   status: string;
+}
+
+export interface IpcSignals {
+  case_id: string | null;
+  data: Generated<Json>;
+  department_id: string | null;
+  detected_at: Generated<Timestamp>;
+  dismiss_reason: string | null;
+  encounter_id: string | null;
+  event_at: Timestamp;
+  handled_at: Timestamp | null;
+  handled_by: string | null;
+  id: Generated<string>;
+  kind: string;
+  order_item_id: string | null;
+  organism_id: string | null;
+  patient_id: string | null;
+  ref_key: string;
+  status: Generated<string>;
+  summary: string;
+  watch_until: Timestamp | null;
 }
 
 export interface IpdReminders {
@@ -2431,6 +2528,7 @@ export interface MicroOrganisms {
   group_code: string;
   id: Generated<string>;
   is_active: Generated<boolean>;
+  is_commensal: Generated<boolean>;
   name: string;
 }
 
@@ -3729,6 +3827,16 @@ export interface RptFactHourly {
   sub: Generated<string>;
 }
 
+export interface RptFactIpcDaily {
+  central_line_days: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  day: string;
+  department_id: string;
+  patient_days: Generated<number>;
+  urinary_days: Generated<number>;
+  vent_days: Generated<number>;
+}
+
 export interface RptFactOr {
   cancelled: Generated<number>;
   cancelled_same_day: Generated<number>;
@@ -4678,13 +4786,19 @@ export interface DB {
   invoice_line_reprices: InvoiceLineReprices;
   invoice_line_shares: InvoiceLineShares;
   invoices: Invoices;
+  ipc_criteria_items: IpcCriteriaItems;
+  ipc_criteria_sets: IpcCriteriaSets;
   ipc_flag_detections: IpcFlagDetections;
+  ipc_hai_cases: IpcHaiCases;
+  ipc_hai_events: IpcHaiEvents;
+  ipc_hai_types: IpcHaiTypes;
   ipc_isolation_types: IpcIsolationTypes;
   ipc_isolations: IpcIsolations;
   ipc_mdro_rules: IpcMdroRules;
   ipc_mdro_types: IpcMdroTypes;
   ipc_micro_scans: IpcMicroScans;
   ipc_patient_flags: IpcPatientFlags;
+  ipc_signals: IpcSignals;
   ipd_reminders: IpdReminders;
   lab_analytes: LabAnalytes;
   lab_blank_group_assignments: LabBlankGroupAssignments;
@@ -4821,6 +4935,7 @@ export interface DB {
   rpt_fact_finance: RptFactFinance;
   rpt_fact_flow: RptFactFlow;
   rpt_fact_hourly: RptFactHourly;
+  rpt_fact_ipc_daily: RptFactIpcDaily;
   rpt_fact_or: RptFactOr;
   rpt_fact_or_room: RptFactOrRoom;
   rpt_fact_payer: RptFactPayer;

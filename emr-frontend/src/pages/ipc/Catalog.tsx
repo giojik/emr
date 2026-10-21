@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal } from '../../components/ui';
-import { ISO_KA, ISO_TYPES, MARKER_KA, useIpcCatalog, type IsoType, type MdroRule, type MdroType } from './types';
+import { DEVICE_KA, ISO_KA, ISO_TYPES, MARKER_KA, useHaiCatalog, useIpcCatalog, type IsoType, type MdroRule, type MdroType } from './types';
 
 /** ცნობარები (0067, infection): იზოლაციის ტიპები (PPE / კარის ნიშნის ტექსტი, ფერი), MDRO ტიპები, ამოცნობის წესები */
 export default function IpcCatalogTab() {
@@ -50,6 +50,7 @@ export default function IpcCatalogTab() {
               <td><button className="btn sm" type="button" onClick={() => setRule(r)}>შეცვლა</button></td></tr>))}</tbody>
         </table>
       </section>
+      <HaiCriteria />
       {iso && <IsoDialog t={iso} onClose={() => setIso(null)} />}
       {mt && <MdroTypeDialog t={mt === 'new' ? null : mt} onClose={() => setMt(null)} />}
       {rule && <RuleDialog r={rule === 'new' ? null : rule} onClose={() => setRule(null)} />}
@@ -135,5 +136,27 @@ function RuleDialog({ r, onClose }: { r: MdroRule | null; onClose: () => void })
         {r && <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>}
       </div>
     </Modal>
+  );
+}
+
+/** HAI ტიპები და კრიტერიუმები (0068) — ნახვა; აქტიური ნაკრები — ადმინისტრირება → მოდულები */
+function HaiCriteria() {
+  const q = useHaiCatalog();
+  const set = q.data?.sets.find((x) => x.active_for_clinic) ?? q.data?.sets[0];
+  if (!q.data || !set) return <ErrorBox error={q.error} />;
+  return (
+    <section className="card card-pad stack" style={{ gap: 8 }}>
+      <h2 style={{ margin: 0 }}>HAI ტიპები და კრიტერიუმები <span className="small muted">{set.name} · {set.version}</span></h2>
+      <span className="hint">{set.note ?? ''} ჩეკლისტი დამხმარეა; „სავალდ.“ პუნქტები დადასტურებისას მოწმდება. ნაკრების არჩევა — ადმინისტრირება → მოდულები → ინფექციის კონტროლი.</span>
+      {q.data.types.map((t) => {
+        const items = q.data.items.filter((i) => i.set_id === set.id && i.hai_type === t.code && i.is_active);
+        return (
+          <details key={t.code}>
+            <summary><strong>{t.short_name}</strong> — {t.name}{t.device_name && <span className="small muted"> · მოწყობილობით: {t.device_name} ({DEVICE_KA[t.device_kind ?? ''] ?? t.device_kind})</span>} <span className="small muted">({items.length})</span></summary>
+            <ul className="small" style={{ margin: '6px 0 6px 18px' }}>{items.map((i) => <li key={i.id}>{i.grp && <strong>{i.grp}: </strong>}{i.text}{i.required && <span className="chip warn" style={{ marginLeft: 6, height: 18 }}>სავალდ.</span>}</li>)}
+              {!items.length && <li className="muted">კრიტერიუმები არ არის</li>}</ul>
+          </details>);
+      })}
+    </section>
   );
 }

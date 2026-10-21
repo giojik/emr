@@ -36,7 +36,7 @@ const drawRank = (container: string | null, specimen: string | null) => {
   const c = (container ?? '').toLowerCase();
   const i = DRAW_ORDER.findIndex((k) => c.includes(k));
   if (i >= 0) return i;
-  return specimen === 'urine' || specimen === 'stool' || specimen === 'swab' ? 20 : 10;
+  return specimen && ['urine', 'stool', 'swab', 'sputum', 'bal', 'wound', 'csf', 'catheter_tip', 'tissue', 'fluid'].includes(specimen) ? 20 : 10;
 };
 /** ანალიზები → სინჯარები (ნიმუში + კონტეინერი + შიდა/გარე), აღების რიგით */
 export function tubesInOrder<T extends { specimen_type: string | null; container: string | null; performed_by: string; name: string }>(items: T[]) {

@@ -41,7 +41,7 @@ const ACVPU: Record<string, string> = { A: 'A — ფხიზელი', C: 'C 
 const FLUID_KA: Record<string, string> = { po: 'პერორალური', iv: 'ინტრავენური', tube: 'ზონდით', blood: 'სისხლი / პრეპარატები', other_in: 'სხვა (მიღება)',
   urine: 'შარდი', drain: 'დრენაჟი', vomit: 'ღებინება', stool: 'განავალი', other_out: 'სხვა (გამოყოფა)' };
 const IN_CATS = ['po', 'iv', 'tube', 'blood', 'other_in']; const OUT_CATS = ['urine', 'drain', 'vomit', 'stool', 'other_out'];
-const LINE_KINDS: Record<string, string> = { pvc: 'პერიფერიული ვენური კათეტერი', cvc: 'ცენტრალური ვენური კათეტერი', picc: 'PICC', arterial: 'არტერიული კათეტერი', urinary: 'შარდის კათეტერი',
+const LINE_KINDS: Record<string, string> = { pvc: 'პერიფერიული ვენური კათეტერი', cvc: 'ცენტრალური ვენური კათეტერი', picc: 'PICC', dialysis: 'დიალიზის კათეტერი', arterial: 'არტერიული კათეტერი', urinary: 'შარდის კათეტერი',
   ng_tube: 'ნაზოგასტრული ზონდი', drain: 'დრენაჟი', trach: 'ტრაქეოსტომა', other: 'სხვა' };
 const LEVEL_CHIP: Record<string, string> = { none: 'ok', low: 'ok', medium: 'warn', high: 'danger' };
 const dt = (iso: string) => `${tsDate(iso)} ${hhmm(iso)}`;

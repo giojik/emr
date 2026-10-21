@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
 import { useModules, type SystemModule } from '../../lib/modules';
+import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
@@ -725,6 +726,7 @@ function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Reco
 
 /** ინფექციის კონტროლი (0067) */
 function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
+  const hai = useHaiCatalog();
   const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
   const int = (k: string, d: number, min: number, max: number) => (
     <input id={`ipc-${k}`} className="input mono" type="number" min={min} max={max} value={Number(s[k] ?? d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
@@ -750,13 +752,46 @@ function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
           <select id="ipc-fm" className="select" value={String(s.mdro_flag_mode ?? 'auto')} onChange={(e) => upd('mdro_flag_mode', e.target.value)}>
             <option value="auto">ავტომატურად აქტიური (IPC გადახედავს)</option><option value="suggest">შეთავაზება — IPC ადასტურებს</option></select></Field>
         <Field label="ფლაგის მოხსნა — მინ. უარყოფითი სკრინინგი" htmlFor="ipc-mdro_clear_negatives" hint="0 — არ მოითხოვება">{int('mdro_clear_negatives', 3, 0, 10)}</Field>
-        <Field label="ჰოსპიტალური შეძენა — ნიმუში დღიდან" htmlFor="ipc-hospital_onset_day" hint="მიღების დღე = 1; ECDC / NHSN — მე-3 დღე">{int('hospital_onset_day', 3, 2, 7)}</Field>
+        <Field label="ჰოსპიტალური შეძენა — ნიმუში დღიდან" htmlFor="ipc-hospital_onset_day" hint="მიღების დღე = 1; ECDC / NHSN — მე-3 დღე">{int('hospital_onset_day', 3, 1, 7)}</Field>
         <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}>
           {chk('mdro_suggest_isolation', 'ფლაგის მქონე პაციენტს — იზოლაციის შეთავაზება (ჰოსპიტალიზაცია, ბარათი)')}
           {chk('alert_new_flag', 'ახალი ფლაგი → შეტყობინება (ინფექციის კონტროლი, განყოფილების IPC, მკურნალი ექიმი)')}
           {chk('alert_sms', 'სასწრაფო MDRO (მაგ. CRE, C. difficile) → SMS ინფექციის კონტროლს', 'პაციენტის მონაცემების გარეშე')}
           {chk('alert_email', 'სასწრაფო MDRO → ელფოსტა ინფექციის კონტროლს', 'პაციენტის მონაცემების გარეშე')}
         </div>
+      </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>სიგნალები (ზედამხედველობა)</h3>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 14 }}>
+        {chk('sig_blood_culture', 'დადებითი ჰემოკულტურა', 'კომენსალი — 2 ცალკე ნიმუში ფანჯარაში')}
+        {chk('sig_hospital_culture', 'ჰოსპიტალური კულტურა (შარდი, ნახველი, ჭრილობა…)')}
+        {chk('sig_fever_device', 'ცხელება ხაზის / კათეტერის / ვენტილაციის / ოპერაციის შემდეგ')}
+        {chk('sig_antibiotic_start', 'ანტიბიოტიკის დაწყება (J01) ჰოსპიტალურ დღეს')}
+        {chk('sig_cluster', 'კლასტერი (ერთი ორგანიზმი, ერთი განყოფილება)')}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="ცხელების ზღვარი, °C" htmlFor="ipc-ft"><input id="ipc-ft" className="input mono" type="number" step={0.1} min={37.5} max={39.5} value={Number(s.fever_threshold ?? 38)}
+          onChange={(e) => upd('fever_threshold', Math.max(37.5, Math.min(39.5, Math.round((Number(e.target.value) || 38) * 10) / 10)))} /></Field>
+        <Field label="კომენსალის ფანჯარა, სთ" htmlFor="ipc-commensal_window_hours" hint="მეორე ნიმუშის მოძებნა">{int('commensal_window_hours', 48, 12, 96)}</Field>
+        <Field label="ოპერაციის შემდგომი ცხელება — დღე" htmlFor="ipc-postop_fever_days">{int('postop_fever_days', 30, 0, 90)}</Field>
+        <Field label="კლასტერი — შემთხვევა (≥)" htmlFor="ipc-cluster_count">{int('cluster_count', 3, 2, 20)}</Field>
+        <Field label="კლასტერი — პერიოდი, დღე" htmlFor="ipc-cluster_days">{int('cluster_days', 14, 3, 60)}</Field>
+        <Field label="განმეორების ჩახშობა, დღე" htmlFor="ipc-signal_dedupe_days" hint="იგივე პაციენტი + სახე">{int('signal_dedupe_days', 7, 1, 30)}</Field>
+      </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>HAI შემთხვევები და device-days</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="კრიტერიუმების ნაკრები" htmlFor="ipc-cs"><select id="ipc-cs" className="select" value={String(s.hai_criteria_set ?? 'ecdc')} onChange={(e) => upd('hai_criteria_set', e.target.value)}>
+          {[...new Set((hai.data?.sets ?? []).filter((x) => x.is_active).map((x) => x.code))].map((c) => <option key={c} value={c}>{hai.data?.sets.find((x) => x.code === c)?.name ?? c}</option>)}
+          {!hai.data && <option value={String(s.hai_criteria_set ?? 'ecdc')}>{String(s.hai_criteria_set ?? 'ecdc')}</option>}</select></Field>
+        <Field label="გადაყვანის წესი, დღე" htmlFor="ipc-hai_transfer_days" hint="ინფექცია გადაყვანიდან N დღეში → წინა განყოფილება">{int('hai_transfer_days', 2, 0, 3)}</Field>
+        <Field label="ხელახალი ჰოსპიტალიზაცია, დღე" htmlFor="ipc-hai_readmit_days" hint="ჩვენი გაწერიდან N დღეში → წინა ჰოსპიტალიზაცია">{int('hai_readmit_days', 30, 0, 90)}</Field>
+        <Field label="მოწყობილობა — მინ. დღე" htmlFor="ipc-device_min_days" hint="ECDC / NHSN: > 2 დღე">{int('device_min_days', 3, 1, 3)}</Field>
+        <Field label="device-day-ის დათვლა" htmlFor="ipc-db"><select id="ipc-db" className="select" value={String(s.device_days_basis ?? 'calendar_day')} onChange={(e) => upd('device_days_basis', e.target.value)}>
+          <option value="calendar_day">კალენდარული დღე (ნებისმიერ დროს)</option><option value="census">ფიქსირებულ საათზე (census)</option></select></Field>
+        {s.device_days_basis === 'census' && <Field label="census-ის საათი" htmlFor="ipc-census_hour">{int('census_hour', 0, 0, 23)}</Field>}
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}><span className="label">ცენტრალური ხაზი (CLABSI)</span>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>{([['cvc', 'CVC'], ['picc', 'PICC'], ['dialysis', 'დიალიზის კათეტერი'], ['arterial', 'არტერიული']] as const).map(([k, l]) => {
+            const cur = (s.central_line_kinds as string[] | undefined) ?? ['cvc', 'picc', 'dialysis'];
+            return <label key={k} className="row small"><input type="checkbox" checked={cur.includes(k)} onChange={() => upd('central_line_kinds', cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k])} /> {l}</label>; })}</div></div>
       </div>
       <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>

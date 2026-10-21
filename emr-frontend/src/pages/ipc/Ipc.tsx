@@ -8,24 +8,29 @@ import { ErrorBox, Field, Loading, Modal, useDebounced } from '../../components/
 import { age, genderShort, tsDate } from '../../lib/format';
 import { useModuleEnabled, useModules } from '../../lib/modules';
 import IpcCatalogTab from './Catalog';
+import { DeviceDays, HaiList, Signals } from './Surveillance';
 import { FLAG_ST, IPC_ANY, IPC_FULL, ISO_KA, ONSET_KA, SOURCE_KA, useIpcCatalog, type FlagRow, type IpcPatientRow } from './types';
 import type { PatientListItem } from '../../api/types';
 
-type Tab = 'patients' | 'flags' | 'catalog';
+type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'rates' | 'catalog';
 
-/** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები (განსახილველი / ყველა), ცნობარები */
+/** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები, ცნობარები; 0068: სიგნალები, HAI შემთხვევები, device-days მაჩვენებლები */
 export default function Ipc() {
   const { user } = useAuth();
   const [sp] = useSearchParams();
   const mods = useModules(); const enabled = useModuleEnabled('ipc');
   const full = can(user, ...IPC_FULL);
   const pending = useQuery({ queryKey: ['ipc-flags', 'pending'], queryFn: () => api<FlagRow[]>('/ipc/flags', { query: { review: 'pending' } }), enabled: enabled && full, refetchInterval: 60_000 });
+  const openSig = useQuery({ queryKey: ['ipc-signals', 'open', ''], queryFn: () => api<unknown[]>('/ipc/signals', { query: { status: 'open', kind: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „ინფექციის კონტროლი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   if (!can(user, ...IPC_ANY)) return <div className="content"><div className="alert warn">ინფექციის კონტროლის გვერდზე წვდომა არ გაქვთ.</div></div>;
   const tabs: [Tab, string, boolean, number][] = [
     ['patients', 'პაციენტები', true, 0],
     ['flags', 'MDRO ფლაგები', true, pending.data?.length ?? 0],
+    ['signals', 'სიგნალები', true, openSig.data?.length ?? 0],
+    ['hai', 'HAI შემთხვევები', true, 0],
+    ['rates', 'მაჩვენებლები', true, 0],
     ['catalog', 'ცნობარები', full, 0],
   ];
   const allowed = tabs.filter((t) => t[2]);
@@ -41,6 +46,9 @@ export default function Ipc() {
       </header>
       {cur === 'patients' && <Patients />}
       {cur === 'flags' && <Flags />}
+      {cur === 'signals' && <Signals />}
+      {cur === 'hai' && <HaiList />}
+      {cur === 'rates' && <DeviceDays />}
       {cur === 'catalog' && <IpcCatalogTab />}
     </>
   );

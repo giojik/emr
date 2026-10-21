@@ -20,6 +20,7 @@ import StayBillingPanel from './Billing';
 import { DischargeDialog, LeaveDialog, TransferDialog } from './StayActions';
 import IpcBanner from '../../components/IpcBanner';
 import IsolationPanel from '../ipc/IsolationPanel';
+import { StayHai } from '../ipc/Surveillance';
 import { chipOf, DISCHARGE_KA, ISOLATION_KA, SEVERITY_KA, SOURCE_KA, STAY_ST, TRANSPORT_KA, type Board, type InpatientSettings, type Printer } from './types';
 
 interface StayDetail {
@@ -156,6 +157,7 @@ export default function Stay() {
               {s.consent !== 'granted' && <Link className="small" to={`/patients/${s.patient_id}`}>გაფორმება →</Link>}</div>
           </section>
           <IsolationPanel encounterId={s.encounter_id} patientId={s.patient_id} />
+          <StayHai encounterId={s.encounter_id} />
           {active && <section className="card card-pad stack" style={{ gap: 10 }}>
             <h2 style={{ margin: 0 }}>მოქმედებები</h2>
             {s.settings.wristband && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

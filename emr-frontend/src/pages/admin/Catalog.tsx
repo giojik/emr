@@ -77,7 +77,7 @@ function CatalogList() {
   );
 }
 
-const SPECIMENS: [string, string][] = [['blood', 'სისხლი (მთლიანი)'], ['serum', 'შრატი'], ['plasma', 'პლაზმა'], ['urine', 'შარდი'], ['stool', 'განავალი'], ['swab', 'ნაცხი'], ['other', 'სხვა']];
+const SPECIMENS: [string, string][] = [['blood', 'სისხლი (მთლიანი)'], ['serum', 'შრატი'], ['plasma', 'პლაზმა'], ['urine', 'შარდი'], ['stool', 'განავალი'], ['swab', 'ნაცხი'], ['sputum', 'ნახველი'], ['bal', 'BAL / ტრაქეალური ასპირატი'], ['wound', 'ჭრილობა'], ['csf', 'ლიქვორი'], ['catheter_tip', 'კათეტერის წვერი'], ['tissue', 'ქსოვილი'], ['fluid', 'პუნქტატი / სითხე'], ['other', 'სხვა']];
 const CONTAINERS = ['EDTA', 'Serum gel', 'Citrate', 'Heparin', 'Fluoride', 'Urine container', 'Stool container', 'Swab'];
 const MODALITIES: [string, string][] = [['CT', 'კომპიუტერული ტომოგრაფია'], ['MR', 'მაგნიტურ-რეზონანსული ტომოგრაფია'], ['US', 'ულტრაბგერა'], ['DX', 'რენტგენოგრაფია'], ['RF', 'რენტგენოსკოპია'], ['MG', 'მამოგრაფია'], ['DXA', 'დენსიტომეტრია']];
 

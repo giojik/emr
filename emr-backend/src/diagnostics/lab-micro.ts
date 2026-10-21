@@ -47,11 +47,11 @@ export class LabMicroService {
     ]).then(([organisms, antibiotics, panels]) => ({ organisms, antibiotics, panels }));
   }
   private async requireManage(u: AuthUser) { if (!has(u, 'admin') && !has(u, 'lab_doctor') && !has(u, 'lab_manager')) throw new ForbiddenException('ცნობარს მართავს ლაბ. ექიმი / მენეჯერი'); }
-  async saveOrganism(id: string | null, dto: { code?: string; name?: string; gram?: string; group_code?: string; is_active?: boolean }, u: AuthUser, ctx: AuditContext) {
+  async saveOrganism(id: string | null, dto: { code?: string; name?: string; gram?: string; group_code?: string; is_active?: boolean; is_commensal?: boolean }, u: AuthUser, ctx: AuditContext) {
     await this.requireManage(u);
     const vals = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
     const r = id ? await this.db.updateTable('micro_organisms').set(vals).where('id', '=', id).returningAll().executeTakeFirst()
-      : await this.db.insertInto('micro_organisms').values({ code: dto.code!, name: dto.name!, gram: dto.gram as 'pos', group_code: dto.group_code ?? 'OTH' }).returningAll().executeTakeFirst();
+      : await this.db.insertInto('micro_organisms').values({ code: dto.code!, name: dto.name!, gram: dto.gram as 'pos', group_code: dto.group_code ?? 'OTH', is_commensal: !!dto.is_commensal }).returningAll().executeTakeFirst();
     if (!r) throw new NotFoundException('ვერ მოიძებნა');
     await this.audit.log(ctx, { action: 'MICRO_ORGANISM', entityName: 'micro_organisms', entityId: r.id, newData: vals });
     return r;
@@ -265,7 +265,9 @@ export class LabMicroService {
 
 // ======================================================================= კონტროლერი
 class OrganismDto { @IsOptional() @IsString() @Length(2, 12) code?: string; @IsOptional() @IsString() @Length(2, 150) name?: string;
-  @IsOptional() @IsIn(['pos', 'neg', 'fungus', 'other']) gram?: string; @IsOptional() @IsString() @Length(2, 6) group_code?: string; @IsOptional() @IsBoolean() is_active?: boolean }
+  @IsOptional() @IsIn(['pos', 'neg', 'fungus', 'other']) gram?: string; @IsOptional() @IsString() @Length(2, 6) group_code?: string; @IsOptional() @IsBoolean() is_active?: boolean;
+  /** 0068: კანის ფლორა (ჰემოკულტურაში — 2 ნიმუში; ინფექციის კონტროლის სიგნალები) */
+  @IsOptional() @IsBoolean() is_commensal?: boolean }
 class AntibioticDto { @IsOptional() @IsString() @Length(2, 12) code?: string; @IsOptional() @IsString() @Length(2, 150) name?: string; @IsOptional() @IsString() @MaxLength(100) class?: string | null;
   @IsOptional() @IsBoolean() is_active?: boolean }
 class PanelItemDto { @IsUUID() antibiotic_id: string; @IsBoolean() reserve: boolean }
