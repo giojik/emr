@@ -228,10 +228,19 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       abx_atc_prefixes: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 10 && v.every((x) => typeof x === 'string' && /^[A-Z][0-9]{2}([A-Z]{1,2})?$/.test(x)) && new Set(v).size === v.length,
       abx_indication_required: bool, abx_restrict_mode: (v) => oneOf(v, ['approve', 'notify', 'off']), abx_restrict_reserve: bool,
       abx_approver: (v) => oneOf(v, ['department', 'ipc', 'any']), abx_timeout_hours: (v) => v === 0 || int(v, 24, 168), aware_access_target: (v) => int(v, 0, 100),
+      // 0071: ანტიბიოგრამა, მასალები
+      abg_dedup: (v) => oneOf(v, ['first_patient', 'all']), abg_min_n: (v) => int(v, 1, 100),
+      abg_exclude_services: (v) => Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)) && new Set(v).size === v.length,
+      material_source: (v) => oneOf(v, ['issue', 'consumption']),
     },
     extra: async (s, db) => {
       const c = s.hai_criteria_set as string | undefined;
       if (c && !(await db.selectFrom('ipc_criteria_sets').select('id').where('code', '=', c).where('is_active', '=', true).executeTakeFirst())) return 'კრიტერიუმების ნაკრები ვერ მოიძებნა ან გათიშულია';
+      const ex = s.abg_exclude_services as string[] | undefined;
+      if (ex?.length) {
+        const n = (await db.selectFrom('dx_services').select(sql<number>`count(*)::int`.as('n')).where('id', 'in', ex).where('section', '=', 'lab').executeTakeFirstOrThrow()).n;
+        if (n !== ex.length) return 'გამოსარიცხი ანალიზი ვერ მოიძებნა (ლაბორატორიის კატალოგი)';
+      }
       return null;
     },
   },

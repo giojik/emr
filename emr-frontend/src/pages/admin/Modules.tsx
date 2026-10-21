@@ -727,6 +727,7 @@ function QualitySettings({ s, set }: { s: Record<string, unknown>; set: (v: Reco
 /** ინფექციის კონტროლი (0067) */
 function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
   const hai = useHaiCatalog();
+  const abg = useQuery({ queryKey: ['ipc-abg-meta'], queryFn: () => api<{ services: { id: string; code: string; name: string }[] }>('/ipc/abg/meta'), staleTime: 60_000, retry: false });
   const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
   const int = (k: string, d: number, min: number, max: number) => (
     <input id={`ipc-${k}`} className="input mono" type="number" min={min} max={max} value={Number(s[k] ?? d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
@@ -826,6 +827,21 @@ function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
           {chk('abx_indication_required', 'ჩვენება სავალდებულოა (ემპირიული / მიზნობრივი / პროფილაქტიკა)')}
           {chk('abx_restrict_reserve', 'AWaRe Reserve — ავტომატურად შეზღუდული')}
         </div>
+      </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ანტიბიოგრამა და მასალები</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="დუბლიკატები" htmlFor="ipc-dd" hint="CLSI M39 — პირველი იზოლატი">
+          <select id="ipc-dd" className="select" value={String(s.abg_dedup ?? 'first_patient')} onChange={(e) => upd('abg_dedup', e.target.value)}>
+            <option value="first_patient">პირველი იზოლატი პაციენტზე × მიკროორგანიზმზე</option><option value="all">ყველა იზოლატი</option></select></Field>
+        <Field label="მინ. იზოლატი (n)" htmlFor="ipc-abg_min_n" hint="ნაკლები — „სტატისტიკურად არასანდო“ (M39: 30)">{int('abg_min_n', 30, 1, 100)}</Field>
+        <Field label="მასალების ხარჯი" htmlFor="ipc-ms" hint="განყოფილებაზე მიბმული საწყობის ლოკაციები">
+          <select id="ipc-ms" className="select" value={String(s.material_source ?? 'issue')} onChange={(e) => upd('material_source', e.target.value)}>
+            <option value="issue">განყოფილებაზე გაცემა / გადატანა (ნეტო)</option><option value="consumption">განყოფილების ხარჯი / ჩამოწერა</option></select></Field>
+        <div className="stack" style={{ gap: 6, gridColumn: 'span 3' }}><span className="label">ანტიბიოგრამიდან გამორიცხული ანალიზები (სკრინინგი — მაგ. რექტალური ნაცხი MDRO-ზე)</span>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>{(abg.data?.services ?? []).map((x) => {
+            const cur = (s.abg_exclude_services as string[] | undefined) ?? [];
+            return <label key={x.id} className="row small"><input type="checkbox" checked={cur.includes(x.id)} onChange={() => upd('abg_exclude_services', cur.includes(x.id) ? cur.filter((y) => y !== x.id) : [...cur, x.id])} /> {x.name}</label>; })}
+            {!abg.data?.services.length && <span className="small muted">მიკრობიოლოგიური ანალიზი ჯერ არ ყოფილა (ან მოდული გამორთულია)</span>}</div></div>
       </div>
       <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>

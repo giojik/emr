@@ -23,6 +23,8 @@ export interface IpcRules {
   sig_ssi_postop: boolean; prophylaxis_window_min: number;
   abx_atc_prefixes: string[]; abx_indication_required: boolean; abx_restrict_mode: 'approve' | 'notify' | 'off'; abx_restrict_reserve: boolean;
   abx_approver: 'department' | 'ipc' | 'any'; abx_timeout_hours: number; aware_access_target: number;
+  // 0071: ანტიბიოგრამა, მასალები
+  abg_dedup: 'first_patient' | 'all'; abg_min_n: number; abg_exclude_services: string[]; material_source: 'issue' | 'consumption';
 }
 export const IPC_DEFAULTS: IpcRules = {
   isolation_remove_mdro: 'ipc', ward_conflict: 'warn', wristband_symbol: false, door_sign: true, mdro_flag_mode: 'auto', mdro_clear_negatives: 3,
@@ -34,6 +36,7 @@ export const IPC_DEFAULTS: IpcRules = {
   wound_class_mode: 'optional', ssi_surveillance: true, ssi_pd_calls: true, ssi_pd_attempts: 3, ssi_pd_sms: false, sig_ssi_postop: true, prophylaxis_window_min: 60,
   abx_atc_prefixes: ['J01'], abx_indication_required: true, abx_restrict_mode: 'approve', abx_restrict_reserve: true, abx_approver: 'any', abx_timeout_hours: 72,
   aware_access_target: 60,
+  abg_dedup: 'first_patient', abg_min_n: 30, abg_exclude_services: [], material_source: 'issue',
 };
 
 /**

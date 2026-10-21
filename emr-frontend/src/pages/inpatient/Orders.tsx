@@ -415,7 +415,8 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
             <select id="od-ai" className="select" value={f.abx_indication ?? ''} onChange={(e) => set('abx_indication', (e.target.value || undefined) as OrderBody['abx_indication'])}>
               <option value="">—</option>{Object.entries(ABX_IND_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
           {med && isAbxGen && <Field label="დიაგნოზი (ICD-10)" htmlFor="od-ad" hint="ინფექცია, რომელსაც მკურნალობთ">
-            <input id="od-ad" className="input mono" style={{ maxWidth: 120 }} value={f.abx_icd10 ?? ''} onChange={(e) => set('abx_icd10', e.target.value.toUpperCase() || undefined)} placeholder="J18.9" /></Field>}
+            <div className="row" style={{ gap: 10 }}><input id="od-ad" className="input mono" style={{ maxWidth: 120 }} value={f.abx_icd10 ?? ''} onChange={(e) => set('abx_icd10', e.target.value.toUpperCase() || undefined)} placeholder="J18.9" />
+              {ctx.settings.abx?.enabled && <a className="small" href="/antibiogram" target="_blank" rel="noreferrer" title="კლინიკის ანტიბიოგრამა (ახალ ფანჯარაში)">ანტიბიოგრამა ↗</a>}</div></Field>}
           {med && <Field label="მომარაგება" htmlFor="od-sp"><select id="od-sp" className="select" value={f.supply_mode ?? ''} onChange={(e) => set('supply_mode', (e.target.value || undefined) as OrderBody['supply_mode'])}>
             <option value="">ავტომატურად{gen?.patient_only ? ' (აფთიაქიდან)' : ''}</option><option value="ward">განყოფილების მარაგიდან</option><option value="pharmacy">აფთიაქიდან პაციენტზე</option></select></Field>}
         </div>

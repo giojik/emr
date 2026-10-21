@@ -11,10 +11,12 @@ import IpcCatalogTab from './Catalog';
 import { DeviceDays, HaiList, Signals } from './Surveillance';
 import SsiTab from './Ssi';
 import AbxTab from './Abx';
+import AbgTab from './Abg';
+import MaterialsTab from './Materials';
 import { FLAG_ST, IPC_ANY, IPC_FULL, ISO_KA, ONSET_KA, SOURCE_KA, useIpcCatalog, type FlagRow, type IpcPatientRow } from './types';
 import type { PatientListItem } from '../../api/types';
 
-type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'abx' | 'rates' | 'catalog';
+type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'abx' | 'abg' | 'materials' | 'rates' | 'catalog';
 
 /** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები, ცნობარები; 0068: სიგნალები, HAI შემთხვევები, device-days მაჩვენებლები */
 export default function Ipc() {
@@ -36,6 +38,8 @@ export default function Ipc() {
     ['hai', 'HAI შემთხვევები', true, 0],
     ['ssi', 'SSI', !!ipcSet?.ssi_surveillance, 0],
     ['abx', 'ანტიბიოტიკები', true, abxPending.data?.length ?? 0],
+    ['abg', 'ანტიბიოგრამა', true, 0],
+    ['materials', 'მასალები', true, 0],
     ['rates', 'მაჩვენებლები', true, 0],
     ['catalog', 'ცნობარები', full, 0],
   ];
@@ -56,6 +60,8 @@ export default function Ipc() {
       {cur === 'hai' && <HaiList />}
       {cur === 'ssi' && <SsiTab />}
       {cur === 'abx' && <AbxTab />}
+      {cur === 'abg' && <AbgTab />}
+      {cur === 'materials' && <MaterialsTab />}
       {cur === 'rates' && <DeviceDays />}
       {cur === 'catalog' && <IpcCatalogTab />}
     </>

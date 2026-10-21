@@ -127,7 +127,7 @@ ipcset '{"abx_restrict_reserve":true}'
 
 step "4. MAR → მაჩვενებლები"
 slot() { api GET "/inpatient/stays/$1/mar" "$NA" | jq -r --arg o "$2" '[.entries[]|select(.order_id==$o and .status=="due")]|sort_by(.scheduled_at)|.[0].id // empty'; }
-give() { local s; s=$(slot "$1" "$2"); [ -n "$s" ] && api POST "/inpatient/mar/$s/document" "$NA" -d '{"outcome":"given"}' | jq -r '.status // .code // .message'; }
+give() { local s; s=$(slot "$1" "$2"); [ -n "$s" ] && api POST "/inpatient/mar/$s/document" "$NA" -d '{"outcome":"given","override_reason":"ტესტ-E2E: დროის ფანჯარა"}' | jq -r '.status // .code // .message'; }
 chk "MAR: ცეფტრიაქსონი 1000 მგ IV (P1), ამოქსიცილინი 500 მგ PO (P2), უცნობი 100 მგ IV (P2)" "$(give "$E1" "$O_C"):$(give "$E2" "$O_A"):$(give "$E2" "$O_X")" "given:given:given"
 api POST /ipc/device-days/refresh "$IC" -d "{\"from\":\"$TODAY\",\"to\":\"$TODAY\"}" >/dev/null
 RT=$(api GET "/ipc/abx/rates?from=$TODAY&to=$TODAY&department_id=$DA" "$IC")

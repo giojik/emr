@@ -28,6 +28,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string }[] = [
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
   { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
   { to: '/ipc', label: 'ინფექციის კონტროლი', roles: ['infection', 'infection_dept'], module: 'ipc' },
+  { to: '/antibiogram', label: 'ანტიბიოგრამა', roles: ['doctor', 'pharmacist', 'anesthesiologist', 'lab_doctor', 'lab_manager'], module: 'ipc' },
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },

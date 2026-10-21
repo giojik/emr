@@ -61,6 +61,7 @@ import CapaCard from './pages/quality/CapaCard';
 import Ipc from './pages/ipc/Ipc';
 import FlagCard from './pages/ipc/FlagCard';
 import HaiCard from './pages/ipc/HaiCard';
+import { AntibiogramPage } from './pages/ipc/Abg';
 
 const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'];
 
@@ -129,6 +130,7 @@ export default function App() {
         <Route path="/ipc" element={<Ipc />} />
         <Route path="/ipc/flags/:id" element={<FlagCard />} />
         <Route path="/ipc/hai/:id" element={<HaiCard />} />
+        <Route path="/antibiogram" element={<AntibiogramPage />} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin', 'reports_all']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />

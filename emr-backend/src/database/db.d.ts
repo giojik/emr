@@ -1619,6 +1619,24 @@ export interface IpcAbxReference {
   updated_at: Generated<Timestamp>;
 }
 
+export interface IpcAntibiograms {
+  data: Json;
+  filters: Generated<Json>;
+  filters_label: Generated<string>;
+  id: Generated<string>;
+  isolates: Generated<number>;
+  note: string | null;
+  period_from: string;
+  period_to: string;
+  published_at: Generated<Timestamp>;
+  published_by: string;
+  status: Generated<string>;
+  title: string;
+  withdraw_reason: string | null;
+  withdrawn_at: Timestamp | null;
+  withdrawn_by: string | null;
+}
+
 export interface IpcCriteriaItems {
   grp: string | null;
   hai_type: string;
@@ -1734,6 +1752,25 @@ export interface IpcIsolationTypes {
   short_name: string;
   sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface IpcMaterialGroups {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  per_days: Generated<number>;
+  sort_order: Generated<number>;
+  target: Numeric | null;
+  unit_label: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IpcMaterialItems {
+  factor: Numeric;
+  group_id: string;
+  item_id: string;
 }
 
 export interface IpcMdroRules {
@@ -4873,6 +4910,7 @@ export interface DB {
   invoice_line_shares: InvoiceLineShares;
   invoices: Invoices;
   ipc_abx_reference: IpcAbxReference;
+  ipc_antibiograms: IpcAntibiograms;
   ipc_criteria_items: IpcCriteriaItems;
   ipc_criteria_sets: IpcCriteriaSets;
   ipc_flag_detections: IpcFlagDetections;
@@ -4881,6 +4919,8 @@ export interface DB {
   ipc_hai_types: IpcHaiTypes;
   ipc_isolation_types: IpcIsolationTypes;
   ipc_isolations: IpcIsolations;
+  ipc_material_groups: IpcMaterialGroups;
+  ipc_material_items: IpcMaterialItems;
   ipc_mdro_rules: IpcMdroRules;
   ipc_mdro_types: IpcMdroTypes;
   ipc_micro_scans: IpcMicroScans;
