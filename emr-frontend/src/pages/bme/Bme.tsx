@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
+import { DevicePm, DueChip, PmRefsPage, WorkDialog, WorksPage } from './BmePm';
 
 // ---------------------------------------------------------------- ტიპები
 type Status = 'operational' | 'restricted' | 'down' | 'standby' | 'retired';
@@ -23,6 +24,7 @@ interface Device {
   responsible_user_id: string | null; responsible_name: string | null; status: Status; status_reason: string | null; status_since: string; manufacture_year: number | null; install_date: string | null;
   purchase_date: string | null; purchase_value: string | null; supplier_id: string | null; supplier_name: string | null; warranty_until: string | null; under_warranty: boolean; asset_id: string | null; asset_inv_no: string | null;
   link_kind: LinkKind | null; link_name: string | null; needs_review: boolean; notes: string | null; pending_move_id: string | null; created_at: string;
+  pm_next_due: string | null; pm_overdue: number;
   events?: { id: string; kind: string; data: Record<string, unknown>; created_at: string; user_name: string | null }[];
   periods?: { id: string; status: Status; reason: string | null; started_at: string; ended_at: string | null; started_by_name: string | null; hours: number }[];
   documents?: Doc[];
@@ -45,7 +47,9 @@ const LINK_KA: Record<LinkKind, string> = { dx_device: 'რადიოლოგ
 const DOC_KA: Record<string, string> = { manual: 'ინსტრუქცია (მომხმარებლის)', service_manual: 'სერვისის სახელმძღვანელო', certificate: 'სერტიფიკატი / კალიბრაცია', license: 'ლიცენზია / ნებართვა',
   act: 'აქტი', warranty: 'საგარანტიო', photo: 'ფოტო', other: 'სხვა' };
 const EV_KA: Record<string, string> = { created: 'რეგისტრაცია', updated: 'რედაქტირება', status: 'სტატუსი', move_requested: 'გადაადგილების მოთხოვნა', moved: 'გადაადგილდა', move_rejected: 'მიღებაზე უარი',
-  move_cancelled: 'გადაადგილება გაუქმდა', linked: 'მიება', unlinked: 'ბმა მოიხსნა', document: 'დოკუმენტი', document_removed: 'დოკუმენტი მოიხსნა', reviewed: 'გადამოწმდა' };
+  move_cancelled: 'გადაადგილება გაუქმდა', linked: 'მიება', unlinked: 'ბმა მოიხსნა', document: 'დოკუმენტი', document_removed: 'დოკუმენტი მოიხსნა', reviewed: 'გადამოწმდა',
+  plan: 'გეგმა', work_planned: 'სამუშაო დაიგეგმა', work_done: 'სამუშაო შესრულდა', work_cancelled: 'სამუშაო გაუქმდა', meter: 'მთვლელი' };
+const RES_KA: Record<string, string> = { pass: 'გავლილი', conditional: 'პირობითად', fail: 'ვერ გაიარა' };
 const useRefs = () => useQuery({ queryKey: ['bme-refs'], queryFn: () => api<Refs>('/bme/refs') });
 const useDeps = () => useQuery({ queryKey: ['departments'], queryFn: () => api<Department[]>('/departments') });
 const n = (x: string) => (x.trim() ? x.trim() : null);
@@ -53,14 +57,15 @@ const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(2
 
 export const StatusChip = ({ s }: { s: Status }) => <span className={`chip ${STATUS_CHIP[s]}`}>{STATUS_KA[s]}</span>;
 
-/** ბიომედ-აპარატურა (0073): რეესტრი (პასპორტი), მისაღები, გადაადგილებები, მიუბმელები, შემაჯამებელი, იმპორტი, ტიპები */
+/** ბიომედ-აპარატურა (0073): რეესტრი (პასპორტი), მისაღები, გადაადგილებები, მიუბმელები, შემაჯამებელი, იმპორტი, ტიპები; 0074: სამუშაოები (PM / კალიბრაცია / ელ. უსაფრთხოება), ჩეკლისტები / სახეები */
 export default function Bme() {
   const { user } = useAuth(); const mods = useModules();
   const [sp, setSp] = useSearchParams();
   const enabled = mods.data?.find((m) => m.code === 'bme')?.enabled;
   const full = can(user, ...FULL);
-  const tabs: [string, string, boolean][] = [['registry', 'რეესტრი', true], ['incoming', 'მისაღები', full || can(user, 'bme_dept')], ['moves', 'გადაადგილებები', true],
-    ['unlinked', 'მიუბმელი ჩანაწერები', full], ['summary', 'შემაჯამებელი', can(user, ...VIEW_ALL)], ['import', 'იმპორტი', full], ['types', 'ტიპები', full]];
+  const tabs: [string, string, boolean][] = [['registry', 'რეესტრი', true], ['works', 'სამუშაოები', true], ['incoming', 'მისაღები', full || can(user, 'bme_dept')], ['moves', 'გადაადგილებები', true],
+    ['unlinked', 'მიუბმელი ჩანაწერები', full], ['summary', 'შემაჯამებელი', can(user, ...VIEW_ALL)], ['import', 'იმპორტი', full], ['types', 'ტიპები', full], ['pmrefs', 'ჩეკლისტები / სახეები', full]];
+  const refs = useRefs();
   const tab = sp.get('tab') ?? 'registry';
   // QR / სკანერი: /bme?inv=BME-00012 → პასპორტი
   const inv = sp.get('inv');
@@ -79,8 +84,9 @@ export default function Bme() {
         : <>
           {scan.error && <div className="content" style={{ paddingBottom: 0 }}><ErrorBox error={scan.error} /></div>}
           {tab === 'incoming' ? <Moves scope="incoming" /> : tab === 'moves' ? <Moves scope="" /> : tab === 'unlinked' ? <UnlinkedPage /> : tab === 'summary' ? <Summary />
-            : tab === 'import' ? <ImportPage /> : tab === 'types' ? <TypesPage /> : <Registry />}
+            : tab === 'import' ? <ImportPage /> : tab === 'types' ? <TypesPage /> : tab === 'works' ? <WorksPage /> : tab === 'pmrefs' ? <PmRefsPage types={refs.data?.types ?? []} /> : <Registry />}
           {sp.get('device') && <DeviceDialog id={sp.get('device')!} onClose={() => { sp.delete('device'); setSp(sp, { replace: true }); }} />}
+          {sp.get('work') && <WorkDialog id={sp.get('work')!} onClose={() => { sp.delete('work'); setSp(sp, { replace: true }); }} />}
         </>}
     </>
   );
@@ -131,7 +137,7 @@ function Registry() {
         <div className="card" style={{ overflowX: 'auto' }}>
           <table className="table">
             <thead><tr>{full && <th><input type="checkbox" aria-label="ყველას მონიშვნა" checked={rows.length > 0 && sel.length === rows.length} onChange={(e) => setSel(e.target.checked ? rows.map((x) => x.id) : [])} /></th>}
-              <th>№</th><th>აპარატი</th><th>ტიპი</th><th>ადგილი</th><th>სტატუსი</th><th>კრიტიკულობა</th><th>გარანტია</th></tr></thead>
+              <th>№</th><th>აპარატი</th><th>ტიპი</th><th>ადგილი</th><th>სტატუსი</th><th>კრიტიკულობა</th><th>შემდ. სამუშაო</th><th>გარანტია</th></tr></thead>
             <tbody>{rows.map((d) => (
               <tr key={d.id} className="clickable" onClick={() => open(d.id)}>
                 {full && <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`მონიშვნა ${d.inv_no}`} checked={sel.includes(d.id)} onChange={(e) => setSel(e.target.checked ? [...sel, d.id] : sel.filter((x) => x !== d.id))} /></td>}
@@ -144,9 +150,11 @@ function Registry() {
                 <td className="small">{d.department_name ?? <span className="muted">—</span>}{(d.room || d.or_room_name) && <div className="muted">{[d.or_room_name, d.room && `ოთახი ${d.room}`].filter(Boolean).join(' · ')}</div>}</td>
                 <td><StatusChip s={d.status} />{d.status_reason && d.status !== 'operational' && <div className="small muted" style={{ maxWidth: 220 }}>{d.status_reason}</div>}</td>
                 <td><span className={`chip ${CRIT_CHIP[d.criticality]}`}>{CRIT_KA[d.criticality]}</span></td>
+                <td style={{ whiteSpace: 'nowrap' }}>{d.status === 'retired' ? '—' : d.pm_overdue > 0 ? <span className="chip danger" title={`ვადაგადაცილებული: ${d.pm_overdue}`}>ვადაგადაცილ. {d.pm_overdue}</span>
+                  : d.pm_next_due ? <DueChip due={d.pm_next_due} days={Math.round((new Date(d.pm_next_due).getTime() - new Date(new Date().toDateString()).getTime()) / 864e5)} /> : <span className="muted small">—</span>}</td>
                 <td className="small">{d.warranty_until ? <span className={d.under_warranty ? '' : 'muted'}>{dateGe(d.warranty_until)}</span> : '—'}</td>
               </tr>))}
-              {!rows.length && <tr><td colSpan={8} className="muted">აპარატი არ მოიძებნა</td></tr>}
+              {!rows.length && <tr><td colSpan={9} className="muted">აპარატი არ მოიძებნა</td></tr>}
             </tbody>
           </table>
         </div>)}
@@ -242,7 +250,7 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ['bme-device', id], queryFn: () => api<Device>(`/bme/devices/${id}`) });
   const d = q.data; const full = can(user, ...FULL);
   const [f, setF] = useState<Form | null>(null);
-  const [sec, setSec] = useState<'passport' | 'documents' | 'status' | 'history' | 'moves'>('passport');
+  const [sec, setSec] = useState<'passport' | 'pm' | 'documents' | 'status' | 'history' | 'moves'>('passport');
   const [dlg, setDlg] = useState<'status' | 'move' | 'link' | null>(null);
   useEffect(() => { if (d && !f) setF(toForm(d)); }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = () => { void qc.invalidateQueries({ queryKey: ['bme-device', id] }); void qc.invalidateQueries({ queryKey: ['bme-devices'] }); void qc.invalidateQueries({ queryKey: ['bme-alerts'] }); };
@@ -285,10 +293,11 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
             {d.asset_inv_no && <span>ბუღალტრული ინვენტარი: <strong className="mono">{d.asset_inv_no}</strong></span>}
           </div>
           <div className="seg" role="group" aria-label="განყოფილება" style={{ alignSelf: 'flex-start' }}>
-            {([['passport', 'პასპორტი'], ['documents', `დოკუმენტები (${d.documents?.length ?? 0})`], ['status', 'სტატუსის ისტორია'], ['moves', 'გადაადგილებები'], ['history', 'ქრონოლოგია']] as const)
+            {([['passport', 'პასპორტი'], ['pm', 'გეგმები / სამუშაოები'], ['documents', `დოკუმენტები (${d.documents?.length ?? 0})`], ['status', 'სტატუსის ისტორია'], ['moves', 'გადაადგილებები'], ['history', 'ქრონოლოგია']] as const)
               .map(([k, l]) => <button key={k} type="button" aria-pressed={sec === k} onClick={() => setSec(k)}>{l}</button>)}
           </div>
           {sec === 'passport' && <fieldset disabled={!editable} style={{ border: 0, padding: 0, margin: 0 }}><PassportFields f={f} set={(k, v) => setF({ ...f, [k]: v })} types={refs.data.types} isNew={false} /></fieldset>}
+          {sec === 'pm' && <DevicePm deviceId={d.id} retired={d.status === 'retired'} />}
           {sec === 'documents' && <Documents d={d} full={full} onChange={done} />}
           {sec === 'status' && (
             <table className="table"><thead><tr><th>სტატუსი</th><th>მიზეზი</th><th>დასაწყისი</th><th>დასასრული</th><th className="num">საათი</th><th>ვინ</th></tr></thead>
@@ -299,6 +308,9 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
             <table className="table"><tbody>{d.events?.map((e) => <tr key={e.id}><td className="small" style={{ whiteSpace: 'nowrap' }}>{tsDate(e.created_at)}</td><td>{EV_KA[e.kind] ?? e.kind}</td>
               <td className="small muted">{e.kind === 'status' ? `${STATUS_KA[e.data.from as Status] ?? ''} → ${STATUS_KA[e.data.to as Status] ?? ''}${e.data.reason ? ` · ${e.data.reason}` : ''}`
                 : e.kind === 'updated' ? (e.data.fields as string[]).join(', ') : e.kind === 'linked' || e.kind === 'created' ? String(e.data.name ?? e.data.link_name ?? e.data.inv_no ?? '')
+                  : e.kind === 'work_done' ? `${e.data.work_no} · ${e.data.kind ?? ''} · ${RES_KA[e.data.result as string] ?? ''}${e.data.next_due ? ` · შემდეგი ${dateGe(e.data.next_due as string)}` : ''}`
+                  : e.kind === 'work_planned' || e.kind === 'work_cancelled' ? `${e.data.work_no}${e.data.reason ? ` · ${e.data.reason}` : ''}`
+                  : e.kind === 'meter' ? `${e.data.value} (${e.data.unit})` : e.kind === 'plan' ? `${e.data.kind ?? ''}${e.data.next_due ? ` · ვადა ${dateGe(e.data.next_due as string)}` : ''}${e.data.interval_months ? ` · ${e.data.interval_months} თვე` : ''}`
                   : typeof e.data.reason === 'string' ? e.data.reason : typeof e.data.note === 'string' ? e.data.note : typeof e.data.title === 'string' ? e.data.title : e.data.backfill ? 'არსებული ჩანაწერიდან (მიგრაცია)' : ''}</td>
               <td className="small">{e.user_name ?? 'სისტემა'}</td></tr>)}</tbody></table>)}
           <ErrorBox error={save.error ?? review.error ?? unlink.error} />
@@ -547,7 +559,7 @@ function TypesPage() {
   const iv = (x: number | null) => (x ? `${x} თვე` : '—');
   return (
     <div className="content">
-      <div className="row"><span className="hint grow">ინტერვალები — PM / კალიბრაციის / ელ. უსაფრთხოების გეგმების ნაგულისხმევი (შემდეგი ეტაპი); კრიტიკულობა / რისკი — ახალი აპარატის ნაგულისხმევი.</span>
+      <div className="row"><span className="hint grow">ინტერვალები — PM / კალიბრაციის / ელ. უსაფრთხოების გეგმების ნაგულისხმევი (ცვლილების შემდეგ — „ჩეკლისტები / სახეები“ → „გეგმების სინქრონიზაცია“ აკლებულ გეგმებს შექმნის); კრიტიკულობა / რისკი — ახალი აპარატის ნაგულისხმევი.</span>
         <button className="btn primary" type="button" onClick={() => setEdit('new')}>+ ტიპი</button></div>
       <div className="card" style={{ overflowX: 'auto' }}><table className="table">
         <thead><tr><th>ტიპი</th><th>ჯგუფი</th><th>კრიტიკულობა</th><th>რისკი</th><th>PM</th><th>კალიბრაცია</th><th>ელ. უსაფრთხ.</th><th className="num">აპარატი</th><th /></tr></thead>

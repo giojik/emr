@@ -50,7 +50,7 @@ import { ReportingModule } from './reporting/reporting.module';
 import { QualityModule } from './quality/quality.module';
 import { IpcModule } from './ipc/ipc.module';
 import { BmeCoreModule } from './bme/bme-common';
-import { BmeModule } from './bme/bme';
+import { BmeModule } from './bme/bme.module';
 import { APP_FILTER } from '@nestjs/core';
 import { PgLockFilter } from './common/pg-lock.filter';
 

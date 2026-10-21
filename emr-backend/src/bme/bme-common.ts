@@ -13,6 +13,9 @@ export interface BmeSettings {
   inv_prefix: string; inv_year: boolean; inv_digits: number; require_department: boolean; move_mode: 'direct' | 'confirm';
   area_radiology: AreaMode; area_endoscopy: AreaMode; area_scopes: AreaMode; area_cssd: AreaMode; area_lab: 'warn' | 'off'; area_or: 'warn' | 'off';
   or_alert_criticality: Criticality; label_size: '50x25' | '40x20' | '70x35'; label_code: 'qr' | 'code128';
+  // 0074: PM / კალიბრაცია / ელ. უსაფრთხოება
+  pm_due_basis: 'last_done' | 'calendar'; pm_cert_sets_due: boolean; pm_auto_plans: boolean; pm_remind_days: number[]; pm_remind_hour: number;
+  pm_remind_email: boolean; pm_remind_sms: boolean; pm_overdue_action: 'warn' | 'restrict'; pm_fail_notify_dept: boolean; pm_act_dept_sign: boolean; pm_work_prefix: string;
 }
 
 export const STATUSES = ['operational', 'restricted', 'down', 'standby', 'retired'] as const;

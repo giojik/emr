@@ -100,6 +100,11 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       instrument_tracking: bool, cycle_entry: (v) => oneOf(v, ['manual']), wash_record: bool, bd_required: bool, bi_frequency: (v) => oneOf(v, ['each', 'daily', 'weekly', 'off']),
       bi_hold: (v) => oneOf(v, ['all', 'implant', 'none']), shelf_life_mode: (v) => oneOf(v, ['time', 'event']), patient_trace: bool, auto_consume: bool,
       label_size: (v) => oneOf(v, ['50x25', '40x20', '70x35']), label_code: (v) => oneOf(v, ['qr', 'code128']),
+      // 0074: PM / კალიბრაცია / ელ. უსაფრთხოება
+      pm_due_basis: (v) => oneOf(v, ['last_done', 'calendar']), pm_cert_sets_due: bool, pm_auto_plans: bool,
+      pm_remind_days: (v) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 180)) && new Set(v).size === v.length,
+      pm_remind_hour: (v) => int(v, 0, 23), pm_remind_email: bool, pm_remind_sms: bool, pm_overdue_action: (v) => oneOf(v, ['warn', 'restrict']),
+      pm_fail_notify_dept: bool, pm_act_dept_sign: bool, pm_work_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
     },
   },
   stock: {
@@ -256,6 +261,11 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       area_cssd: (v) => oneOf(v, ['block', 'warn', 'off']), area_lab: (v) => oneOf(v, ['warn', 'off']), area_or: (v) => oneOf(v, ['warn', 'off']),
       or_alert_criticality: (v) => oneOf(v, ['life_support', 'high', 'medium', 'low']),
       label_size: (v) => oneOf(v, ['50x25', '40x20', '70x35']), label_code: (v) => oneOf(v, ['qr', 'code128']),
+      // 0074: PM / კალიბრაცია / ელ. უსაფრთხოება
+      pm_due_basis: (v) => oneOf(v, ['last_done', 'calendar']), pm_cert_sets_due: bool, pm_auto_plans: bool,
+      pm_remind_days: (v) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 180)) && new Set(v).size === v.length,
+      pm_remind_hour: (v) => int(v, 0, 23), pm_remind_email: bool, pm_remind_sms: bool, pm_overdue_action: (v) => oneOf(v, ['warn', 'restrict']),
+      pm_fail_notify_dept: bool, pm_act_dept_sign: bool, pm_work_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
     },
   },
   asset_register: {

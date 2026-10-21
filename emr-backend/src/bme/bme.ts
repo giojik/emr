@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res,
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res,
   StreamableFile, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import bwipjs from 'bwip-js';
@@ -23,6 +23,7 @@ import {
   AREAS, BME_DEPT, BME_FULL, BME_VIEW_ALL, BmeGuard, CRITICALITY, DOC_KINDS, GROUPS, LINKS, LINK_KA, REASON_REQUIRED, RISK_CLASSES, STATUS_KA, STATUSES, userName, viewScope,
   type Area, type BmeSettings, type BmeStatus, type Ex, type LinkKind, type Trx,
 } from './bme-common';
+import { ensurePlans } from './bme-pm-common';
 
 const mm = (v: number) => (v * 72) / 25.4;
 const tz = 'Asia/Tbilisi';
@@ -97,6 +98,9 @@ export class BmeService {
           WHEN b.endo_scope_id IS NOT NULL THEN 'endo_scope' END`.as('link_kind'),
         sql<string | null>`coalesce(x.name || ' (' || x.section || ')', lm.name, cm.name, es.name || ' · ' || es.serial_number)`.as('link_name'),
         sql<string | null>`(SELECT m.id FROM bme_moves m WHERE m.device_id = b.id AND m.status = 'pending')`.as('pending_move_id'),
+        // 0074: უახლოესი გეგმიური სამუშაო
+        sql<string | null>`(SELECT to_char(min(p.next_due), 'YYYY-MM-DD') FROM bme_plans p WHERE p.device_id = b.id AND p.is_active)`.as('pm_next_due'),
+        sql<number>`(SELECT count(*)::int FROM bme_plans p WHERE p.device_id = b.id AND p.is_active AND p.next_due < (now() AT TIME ZONE ${tz})::date)`.as('pm_overdue'),
         sql<boolean>`b.warranty_until IS NOT NULL AND b.warranty_until >= (now() AT TIME ZONE ${tz})::date`.as('under_warranty')]);
   }
 
@@ -214,6 +218,7 @@ export class BmeService {
         }).returning('id').executeTakeFirstOrThrow();
         await trx.insertInto('bme_status_periods').values({ device_id: b.id, status, reason: dto.status_reason?.trim() || null, started_by: u.id }).execute();
         await this.event(trx, b.id, 'created', { inv_no: inv, department_id: dto.department_id ?? null, room: dto.room ?? null, ...(link && { link: link.kind, link_name: link.name }) }, u);
+        if (s.pm_auto_plans !== false) await ensurePlans(trx, b.id, u.id);
         await this.audit.log(ctx, { action: 'CREATE_BME_DEVICE', entityName: 'bme_devices', entityId: b.id, newData: { ...dto, inv_no: inv } }, trx);
         return b.id;
       });
@@ -237,6 +242,10 @@ export class BmeService {
         if (!changed.length) return;
         await trx.updateTable('bme_devices').set({ ...set, updated_at: sql`now()` }).where('id', '=', id).execute();
         await this.event(trx, id, 'updated', { fields: changed }, u);
+        if (changed.includes('type_id') || changed.includes('install_date')) {
+          const s = await this.settings();
+          if (s.pm_auto_plans !== false) await ensurePlans(trx, id, u.id);
+        }
         await this.audit.log(ctx, { action: 'UPDATE_BME_DEVICE', entityName: 'bme_devices', entityId: id, oldData: Object.fromEntries(changed.map((k) => [k, (old as Record<string, unknown>)[k]])), newData: set }, trx);
       });
     } catch (e) { mapPgError(e, BmeService.PG); }
@@ -278,6 +287,11 @@ export class BmeService {
       await trx.insertInto('bme_status_periods').values({ device_id: id, status: dto.status, reason, started_by: u.id }).execute();
       await trx.updateTable('bme_devices').set({ status: dto.status, status_reason: reason, status_since: sql`now()`, updated_at: sql`now()` }).where('id', '=', id).execute();
       await this.event(trx, id, 'status', { from: d.status, to: dto.status, reason }, u);
+      if (dto.status === 'retired') {   // 0074: გეგმები ჩერდება, ღია სამუშაოები უქმდება
+        await trx.updateTable('bme_plans').set({ is_active: false, updated_at: sql`now()` }).where('device_id', '=', id).where('is_active', '=', true).execute();
+        await trx.updateTable('bme_works').set({ status: 'cancelled', cancel_reason: 'აპარატი გამოყვანილია', updated_at: sql`now()` })
+          .where('device_id', '=', id).where('status', 'in', ['planned', 'in_progress']).execute();
+      }
       await this.audit.log(ctx, { action: 'BME_STATUS', entityName: 'bme_devices', entityId: id, oldData: { status: d.status, reason: d.status_reason }, newData: { status: dto.status, reason } }, trx);
       // განყოფილების (bme_dept) და პასუხისმგებლის ინფორმირება: გაუმართავი / შეზღუდული / აღდგა
       if (d.department_id && (['down', 'restricted'].includes(dto.status) || (['down', 'restricted'].includes(d.status) && dto.status === 'operational'))) {
@@ -495,6 +509,7 @@ export class BmeService {
           [LINKS[l.kind]]: l.id, needs_review: true, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
         await trx.insertInto('bme_status_periods').values({ device_id: b.id, status: 'operational', started_by: u.id }).execute();
         await this.event(trx, b.id, 'created', { inv_no: inv, link: l.kind, link_name: l.name }, u);
+        if (s.pm_auto_plans !== false) await ensurePlans(trx, b.id, u.id, 'backfill');
         await this.audit.log(ctx, { action: 'CREATE_BME_DEVICE', entityName: 'bme_devices', entityId: b.id, newData: { from_link: l, inv_no: inv } }, trx);
         return b.id;
       });
@@ -687,6 +702,7 @@ export class BmeService {
               warranty_until: v(14) || null, notes: v(15) || null, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
             await trx.insertInto('bme_status_periods').values({ device_id: b.id, status: 'operational', started_by: u.id }).execute();
             await this.event(trx, b.id, 'created', { inv_no: no, import: name }, u);
+            if (s.pm_auto_plans !== false) await ensurePlans(trx, b.id, u.id, 'backfill');
             created++; report.push({ row, status: 'create', inv_no: no, name: nm });
           } catch (e) { report.push({ row, status: 'error', inv_no: v(0), name: nm, message: (e as Error).message }); }
         }
@@ -805,6 +821,3 @@ export class BmeController {
     return this.s.removeDoc(id, fid, d.reason, u, auditCtx(r));
   }
 }
-
-@Module({ controllers: [BmeController], providers: [BmeService] })
-export class BmeModule {}

@@ -14,6 +14,7 @@ import { RptJobsService } from './reporting/reporting-jobs';
 import { WorkerModule } from './worker.module';
 import { QmJobsService } from './quality/quality-jobs';
 import { IpcJobsService } from './ipc/ipc-jobs';
+import { BmePmJobsService } from './bme/bme-pm-jobs';
 
 const HEARTBEAT_MS = 60_000;
 
@@ -78,8 +79,13 @@ async function bootstrap() {
   const abxTick = () => void ipc.abx.tick().then((r) => { if (r.timeouts) log.log(`IPC ანტიბიოტიკი: time-out ${r.timeouts}`); })
     .catch((e) => log.error(`IPC ანტიბიოტიკი: ${(e as Error).message}`));
   const abxTimer = setInterval(abxTick, 15 * 60_000); setTimeout(abxTick, 180_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); });
+  // 0074: ბიომედ-აპარატურა — PM / კალიბრაციის შეხსენებები და ვადაგადაცილება (დღეში ერთხელ, pm_remind_hour-ის შემდეგ) — ყოველ 30 წუთში მოწმდება
+  const bmePm = app.get(BmePmJobsService);
+  const bmeTick = () => void bmePm.tick().then((r) => { if (r.reminders || r.restricted) log.log(`ბიომედ PM: შეხსენება ${r.reminders}, მიმღები ${r.notified}, შეზღუდული ${r.restricted}`); })
+    .catch((e) => log.error(`ბიომედ PM: ${(e as Error).message}`));
+  const bmeTimer = setInterval(bmeTick, 30 * 60_000); setTimeout(bmeTick, 200_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

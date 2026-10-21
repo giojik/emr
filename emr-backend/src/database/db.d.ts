@@ -345,6 +345,32 @@ export interface BillingPackages {
   updated_at: Generated<Timestamp>;
 }
 
+export interface BmeChecklistItems {
+  checklist_id: string;
+  critical: Generated<boolean>;
+  id: Generated<Int8>;
+  item_type: string;
+  limit_high: Numeric | null;
+  limit_low: Numeric | null;
+  nominal: Numeric | null;
+  required: Generated<boolean>;
+  sort_order: number;
+  text: string;
+  tolerance: Numeric | null;
+  unit: string | null;
+}
+
+export interface BmeChecklists {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind_id: string;
+  name: string;
+  type_id: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface BmeDevices {
   asset_id: string | null;
   created_at: Generated<Timestamp>;
@@ -414,6 +440,7 @@ export interface BmeDocuments {
   title: string;
   uploaded_by: string;
   valid_until: string | null;
+  work_id: string | null;
 }
 
 export interface BmeEvents {
@@ -423,6 +450,17 @@ export interface BmeEvents {
   id: Generated<Int8>;
   kind: string;
   user_id: string | null;
+}
+
+export interface BmeMeterReadings {
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  id: Generated<Int8>;
+  note: string | null;
+  read_on: string;
+  unit: string;
+  user_id: string;
+  value: Numeric;
 }
 
 export interface BmeMoves {
@@ -444,6 +482,30 @@ export interface BmeMoves {
   to_room: string | null;
 }
 
+export interface BmePlans {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  device_id: string;
+  id: Generated<string>;
+  interval_months: number | null;
+  is_active: Generated<boolean>;
+  kind_id: string;
+  last_done_on: string | null;
+  last_result: string | null;
+  last_work_id: string | null;
+  next_due: string | null;
+  notes: string | null;
+  source: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface BmeReminders {
+  due_date: string;
+  plan_id: string;
+  sent_at: Generated<Timestamp>;
+  stage: number;
+}
+
 export interface BmeStatusPeriods {
   device_id: string;
   ended_at: Timestamp | null;
@@ -453,6 +515,71 @@ export interface BmeStatusPeriods {
   started_at: Generated<Timestamp>;
   started_by: string | null;
   status: string;
+}
+
+export interface BmeWorkItems {
+  critical: boolean;
+  id: Generated<Int8>;
+  item_type: string;
+  limit_high: Numeric | null;
+  limit_low: Numeric | null;
+  nominal: Numeric | null;
+  note: string | null;
+  outcome: string | null;
+  required: boolean;
+  sort_order: number;
+  text: string;
+  tolerance: Numeric | null;
+  unit: string | null;
+  value_num: Numeric | null;
+  work_id: string;
+}
+
+export interface BmeWorkKinds {
+  code: string;
+  created_at: Generated<Timestamp>;
+  default_months: number | null;
+  groups: Generated<string[]>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  needs_certificate: Generated<boolean>;
+  short_name: string;
+  sort_order: Generated<number>;
+  standard: string | null;
+  type_field: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface BmeWorks {
+  assignee_id: string | null;
+  cancel_reason: string | null;
+  cert_no: string | null;
+  cert_valid_until: string | null;
+  checklist_id: string | null;
+  completed_at: Timestamp | null;
+  completed_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  device_id: string;
+  due_date: string | null;
+  external_person: string | null;
+  id: Generated<string>;
+  kind_id: string;
+  next_due: string | null;
+  performed_on: string | null;
+  performer_kind: Generated<string>;
+  plan_id: string | null;
+  result: string | null;
+  result_note: string | null;
+  scheduled_date: string | null;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+  status_applied: Generated<boolean>;
+  suggested_status: string | null;
+  supplier_id: string | null;
+  updated_at: Generated<Timestamp>;
+  work_no: string;
 }
 
 export interface ClaimTemplates {
@@ -5024,12 +5151,20 @@ export interface DB {
   beds: Beds;
   billing_package_items: BillingPackageItems;
   billing_packages: BillingPackages;
+  bme_checklist_items: BmeChecklistItems;
+  bme_checklists: BmeChecklists;
   bme_device_types: BmeDeviceTypes;
   bme_devices: BmeDevices;
   bme_documents: BmeDocuments;
   bme_events: BmeEvents;
+  bme_meter_readings: BmeMeterReadings;
   bme_moves: BmeMoves;
+  bme_plans: BmePlans;
+  bme_reminders: BmeReminders;
   bme_status_periods: BmeStatusPeriods;
+  bme_work_items: BmeWorkItems;
+  bme_work_kinds: BmeWorkKinds;
+  bme_works: BmeWorks;
   claim_templates: ClaimTemplates;
   clinic_settings: ClinicSettings;
   consultations: Consultations;

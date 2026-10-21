@@ -100,6 +100,25 @@ function BmeSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
           <option value="life_support">სიცოცხლის შემანარჩუნებელი</option><option value="high">მაღალი და ზემოთ</option><option value="medium">საშუალო და ზემოთ</option><option value="low">ყველა</option></select></Field>
       </div>
       <span className="hint">„შეზღუდულად მუშა“ არასდროს ბლოკავს — მხოლოდ გაფრთხილება. მოდულის გამორთვისას დაგეგმვა არ ჩერდება.</span>
+      <strong className="small">გეგმიური მომსახურება / კალიბრაცია / ელ. უსაფრთხოება</strong>
+      <div style={grid}>
+        <Field label="შემდეგი ვადა" htmlFor="bpd" hint="კალენდრით — განრიგი არ „მიცურავს“ დაგვიანებისას"><select id="bpd" className="select" value={v<string>('pm_due_basis') ?? 'last_done'} onChange={(e) => upd('pm_due_basis', e.target.value)}>
+          <option value="last_done">ბოლო შესრულებიდან</option><option value="calendar">კალენდრით (წინა ვადიდან)</option></select></Field>
+        <Field label="ვადაგადაცილება" htmlFor="bpo" hint="აღდგება სამუშაოს შესრულებისას"><select id="bpo" className="select" value={v<string>('pm_overdue_action') ?? 'warn'} onChange={(e) => upd('pm_overdue_action', e.target.value)}>
+          <option value="warn">მხოლოდ გაფრთხილება</option><option value="restrict">ავტომატურად „შეზღუდულად მუშა“</option></select></Field>
+        <Field label="სამუშაოს ნომრის პრეფიქსი" htmlFor="bpp" hint="მაგ. PM-26-00001"><input id="bpp" className="input mono" maxLength={8} value={v<string>('pm_work_prefix') ?? 'PM'} onChange={(e) => upd('pm_work_prefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} /></Field>
+        <Field label="შეხსენება ვადამდე (დღე, მძიმით)" htmlFor="bpr" hint="მაქს. 4, მაგ. 30, 7; ვადაგადაცილებაზე — ყოველთვის"><input id="bpr" className="input mono" key={(v<number[]>('pm_remind_days') ?? []).join(',')} defaultValue={(v<number[]>('pm_remind_days') ?? []).join(', ')}
+          onBlur={(e) => upd('pm_remind_days', [...new Set(e.target.value.split(/[,\s]+/).map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 4))} /></Field>
+        <Field label="შეხსენების საათი" htmlFor="bph" hint="დღეში ერთხელ, ამ საათის შემდეგ"><input id="bph" className="input mono" type="number" min={0} max={23} value={v<number>('pm_remind_hour') ?? 9} onChange={(e) => upd('pm_remind_hour', Number(e.target.value))} /></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('pm_remind_email')} onChange={(e) => upd('pm_remind_email', e.target.checked)} /> შეხსენება ელფოსტითაც</label>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('pm_remind_sms')} onChange={(e) => upd('pm_remind_sms', e.target.checked)} /> შეხსენება SMS-ითაც</label></div>
+        <label className="row"><input type="checkbox" checked={v<boolean>('pm_auto_plans') !== false} onChange={(e) => upd('pm_auto_plans', e.target.checked)} /> ახალ აპარატს გეგმები ავტომატურად (ტიპიდან)</label>
+        <label className="row"><input type="checkbox" checked={v<boolean>('pm_cert_sets_due') !== false} onChange={(e) => upd('pm_cert_sets_due', e.target.checked)} /> სერტიფიკატის ვადა = შემდეგი ვადა</label>
+        <label className="row"><input type="checkbox" checked={v<boolean>('pm_fail_notify_dept') !== false} onChange={(e) => upd('pm_fail_notify_dept', e.target.checked)} /> „ვერ გაიარა“ / „პირობითად“ — განყოფილებას შეტყობინება</label>
+        <label className="row"><input type="checkbox" checked={v<boolean>('pm_act_dept_sign') !== false} onChange={(e) => upd('pm_act_dept_sign', e.target.checked)} /> აქტში — განყოფილების ხელმოწერის ადგილი</label>
+      </div>
+      <span className="hint">შეხსენება: სამედიცინო ინჟინრებს, სამუშაოს შემსრულებელს და აპარატის განყოფილების „ბიომედ-აპარატურა (განყოფილება)“ უფლების მქონეებს — ეკრანზე (დღიური შეჯამება); ელფოსტა / SMS — სერვერზე კონფიგურირებული SMTP / SMS სერვისით.</span>
     </div>
   );
 }
