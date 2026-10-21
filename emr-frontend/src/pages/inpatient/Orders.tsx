@@ -22,6 +22,9 @@ export interface Order {
   verify_status: 'not_required' | 'pending' | 'verified' | 'rejected'; verify_note: string | null; verified_by_name: string | null;
   approval_status: 'not_required' | 'pending' | 'approved' | 'rejected'; approval_note: string | null; approved_by_name: string | null;
   supply_mode: 'ward' | 'pharmacy' | null; req_no: string | null; request_status: string | null; stock_request_id: string | null;
+  // 0070: ანტიმიკრობული
+  atc_code?: string | null; aware?: string | null; abx_indication?: string | null; abx_icd10?: string | null; abx_review_due?: string | null; abx_reviewed_at?: string | null;
+  abx_review_decision?: string | null; abx_review_note?: string | null;
   title: string; inn: string | null; strength: string | null; high_alert: boolean | null; controlled_class: string | null; reserve_antibiotic: boolean | null; created_at: string;
   // 0047: ტიტრაცია
   titratable?: boolean; dose_rate?: string | null; dose_rate_unit?: string | null; conc_amount?: string | null; conc_unit?: string | null; conc_volume_ml?: string | null;
@@ -31,13 +34,14 @@ export interface Order {
 }
 interface OrdersResp {
   orders: Order[]; weight: { kg: number; at: string } | null; age_days: number;
-  settings: { antibiotic_default_days: number; verbal_orders: boolean; med_verification: string };
+  settings: { antibiotic_default_days: number; verbal_orders: boolean; med_verification: string;
+    abx?: { enabled: boolean; prefixes: string[]; indication_required: boolean; restrict_mode: string; timeout_hours: number } };
   can: { order: boolean; verbal: boolean; approve: boolean };
 }
 type Category = 'medication' | 'diet' | 'nursing' | 'activity';
 type OType = 'scheduled' | 'once' | 'prn' | 'continuous';
 interface GenericRow { id: string; inn: string; inn_latin: string | null; strength: string | null; form_name: string; atc_code: string | null; dose_unit: string | null; routes: string[];
-  high_alert: boolean; controlled_class: string | null; reserve_antibiotic: boolean; patient_only: boolean; is_active: boolean }
+  high_alert: boolean; controlled_class: string | null; reserve_antibiotic: boolean; patient_only: boolean; is_active: boolean; aware?: string | null }
 interface Frequency { code: string; name: string; times_of_day: string[] | null; interval_hours: number | null; per_day: string; is_active: boolean; sort_order: number }
 interface OrderSet { id: string; name: string; department_id: string | null; owner_id: string | null; items: Partial<OrderBody>[]; department_name: string | null }
 export type OrderBody = {
@@ -45,9 +49,14 @@ export type OrderBody = {
   route_code?: string; frequency_code?: string; prn_reason?: string; prn_max_per_day?: number; prn_min_interval_h?: number; diluent?: string; volume_ml?: number;
   rate_ml_h?: number; duration_min?: number; text?: string; instructions?: string; start_at?: string; duration_days?: number; supply_mode?: 'ward' | 'pharmacy';
   titratable?: boolean; dose_rate?: number; dose_rate_unit?: string; conc_amount?: number; conc_unit?: string; conc_volume_ml?: number; titrate_min?: number; titrate_max?: number; titrate_goal?: string;
+  abx_indication?: 'empiric' | 'targeted' | 'prophylaxis'; abx_icd10?: string;
   verbal_doctor_id?: string; set_id?: string; nursing_task?: 'vitals' | 'fluid' | 'scale' | 'other'; task_scale_code?: string; ack?: boolean; override_reason?: string; confirm_severe?: boolean; reason?: string;
 };
 
+export const AWARE_KA: Record<string, [string, string]> = { access: ['ok', 'Access'], watch: ['warn', 'Watch'], reserve: ['danger', 'Reserve'], not_recommended: ['danger', 'არარეკომ.'] };
+export const ABX_IND_KA: Record<string, string> = { empiric: 'ემპირიული', targeted: 'მიზნობრივი', prophylaxis: 'პროფილაქტიკა' };
+const ABX_DEC_KA: Record<string, string> = { continue: 'გაგრძელება', deescalate: 'დე-ესკალაცია', iv_to_po: 'IV → per os', stop: 'შეწყვეტა' };
+export const abxDue = (o: Order) => !!o.abx_review_due && !o.abx_reviewed_at && new Date(o.abx_review_due) <= new Date() && (o.status === 'active' || o.status === 'on_hold');
 export const CATEGORY_KA: Record<Category, string> = { medication: 'მედიკამენტი', diet: 'კვება / დიეტა', nursing: 'მოვლა / პროცედურა', activity: 'რეჟიმი' };
 const TYPE_KA: Record<OType, string> = { scheduled: 'გეგმიური', once: 'ერთჯერადი', prn: 'საჭიროებისამებრ (PRN)', continuous: 'უწყვეტი ინფუზია' };
 const STATUS: Record<Order['status'], [string, string]> = { active: ['ok', 'აქტიური'], on_hold: ['warn', 'შეჩერებული'], stopped: ['', 'შეწყვეტილი'], completed: ['', 'დასრულებული'] };
@@ -76,7 +85,11 @@ export function OrderBadges({ o }: { o: Order }) {
     {o.verify_status === 'pending' && <span className="chip warn" title="დადასტურების მოლოდინში (მთავარი ექთანი / ფარმაცევტი)">დასადასტურებელი</span>}
     {o.verify_status === 'verified' && o.verify_note && <span className="chip info" title={o.verify_note}>შენიშვნა</span>}
     {o.verify_status === 'rejected' && <span className="chip danger" title={o.verify_note ?? ''}>უარყოფილია</span>}
-    {o.approval_status === 'pending' && <span className="chip warn" title="სარეზერვო ანტიბიოტიკი — დამტკიცების მოლოდინში">დასამტკიცებელი</span>}
+    {o.aware && AWARE_KA[o.aware] && <span className={`chip ${AWARE_KA[o.aware][0]}`} title="WHO AWaRe">{AWARE_KA[o.aware][1]}</span>}
+    {o.abx_indication && <span className="chip" title={o.abx_icd10 ? `დიაგნოზი: ${o.abx_icd10}` : ''}>{ABX_IND_KA[o.abx_indication]}</span>}
+    {abxDue(o) && <span className="chip danger" title="ანტიბიოტიკის time-out — საჭიროა გადახედვა">გადასახედი</span>}
+    {o.abx_review_decision && <span className="chip info" title={o.abx_review_note ?? ''}>გადახედულია: {ABX_DEC_KA[o.abx_review_decision]}</span>}
+    {o.approval_status === 'pending' && <span className="chip warn" title="შეზღუდული ანტიბიოტიკი — დამტკიცების მოლოდინში">დასამტკიცებელი</span>}
     {o.approval_status === 'approved' && <span className="chip ok" title={o.approval_note ?? ''}>დამტკიცებული</span>}
     {o.is_verbal && !o.verbal_confirmed_at && <span className="chip warn" title="ზეპირი დანიშნულება — ექიმის დადასტურების მოლოდინში">ზეპირი</span>}
     {o.supply_mode === 'pharmacy' && <span className="chip" title={o.req_no ? `მოთხოვნა ${o.req_no}` : 'აფთიაქიდან პაციენტზე'}>აფთიაქიდან{o.req_no ? ` · ${o.req_no}` : ''}</span>}
@@ -102,6 +115,7 @@ export default function OrdersPanel({ encounterId, departmentId }: { encounterId
   const [sets, setSets] = useState(false);
   const [detail, setDetail] = useState<Order | null>(null);
   const [reasonFor, setReasonFor] = useState<null | { o: Order; action: 'hold' | 'stop' | 'approve-reject' }>(null);
+  const [review, setReview] = useState<Order | null>(null);
   const act = useMutation({ mutationFn: (a: { path: string; body?: unknown; msg: string }) => api(a.path, { body: a.body ?? {} }).then(() => a.msg),
     onSuccess: (m) => { toast.show(m); inval(); } });
   useEffect(() => { if (new URLSearchParams(window.location.search).get('tab') === 'orders') document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth' }); }, [q.isSuccess]);
@@ -147,6 +161,7 @@ export default function OrdersPanel({ encounterId, departmentId }: { encounterId
                   {d.can.approve && o.approval_status === 'pending' && o.ordered_by !== user?.id && (o.status === 'active' || o.status === 'on_hold') && <>
                     <button className="btn sm primary" type="button" onClick={() => act.mutate({ path: `/inpatient/orders/${o.id}/approve`, msg: 'დამტკიცდა' })}>დამტკიცება</button>{' '}
                     <button className="btn sm" type="button" onClick={() => setReasonFor({ o, action: 'approve-reject' })}>უარი</button>{' '}</>}
+                  {d.can.order && abxDue(o) && <><button className="btn sm primary" type="button" onClick={() => setReview(o)}>გადახედვა</button>{' '}</>}
                   {d.can.order && (o.status === 'active' || o.status === 'on_hold') && <>
                     <button className="btn sm" type="button" onClick={() => setDlg({ mode: 'modify', replaces: o, initial: fromOrder(o) })}>შეცვლა</button>{' '}
                     {o.status === 'active' ? <button className="btn sm" type="button" onClick={() => setReasonFor({ o, action: 'hold' })}>შეჩერება</button>
@@ -160,7 +175,8 @@ export default function OrdersPanel({ encounterId, departmentId }: { encounterId
       {sets && <SetsDialog departmentId={departmentId} active={d.orders.filter((o) => o.status === 'active' || o.status === 'on_hold')} onClose={() => setSets(false)}
         onPick={(it, setId) => { setSets(false); setDlg({ mode: 'new', initial: it, setId }); }} />}
       {detail && <OrderDetail id={detail.id} onClose={() => setDetail(null)} />}
-      {reasonFor && <ReasonModal title={{ hold: 'შეჩერება', stop: 'შეწყვეტა', 'approve-reject': 'სარეზერვო ანტიბიოტიკი — უარი' }[reasonFor.action] + ` — ${reasonFor.o.title}`}
+      {review && <AbxReviewDialog o={review} onClose={() => setReview(null)} onDone={() => { setReview(null); toast.show('გადახედვა ჩაიწერა'); inval(); }} />}
+      {reasonFor && <ReasonModal title={{ hold: 'შეჩერება', stop: 'შეწყვეტა', 'approve-reject': 'შეზღუდული ანტიბიოტიკი — უარი' }[reasonFor.action] + ` — ${reasonFor.o.title}`}
         onClose={() => setReasonFor(null)} onSubmit={(r) => act.mutateAsync({ path: `/inpatient/orders/${reasonFor.o.id}/${reasonFor.action}`,
           body: reasonFor.action === 'approve-reject' ? { note: r } : { reason: r }, msg: 'შესრულდა' }).then(() => setReasonFor(null))} />}
     </section>
@@ -176,9 +192,31 @@ function fromOrder(o: Order): Partial<OrderBody> {
     frequency_code: o.frequency_code ?? undefined, prn_reason: o.prn_reason ?? undefined, prn_max_per_day: o.prn_max_per_day ?? undefined, prn_min_interval_h: n(o.prn_min_interval_h),
     diluent: o.diluent ?? undefined, volume_ml: n(o.volume_ml), rate_ml_h: n(o.rate_ml_h), duration_min: o.duration_min ?? undefined, text: o.text ?? undefined,
     instructions: o.instructions ?? undefined, duration_days: o.duration_days ?? undefined, supply_mode: o.supply_mode ?? undefined,
+    abx_indication: (o.abx_indication ?? undefined) as OrderBody['abx_indication'], abx_icd10: o.abx_icd10 ?? undefined,
     ...(o.dose_rate && { titratable: !!o.titratable, dose_rate: n(o.dose_rate), dose_rate_unit: o.dose_rate_unit ?? undefined, conc_amount: n(o.conc_amount ?? null), conc_unit: o.conc_unit ?? undefined,
       conc_volume_ml: n(o.conc_volume_ml ?? null), titrate_min: n(o.titrate_min ?? null), titrate_max: n(o.titrate_max ?? null), titrate_goal: o.titrate_goal ?? undefined, rate_ml_h: undefined }),
   };
+}
+
+/** 0070: ანტიბიოტიკის გადახედვა (time-out) */
+export function AbxReviewDialog({ o, onClose, onDone }: { o: Order; onClose: () => void; onDone: () => void }) {
+  const [dec, setDec] = useState<'continue' | 'deescalate' | 'iv_to_po' | 'stop' | ''>(''); const [note, setNote] = useState('');
+  const m = useMutation({ mutationFn: () => api(`/inpatient/orders/${o.id}/abx-review`, { body: { decision: dec, note: note.trim() || undefined } }), onSuccess: onDone });
+  return (
+    <Modal title={`ანტიბიოტიკის გადახედვა — ${o.title}`} onClose={onClose} footer={<>
+      <button className="btn" type="button" onClick={onClose}>გაუქმება</button>
+      <button className="btn primary" type="button" disabled={!dec || m.isPending || (dec === 'stop' && note.trim().length < 3)} onClick={() => m.mutate()}>შენახვა</button></>}>
+      <div className="stack" style={{ gap: 10 }}>
+        <ErrorBox error={m.error} />
+        <span className="small muted">დაწყება {dt(o.start_at)}{o.abx_indication ? ` · ${ABX_IND_KA[o.abx_indication]}` : ''}{o.abx_icd10 ? ` · ${o.abx_icd10}` : ''}. გადახედეთ კულტურის პასუხს და კლინიკურ მდგომარეობას.</span>
+        <div className="seg" role="group" aria-label="გადაწყვეტილება">{(['continue', 'deescalate', 'iv_to_po', 'stop'] as const).map((k) =>
+          <button key={k} type="button" aria-pressed={dec === k} onClick={() => setDec(k)}>{ABX_DEC_KA[k]}</button>)}</div>
+        {(dec === 'deescalate' || dec === 'iv_to_po') && <span className="small">ჩაიწერება გადაწყვეტილება — დანიშნულება შეცვალეთ ღილაკით „შეცვლა“.</span>}
+        {dec === 'stop' && <span className="small">დანიშნულება შეწყდება.</span>}
+        <Field label="შენიშვნა" htmlFor="ar-n" required={dec === 'stop'}><input id="ar-n" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="მაგ. კულტურა უარყოფითი, CRP ↓" /></Field>
+      </div>
+    </Modal>
+  );
 }
 
 function ReasonModal({ title, onClose, onSubmit }: { title: string; onClose: () => void; onSubmit: (r: string) => Promise<unknown> }) {
@@ -223,6 +261,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
     setChecks(null);
   };
   const med = f.category === 'medication';
+  const isAbxGen = !free && !!gen?.atc_code && (ctx.settings.abx?.prefixes ?? ['J01']).some((p) => gen.atc_code!.startsWith(p));
   const child = ctx.age_days < 18 * 365;
   const routes = useMemo(() => {
     const all = (refs.data?.routes ?? []).filter((r) => r.is_active);
@@ -235,6 +274,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
       ...(f.category === 'nursing' && f.nursing_task && f.nursing_task !== 'other' && { nursing_task: f.nursing_task, ...(f.nursing_task === 'scale' && { task_scale_code: f.task_scale_code }) }) };
     delete b.nursing_task; delete b.task_scale_code;
     if (free) { delete b.generic_id; } else { delete b.drug_text; b.generic_id = gen?.id; }
+    if (!isAbxGen) { delete b.abx_indication; delete b.abx_icd10; }
     if (perKg) delete b.dose; else delete b.dose_per_kg;
     if (b.order_type !== 'scheduled') delete b.frequency_code;
     if (b.order_type !== 'prn') { delete b.prn_reason; delete b.prn_max_per_day; delete b.prn_min_interval_h; }
@@ -299,6 +339,7 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
               {free ? <input className="input" aria-label="მედიკამენტი ტექსტით" value={f.drug_text ?? ''} onChange={(e) => set('drug_text', e.target.value)} placeholder="დასახელება, ფორმა, დოზა" />
                 : gen ? <div className="row" style={{ gap: 8 }}><strong>{gen.inn}{gen.strength ? ` ${gen.strength}` : ''}</strong><span className="small muted">{gen.form_name}{gen.atc_code ? ` · ${gen.atc_code}` : ''}</span>
                     {gen.high_alert && <span className="chip danger">მაღ. რისკი</span>}{gen.reserve_antibiotic && <span className="chip warn">სარეზერვო</span>}
+                    {gen.aware && AWARE_KA[gen.aware] && <span className={`chip ${AWARE_KA[gen.aware][0]}`}>{AWARE_KA[gen.aware][1]}</span>}
                     {mode !== 'modify' && <button className="btn sm" type="button" onClick={() => { setGen(null); set('generic_id', undefined); }}>შეცვლა</button>}</div>
                 : <>
                   <input id="od-g" className="input" aria-label="ჯენერიკის ძებნა" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="INN, ლათინური ან ATC (მინ. 2 სიმბოლო)" />
@@ -370,6 +411,11 @@ function OrderDialog({ encounterId, mode, initial, replaces, setId, ctx, onClose
           <Field label="დრო" htmlFor="od-st"><input id="od-st" className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
           {med && f.order_type !== 'once' && <Field label="ხანგრძლივობა (დღე)" htmlFor="od-dd" hint={gen?.atc_code?.startsWith('J01') ? 'ანტიბიოტიკი — სავალდებულო' : 'ცარიელი — გაუქმებამდე'}>
             <input id="od-dd" className="input mono" type="number" min={1} max={365} value={f.duration_days ?? ''} onChange={(e) => set('duration_days', e.target.value ? Number(e.target.value) : undefined)} /></Field>}
+          {med && isAbxGen && <Field label="ჩვენება" htmlFor="od-ai" required={!!ctx.settings.abx?.indication_required}>
+            <select id="od-ai" className="select" value={f.abx_indication ?? ''} onChange={(e) => set('abx_indication', (e.target.value || undefined) as OrderBody['abx_indication'])}>
+              <option value="">—</option>{Object.entries(ABX_IND_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
+          {med && isAbxGen && <Field label="დიაგნოზი (ICD-10)" htmlFor="od-ad" hint="ინფექცია, რომელსაც მკურნალობთ">
+            <input id="od-ad" className="input mono" style={{ maxWidth: 120 }} value={f.abx_icd10 ?? ''} onChange={(e) => set('abx_icd10', e.target.value.toUpperCase() || undefined)} placeholder="J18.9" /></Field>}
           {med && <Field label="მომარაგება" htmlFor="od-sp"><select id="od-sp" className="select" value={f.supply_mode ?? ''} onChange={(e) => set('supply_mode', (e.target.value || undefined) as OrderBody['supply_mode'])}>
             <option value="">ავტომატურად{gen?.patient_only ? ' (აფთიაქიდან)' : ''}</option><option value="ward">განყოფილების მარაგიდან</option><option value="pharmacy">აფთიაქიდან პაციენტზე</option></select></Field>}
         </div>

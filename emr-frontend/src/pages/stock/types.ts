@@ -33,6 +33,7 @@ export interface MedGeneric {
   high_alert: boolean; reserve_antibiotic: boolean; patient_only: boolean;
   max_single_dose: string | null; max_daily_dose: string | null; ped_max_single_per_kg: string | null; ped_max_daily_per_kg: string | null; min_age_days: number | null;
   notes: string | null; is_active: boolean; allergen_groups: string[]; items: number;
+  ddd_oral?: string | null; ddd_parenteral?: string | null; ddd_unit?: string | null; aware?: string | null;
 }
 export interface MedInteraction {
   id: string; a_generic_id: string | null; a_atc: string | null; b_generic_id: string | null; b_atc: string | null;

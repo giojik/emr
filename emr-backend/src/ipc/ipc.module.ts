@@ -9,12 +9,13 @@ import { IpcDeviceDaysController, IpcDeviceDaysService } from './ipc-device-days
 import { IpcHaiController, IpcHaiService } from './ipc-hai';
 import { IpcSignalsController, IpcSignalsService } from './ipc-signals';
 import { IpcSsiController, IpcSsiService } from './ipc-ssi';
+import { IpcAbxController, IpcAbxService } from './ipc-abx';
 
-/** ინფექციის კონტროლი (0067–): იზოლაციის ეპიზოდები, კარის ნიშანი, MDRO წესები / ფლაგები, ცნობარები, worker; 0068: სიგნალები, HAI რეესტრი, device-days; 0069: SSI */
+/** ინფექციის კონტროლი (0067–): იზოლაციის ეპიზოდები, კარის ნიშანი, MDRO წესები / ფლაგები, ცნობარები, worker; 0068: სიგნალები, HAI რეესტრი, device-days; 0069: SSI; 0070: ანტიბიოტიკები */
 @Module({
   imports: [NotificationsModule],
-  controllers: [IpcIsolationController, IpcFlagsController, IpcCatalogController, IpcSignalsController, IpcHaiController, IpcDeviceDaysController, IpcSsiController],
-  providers: [IpcCommon, IpcIsolationService, IpcMdroService, IpcCatalogService, IpcJobsService, IpcSignalsService, IpcHaiService, IpcDeviceDaysService, IpcSsiService],
+  controllers: [IpcIsolationController, IpcFlagsController, IpcCatalogController, IpcSignalsController, IpcHaiController, IpcDeviceDaysController, IpcSsiController, IpcAbxController],
+  providers: [IpcCommon, IpcIsolationService, IpcMdroService, IpcCatalogService, IpcJobsService, IpcSignalsService, IpcHaiService, IpcDeviceDaysService, IpcSsiService, IpcAbxService],
   exports: [IpcCommon, IpcMdroService, IpcJobsService],
 })
 export class IpcModule {}

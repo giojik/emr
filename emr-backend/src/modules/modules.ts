@@ -224,6 +224,10 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       // 0069: SSI
       wound_class_mode: (v) => oneOf(v, ['optional', 'required', 'off']), ssi_surveillance: bool, ssi_pd_calls: bool, ssi_pd_attempts: (v) => int(v, 1, 5), ssi_pd_sms: bool,
       sig_ssi_postop: bool, prophylaxis_window_min: (v) => int(v, 30, 180),
+      // 0070: ანტიბიოტიკები
+      abx_atc_prefixes: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 10 && v.every((x) => typeof x === 'string' && /^[A-Z][0-9]{2}([A-Z]{1,2})?$/.test(x)) && new Set(v).size === v.length,
+      abx_indication_required: bool, abx_restrict_mode: (v) => oneOf(v, ['approve', 'notify', 'off']), abx_restrict_reserve: bool,
+      abx_approver: (v) => oneOf(v, ['department', 'ipc', 'any']), abx_timeout_hours: (v) => v === 0 || int(v, 24, 168), aware_access_target: (v) => int(v, 0, 100),
     },
     extra: async (s, db) => {
       const c = s.hai_criteria_set as string | undefined;

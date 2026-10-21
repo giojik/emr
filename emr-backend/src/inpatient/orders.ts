@@ -20,6 +20,7 @@ import { PharmacyCatalogService } from '../stock/pharmacy-catalog';
 import { StockModule } from '../stock/stock.module';
 import { StockTransfersService } from '../stock/stock-transfers';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
+import { abxPolicy, isAbx, isRestricted, type AbxPolicy } from '../ipc/ipc-common';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -72,6 +73,13 @@ export class OrderDto {
   @IsOptional() @IsBoolean() ack?: boolean;
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
   @IsOptional() @IsBoolean() confirm_severe?: boolean;
+  // 0070: ანტიმიკრობული — ჩვენება + დიაგნოზი
+  @IsOptional() @IsIn(['empiric', 'targeted', 'prophylaxis']) abx_indication?: 'empiric' | 'targeted' | 'prophylaxis';
+  @IsOptional() @IsString() @Length(2, 10) abx_icd10?: string;
+}
+export class AbxReviewDto {
+  @IsIn(['continue', 'deescalate', 'iv_to_po', 'stop']) decision: 'continue' | 'deescalate' | 'iv_to_po' | 'stop';
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
 }
 export class ModifyDto extends OrderDto { @IsString() @Length(3, 1000) reason: string }
 export class ReasonDto { @IsString() @Length(3, 1000) reason: string }
@@ -137,7 +145,11 @@ export class OrdersService {
     if (st.attending_doctor_id === u.id) return true;
     return (await this.ipd.me(u, ex)).department_id === st.department_id;
   }
+  /** 0070: ამტკიცებს — abx_approver: department (განყოფილების ხელმძღვანელი ექიმი + ფარმაცევტი) / ipc (ინფექციის კონტროლი) / any (ყველა) */
   private async canApprove(u: AuthUser, departmentId: string, ex: Ex = this.db) {
+    const pol = await abxPolicy(ex);
+    if (pol.approver !== 'department' && has(u, 'infection')) return true;
+    if (pol.approver === 'ipc') return false;
     if (has(u, 'pharmacist')) return true;
     if (!has(u, 'doctor')) return false;
     const me = await this.ipd.me(u, ex);
@@ -161,6 +173,35 @@ export class OrdersService {
     return ex.selectFrom('encounter_vitals as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').select(['v.weight_kg', 'v.recorded_at'])
       .where('e.patient_id', '=', patientId).where('v.weight_kg', 'is not', null).where('v.voided_at', 'is', null).orderBy('v.recorded_at', 'desc').limit(1).executeTakeFirst();
   }
+  private async approverIds(pol: AbxPolicy, departmentId: string) {
+    const ipc = pol.approver !== 'department' ? await this.staffIds(null, ['infection']) : [];
+    const dept = pol.approver !== 'ipc' ? [...await this.staffIds(departmentId, ['doctor'], true), ...await this.staffIds(null, ['pharmacist'])] : [];
+    return [...ipc, ...dept];
+  }
+  /**
+   * 0070: ანტიმიკრობულის გადახედვა (time-out) — მკურნალი / განყოფილების ექიმი ან ინფექციის კონტროლი.
+   * stop → დანიშნულება წყდება; deescalate / iv_to_po → ჩაიწერება (ექიმი ცვლის დანიშნულებას — „შეცვლა“).
+   */
+  async abxReview(id: string, d: AbxReviewDto, u: AuthUser, ctx: AuditContext) {
+    await this.db.transaction().execute(async (trx) => {
+      const o = await this.lockOrder(trx, id);
+      const g = o.generic_id ? await trx.selectFrom('med_generics').select('atc_code').where('id', '=', o.generic_id).executeTakeFirst() : undefined;
+      const pol = await abxPolicy(trx);
+      if (!isAbx(g?.atc_code, pol.prefixes)) throw new BadRequestException({ code: 'NOT_ABX', message: 'დანიშნულება ანტიმიკრობული არ არის' });
+      if (!['active', 'on_hold'].includes(o.status)) throw new ConflictException('დანიშნულება აქტიური არ არის');
+      const st = await this.stay(o.encounter_id, trx);
+      if (!has(u, 'infection') && !(await this.isDoctorFor(u, st, trx))) throw new ForbiddenException('გადახედვა — მკურნალი / განყოფილების ექიმი ან ინფექციის კონტროლი');
+      if (d.decision === 'stop' && (d.note?.trim().length ?? 0) < 3) throw new BadRequestException('შეწყვეტას სჭირდება მიზეზი');
+      await trx.updateTable('med_orders').set({ abx_reviewed_at: sql`now()`, abx_reviewed_by: u.id, abx_review_decision: d.decision, abx_review_note: d.note?.trim() || null,
+        ...(d.decision === 'stop' && { status: 'stopped' as const, stopped_at: sql`now()`, stopped_by: u.id, stop_reason: `ანტიბიოტიკის გადახედვა: ${d.note!.trim()}` }) })
+        .where('id', '=', id).execute();
+      await this.ev(trx, id, 'abx_review', { decision: d.decision, note: d.note ?? null }, u);
+      if (d.decision === 'stop') await this.ev(trx, id, 'stopped', { reason: d.note, abx_review: true }, u);
+      await this.audit.log(ctx, { action: 'MED_ORDER_ABX_REVIEW', entityName: 'med_orders', entityId: id, newData: d }, trx);
+    });
+    return this.get(id);
+  }
+
   private async staffIds(departmentId: string | null, caps: string[], headsOnly = false) {
     let q = this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id').select('u.id').distinct().where('u.is_active', '=', true)
       .where(sql<boolean>`c.capabilities && ${sql.val(caps)}::varchar[]`);
@@ -195,7 +236,7 @@ export class OrdersService {
       if (dto.frequency_code) await this.frequency(dto.frequency_code, ex);
       return { values: { ...base, text: dto.text.trim(), frequency_code: dto.frequency_code ?? null,
         nursing_task: dto.category === 'nursing' && dto.nursing_task && dto.nursing_task !== 'other' ? dto.nursing_task : null, task_scale_code: dto.nursing_task === 'scale' ? dto.task_scale_code! : null },
-        checks, generic: null, verify: false, approval: false };
+        checks, generic: null, verify: false, approval: false, policy: null as AbxPolicy | null };
     }
     if (!dto.order_type) throw new BadRequestException('დანიშნულების ტიპი სავალდებულოა');
     if (!dto.generic_id && !dto.drug_text?.trim()) throw new BadRequestException('მიუთითეთ მედიკამენტი (კატალოგიდან ან ტექსტით)');
@@ -205,7 +246,7 @@ export class OrdersService {
     if (!route?.is_active) throw new BadRequestException('მიღების გზა ვერ მოიძებნა');
     const g = dto.generic_id ? await ex.selectFrom('med_generics as g').innerJoin('med_dosage_forms as f', 'f.code', 'g.form_code')
       .select(['g.id', 'g.inn', 'g.inn_latin', 'g.strength', 'g.atc_code', 'g.dose_unit', 'g.routes', 'g.controlled_class', 'g.high_alert', 'g.reserve_antibiotic',
-        'g.patient_only', 'g.is_active', 'f.name as form_name'])
+        'g.patient_only', 'g.is_active', 'f.name as form_name', 'g.aware'])
       .where('g.id', '=', dto.generic_id).executeTakeFirst() : null;
     if (dto.generic_id && !g?.is_active) throw new BadRequestException('ჯენერიკი ვერ მოიძებნა ან გათიშულია');
 
@@ -271,6 +312,19 @@ export class OrdersService {
     if (antibiotic && dto.order_type !== 'once' && !dto.duration_days) {
       throw new BadRequestException({ code: 'ANTIBIOTIC_DURATION', message: `ანტიბიოტიკი: მიუთითეთ ხანგრძლივობა (დღეები; ნაგულისხმევად ${s.antibiotic_default_days})` });
     }
+    // 0070: ანტიმიკრობული (abx_atc_prefixes) — ჩვენება / დიაგნოზი; შეზღუდული; time-out
+    const pol = await abxPolicy(ex);
+    const abx = !!g && isAbx(g.atc_code, pol.prefixes);
+    if (abx && pol.indication_required && !dto.abx_indication) {
+      throw new BadRequestException({ code: 'ABX_INDICATION', message: 'ანტიმიკრობული: მიუთითეთ ჩვენება (ემპირიული / მიზნობრივი / პროფილაქტიკა)' });
+    }
+    let abxIcd: string | null = null;
+    if (abx && dto.abx_icd10) {
+      const c = await ex.selectFrom('icd10_codes').select(['code', 'is_active']).where('code', '=', dto.abx_icd10.trim().toUpperCase()).executeTakeFirst();
+      if (!c?.is_active) throw new BadRequestException(`ICD-10 კოდი ${dto.abx_icd10} კლასიფიკატორში არ არსებობს`);
+      abxIcd = c.code;
+    }
+    const restricted = isRestricted(g, pol);
 
     // --- შემოწმებები
     if (!g) checks.push({ code: 'free_text', level: 'info', message: 'კატალოგის გარეშე — დოზისა და ურთიერთქმედების შემოწმება ვერ ხერხდება' });
@@ -313,9 +367,9 @@ export class OrdersService {
 
     // --- ვერიფიკაცია / დამტკიცება / მომარაგება
     const supply = dto.supply_mode ?? (g?.patient_only ? 'pharmacy' : 'ward');
-    const risky = !g || !!g.high_alert || !!g.controlled_class || !!g.reserve_antibiotic;
+    const risky = !g || !!g.high_alert || !!g.controlled_class || restricted;
     const verify = s.med_verification === 'all' || (s.med_verification === 'high_risk' && (risky || supply === 'pharmacy'));
-    const approval = !!g?.reserve_antibiotic;
+    const approval = restricted && pol.restrict_mode !== 'off';
     return {
       values: {
         ...base, generic_id: g?.id ?? null, drug_text: g ? null : dto.drug_text!.trim(), order_type: dto.order_type, dose, dose_unit: dto.dose_unit ?? null,
@@ -328,8 +382,10 @@ export class OrdersService {
         titrate_min: titr && dto.titrate_min !== undefined ? String(dto.titrate_min) : null, titrate_max: titr && dto.titrate_max !== undefined ? String(dto.titrate_max) : null,
         titrate_goal: titr ? dto.titrate_goal?.trim() || null : null,
         supply_mode: supply,
+        abx_indication: abx ? dto.abx_indication ?? null : null, abx_icd10: abxIcd,
+        abx_review_due: abx && pol.timeout_hours > 0 && dto.order_type !== 'once' ? new Date(startAt.getTime() + pol.timeout_hours * 3_600_000) : null,
       },
-      checks, generic: g, verify, approval,
+      checks, generic: g, verify, approval, policy: pol,
     };
   }
 
@@ -395,15 +451,15 @@ export class OrdersService {
       // მთავარი ექთანი — ყველა; ფარმაცევტი — pharmacist რეჟიმში, ან both-ში მხოლოდ კონტროლირებადი / სარეზერვო / აფთიაქიდან / კატალოგის გარეშე (ან თუ მთავარი ექთანი არ ჰყავს)
       const mode = s.med_verifier ?? 'both'; const g = out.p.generic;
       const heads = mode !== 'pharmacist' ? await this.staffIds(out.st.department_id, ['nurse'], true) : [];
-      const pharmFocus = !g || !!g.controlled_class || !!g.reserve_antibiotic || out.p.values.supply_mode === 'pharmacy';
+      const pharmFocus = !g || !!g.controlled_class || out.p.approval || out.p.values.supply_mode === 'pharmacy';
       const pharm = mode === 'pharmacist' || (mode === 'both' && (pharmFocus || !heads.length)) ? await this.staffIds(null, ['pharmacist']) : [];
       const n = { kind: 'ipd_order_verify', title: `დანიშნულება — დასადასტურებელი: ${name}`, body: who, item: name, entityId: out.id };
       await this.notify(heads, { ...n, link: `/inpatient?tab=orders&department_id=${out.st.department_id}` }, u.id);
       await this.notify(pharm.filter((x) => !heads.includes(x)), { ...n, link: '/stock/verification' }, u.id);
     }
     if (out.p.approval) {
-      const heads = await this.staffIds(out.st.department_id, ['doctor'], true);
-      await this.notify([...heads, ...await this.staffIds(null, ['pharmacist'])], { kind: 'ipd_order_approve', title: `სარეზერვო ანტიბიოტიკი — დასამტკიცებელი: ${name}`, body: who, item: name, entityId: out.id, link, urgent: true }, u.id);
+      await this.notify(await this.approverIds(out.p.policy!, out.st.department_id), { kind: 'ipd_order_approve', title: `შეზღუდული ანტიბიოტიკი — დასამტკიცებელი: ${name}`,
+        body: who, item: name, entityId: out.id, link, urgent: out.p.policy!.restrict_mode === 'approve' }, u.id);
     }
     if (out.verbal) await this.notify([out.orderedBy], { kind: 'ipd_verbal_confirm', title: `ზეპირი დანიშნულება — დაადასტურეთ: ${name}`, body: who, item: name, entityId: out.id, link });
     return this.get(out.id);
@@ -429,7 +485,7 @@ export class OrdersService {
       .leftJoin('med_routes as r', 'r.code', 'o.route_code').leftJoin('med_frequencies as fq', 'fq.code', 'o.frequency_code')
       .innerJoin('users as ob', 'ob.id', 'o.ordered_by').innerJoin('users as eb', 'eb.id', 'o.entered_by')
       .leftJoin('users as vb', 'vb.id', 'o.verified_by').leftJoin('users as ab', 'ab.id', 'o.approved_by').leftJoin('stock_requests as rq', 'rq.id', 'o.stock_request_id')
-      .selectAll('o').select(['g.inn', 'g.inn_latin', 'g.strength', 'g.atc_code', 'g.high_alert', 'g.controlled_class', 'g.reserve_antibiotic', 'f.name as form_name',
+      .selectAll('o').select(['g.inn', 'g.inn_latin', 'g.strength', 'g.atc_code', 'g.high_alert', 'g.controlled_class', 'g.reserve_antibiotic', 'g.aware', 'f.name as form_name',
         'r.name as route_name', 'fq.name as frequency_name', 'rq.req_no', 'rq.status as request_status',
         sql<string>`ob.last_name || ' ' || ob.first_name`.as('ordered_by_name'), sql<string>`eb.last_name || ' ' || eb.first_name`.as('entered_by_name'),
         sql<string | null>`vb.last_name || ' ' || vb.first_name`.as('verified_by_name'), sql<string | null>`ab.last_name || ' ' || ab.first_name`.as('approved_by_name'),
@@ -452,7 +508,7 @@ export class OrdersService {
     const nurse = has(u, 'nurse') && await this.ipd.isStaff(u, st.department_id);
     return {
       orders, weight: w ? { kg: Number(w.weight_kg), at: w.recorded_at } : null, age_days: st.age_days,
-      settings: { antibiotic_default_days: s.antibiotic_default_days, verbal_orders: s.verbal_orders, med_verification: s.med_verification },
+      settings: { antibiotic_default_days: s.antibiotic_default_days, verbal_orders: s.verbal_orders, med_verification: s.med_verification, abx: await abxPolicy(this.db) },
       can: { order: st.status === 'active' && doctor, verbal: st.status === 'active' && s.verbal_orders && nurse, approve: await this.canApprove(u, st.department_id) },
     };
   }
@@ -504,11 +560,11 @@ export class OrdersService {
       if (o.approval_status !== 'pending') throw new ConflictException('დანიშნულება დამტკიცებას არ ელოდება');
       if (!['active', 'on_hold'].includes(o.status)) throw new ConflictException('დანიშნულება შეწყვეტილია');
       const st = await this.stay(o.encounter_id, trx);
-      if (!(await this.canApprove(u, st.department_id, trx))) throw new ForbiddenException('ამტკიცებს განყოფილების ხელმძღვანელი ექიმი ან ფარმაცევტი');
+      if (!(await this.canApprove(u, st.department_id, trx))) throw new ForbiddenException('ამტკიცებს: განყოფილების ხელმძღვანელი ექიმი / ფარმაცევტი / ინფექციის კონტროლი (პარამეტრის — abx_approver — მიხედვით)');
       if (o.ordered_by === u.id) throw new ConflictException('საკუთარ დანიშნულებას ვერ დაამტკიცებთ');
       if (!approve && (note ?? '').trim().length < 3) throw new BadRequestException('უარყოფის მიზეზი სავალდებულოა');
       await trx.updateTable('med_orders').set({ approval_status: approve ? 'approved' : 'rejected', approved_by: u.id, approved_at: sql`now()`, approval_note: note?.trim() || null,
-        ...(!approve && { status: 'stopped' as const, stopped_at: sql`now()`, stopped_by: u.id, stop_reason: `სარეზერვო ანტიბიოტიკი არ დამტკიცდა: ${note!.trim()}` }) })
+        ...(!approve && { status: 'stopped' as const, stopped_at: sql`now()`, stopped_by: u.id, stop_reason: `შეზღუდული ანტიბიოტიკი არ დამტკიცდა: ${note!.trim()}` }) })
         .where('id', '=', id).execute();
       await this.ev(trx, id, approve ? 'approved' : 'approval_rejected', { note }, u);
       await this.audit.log(ctx, { action: approve ? 'MED_ORDER_APPROVE' : 'MED_ORDER_APPROVAL_REJECT', entityName: 'med_orders', entityId: id, newData: { note } }, trx);
@@ -516,7 +572,7 @@ export class OrdersService {
     });
     if (!approve) {
       const r = await this.get(id);
-      await this.notify([o0.ordered_by], { kind: 'ipd_order_rejected', title: `სარეზერვო ანტიბიოტიკი არ დამტკიცდა: ${r.title}`, body: note ?? '', item: r.title, entityId: id, link: `/inpatient/stay/${o0.encounter_id}?tab=orders`, urgent: true });
+      await this.notify([o0.ordered_by], { kind: 'ipd_order_rejected', title: `შეზღუდული ანტიბიოტიკი არ დამტკიცდა: ${r.title}`, body: note ?? '', item: r.title, entityId: id, link: `/inpatient/stay/${o0.encounter_id}?tab=orders`, urgent: true });
     }
     return this.get(id);
   }
@@ -676,10 +732,12 @@ export class OrdersController {
   stop(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.setStatus(id, 'stop', d.reason.trim(), u, auditCtx(r)); }
   @Post('inpatient/orders/:id/confirm') @HttpCode(200) @Roles('doctor')
   confirm(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.confirmVerbal(id, u, auditCtx(r)); }
-  @Post('inpatient/orders/:id/approve') @HttpCode(200) @Roles('doctor', 'pharmacist')
+  @Post('inpatient/orders/:id/approve') @HttpCode(200) @Roles('doctor', 'pharmacist', 'infection')
   approve(@Param('id', ParseUUIDPipe) id: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.approval(id, true, d.note ?? null, u, auditCtx(r)); }
-  @Post('inpatient/orders/:id/approve-reject') @HttpCode(200) @Roles('doctor', 'pharmacist')
+  @Post('inpatient/orders/:id/approve-reject') @HttpCode(200) @Roles('doctor', 'pharmacist', 'infection')
   approveReject(@Param('id', ParseUUIDPipe) id: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.approval(id, false, d.note ?? null, u, auditCtx(r)); }
+  @Post('inpatient/orders/:id/abx-review') @HttpCode(200) @Roles('doctor', 'infection')
+  abxReview(@Param('id', ParseUUIDPipe) id: string, @Body() d: AbxReviewDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.abxReview(id, d, u, auditCtx(r)); }
   @Get('pharmacy/verification') @Roles('pharmacist', 'admin', 'nurse')
   queue(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('department_id') dep?: string) {
     return this.s.verificationQueue(status === 'done' ? 'done' : 'pending', u, dep && /^[0-9a-f-]{36}$/i.test(dep) ? dep : undefined);

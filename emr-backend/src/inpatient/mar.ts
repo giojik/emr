@@ -18,6 +18,7 @@ import { StockOpsService } from '../stock/stock-ops';
 import { StockModule } from '../stock/stock.module';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { ensureMarSlots } from './mar-schedule';
+import { abxPolicy } from '../ipc/ipc-common';
 import { doseRateToMlH, mlHToDoseRate, type ConcUnit, type DoseRateUnit } from './icu-calc';
 
 type Trx = Transaction<DB>;
@@ -180,7 +181,7 @@ export class MarService {
       if (med) {
         if (o.verify_status === 'rejected') throw new UnprocessableEntityException({ code: 'MAR_BLOCKED', message: 'დანიშნულება უარყოფილია (ფარმაცევტი / მთავარი ექთანი) — მიმართეთ ექიმს' });
         if (o.verify_status === 'pending') checks.push({ code: 'verify_pending', message: 'დანიშნულება ჯერ დადასტურებული არ არის (მთავარი ექთანი / ფარმაცევტი)' });
-        if (o.approval_status === 'pending') {
+        if (o.approval_status === 'pending' && (await abxPolicy(this.db)).restrict_mode === 'approve') {
           const prev = await this.db.selectFrom('mar_entries').select('id').where('order_id', '=', o.id).where('status', 'in', ['given', 'partial']).where('voided_at', 'is', null).executeTakeFirst();
           if (prev) throw new UnprocessableEntityException({ code: 'MAR_BLOCKED', message: 'სარეზერვო ანტიბიოტიკი: დამტკიცებამდე მხოლოდ პირველი დოზა' });
           checks.push({ code: 'approval_pending', message: 'სარეზერვო ანტიბიოტიკი დამტკიცებული არ არის — პირველი დოზა' });

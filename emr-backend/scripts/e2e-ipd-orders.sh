@@ -75,7 +75,7 @@ ADMIT() { api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$1\",\"depa
 E1=$(ADMIT "$P1"); E2=$(ADMIT "$P2"); E3=$(ADMIT "$P3")
 [ -n "$E1" ] && [ -n "$E2" ] && [ -n "$E3" ] && ok "3 ჰოსპიტალიზაცია (A)" || die "ჰოსპიტალიზაცია ვერ მოხერხდა"
 OR="/inpatient/stays/$E1/orders"
-med() { jq -nc --arg g "$1" --arg t "$2" --argjson d "$3" --arg u "$4" --arg r "$5" --arg f "${6:-}" '{category:"medication",generic_id:$g,order_type:$t,dose:$d,dose_unit:$u,route_code:$r} + (if $f=="" then {} else {frequency_code:$f} end)'; }
+med() { jq -nc --arg g "$1" --arg t "$2" --argjson d "$3" --arg u "$4" --arg r "$5" --arg f "${6:-}" '{category:"medication",generic_id:$g,order_type:$t,dose:$d,dose_unit:$u,route_code:$r,abx_indication:"empiric"} + (if $f=="" then {} else {frequency_code:$f} end)'; }   # 0070: ჩვენება (ანტიმიკრობულზე სავალდებულო; სხვაზე — იგნორირდება)
 plus() { echo "$1" | jq -c ". + $2"; }
 
 step "1. უფლებები"

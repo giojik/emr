@@ -71,6 +71,7 @@ export function GenericDialog({ g, onClose, onSaved, initialInn }: { g: MedGener
     controlled_class: (g?.controlled_class ?? '') as Controlled | '', high_alert: g?.high_alert ?? false, reserve_antibiotic: g?.reserve_antibiotic ?? false, patient_only: g?.patient_only ?? false,
     dose_unit: g?.dose_unit ?? '', dose_per_unit: n2s(g?.dose_per_unit), max_single_dose: n2s(g?.max_single_dose), max_daily_dose: n2s(g?.max_daily_dose),
     ped_max_single_per_kg: n2s(g?.ped_max_single_per_kg), ped_max_daily_per_kg: n2s(g?.ped_max_daily_per_kg), min_age_days: n2s(g?.min_age_days),
+    ddd_oral: n2s(g?.ddd_oral), ddd_parenteral: n2s(g?.ddd_parenteral), ddd_unit: g?.ddd_unit ?? '', aware: g?.aware ?? '',
   });
   const [routes, setRoutes] = useState<string[]>(g?.routes ?? []);
   const [allergens, setAllergens] = useState<string[]>(g?.allergen_groups ?? []);
@@ -83,6 +84,7 @@ export function GenericDialog({ g, onClose, onSaved, initialInn }: { g: MedGener
         controlled_class: f.controlled_class || null, high_alert: f.high_alert, reserve_antibiotic: f.reserve_antibiotic, patient_only: f.patient_only, routes, allergen_groups: allergens,
         dose_unit: f.dose_unit || null, dose_per_unit: s2n(f.dose_per_unit), max_single_dose: s2n(f.max_single_dose), max_daily_dose: s2n(f.max_daily_dose),
         ped_max_single_per_kg: s2n(f.ped_max_single_per_kg), ped_max_daily_per_kg: s2n(f.ped_max_daily_per_kg), min_age_days: s2n(f.min_age_days),
+        ddd_oral: s2n(f.ddd_oral), ddd_parenteral: s2n(f.ddd_parenteral), ddd_unit: f.ddd_unit || null, aware: f.aware || null,
       });
       return g ? api<MedGeneric>(`/pharmacy/generics/${g.id}`, { method: 'PATCH', body }) : api<MedGeneric>('/pharmacy/generics', { body });
     },
@@ -143,6 +145,14 @@ export function GenericDialog({ g, onClose, onSaved, initialInn }: { g: MedGener
               <Field label="ბავშვი: მაქს. ერთჯერადი / კგ" htmlFor="gps"><input id="gps" className="input mono" inputMode="decimal" value={f.ped_max_single_per_kg} onChange={(e) => set('ped_max_single_per_kg', e.target.value)} /></Field>
               <Field label="ბავშვი: მაქს. დღიური / კგ" htmlFor="gpd"><input id="gpd" className="input mono" inputMode="decimal" value={f.ped_max_daily_per_kg} onChange={(e) => set('ped_max_daily_per_kg', e.target.value)} /></Field>
             </div>
+            {/^[JP]/.test(f.atc_code.toUpperCase()) && <div style={grid}>
+              <Field label="DDD per os" htmlFor="gdo" hint="WHO ATC/DDD"><input id="gdo" className="input mono" inputMode="decimal" value={f.ddd_oral} onChange={(e) => set('ddd_oral', e.target.value)} /></Field>
+              <Field label="DDD პარენტერალური" htmlFor="gdpp"><input id="gdpp" className="input mono" inputMode="decimal" value={f.ddd_parenteral} onChange={(e) => set('ddd_parenteral', e.target.value)} /></Field>
+              <Field label="DDD ერთეული / AWaRe" htmlFor="gdun"><div className="row" style={{ gap: 6 }}>
+                <select id="gdun" className="select" value={f.ddd_unit} onChange={(e) => set('ddd_unit', e.target.value)}><option value="">—</option><option value="g">g</option><option value="mg">mg</option><option value="MU">MU (მლნ სე)</option></select>
+                <select className="select" aria-label="AWaRe" value={f.aware} onChange={(e) => set('aware', e.target.value)}><option value="">AWaRe —</option>
+                  <option value="access">Access</option><option value="watch">Watch</option><option value="reserve">Reserve</option><option value="not_recommended">არარეკომენდებული</option></select></div></Field>
+            </div>}
             <div>
               <span className="label">ალერგენული ჯგუფები</span>
               <span className="hint" style={{ display: 'block' }}>პაციენტის ალერგიასთან შედარდება დანიშნულებისას (სტაციონარის ეტაპი) — ჯვარედინი რეაქციების ჩათვლით</span>

@@ -807,6 +807,26 @@ function IpcSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
           {chk('ssi_pd_sms', 'SMS შეხსენება პაციენტს ვადის დღეს (SMS თანხმობით)', 'ტექსტში — მხოლოდ ზოგადი შეხსენება და კლინიკის ტელეფონი')}
         </div>
       </div>
+      <h3 style={{ margin: '6px 0 0', fontSize: 15 }}>ანტიბიოტიკების მართვა</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        <Field label="შეზღუდული ანტიბიოტიკი" htmlFor="ipc-rm2" hint="„სარეზერვო“ დროშა ან AWaRe Reserve">
+          <select id="ipc-rm2" className="select" value={String(s.abx_restrict_mode ?? 'approve')} onChange={(e) => upd('abx_restrict_mode', e.target.value)}>
+            <option value="approve">დამტკიცება — მანამდე მხოლოდ პირველი დოზა</option><option value="notify">დამტკიცება შემდგომ (MAR არ იბლოკება)</option><option value="off">გამორთული</option></select></Field>
+        <Field label="ვინ ამტკიცებს" htmlFor="ipc-ap">
+          <select id="ipc-ap" className="select" value={String(s.abx_approver ?? 'any')} onChange={(e) => upd('abx_approver', e.target.value)}>
+            <option value="any">ინფექციის კონტროლი, განყოფილების ხელმძღვანელი, ფარმაცევტი</option><option value="ipc">მხოლოდ ინფექციის კონტროლი</option>
+            <option value="department">განყოფილების ხელმძღვანელი / ფარმაცევტი</option></select></Field>
+        <Field label="Time-out (გადახედვა), სთ" htmlFor="ipc-to" hint="0 — გამორთული; 24–168">
+          <input id="ipc-to" className="input mono" type="number" min={0} max={168} value={Number(s.abx_timeout_hours ?? 72)} onChange={(e) => upd('abx_timeout_hours', Math.round(Number(e.target.value) || 0))} /></Field>
+        <Field label="ანტიმიკრობული — ATC პრეფიქსები" htmlFor="ipc-atc" hint="მძიმით: J01 (ანტიბაქტერიული), J02, J04, J05, P01AB">
+          <input id="ipc-atc" className="input mono" defaultValue={((s.abx_atc_prefixes as string[] | undefined) ?? ['J01']).join(', ')}
+            onBlur={(e) => upd('abx_atc_prefixes', [...new Set(e.target.value.toUpperCase().split(/[\s,;]+/).filter(Boolean))])} /></Field>
+        <Field label="Access წილის მიზანი, %" htmlFor="ipc-aware_access_target" hint="WHO: ≥ 60%">{int('aware_access_target', 60, 0, 100)}</Field>
+        <div className="stack" style={{ gap: 6 }}>
+          {chk('abx_indication_required', 'ჩვენება სავალდებულოა (ემპირიული / მიზნობრივი / პროფილაქტიკა)')}
+          {chk('abx_restrict_reserve', 'AWaRe Reserve — ავტომატურად შეზღუდული')}
+        </div>
+      </div>
       <span className="small muted">იზოლაციის ტიპების ტექსტი (PPE, კარის ნიშანი), MDRO ტიპები (ვადა, სასწრაფო) და ამოცნობის წესები — „ინფექციის კონტროლი“ → „ცნობარები“. იზოლაცია მოდულის გამორთვისასაც მუშაობს (სტაციონარის ნაწილია).</span>
     </div>
   );

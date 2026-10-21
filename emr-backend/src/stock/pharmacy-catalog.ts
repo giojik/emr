@@ -13,7 +13,7 @@ import { clean, STOCK_READ } from './stock-catalog';
 const ATC = /^[A-Z]([0-9]{2}([A-Z]([A-Z]([0-9]{2})?)?)?)?$/;
 /** კლინიკური ველები — ცვლის მხოლოდ ფარმაცევტი / ადმინისტრატორი */
 const CLINICAL = ['controlled_class', 'high_alert', 'reserve_antibiotic', 'patient_only', 'routes', 'dose_unit', 'dose_per_unit', 'max_single_dose', 'max_daily_dose',
-  'ped_max_single_per_kg', 'ped_max_daily_per_kg', 'min_age_days', 'allergen_groups'] as const;
+  'ped_max_single_per_kg', 'ped_max_daily_per_kg', 'min_age_days', 'allergen_groups', 'ddd_oral', 'ddd_parenteral', 'ddd_unit', 'aware'] as const;
 const ADULT_DAYS = 18 * 365;
 const SEVERITY_ORDER: Record<string, number> = { contraindicated: 0, major: 1, moderate: 2, minor: 3, duplicate: 4 };
 const PG_MSG = { ux_med_generics_active: 'ასეთი ჯენერიკი (INN + ფორმა + დოზა) უკვე არსებობს', ux_med_interactions_pair: 'ამ წყვილის ურთიერთქმედება უკვე ჩაწერილია',
@@ -70,6 +70,16 @@ export class PharmacyCatalogService {
         let gid = id;
         if (id) { if (Object.keys(vals).length) await trx.updateTable('med_generics').set(vals).where('id', '=', id).execute(); }
         else gid = (await trx.insertInto('med_generics').values({ ...(vals as { inn: string; form_code: string }), created_by: u.id }).returning('id').executeTakeFirstOrThrow()).id;
+        // 0070: DDD / AWaRe — საცნობაროდან (ATC), თუ არ არის მითითებული
+        if (!id && gid && vals.atc_code) {
+          await sql`UPDATE med_generics g
+                       SET ddd_oral = coalesce(g.ddd_oral, r.ddd_oral), ddd_parenteral = coalesce(g.ddd_parenteral, r.ddd_parenteral), ddd_unit = coalesce(g.ddd_unit, r.ddd_unit),
+                           aware = coalesce(g.aware, CASE WHEN g.form_code IN ('INJ_SOL', 'INJ_PWD', 'INF_SOL', 'INF_CONC') THEN coalesce(r.aware_parenteral, r.aware_oral)
+                                                          ELSE coalesce(r.aware_oral, r.aware_parenteral) END)
+                      FROM ipc_abx_reference r
+                     WHERE g.id = ${gid} AND r.atc_code = g.atc_code AND (g.ddd_unit IS NULL OR g.ddd_unit = r.ddd_unit)
+                       AND (g.aware IS NULL OR (g.ddd_oral IS NULL AND g.ddd_parenteral IS NULL))`.execute(trx);
+        }
         if (allergen_groups !== undefined) {
           await trx.deleteFrom('med_generic_allergens').where('generic_id', '=', gid!).execute();
           if (allergen_groups.length) await trx.insertInto('med_generic_allergens').values([...new Set(allergen_groups)].map((c) => ({ generic_id: gid!, group_code: c }))).execute();
@@ -184,6 +194,10 @@ export class GenericDto {
   @IsOptional() @IsInt() @Min(0) @Max(40_000) min_age_days?: number | null;
   @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({ each: true }) allergen_groups?: string[];
   @IsOptional() @IsString() @MaxLength(2000) notes?: string | null; @IsOptional() @IsBoolean() is_active?: boolean;
+  // 0070: WHO ATC/DDD (per os / პარენტერალური) + AWaRe
+  @IsOptional() @IsNumber() @Min(0.0001) ddd_oral?: number | null; @IsOptional() @IsNumber() @Min(0.0001) ddd_parenteral?: number | null;
+  @IsOptional() @IsIn(['g', 'mg', 'MU']) ddd_unit?: string | null;
+  @IsOptional() @IsIn(['access', 'watch', 'reserve', 'not_recommended']) aware?: string | null;
 }
 class InteractionDto {
   @IsOptional() @IsUUID() a_generic_id?: string | null; @IsOptional() @IsString() a_atc?: string | null;

@@ -105,7 +105,7 @@ api POST "/inpatient/stays/$E1/vitals" "$NA" -d '{"temperature":38.6,"heart_rate
 api POST "/inpatient/stays/$E4/vitals" "$NA" -d '{"temperature":39.0}' >/dev/null
 G_CEF=$(api POST /pharmacy/generics "$ADM" -d "{\"inn\":\"ტესტ-E2E HAI ცეფტრიაქსონი $S\",\"atc_code\":\"J01DD04\",\"form_code\":\"INJ_PWD\",\"strength\":\"1 გ\",\"dose_unit\":\"mg\",\"max_single_dose\":2000,\"routes\":[\"IV\"]}" | jq -r '.id // empty')
 DRB=$(mkuser '["doctor"]' 50 ",\"department_id\":\"$DB\"")
-api POST "/inpatient/stays/$E3/orders" "$DRB" -d "{\"category\":\"medication\",\"generic_id\":\"$G_CEF\",\"order_type\":\"scheduled\",\"dose\":1000,\"dose_unit\":\"mg\",\"route_code\":\"IV\",\"frequency_code\":\"Q12H\",\"duration_days\":7}" >/dev/null
+api POST "/inpatient/stays/$E3/orders" "$DRB" -d "{\"category\":\"medication\",\"generic_id\":\"$G_CEF\",\"order_type\":\"scheduled\",\"dose\":1000,\"dose_unit\":\"mg\",\"route_code\":\"IV\",\"frequency_code\":\"Q12H\",\"duration_days\":7,\"abx_indication\":\"empiric\"}" >/dev/null
 NIC0=$(notes "$IC" ipc_signal)
 chk "შემოწმება: ექთანი / IPC განყ. — 403; IPC — ok" "$(code POST /ipc/signals/scan "$NA"):$(code POST /ipc/signals/scan "$ID"):$(api POST /ipc/signals/scan "$IC" | jq -r '.created >= 4')" "403:403:true"
 S1=$(sigs "$P1"); S2=$(sigs "$P2"); S3=$(sigs "$P3"); S4=$(sigs "$P4")

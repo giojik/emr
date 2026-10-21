@@ -1608,6 +1608,17 @@ export interface Invoices {
   writeoff_amount: Generated<Numeric>;
 }
 
+export interface IpcAbxReference {
+  atc_code: string;
+  aware_oral: string | null;
+  aware_parenteral: string | null;
+  ddd_oral: Numeric | null;
+  ddd_parenteral: Numeric | null;
+  ddd_unit: Generated<string>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface IpcCriteriaItems {
   grp: string | null;
   hai_type: string;
@@ -2407,9 +2418,13 @@ export interface MedGenericAllergens {
 
 export interface MedGenerics {
   atc_code: string | null;
+  aware: string | null;
   controlled_class: string | null;
   created_at: Generated<Timestamp>;
   created_by: string | null;
+  ddd_oral: Numeric | null;
+  ddd_parenteral: Numeric | null;
+  ddd_unit: string | null;
   dose_per_unit: Numeric | null;
   dose_unit: string | null;
   form_code: string;
@@ -2458,6 +2473,14 @@ export interface MedOrderEvents {
 }
 
 export interface MedOrders {
+  abx_icd10: string | null;
+  abx_indication: string | null;
+  abx_review_decision: string | null;
+  abx_review_due: Timestamp | null;
+  abx_review_note: string | null;
+  abx_reviewed_at: Timestamp | null;
+  abx_reviewed_by: string | null;
+  abx_timeout_notified_at: Timestamp | null;
   approval_note: string | null;
   approval_status: Generated<string>;
   approved_at: Timestamp | null;
@@ -4849,6 +4872,7 @@ export interface DB {
   invoice_line_reprices: InvoiceLineReprices;
   invoice_line_shares: InvoiceLineShares;
   invoices: Invoices;
+  ipc_abx_reference: IpcAbxReference;
   ipc_criteria_items: IpcCriteriaItems;
   ipc_criteria_sets: IpcCriteriaSets;
   ipc_flag_detections: IpcFlagDetections;

@@ -5,6 +5,7 @@ import { IpcMdroService } from './ipc-mdro';
 import { IpcDeviceDaysService } from './ipc-device-days';
 import { IpcSignalsService } from './ipc-signals';
 import { IpcSsiService } from './ipc-ssi';
+import { IpcAbxService } from './ipc-abx';
 
 /**
  * worker (ყოველ 5 წუთში, 0067):
@@ -12,11 +13,12 @@ import { IpcSsiService } from './ipc-ssi';
  *  • ფლაგის ვადა (ipc_mdro_types.expiry_days) ამოიწურა → მოიხსნა („ვადა ამოიწურა“), ინფექციის კონტროლს — შეტყობინება.
  * 0068: სიგნალები (signals.scan — 15 წთ), device-days (deviceDays.tick — საათში ერთხელ) — worker.ts-იდან.
  * 0069: SSI ზედამხედველობა (ssi.tick — საათში ერთხელ): ოპერაციები, გაწერის შემდგომი კონტაქტი, SMS.
+ * 0070: ანტიბიოტიკის time-out შეხსენება (abx.tick — 15 წთ, სიგნალებთან ერთად).
  */
 @Injectable()
 export class IpcJobsService {
   private readonly log = new Logger('IPC-jobs');
-  constructor(private readonly c: IpcCommon, private readonly mdro: IpcMdroService, readonly signals: IpcSignalsService, readonly deviceDays: IpcDeviceDaysService, readonly ssi: IpcSsiService) {}
+  constructor(private readonly c: IpcCommon, private readonly mdro: IpcMdroService, readonly signals: IpcSignalsService, readonly deviceDays: IpcDeviceDaysService, readonly ssi: IpcSsiService, readonly abx: IpcAbxService) {}
 
   async tick() {
     if (!(await ipcRules(this.c.db))) return { scanned: 0, expired: 0 };

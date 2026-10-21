@@ -75,8 +75,11 @@ async function bootstrap() {
   const ssiTick = () => void ipc.ssi.tick().then((r) => { if (r.ops || r.followups || r.sms) log.log(`IPC SSI: ოპერაცია ${r.ops}, კონტაქტი ${r.followups}, SMS ${r.sms}`); })
     .catch((e) => log.error(`IPC SSI: ${(e as Error).message}`));
   const ssiTimer = setInterval(ssiTick, 60 * 60_000); setTimeout(ssiTick, 170_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); });
+  const abxTick = () => void ipc.abx.tick().then((r) => { if (r.timeouts) log.log(`IPC ანტიბიოტიკი: time-out ${r.timeouts}`); })
+    .catch((e) => log.error(`IPC ანტიბიოტიკი: ${(e as Error).message}`));
+  const abxTimer = setInterval(abxTick, 15 * 60_000); setTimeout(abxTick, 180_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }

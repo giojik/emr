@@ -10,10 +10,11 @@ import { useModuleEnabled, useModules } from '../../lib/modules';
 import IpcCatalogTab from './Catalog';
 import { DeviceDays, HaiList, Signals } from './Surveillance';
 import SsiTab from './Ssi';
+import AbxTab from './Abx';
 import { FLAG_ST, IPC_ANY, IPC_FULL, ISO_KA, ONSET_KA, SOURCE_KA, useIpcCatalog, type FlagRow, type IpcPatientRow } from './types';
 import type { PatientListItem } from '../../api/types';
 
-type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'rates' | 'catalog';
+type Tab = 'patients' | 'flags' | 'signals' | 'hai' | 'ssi' | 'abx' | 'rates' | 'catalog';
 
 /** ინფექციის კონტროლი (0067): პაციენტები (იზოლაცია / MDRO), MDRO ფლაგები, ცნობარები; 0068: სიგნალები, HAI შემთხვევები, device-days მაჩვენებლები */
 export default function Ipc() {
@@ -24,6 +25,7 @@ export default function Ipc() {
   const full = can(user, ...IPC_FULL);
   const pending = useQuery({ queryKey: ['ipc-flags', 'pending'], queryFn: () => api<FlagRow[]>('/ipc/flags', { query: { review: 'pending' } }), enabled: enabled && full, refetchInterval: 60_000 });
   const openSig = useQuery({ queryKey: ['ipc-signals', 'open', ''], queryFn: () => api<unknown[]>('/ipc/signals', { query: { status: 'open', kind: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
+  const abxPending = useQuery({ queryKey: ['ipc-abx-orders', 'pending', ''], queryFn: () => api<unknown[]>('/ipc/abx/orders', { query: { view: 'pending', q: '' } }), enabled: enabled && can(user, ...IPC_ANY), refetchInterval: 60_000 });
   if (mods.isLoading) return <div className="content"><Loading /></div>;
   if (!enabled) return <div className="content"><div className="alert warn">მოდული „ინფექციის კონტროლი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>;
   if (!can(user, ...IPC_ANY)) return <div className="content"><div className="alert warn">ინფექციის კონტროლის გვერდზე წვდომა არ გაქვთ.</div></div>;
@@ -33,6 +35,7 @@ export default function Ipc() {
     ['signals', 'სიგნალები', true, openSig.data?.length ?? 0],
     ['hai', 'HAI შემთხვევები', true, 0],
     ['ssi', 'SSI', !!ipcSet?.ssi_surveillance, 0],
+    ['abx', 'ანტიბიოტიკები', true, abxPending.data?.length ?? 0],
     ['rates', 'მაჩვენებლები', true, 0],
     ['catalog', 'ცნობარები', full, 0],
   ];
@@ -52,6 +55,7 @@ export default function Ipc() {
       {cur === 'signals' && <Signals />}
       {cur === 'hai' && <HaiList />}
       {cur === 'ssi' && <SsiTab />}
+      {cur === 'abx' && <AbxTab />}
       {cur === 'rates' && <DeviceDays />}
       {cur === 'catalog' && <IpcCatalogTab />}
     </>

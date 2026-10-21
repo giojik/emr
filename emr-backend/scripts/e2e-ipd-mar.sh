@@ -88,7 +88,7 @@ E1=$(api POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$P1\",\"departme
 ADMNO=$(api GET "/inpatient/stays/$E1" "$NA" | jq -r '.stay.adm_no // .adm_no')
 OR="/inpatient/stays/$E1/orders"
 ord() { api POST "$OR" "$DR" -d "$1" | jq -r '.id // empty'; }
-O_CEF=$(ord "{\"category\":\"medication\",\"generic_id\":\"$G_CEF\",\"order_type\":\"scheduled\",\"dose\":1000,\"dose_unit\":\"mg\",\"route_code\":\"IV\",\"frequency_code\":\"Q8H\",\"duration_days\":3}")
+O_CEF=$(ord "{\"category\":\"medication\",\"generic_id\":\"$G_CEF\",\"order_type\":\"scheduled\",\"dose\":1000,\"dose_unit\":\"mg\",\"route_code\":\"IV\",\"frequency_code\":\"Q8H\",\"duration_days\":3,\"abx_indication\":\"prophylaxis\"}")
 O_HEP=$(ord "{\"category\":\"medication\",\"generic_id\":\"$G_WAR\",\"order_type\":\"scheduled\",\"dose\":5000,\"dose_unit\":\"IU\",\"route_code\":\"SC\",\"frequency_code\":\"Q12H\",\"duration_days\":3}")
 O_MOR=$(ord "{\"category\":\"medication\",\"generic_id\":\"$G_MOR\",\"order_type\":\"prn\",\"dose\":5,\"dose_unit\":\"mg\",\"route_code\":\"IV\",\"prn_reason\":\"ტკივილი > 6\",\"prn_max_per_day\":2,\"prn_min_interval_h\":4}")
 O_PAR=$(ord "{\"category\":\"medication\",\"generic_id\":\"$G_PAR\",\"order_type\":\"prn\",\"dose\":500,\"dose_unit\":\"mg\",\"route_code\":\"PO\",\"prn_reason\":\"ცხელება > 38.5\",\"prn_max_per_day\":4}")

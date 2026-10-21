@@ -21,6 +21,8 @@ export interface IpcRules {
   device_days_basis: 'calendar_day' | 'census'; census_hour: number; central_line_kinds: string[];
   wound_class_mode: 'optional' | 'required' | 'off'; ssi_surveillance: boolean; ssi_pd_calls: boolean; ssi_pd_attempts: number; ssi_pd_sms: boolean;
   sig_ssi_postop: boolean; prophylaxis_window_min: number;
+  abx_atc_prefixes: string[]; abx_indication_required: boolean; abx_restrict_mode: 'approve' | 'notify' | 'off'; abx_restrict_reserve: boolean;
+  abx_approver: 'department' | 'ipc' | 'any'; abx_timeout_hours: number; aware_access_target: number;
 }
 export const IPC_DEFAULTS: IpcRules = {
   isolation_remove_mdro: 'ipc', ward_conflict: 'warn', wristband_symbol: false, door_sign: true, mdro_flag_mode: 'auto', mdro_clear_negatives: 3,
@@ -30,7 +32,25 @@ export const IPC_DEFAULTS: IpcRules = {
   hai_criteria_set: 'ecdc', hai_transfer_days: 2, hai_readmit_days: 30, device_min_days: 3, device_days_basis: 'calendar_day', census_hour: 0,
   central_line_kinds: ['cvc', 'picc', 'dialysis'],
   wound_class_mode: 'optional', ssi_surveillance: true, ssi_pd_calls: true, ssi_pd_attempts: 3, ssi_pd_sms: false, sig_ssi_postop: true, prophylaxis_window_min: 60,
+  abx_atc_prefixes: ['J01'], abx_indication_required: true, abx_restrict_mode: 'approve', abx_restrict_reserve: true, abx_approver: 'any', abx_timeout_hours: 72,
+  aware_access_target: 60,
 };
+
+/**
+ * 0070: ანტიბიოტიკების პოლიტიკა (დანიშნულებები / MAR / worker). მოდული გამორთულია → 0042-ის ქცევა:
+ * J01, ჩვენების გარეშე, „სარეზერვო“ — დამტკიცებით (განყოფილების ხელმძღვანელი / ფარმაცევტი), time-out არ არის.
+ */
+export interface AbxPolicy { enabled: boolean; prefixes: string[]; indication_required: boolean; restrict_mode: 'approve' | 'notify' | 'off'; restrict_reserve: boolean;
+  approver: 'department' | 'ipc' | 'any'; timeout_hours: number }
+export async function abxPolicy(ex: Ex): Promise<AbxPolicy> {
+  const r = await ipcRules(ex);
+  if (!r) return { enabled: false, prefixes: ['J01'], indication_required: false, restrict_mode: 'approve', restrict_reserve: false, approver: 'department', timeout_hours: 0 };
+  return { enabled: true, prefixes: r.abx_atc_prefixes, indication_required: r.abx_indication_required, restrict_mode: r.abx_restrict_mode, restrict_reserve: r.abx_restrict_reserve,
+    approver: r.abx_approver, timeout_hours: r.abx_timeout_hours };
+}
+export const isAbx = (atc: string | null | undefined, prefixes: string[]) => !!atc && prefixes.some((p) => atc.startsWith(p));
+export const isRestricted = (g: { reserve_antibiotic: boolean; aware: string | null } | null | undefined, p: AbxPolicy) =>
+  !!g && (g.reserve_antibiotic || (p.restrict_reserve && g.aware === 'reserve'));
 
 export const ISO_TYPES = ['contact', 'contact_plus', 'droplet', 'airborne', 'protective'] as const;
 export type IsoType = (typeof ISO_TYPES)[number];
