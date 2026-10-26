@@ -101,7 +101,13 @@ export class BmeService {
         // 0074: უახლოესი გეგმიური სამუშაო
         sql<string | null>`(SELECT to_char(min(p.next_due), 'YYYY-MM-DD') FROM bme_plans p WHERE p.device_id = b.id AND p.is_active)`.as('pm_next_due'),
         sql<number>`(SELECT count(*)::int FROM bme_plans p WHERE p.device_id = b.id AND p.is_active AND p.next_due < (now() AT TIME ZONE ${tz})::date)`.as('pm_overdue'),
-        sql<boolean>`b.warranty_until IS NOT NULL AND b.warranty_until >= (now() AT TIME ZONE ${tz})::date`.as('under_warranty')]);
+        sql<boolean>`b.warranty_until IS NOT NULL AND b.warranty_until >= (now() AT TIME ZONE ${tz})::date`.as('under_warranty'),
+        // 0075: ღია შეკეთება, აქტიური კონტრაქტი
+        sql<string | null>`(SELECT r.repair_no FROM bme_repairs r WHERE r.device_id = b.id AND r.status IN ('requested', 'triaged', 'in_progress', 'waiting_parts', 'waiting_vendor', 'done')
+          ORDER BY coalesce(r.priority, r.suggested_priority), r.reported_at LIMIT 1)`.as('open_repair_no'),
+        sql<number>`(SELECT count(*)::int FROM bme_repairs r WHERE r.device_id = b.id AND r.status IN ('requested', 'triaged', 'in_progress', 'waiting_parts', 'waiting_vendor', 'done'))`.as('open_repairs'),
+        sql<string | null>`(SELECT to_char(max(c.end_date), 'YYYY-MM-DD') FROM bme_contracts c JOIN bme_contract_devices cd ON cd.contract_id = c.id
+          WHERE cd.device_id = b.id AND c.status = 'active' AND (now() AT TIME ZONE ${tz})::date BETWEEN c.start_date AND c.end_date)`.as('contract_until')]);
   }
 
   async list(u: AuthUser, q: ListQ) {
@@ -269,7 +275,7 @@ export class BmeService {
   }
 
   // ---------------------------------------------------------------- სტატუსი
-  async setStatus(id: string, dto: { status: BmeStatus; reason?: string | null }, u: AuthUser, ctx: AuditContext) {
+  async setStatus(id: string, dto: { status: BmeStatus; reason?: string | null }, u: AuthUser, ctx: AuditContext, opts: { repairId?: string | null } = {}) {
     this.full(u);
     await this.settings();
     const reason = dto.reason?.trim() || null;
@@ -279,18 +285,30 @@ export class BmeService {
       const d = await trx.selectFrom('bme_devices').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!d) throw new NotFoundException('აპარატი ვერ მოიძებნა');
       if (d.status === dto.status && (d.status_reason ?? '') === (reason ?? '')) throw new ConflictException('სტატუსი უკვე ასეთია');
+      // 0075: მტკიცებულების შენახვა (ინციდენტი) — „გაუმართავი“-დან სხვა სტატუსზე გადასვლა დაბლოკილია ხარისხის მენეჯერის მოხსნამდე
+      if (dto.status !== 'down') {
+        const h = await trx.selectFrom('bme_repairs').select('repair_no').where('device_id', '=', id).where('hold', '=', true).where('status', 'not in', ['closed', 'rejected', 'duplicate']).executeTakeFirst();
+        if (h) throw new ConflictException({ code: 'BME_HOLD', message: `აპარატი შენახულია გამოძიებისთვის (${h.repair_no}) — სტატუსის ცვლილება ხარისხის მენეჯერის მოხსნამდე დაბლოკილია` });
+      }
       if (dto.status === 'retired') {
         const pm = await trx.selectFrom('bme_moves').select('id').where('device_id', '=', id).where('status', '=', 'pending').executeTakeFirst();
         if (pm) throw new ConflictException('გადაადგილება მიმდინარეობს — ჯერ დაასრულეთ ან გააუქმეთ');
       }
       await trx.updateTable('bme_status_periods').set({ ended_at: sql`now()`, ended_by: u.id }).where('device_id', '=', id).where('ended_at', 'is', null).execute();
-      await trx.insertInto('bme_status_periods').values({ device_id: id, status: dto.status, reason, started_by: u.id }).execute();
+      await trx.insertInto('bme_status_periods').values({ device_id: id, status: dto.status, reason, started_by: u.id, repair_id: opts.repairId ?? null }).execute();
       await trx.updateTable('bme_devices').set({ status: dto.status, status_reason: reason, status_since: sql`now()`, updated_at: sql`now()` }).where('id', '=', id).execute();
-      await this.event(trx, id, 'status', { from: d.status, to: dto.status, reason }, u);
+      await this.event(trx, id, 'status', { from: d.status, to: dto.status, reason, ...(opts.repairId && { repair_id: opts.repairId }) }, u);
       if (dto.status === 'retired') {   // 0074: გეგმები ჩერდება, ღია სამუშაოები უქმდება
         await trx.updateTable('bme_plans').set({ is_active: false, updated_at: sql`now()` }).where('device_id', '=', id).where('is_active', '=', true).execute();
         await trx.updateTable('bme_works').set({ status: 'cancelled', cancel_reason: 'აპარატი გამოყვანილია', updated_at: sql`now()` })
           .where('device_id', '=', id).where('status', 'in', ['planned', 'in_progress']).execute();
+        // 0075: კონტრაქტებიდან ამოღება არ ხდება (ისტორია); ღია ორდერები (სხვა, გარდა გამომყვანისა) — უარყოფილი
+        await trx.updateTable('bme_repairs').set({ status: 'rejected', reject_reason: 'other', reject_note: 'აპარატი გამოყვანილია', triaged_at: sql`coalesce(triaged_at, now())`, triaged_by: sql`coalesce(triaged_by, ${u.id}::uuid)`, updated_at: sql`now()` })
+          .where('device_id', '=', id).where('status', 'in', ['requested', 'triaged', 'in_progress', 'waiting_parts', 'waiting_vendor'])
+          .$if(!!opts.repairId, (q) => q.where('id', '<>', opts.repairId!)).execute();
+        // შესრულებული (დადასტურებას ელოდება) ორდერები — იხურება (აპარატი აღარ ბრუნდება განყოფილებაში)
+        await trx.updateTable('bme_repairs').set({ status: 'closed', closed_at: sql`now()`, closed_by: u.id, close_kind: 'engineer', close_note: 'აპარატი გამოყვანილია', updated_at: sql`now()` })
+          .where('device_id', '=', id).where('status', '=', 'done').where('hold', '=', false).execute();
       }
       await this.audit.log(ctx, { action: 'BME_STATUS', entityName: 'bme_devices', entityId: id, oldData: { status: d.status, reason: d.status_reason }, newData: { status: dto.status, reason } }, trx);
       // განყოფილების (bme_dept) და პასუხისმგებლის ინფორმირება: გაუმართავი / შეზღუდული / აღდგა
@@ -646,6 +664,10 @@ export class BmeService {
         sql<number>`count(*) FILTER (WHERE status <> 'retired' AND warranty_until BETWEEN (now() AT TIME ZONE ${tz})::date AND (now() AT TIME ZONE ${tz})::date + 60)::int`.as('warranty_60'),
         sql<number>`count(*) FILTER (WHERE status <> 'retired' AND department_id IS NULL)::int`.as('no_department'),
         sql<number>`(SELECT count(*)::int FROM bme_documents f WHERE f.is_active AND f.valid_until < (now() AT TIME ZONE ${tz})::date)`.as('expired_docs'),
+        // 0075: შეკეთება / კონტრაქტები
+        sql<number>`(SELECT count(*)::int FROM bme_repairs r WHERE r.status IN ('requested', 'triaged', 'in_progress', 'waiting_parts', 'waiting_vendor'))`.as('open_repairs'),
+        sql<number>`(SELECT count(*)::int FROM bme_repairs r WHERE r.status = 'requested')`.as('repairs_requested'),
+        sql<number>`(SELECT count(*)::int FROM bme_contracts c WHERE c.status = 'active' AND c.end_date BETWEEN (now() AT TIME ZONE ${tz})::date AND (now() AT TIME ZONE ${tz})::date + 90)`.as('contracts_90'),
       ]).executeTakeFirstOrThrow(),
     ]);
     return { by_status: byStatus, by_type: byType, by_department: byDept, ...flags };

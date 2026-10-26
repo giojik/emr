@@ -8,6 +8,7 @@ import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../c
 import { dateGe, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import { DevicePm, DueChip, PmRefsPage, WorkDialog, WorksPage } from './BmePm';
+import { ContractDialog, ContractsPage, DeviceRepairs, RepairDialog, RepairsPage, RequestDialog } from './BmeRepair';
 
 // ---------------------------------------------------------------- ტიპები
 type Status = 'operational' | 'restricted' | 'down' | 'standby' | 'retired';
@@ -24,7 +25,7 @@ interface Device {
   responsible_user_id: string | null; responsible_name: string | null; status: Status; status_reason: string | null; status_since: string; manufacture_year: number | null; install_date: string | null;
   purchase_date: string | null; purchase_value: string | null; supplier_id: string | null; supplier_name: string | null; warranty_until: string | null; under_warranty: boolean; asset_id: string | null; asset_inv_no: string | null;
   link_kind: LinkKind | null; link_name: string | null; needs_review: boolean; notes: string | null; pending_move_id: string | null; created_at: string;
-  pm_next_due: string | null; pm_overdue: number;
+  pm_next_due: string | null; pm_overdue: number; open_repairs: number; open_repair_no: string | null; contract_until: string | null;
   events?: { id: string; kind: string; data: Record<string, unknown>; created_at: string; user_name: string | null }[];
   periods?: { id: string; status: Status; reason: string | null; started_at: string; ended_at: string | null; started_by_name: string | null; hours: number }[];
   documents?: Doc[];
@@ -48,7 +49,8 @@ const DOC_KA: Record<string, string> = { manual: 'ინსტრუქცია
   act: 'აქტი', warranty: 'საგარანტიო', photo: 'ფოტო', other: 'სხვა' };
 const EV_KA: Record<string, string> = { created: 'რეგისტრაცია', updated: 'რედაქტირება', status: 'სტატუსი', move_requested: 'გადაადგილების მოთხოვნა', moved: 'გადაადგილდა', move_rejected: 'მიღებაზე უარი',
   move_cancelled: 'გადაადგილება გაუქმდა', linked: 'მიება', unlinked: 'ბმა მოიხსნა', document: 'დოკუმენტი', document_removed: 'დოკუმენტი მოიხსნა', reviewed: 'გადამოწმდა',
-  plan: 'გეგმა', work_planned: 'სამუშაო დაიგეგმა', work_done: 'სამუშაო შესრულდა', work_cancelled: 'სამუშაო გაუქმდა', meter: 'მთვლელი' };
+  plan: 'გეგმა', work_planned: 'სამუშაო დაიგეგმა', work_done: 'სამუშაო შესრულდა', work_cancelled: 'სამუშაო გაუქმდა', meter: 'მთვლელი',
+  repair_requested: 'გაუმართაობის მოთხოვნა', repair_done: 'შეკეთება შესრულდა', repair_closed: 'ორდერი დაიხურა', repair_rejected: 'მოთხოვნა უარყოფილია', contract: 'კონტრაქტი' };
 const RES_KA: Record<string, string> = { pass: 'გავლილი', conditional: 'პირობითად', fail: 'ვერ გაიარა' };
 const useRefs = () => useQuery({ queryKey: ['bme-refs'], queryFn: () => api<Refs>('/bme/refs') });
 const useDeps = () => useQuery({ queryKey: ['departments'], queryFn: () => api<Department[]>('/departments') });
@@ -63,7 +65,8 @@ export default function Bme() {
   const [sp, setSp] = useSearchParams();
   const enabled = mods.data?.find((m) => m.code === 'bme')?.enabled;
   const full = can(user, ...FULL);
-  const tabs: [string, string, boolean][] = [['registry', 'რეესტრი', true], ['works', 'სამუშაოები', true], ['incoming', 'მისაღები', full || can(user, 'bme_dept')], ['moves', 'გადაადგილებები', true],
+  const tabs: [string, string, boolean][] = [['registry', 'რეესტრი', true], ['repairs', 'შეკეთება', true], ['works', 'სამუშაოები', true],
+    ['contracts', 'კონტრაქტები', can(user, ...VIEW_ALL, 'procurement', 'procurement_approve', 'accountant')], ['incoming', 'მისაღები', full || can(user, 'bme_dept')], ['moves', 'გადაადგილებები', true],
     ['unlinked', 'მიუბმელი ჩანაწერები', full], ['summary', 'შემაჯამებელი', can(user, ...VIEW_ALL)], ['import', 'იმპორტი', full], ['types', 'ტიპები', full], ['pmrefs', 'ჩეკლისტები / სახეები', full]];
   const refs = useRefs();
   const tab = sp.get('tab') ?? 'registry';
@@ -84,9 +87,12 @@ export default function Bme() {
         : <>
           {scan.error && <div className="content" style={{ paddingBottom: 0 }}><ErrorBox error={scan.error} /></div>}
           {tab === 'incoming' ? <Moves scope="incoming" /> : tab === 'moves' ? <Moves scope="" /> : tab === 'unlinked' ? <UnlinkedPage /> : tab === 'summary' ? <Summary />
-            : tab === 'import' ? <ImportPage /> : tab === 'types' ? <TypesPage /> : tab === 'works' ? <WorksPage /> : tab === 'pmrefs' ? <PmRefsPage types={refs.data?.types ?? []} /> : <Registry />}
+            : tab === 'import' ? <ImportPage /> : tab === 'types' ? <TypesPage /> : tab === 'works' ? <WorksPage /> : tab === 'pmrefs' ? <PmRefsPage types={refs.data?.types ?? []} />
+            : tab === 'repairs' ? <RepairsPage /> : tab === 'contracts' ? <ContractsPage /> : <Registry />}
           {sp.get('device') && <DeviceDialog id={sp.get('device')!} onClose={() => { sp.delete('device'); setSp(sp, { replace: true }); }} />}
           {sp.get('work') && <WorkDialog id={sp.get('work')!} onClose={() => { sp.delete('work'); setSp(sp, { replace: true }); }} />}
+          {sp.get('repair') && <RepairDialog id={sp.get('repair')!} onClose={() => { sp.delete('repair'); setSp(sp, { replace: true }); }} />}
+          {sp.get('contract') && <ContractDialog id={sp.get('contract')!} onClose={() => { sp.delete('contract'); setSp(sp, { replace: true }); }} />}
         </>}
     </>
   );
@@ -145,14 +151,15 @@ function Registry() {
                 <td><strong>{d.name}</strong>{(d.manufacturer || d.model || d.serial_no) && <div className="small muted">{[d.manufacturer, d.model].filter(Boolean).join(' ')}{d.serial_no ? ` · SN ${d.serial_no}` : ''}</div>}
                   <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>{d.needs_review && <span className="chip warn" style={{ height: 20, fontSize: 11 }}>შესავსები</span>}
                     {d.link_kind && <span className="chip info" style={{ height: 20, fontSize: 11 }} title={d.link_name ?? ''}>{LINK_KA[d.link_kind]}</span>}
-                    {d.pending_move_id && <span className="chip warn" style={{ height: 20, fontSize: 11 }}>გადაადგილება — ელოდება</span>}</div></td>
+                    {d.pending_move_id && <span className="chip warn" style={{ height: 20, fontSize: 11 }}>გადაადგილება — ელოდება</span>}
+                    {d.open_repairs > 0 && <span className="chip danger" style={{ height: 20, fontSize: 11 }} title={d.open_repair_no ?? ''}>შეკეთება{d.open_repairs > 1 ? ` ×${d.open_repairs}` : ''}</span>}</div></td>
                 <td className="small">{d.type_name}</td>
                 <td className="small">{d.department_name ?? <span className="muted">—</span>}{(d.room || d.or_room_name) && <div className="muted">{[d.or_room_name, d.room && `ოთახი ${d.room}`].filter(Boolean).join(' · ')}</div>}</td>
                 <td><StatusChip s={d.status} />{d.status_reason && d.status !== 'operational' && <div className="small muted" style={{ maxWidth: 220 }}>{d.status_reason}</div>}</td>
                 <td><span className={`chip ${CRIT_CHIP[d.criticality]}`}>{CRIT_KA[d.criticality]}</span></td>
                 <td style={{ whiteSpace: 'nowrap' }}>{d.status === 'retired' ? '—' : d.pm_overdue > 0 ? <span className="chip danger" title={`ვადაგადაცილებული: ${d.pm_overdue}`}>ვადაგადაცილ. {d.pm_overdue}</span>
                   : d.pm_next_due ? <DueChip due={d.pm_next_due} days={Math.round((new Date(d.pm_next_due).getTime() - new Date(new Date().toDateString()).getTime()) / 864e5)} /> : <span className="muted small">—</span>}</td>
-                <td className="small">{d.warranty_until ? <span className={d.under_warranty ? '' : 'muted'}>{dateGe(d.warranty_until)}</span> : '—'}</td>
+                <td className="small">{d.warranty_until ? <span className={d.under_warranty ? '' : 'muted'}>{dateGe(d.warranty_until)}</span> : '—'}{d.contract_until && <div className="muted" title="სერვისის კონტრაქტი">კონტრ. {dateGe(d.contract_until)}</div>}</td>
               </tr>))}
               {!rows.length && <tr><td colSpan={9} className="muted">აპარატი არ მოიძებნა</td></tr>}
             </tbody>
@@ -250,8 +257,9 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ['bme-device', id], queryFn: () => api<Device>(`/bme/devices/${id}`) });
   const d = q.data; const full = can(user, ...FULL);
   const [f, setF] = useState<Form | null>(null);
-  const [sec, setSec] = useState<'passport' | 'pm' | 'documents' | 'status' | 'history' | 'moves'>('passport');
-  const [dlg, setDlg] = useState<'status' | 'move' | 'link' | null>(null);
+  const [sec, setSec] = useState<'passport' | 'pm' | 'repairs' | 'documents' | 'status' | 'history' | 'moves'>('passport');
+  const [dlg, setDlg] = useState<'status' | 'move' | 'link' | 'request' | null>(null);
+  const [, setSp2] = useSearchParams();
   useEffect(() => { if (d && !f) setF(toForm(d)); }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = () => { void qc.invalidateQueries({ queryKey: ['bme-device', id] }); void qc.invalidateQueries({ queryKey: ['bme-devices'] }); void qc.invalidateQueries({ queryKey: ['bme-alerts'] }); };
   const save = useMutation({
@@ -271,6 +279,7 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
           {d.link_kind ? <button className="btn" type="button" disabled={unlink.isPending} onClick={() => { if (confirm(`მოვხსნათ ბმა: ${d.link_name}?`)) unlink.mutate(); }}>ბმის მოხსნა</button>
             : <button className="btn" type="button" onClick={() => setDlg('link')}>ბმა</button>}
           <button className="btn" type="button" onClick={() => void label()}>ეტიკეტი</button></>}
+        {d && d.status !== 'retired' && <button className="btn" type="button" onClick={() => setDlg('request')}>⚠ გაუმართაობა</button>}
         <span className="grow" />
         <button className="btn" type="button" onClick={onClose}>დახურვა</button>
         {editable && sec === 'passport' && <button className="btn primary" type="button" disabled={!dirty || save.isPending || !f || f.name.trim().length < 2 || !f.type_id} onClick={() => save.mutate()}>შენახვა</button>}</>}>
@@ -293,11 +302,12 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
             {d.asset_inv_no && <span>ბუღალტრული ინვენტარი: <strong className="mono">{d.asset_inv_no}</strong></span>}
           </div>
           <div className="seg" role="group" aria-label="განყოფილება" style={{ alignSelf: 'flex-start' }}>
-            {([['passport', 'პასპორტი'], ['pm', 'გეგმები / სამუშაოები'], ['documents', `დოკუმენტები (${d.documents?.length ?? 0})`], ['status', 'სტატუსის ისტორია'], ['moves', 'გადაადგილებები'], ['history', 'ქრონოლოგია']] as const)
+            {([['passport', 'პასპორტი'], ['pm', 'გეგმები / სამუშაოები'], ['repairs', `შეკეთება / კონტრაქტი${d.open_repairs ? ` (${d.open_repairs})` : ''}`], ['documents', `დოკუმენტები (${d.documents?.length ?? 0})`], ['status', 'სტატუსის ისტორია'], ['moves', 'გადაადგილებები'], ['history', 'ქრონოლოგია']] as const)
               .map(([k, l]) => <button key={k} type="button" aria-pressed={sec === k} onClick={() => setSec(k)}>{l}</button>)}
           </div>
           {sec === 'passport' && <fieldset disabled={!editable} style={{ border: 0, padding: 0, margin: 0 }}><PassportFields f={f} set={(k, v) => setF({ ...f, [k]: v })} types={refs.data.types} isNew={false} /></fieldset>}
           {sec === 'pm' && <DevicePm deviceId={d.id} retired={d.status === 'retired'} />}
+          {sec === 'repairs' && <DeviceRepairs device={d} retired={d.status === 'retired'} />}
           {sec === 'documents' && <Documents d={d} full={full} onChange={done} />}
           {sec === 'status' && (
             <table className="table"><thead><tr><th>სტატუსი</th><th>მიზეზი</th><th>დასაწყისი</th><th>დასასრული</th><th className="num">საათი</th><th>ვინ</th></tr></thead>
@@ -310,6 +320,8 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 : e.kind === 'updated' ? (e.data.fields as string[]).join(', ') : e.kind === 'linked' || e.kind === 'created' ? String(e.data.name ?? e.data.link_name ?? e.data.inv_no ?? '')
                   : e.kind === 'work_done' ? `${e.data.work_no} · ${e.data.kind ?? ''} · ${RES_KA[e.data.result as string] ?? ''}${e.data.next_due ? ` · შემდეგი ${dateGe(e.data.next_due as string)}` : ''}`
                   : e.kind === 'work_planned' || e.kind === 'work_cancelled' ? `${e.data.work_no}${e.data.reason ? ` · ${e.data.reason}` : ''}`
+                  : e.kind.startsWith('repair_') ? `${e.data.repair_no ?? ''}${e.data.outcome ? ` · ${e.data.outcome}` : ''}${e.data.reason ? ` · ${e.data.reason}` : ''}`
+                  : e.kind === 'contract' ? `${e.data.action === 'removed' ? 'ამოღება' : 'დამატება'}: ${e.data.contract_no ?? ''}`
                   : e.kind === 'meter' ? `${e.data.value} (${e.data.unit})` : e.kind === 'plan' ? `${e.data.kind ?? ''}${e.data.next_due ? ` · ვადა ${dateGe(e.data.next_due as string)}` : ''}${e.data.interval_months ? ` · ${e.data.interval_months} თვე` : ''}`
                   : typeof e.data.reason === 'string' ? e.data.reason : typeof e.data.note === 'string' ? e.data.note : typeof e.data.title === 'string' ? e.data.title : e.data.backfill ? 'არსებული ჩანაწერიდან (მიგრაცია)' : ''}</td>
               <td className="small">{e.user_name ?? 'სისტემა'}</td></tr>)}</tbody></table>)}
@@ -317,6 +329,7 @@ function DeviceDialog({ id, onClose }: { id: string; onClose: () => void }) {
         </div>)}
       {dlg === 'status' && d && <StatusDialog d={d} onClose={() => setDlg(null)} onDone={(r) => { setDlg(null); qc.setQueryData(['bme-device', id], r); done(); }} />}
       {dlg === 'move' && d && <MoveDialog d={d} onClose={() => setDlg(null)} onDone={() => { setDlg(null); done(); void qc.invalidateQueries({ queryKey: ['bme-moves'] }); }} />}
+      {dlg === 'request' && d && <RequestDialog device={d} onClose={() => setDlg(null)} onDone={(rid) => { setDlg(null); done(); setSp2((p) => { p.set('repair', rid); return p; }); }} />}
       {dlg === 'link' && d && <LinkDialog d={d} onClose={() => setDlg(null)} onDone={(r) => { setDlg(null); qc.setQueryData(['bme-device', id], r); done(); }} />}
     </Modal>
   );
@@ -500,7 +513,7 @@ function UnlinkedPage() {
 // ---------------------------------------------------------------- შემაჯამებელი
 interface Sum { by_status: { status: Status; n: number }[]; by_type: { type_name: string; grp: string; total: number; unavailable: number }[];
   by_department: { department_name: string | null; total: number; down: number; restricted: number; life_support: number; value: string }[];
-  needs_review: number; warranty_60: number; no_department: number; expired_docs: number }
+  needs_review: number; warranty_60: number; no_department: number; expired_docs: number; open_repairs: number; repairs_requested: number; contracts_90: number }
 function Summary() {
   const q = useQuery({ queryKey: ['bme-summary'], queryFn: () => api<Sum>('/bme/summary') });
   if (q.isLoading) return <div className="content"><Loading /></div>;
@@ -508,7 +521,8 @@ function Summary() {
   if (!s) return <div className="content"><ErrorBox error={q.error} /></div>;
   const st = (k: Status) => s.by_status.find((x) => x.status === k)?.n ?? 0;
   const tiles: [string, number, string, string][] = [['მუშა', st('operational'), 'ok', '/bme?tab=registry'], ['შეზღუდულად', st('restricted'), 'warn', ''], ['გაუმართავი', st('down'), 'danger', ''],
-    ['რეზერვი', st('standby'), 'info', ''], ['შესავსები', s.needs_review, 'warn', ''], ['განყოფილების გარეშე', s.no_department, 'warn', ''], ['გარანტია იწურება (60 დღე)', s.warranty_60, 'info', ''], ['ვადაგასული დოკუმენტი', s.expired_docs, 'danger', '']];
+    ['რეზერვი', st('standby'), 'info', ''], ['შესავსები', s.needs_review, 'warn', ''], ['განყოფილების გარეშე', s.no_department, 'warn', ''], ['გარანტია იწურება (60 დღე)', s.warranty_60, 'info', ''], ['ვადაგასული დოკუმენტი', s.expired_docs, 'danger', ''],
+    ['ღია შეკეთება', s.open_repairs, 'warn', ''], ['ტრიაჟს ელოდება', s.repairs_requested, 'danger', ''], ['კონტრაქტი იწურება (90 დღე)', s.contracts_90, 'info', '']];
   return (
     <div className="content">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>

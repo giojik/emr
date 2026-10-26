@@ -119,6 +119,36 @@ function BmeSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
         <label className="row"><input type="checkbox" checked={v<boolean>('pm_act_dept_sign') !== false} onChange={(e) => upd('pm_act_dept_sign', e.target.checked)} /> აქტში — განყოფილების ხელმოწერის ადგილი</label>
       </div>
       <span className="hint">შეხსენება: სამედიცინო ინჟინრებს, სამუშაოს შემსრულებელს და აპარატის განყოფილების „ბიომედ-აპარატურა (განყოფილება)“ უფლების მქონეებს — ეკრანზე (დღიური შეჯამება); ელფოსტა / SMS — სერვერზე კონფიგურირებული SMTP / SMS სერვისით.</span>
+      <strong className="small">შეკეთება (გაუმართაობის მოთხოვნა → ორდერი), SLA, კონტრაქტები</strong>
+      <div style={grid}>
+        <Field label="ვინ აგზავნის მოთხოვნას" htmlFor="brw"><select id="brw" className="select" value={v<string>('rep_who') ?? 'all_staff'} onChange={(e) => upd('rep_who', e.target.value)}>
+          <option value="all_staff">ყველა თანამშრომელი (თავისი განყოფილების აპარატზე)</option><option value="bme_dept">მხოლოდ „ბიომედ-აპარატურა (განყოფილება)“</option></select></Field>
+        <Field label="დახურვა" htmlFor="brc"><select id="brc" className="select" value={v<string>('rep_close_mode') ?? 'confirm'} onChange={(e) => upd('rep_close_mode', e.target.value)}>
+          <option value="confirm">განყოფილების დადასტურებით</option><option value="engineer">ინჟინერი ხურავს</option></select></Field>
+        <Field label="ავტომატური დახურვა (დღე)" htmlFor="brd" hint="დადასტურების გარეშე; 0 — გამორთული"><input id="brd" className="input mono" type="number" min={0} max={30} value={v<number>('rep_close_auto_days') ?? 3} onChange={(e) => upd('rep_close_auto_days', Number(e.target.value))} /></Field>
+        <Field label="შემოწმება შეკეთების შემდეგ" htmlFor="brp" hint="0074-ის სამუშაო (ელ. უსაფრთხოება / კალიბრაცია)"><select id="brp" className="select" value={v<string>('rep_post_check') ?? 'suggest'} onChange={(e) => upd('rep_post_check', e.target.value)}>
+          <option value="suggest">შეთავაზება (მაღალი / სიცოცხ. შემანარჩუნებელი)</option><option value="required_life_support">სიცოცხ. შემანარჩუნებელზე სავალდებულო</option><option value="off">გამორთული</option></select></Field>
+        <Field label="PM „ვერ გაიარა“ → ორდერი" htmlFor="brf"><select id="brf" className="select" value={v<string>('rep_pm_fail') ?? 'auto'} onChange={(e) => upd('rep_pm_fail', e.target.value)}>
+          <option value="auto">ავტომატურად</option><option value="button">ღილაკით</option></select></Field>
+        <Field label="ორდერის № პრეფიქსი" htmlFor="brx" hint="მაგ. RO26-00001"><input id="brx" className="input mono" maxLength={8} value={v<string>('rep_prefix') ?? 'RO'} onChange={(e) => upd('rep_prefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} /></Field>
+        <Field label="SLA რეაგირება, სთ (P1–P4)" htmlFor="brs1" hint="შიდა; გარე — კონტრაქტიდან"><input id="brs1" className="input mono" key={(v<number[]>('rep_sla_response') ?? []).join(',')} defaultValue={(v<number[]>('rep_sla_response') ?? [1, 4, 24, 72]).join(', ')}
+          onBlur={(e) => { const a = e.target.value.split(/[,\s]+/).map(Number).filter((x) => Number.isInteger(x) && x > 0); if (a.length === 4) upd('rep_sla_response', a); }} /></Field>
+        <Field label="SLA აღდგენა, სთ (P1–P4)" htmlFor="brs2" hint="კალენდარული საათები (24/7)"><input id="brs2" className="input mono" key={(v<number[]>('rep_sla_restore') ?? []).join(',')} defaultValue={(v<number[]>('rep_sla_restore') ?? [24, 72, 168, 336]).join(', ')}
+          onBlur={(e) => { const a = e.target.value.split(/[,\s]+/).map(Number).filter((x) => Number.isInteger(x) && x > 0); if (a.length === 4) upd('rep_sla_restore', a); }} /></Field>
+        <Field label="SLA გაფრთხილება (%)" htmlFor="brsw"><input id="brsw" className="input mono" type="number" min={50} max={95} value={v<number>('rep_sla_warn_pct') ?? 80} onChange={(e) => upd('rep_sla_warn_pct', Number(e.target.value))} /></Field>
+        <Field label="შრომის განაკვეთი (₾/სთ)" htmlFor="brl" hint="0 — ფულადი შეფასება გამორთულია"><input id="brl" className="input mono" type="number" min={0} step="0.5" value={v<number>('rep_labor_rate') ?? 0} onChange={(e) => upd('rep_labor_rate', Number(e.target.value))} /></Field>
+        <Field label="ნაწილების ლოკაცია (ID)" htmlFor="brloc" hint="ნაგულისხმევი საწყობი ჩამოწერისთვის; ცარიელი — ირჩევა ორდერზე"><input id="brloc" className="input mono" value={v<string | null>('rep_parts_location_id') ?? ''}
+          onChange={(e) => upd('rep_parts_location_id', e.target.value.trim() || null)} /></Field>
+        <Field label="კონტრაქტის შეხსენება (დღე)" htmlFor="brct"><input id="brct" className="input mono" key={(v<number[]>('ct_remind_days') ?? []).join(',')} defaultValue={(v<number[]>('ct_remind_days') ?? [90, 30]).join(', ')}
+          onBlur={(e) => upd('ct_remind_days', [...new Set(e.target.value.split(/[,\s]+/).map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 4))} /></Field>
+        <Field label="ქარხნული გარანტიის შეხსენება (დღე)" htmlFor="brwr"><input id="brwr" className="input mono" key={(v<number[]>('wr_remind_days') ?? []).join(',')} defaultValue={(v<number[]>('wr_remind_days') ?? [60, 30]).join(', ')}
+          onBlur={(e) => upd('wr_remind_days', [...new Set(e.target.value.split(/[,\s]+/).map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 4))} /></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={v<boolean>('rep_sets_down') !== false} onChange={(e) => upd('rep_sets_down', e.target.checked)} /> „არ მუშაობს“ → აპარატი მაშინვე „გაუმართავი“</label>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('rep_notify_email')} onChange={(e) => upd('rep_notify_email', e.target.checked)} /> P1 / პაციენტის უსაფრთხოება — ელფოსტითაც</label>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('rep_notify_sms')} onChange={(e) => upd('rep_notify_sms', e.target.checked)} /> P1 / პაციენტის უსაფრთხოება — SMS-ითაც</label></div>
+      </div>
+      <span className="hint">ქარხნული გარანტია — აპარატის პასპორტის ველი; სერვისის კონტრაქტები — „ბიომედ-აპარატურა → კონტრაქტები“. გარე ხარჯი ხარჯის ჟურნალში მხოლოდ AP ინვოისით მოდის (ორმაგი აღრიცხვა არ ხდება).</span>
     </div>
   );
 }

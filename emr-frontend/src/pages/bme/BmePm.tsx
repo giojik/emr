@@ -25,7 +25,8 @@ interface Work { id: string; work_no: string; device_id: string; plan_id: string
   assignee_name: string | null; supplier_name: string | null; completed_by_name: string | null; manufacturer?: string | null; model?: string | null; serial_no?: string | null; days_left: number | null }
 interface WItem { id: string; sort_order: number; text: string; item_type: 'check' | 'measure'; unit: string | null; nominal: string | null; tolerance: string | null; limit_low: string | null; limit_high: string | null;
   critical: boolean; required: boolean; value_num: string | null; outcome: Outcome | null; note: string | null }
-interface WorkFull extends Work { items: WItem[]; documents: { id: string; kind: string; title: string; valid_until: string | null; original_name: string | null; created_at: string }[]; auto_result: Result; missing: number }
+interface WorkFull extends Work { items: WItem[]; documents: { id: string; kind: string; title: string; valid_until: string | null; original_name: string | null; created_at: string }[]; auto_result: Result; missing: number;
+  repair: { id: string; repair_no: string; status: string } | null; for_repair: { id: string; repair_no: string; status: string } | null }
 type BoardRow = (Plan & { row: 'plan'; inv_no: string; device_name: string; department_name: string | null; room: string | null; criticality: string; due_date: string | null })
   | (Work & { row: 'work' });
 interface Meter { id: string; unit: string; value: string; read_on: string; note: string | null; user_name: string }
@@ -230,6 +231,9 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
     cert_no: fin.cert_no.trim() || null, cert_valid_until: fin.cert_valid_until || null } }), onSuccess: (r) => { done(r); toast.show('სამუშაო დასრულდა'); } });
   const cancel = useMutation({ mutationFn: (reason: string) => api<WorkFull>(`/bme/works/${id}/cancel`, { body: { reason } }), onSuccess: (r) => done(r) });
   const apply = useMutation({ mutationFn: (status: 'restricted' | 'down') => api<WorkFull>(`/bme/works/${id}/apply-status`, { body: { status } }), onSuccess: (r) => { done(r); toast.show('აპარატის სტატუსი შეიცვალა'); } });
+  const [sp, setSp] = useSearchParams();
+  const goRepair = (rid: string) => { sp.delete('work'); sp.set('repair', rid); setSp(sp); };
+  const mkRepair = useMutation({ mutationFn: () => api<{ id: string }>(`/bme/works/${id}/repair`, { body: {} }), onSuccess: (r) => { done(); goRepair(r.id); } });
   const result = fin.result || auto;
   const rank = { pass: 0, conditional: 1, fail: 2 } as const;
   const certNeed = !!w?.needs_certificate && result !== 'fail';
@@ -253,7 +257,8 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
             <span className={`chip ${w.status === 'done' ? 'ok' : w.status === 'cancelled' ? '' : 'info'}`}>{WSTATUS_KA[w.status]}</span>
             {w.due_date && open && <DueChip due={w.due_date} days={w.days_left} />}
           </div>
-          <div className="small muted">{w.kind_name}{w.plan_id ? '' : ' · გეგმის გარეშე'}{w.cancel_reason ? ` · გაუქმდა: ${w.cancel_reason}` : ''}</div>
+          <div className="small muted">{w.kind_name}{w.plan_id ? '' : ' · გეგმის გარეშე'}{w.cancel_reason ? ` · გაუქმდა: ${w.cancel_reason}` : ''}
+            {w.for_repair && <> · შემოწმება შეკეთების შემდეგ: <button className="link" type="button" onClick={() => goRepair(w.for_repair!.id)}>{w.for_repair.repair_no}</button></>}</div>
 
           {open && full && perf && (
             <section className="card card-pad stack" style={{ gap: 8 }}>
@@ -320,6 +325,8 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
                 onClick={() => { if (confirm(`აპარატის სტატუსი → „${w.suggested_status === 'down' ? 'გაუმართავი / შეკეთებაში' : 'შეზღუდულად მუშა'}“?`)) apply.mutate(w.suggested_status!); }}>
                 სტატუსი: {w.suggested_status === 'down' ? 'გაუმართავი' : 'შეზღუდულად მუშა'}</button>}
               {w.suggested_status && w.status_applied && <span className="chip">სტატუსი შეიცვალა</span>}
+              {w.repair ? <button className="btn sm" type="button" onClick={() => goRepair(w.repair!.id)}>შეკეთება {w.repair.repair_no}</button>
+                : w.result !== 'pass' && full && w.device_status !== 'retired' && <button className="btn sm" type="button" disabled={mkRepair.isPending} onClick={() => mkRepair.mutate()}>შეკეთების ორდერი</button>}
             </section>)}
 
           <section className="stack" style={{ gap: 6 }}>
@@ -329,7 +336,7 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
             {full && w.status !== 'cancelled' && <div className="row" style={{ gap: 6 }}><input type="file" aria-label="სერტიფიკატის ფაილი" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               <button className="btn sm" type="button" disabled={!file || upload.isPending} onClick={() => upload.mutate()}>სერტიფიკატის ატვირთვა</button></div>}
           </section>
-          <ErrorBox error={save.error ?? assign.error ?? complete.error ?? cancel.error ?? apply.error ?? upload.error} />
+          <ErrorBox error={save.error ?? assign.error ?? complete.error ?? cancel.error ?? apply.error ?? upload.error ?? mkRepair.error} />
         </div>)}
     </Modal>
   );

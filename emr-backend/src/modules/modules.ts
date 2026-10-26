@@ -17,6 +17,9 @@ const bool = (v: unknown) => typeof v === 'boolean';
 const int = (v: unknown, a: number, b: number) => Number.isInteger(v) && (v as number) >= a && (v as number) <= b;
 const oneOf = (v: unknown, xs: string[]) => typeof v === 'string' && xs.includes(v);
 const UUID = /^[0-9a-f-]{36}$/i;
+/** 0075: P1–P4 საათები (ზრდადი) / შეხსენების დღეები */
+const hours4 = (v: unknown) => Array.isArray(v) && v.length === 4 && v.every((x) => int(x, 1, 2000)) && v.every((x, i) => i === 0 || x >= v[i - 1]);
+const days4 = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 365)) && new Set(v).size === v.length;
 const hhmm = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 const ICU_FEATURES = ['sheet', 'ventilation', 'infusions', 'sofa', 'apache', 'abg', 'bundles', 'icu_note', 'board'];
@@ -100,11 +103,6 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       instrument_tracking: bool, cycle_entry: (v) => oneOf(v, ['manual']), wash_record: bool, bd_required: bool, bi_frequency: (v) => oneOf(v, ['each', 'daily', 'weekly', 'off']),
       bi_hold: (v) => oneOf(v, ['all', 'implant', 'none']), shelf_life_mode: (v) => oneOf(v, ['time', 'event']), patient_trace: bool, auto_consume: bool,
       label_size: (v) => oneOf(v, ['50x25', '40x20', '70x35']), label_code: (v) => oneOf(v, ['qr', 'code128']),
-      // 0074: PM / კალიბრაცია / ელ. უსაფრთხოება
-      pm_due_basis: (v) => oneOf(v, ['last_done', 'calendar']), pm_cert_sets_due: bool, pm_auto_plans: bool,
-      pm_remind_days: (v) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 180)) && new Set(v).size === v.length,
-      pm_remind_hour: (v) => int(v, 0, 23), pm_remind_email: bool, pm_remind_sms: bool, pm_overdue_action: (v) => oneOf(v, ['warn', 'restrict']),
-      pm_fail_notify_dept: bool, pm_act_dept_sign: bool, pm_work_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
     },
   },
   stock: {
@@ -266,6 +264,21 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       pm_remind_days: (v) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 180)) && new Set(v).size === v.length,
       pm_remind_hour: (v) => int(v, 0, 23), pm_remind_email: bool, pm_remind_sms: bool, pm_overdue_action: (v) => oneOf(v, ['warn', 'restrict']),
       pm_fail_notify_dept: bool, pm_act_dept_sign: bool, pm_work_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
+      // 0075: შეკეთება / კონტრაქტები / SLA
+      rep_who: (v) => oneOf(v, ['all_staff', 'bme_dept']), rep_sets_down: bool, rep_notify_email: bool, rep_notify_sms: bool,
+      rep_close_mode: (v) => oneOf(v, ['confirm', 'engineer']), rep_close_auto_days: (v) => int(v, 0, 30),
+      rep_post_check: (v) => oneOf(v, ['suggest', 'required_life_support', 'off']), rep_pm_fail: (v) => oneOf(v, ['auto', 'button']),
+      rep_sla_response: (v) => hours4(v), rep_sla_restore: (v) => hours4(v), rep_sla_warn_pct: (v) => int(v, 50, 95),
+      rep_labor_rate: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000,
+      rep_parts_location_id: (v) => v === null || (typeof v === 'string' && UUID.test(v)), rep_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
+      ct_remind_days: (v) => days4(v), wr_remind_days: (v) => days4(v),
+    },
+    extra: async (s, db) => {
+      const r = s.rep_sla_response as number[] | undefined; const t = s.rep_sla_restore as number[] | undefined;
+      if (r && t && r.some((x, i) => x > t[i])) return 'SLA: რეაგირების დრო აღდგენის დროზე მეტი ვერ იქნება';
+      const loc = s.rep_parts_location_id as string | null | undefined;
+      if (loc && !(await db.selectFrom('stock_locations').select('id').where('id', '=', loc).where('is_active', '=', true).executeTakeFirst())) return 'ნაწილების ლოკაცია ვერ მოიძებნა ან გათიშულია';
+      return null;
     },
   },
   asset_register: {

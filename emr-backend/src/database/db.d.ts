@@ -371,6 +371,52 @@ export interface BmeChecklists {
   version: Generated<number>;
 }
 
+export interface BmeContractDevices {
+  added_at: Generated<Timestamp>;
+  added_by: string | null;
+  contract_id: string;
+  device_id: string;
+}
+
+export interface BmeContractFiles {
+  contract_id: string;
+  created_at: Generated<Timestamp>;
+  file_path: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  mime_type: string;
+  original_name: string | null;
+  sha256: string;
+  size_bytes: number;
+  title: string;
+  uploaded_by: string;
+}
+
+export interface BmeContracts {
+  cancel_reason: string | null;
+  contact: string | null;
+  contract_no: string;
+  cost: Numeric | null;
+  cost_period: string | null;
+  covers_kinds: Generated<string[]>;
+  covers_parts: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  end_date: string;
+  id: Generated<string>;
+  kind: string;
+  notes: string | null;
+  pm_visits_per_year: number | null;
+  response_hours: number[] | null;
+  restore_hours: number[] | null;
+  start_date: string;
+  status: Generated<string>;
+  supplier_id: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  uptime_pct: Numeric | null;
+}
+
 export interface BmeDevices {
   asset_id: string | null;
   created_at: Generated<Timestamp>;
@@ -435,6 +481,7 @@ export interface BmeDocuments {
   remove_reason: string | null;
   removed_at: Timestamp | null;
   removed_by: string | null;
+  repair_id: string | null;
   sha256: string;
   size_bytes: number;
   title: string;
@@ -450,6 +497,14 @@ export interface BmeEvents {
   id: Generated<Int8>;
   kind: string;
   user_id: string | null;
+}
+
+export interface BmeExpiryReminders {
+  end_date: string;
+  ref_id: string;
+  ref_kind: string;
+  sent_at: Generated<Timestamp>;
+  stage: number;
 }
 
 export interface BmeMeterReadings {
@@ -506,12 +561,108 @@ export interface BmeReminders {
   stage: number;
 }
 
+export interface BmeRepairCodes {
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface BmeRepairEvents {
+  created_at: Generated<Timestamp>;
+  data: Generated<Json>;
+  id: Generated<Int8>;
+  kind: string;
+  repair_id: string;
+  user_id: string | null;
+}
+
+export interface BmeRepairs {
+  action_id: string | null;
+  ap_invoice_id: string | null;
+  assignee_id: string | null;
+  cause_id: string | null;
+  close_kind: string | null;
+  close_note: string | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  condition: string;
+  contact_phone: string | null;
+  contract_id: string | null;
+  coverage: string | null;
+  created_at: Generated<Timestamp>;
+  description: string;
+  device_id: string;
+  device_status_before: string | null;
+  done_at: Timestamp | null;
+  done_by: string | null;
+  duplicate_of: string | null;
+  external_cost: Generated<Numeric>;
+  external_person: string | null;
+  hold: Generated<boolean>;
+  hold_at: Timestamp | null;
+  hold_by: string | null;
+  hold_note: string | null;
+  hold_released_at: Timestamp | null;
+  hold_released_by: string | null;
+  id: Generated<string>;
+  incident_id: string | null;
+  invoice_no: string | null;
+  labor_cost: Generated<Numeric>;
+  labor_hours: Numeric | null;
+  loaner_device_id: string | null;
+  loaner_text: string | null;
+  outcome: string | null;
+  parts_cost: Generated<Numeric>;
+  patient_involved: Generated<boolean>;
+  performer_kind: Generated<string>;
+  pm_work_id: string | null;
+  post_check_required: Generated<boolean>;
+  post_check_work_id: string | null;
+  priority: number | null;
+  reject_note: string | null;
+  reject_reason: string | null;
+  reopen_count: Generated<number>;
+  repair_no: string;
+  reported_at: Generated<Timestamp>;
+  reported_by: string;
+  reporter_department_id: string | null;
+  resolution: string | null;
+  sla_breach_notified_at: Timestamp | null;
+  sla_response_due: Timestamp | null;
+  sla_response_hours: number | null;
+  sla_restore_due: Timestamp | null;
+  sla_restore_hours: number | null;
+  sla_warned_at: Timestamp | null;
+  source: string;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+  status_applied: Generated<boolean>;
+  suggested_priority: number;
+  suggested_status: string | null;
+  supplier_id: string | null;
+  triage_note: string | null;
+  triaged_at: Timestamp | null;
+  triaged_by: string | null;
+  updated_at: Generated<Timestamp>;
+  urgency: Generated<string>;
+  vendor_arrived_at: Timestamp | null;
+  vendor_called_at: Timestamp | null;
+  vendor_ref: string | null;
+  wait_reason: string | null;
+}
+
 export interface BmeStatusPeriods {
   device_id: string;
   ended_at: Timestamp | null;
   ended_by: string | null;
   id: Generated<Int8>;
   reason: string | null;
+  repair_id: string | null;
   started_at: Generated<Timestamp>;
   started_by: string | null;
   status: string;
@@ -570,6 +721,7 @@ export interface BmeWorks {
   performed_on: string | null;
   performer_kind: Generated<string>;
   plan_id: string | null;
+  repair_id: string | null;
   result: string | null;
   result_note: string | null;
   scheduled_date: string | null;
@@ -3758,6 +3910,7 @@ export interface ProcRequisitionLines {
 }
 
 export interface ProcRequisitions {
+  bme_repair_id: string | null;
   closed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -4710,6 +4863,7 @@ export interface StockDocs {
   approval_status: string | null;
   approved_at: Timestamp | null;
   approved_by: string | null;
+  bme_repair_id: string | null;
   count_id: string | null;
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -5153,14 +5307,21 @@ export interface DB {
   billing_packages: BillingPackages;
   bme_checklist_items: BmeChecklistItems;
   bme_checklists: BmeChecklists;
+  bme_contract_devices: BmeContractDevices;
+  bme_contract_files: BmeContractFiles;
+  bme_contracts: BmeContracts;
   bme_device_types: BmeDeviceTypes;
   bme_devices: BmeDevices;
   bme_documents: BmeDocuments;
   bme_events: BmeEvents;
+  bme_expiry_reminders: BmeExpiryReminders;
   bme_meter_readings: BmeMeterReadings;
   bme_moves: BmeMoves;
   bme_plans: BmePlans;
   bme_reminders: BmeReminders;
+  bme_repair_codes: BmeRepairCodes;
+  bme_repair_events: BmeRepairEvents;
+  bme_repairs: BmeRepairs;
   bme_status_periods: BmeStatusPeriods;
   bme_work_items: BmeWorkItems;
   bme_work_kinds: BmeWorkKinds;

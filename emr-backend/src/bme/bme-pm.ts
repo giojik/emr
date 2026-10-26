@@ -24,6 +24,7 @@ import {
 } from './bme-pm-common';
 import { BmeService } from './bme';
 import { BmePmJobsService } from './bme-pm-jobs';
+import { createRepair, repEvent, devEvent } from './bme-repair-common';
 
 const OPEN = ['planned', 'in_progress'] as const;
 const VIEWS = ['overdue', 'week', 'month', 'open', 'undated', 'all', 'done'] as const;
@@ -328,18 +329,45 @@ export class PmService {
       .orderBy(sql`c.type_id IS NULL`).limit(1).executeTakeFirst();
   }
 
-  private async createWork(trx: Ex, s: BmeSettings, p: { device_id: string; kind_id: string; plan_id: string | null; due_date: string | null; scheduled_date: string | null },
+  private async createWork(trx: Ex, s: BmeSettings, p: { device_id: string; kind_id: string; plan_id: string | null; due_date: string | null; scheduled_date: string | null; repair_id?: string | null },
     perf: Awaited<ReturnType<PmService['performer']>>, u: AuthUser) {
     const cl = await this.checklistFor(trx, p.kind_id, p.device_id);
     const no = await this.nextNo(trx, s);
     const w = await trx.insertInto('bme_works').values({ work_no: no, device_id: p.device_id, plan_id: p.plan_id, kind_id: p.kind_id, checklist_id: cl?.id ?? null, due_date: p.due_date,
-      scheduled_date: p.scheduled_date, ...perf, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
+      scheduled_date: p.scheduled_date, repair_id: p.repair_id ?? null, ...perf, created_by: u.id }).returning('id').executeTakeFirstOrThrow();
     if (cl) {
       await sql`INSERT INTO bme_work_items (work_id, sort_order, text, item_type, unit, nominal, tolerance, limit_low, limit_high, critical, required)
         SELECT ${w.id}, sort_order, text, item_type, unit, nominal, tolerance, limit_low, limit_high, critical, required FROM bme_checklist_items WHERE checklist_id = ${cl.id}`.execute(trx);
     }
     await this.event(trx, p.device_id, 'work_planned', { work_id: w.id, work_no: no, kind_id: p.kind_id, scheduled_date: p.scheduled_date }, u);
     return { id: w.id, work_no: no };
+  }
+
+  /** 0075: შემოწმება შეკეთების შემდეგ — სამუშაო ორდერის ტრანზაქციაში (repair_id) */
+  createWorkInTrx(trx: Ex, s: BmeSettings, p: { device_id: string; kind_id: string; plan_id: null; due_date: string | null; scheduled_date: string | null; repair_id: string },
+    perf: { performer_kind: 'internal'; assignee_id: string | null; supplier_id: null; external_person: null }, u: AuthUser) {
+    return this.createWork(trx, s, p, perf, u);
+  }
+
+  /**
+   * 0075: „ვერ გაიარა“ / „პირობითად“ → შეკეთების ორდერი (ტრიაჟი გავლილია, შემსრულებელი — სამუშაოს დამსრულებელი); აღწერაში — ჩავარდნილი პუნქტები.
+   * ერთ სამუშაოზე ერთი ორდერი; manual — ღილაკით (შეცდომა, თუ უკვე არსებობს).
+   */
+  async repairFromWork(trx: Ex, s: BmeSettings, workId: string, u: AuthUser, manual: boolean) {
+    const w = await trx.selectFrom('bme_works as w').innerJoin('bme_work_kinds as k', 'k.id', 'w.kind_id').innerJoin('bme_devices as b', 'b.id', 'w.device_id')
+      .select(['w.id', 'w.work_no', 'w.status', 'w.result', 'w.result_note', 'w.device_id', 'w.completed_by', 'k.short_name', 'b.status as device_status']).where('w.id', '=', workId).executeTakeFirst();
+    if (!w) throw new NotFoundException('სამუშაო ვერ მოიძებნა');
+    if (w.status !== 'done' || !w.result || w.result === 'pass') throw new ConflictException('ორდერი — მხოლოდ „ვერ გაიარა“ / „პირობითად“ შედეგზე');
+    if (w.device_status === 'retired') throw new ConflictException('აპარატი გამოყვანილია');
+    const ex = await trx.selectFrom('bme_repairs').select(['id', 'repair_no']).where('pm_work_id', '=', workId).where('status', 'not in', ['rejected', 'duplicate']).executeTakeFirst();
+    if (ex) { if (manual) throw new ConflictException(`სამუშაოზე ორდერი უკვე არსებობს: ${ex.repair_no}`); return ex; }
+    const failed = await trx.selectFrom('bme_work_items').select(['text', 'value_num', 'unit', 'critical']).where('work_id', '=', workId).where('outcome', '=', 'fail').orderBy('sort_order').execute();
+    const desc = `${w.work_no} (${w.short_name}) — ${RESULT_KA[w.result as PmResult]}${w.result_note ? `: ${w.result_note}` : ''}`
+      + (failed.length ? `\nჩავარდნილი: ${failed.map((f) => `${f.text}${f.value_num !== null ? ` = ${Number(f.value_num)}${f.unit ? ` ${f.unit}` : ''}` : ''}${f.critical ? '' : ' (არაკრიტ.)'}`).join('; ')}` : '');
+    const r = await createRepair(trx, s, { device_id: w.device_id, source: 'pm_work', pm_work_id: workId, condition: w.result === 'fail' ? 'limited' : 'issue', urgency: w.result === 'fail' ? 'urgent' : 'normal',
+      description: desc.slice(0, 2000), triaged: true }, u.id);
+    await this.event(trx, w.device_id, 'work_done', { work_id: workId, work_no: w.work_no, repair_id: r.id, repair_no: r.repair_no, kind: w.short_name, result: w.result, repair: true }, u);
+    return { id: r.id, repair_no: r.repair_no };
   }
 
   async create(dto: CreateWorkDto, u: AuthUser, ctx: AuditContext) {
@@ -359,7 +387,15 @@ export class PmService {
         if (!d) throw new NotFoundException('აპარატი ვერ მოიძებნა');
         if (d.status === 'retired') throw new ConflictException('გამოყვანილ აპარატზე სამუშაო არ იგეგმება');
         if (!(await trx.selectFrom('bme_work_kinds').select('id').where('id', '=', kind).where('is_active', '=', true).executeTakeFirst())) throw new BadRequestException('სახე ვერ მოიძებნა ან გათიშულია');
-        const perf = await this.performer(trx, dto);
+        // 0075: შემსრულებელი არ არის მითითებული + აქტიური კონტრაქტი ფარავს ამ სახეს → გარე (კონტრაქტის მომწოდებელი)
+        let pdto: AssignDto = dto;
+        if (dto.performer_kind === undefined && !dto.assignee_id && !dto.supplier_id) {
+          const c = await trx.selectFrom('bme_contracts as c').innerJoin('bme_contract_devices as cd', 'cd.contract_id', 'c.id').select(['c.supplier_id'])
+            .where('cd.device_id', '=', dev).where('c.status', '=', 'active').where(sql<boolean>`${today()} BETWEEN c.start_date AND c.end_date`).where(sql<boolean>`${kind}::uuid = ANY (c.covers_kinds)`)
+            .orderBy('c.end_date', 'desc').limit(1).executeTakeFirst();
+          if (c) pdto = { performer_kind: 'external', supplier_id: c.supplier_id };
+        }
+        const perf = await this.performer(trx, pdto);
         const w = await this.createWork(trx, s, { device_id: dev, kind_id: kind, plan_id: dto.plan_id ?? null, due_date: due, scheduled_date: dto.scheduled_date ?? null }, perf, u);
         id = w.id; notify = perf.assignee_id; label = `${w.work_no} · ${d.inv_no} ${d.name}`;
         await this.audit.log(ctx, { action: 'CREATE_BME_WORK', entityName: 'bme_works', entityId: w.id, newData: dto }, trx);
@@ -446,7 +482,12 @@ export class PmService {
       this.db.selectFrom('bme_documents').select(['id', 'kind', 'title', 'valid_until', 'mime_type', 'original_name', 'created_at']).where('work_id', '=', id).where('is_active', '=', true).orderBy('created_at').execute(),
     ]);
     const auto = autoResult(items.map((i) => ({ outcome: i.outcome, critical: i.critical })));
-    return { ...w, items, documents, auto_result: auto, missing: items.filter((i) => i.required && !i.outcome).length };
+    // 0075: სამუშაოდან შექმნილი ორდერი / ორდერის შემოწმება
+    const [repair, forRepair] = await Promise.all([
+      this.db.selectFrom('bme_repairs').select(['id', 'repair_no', 'status']).where('pm_work_id', '=', id).where('status', 'not in', ['rejected', 'duplicate']).executeTakeFirst(),
+      this.db.selectFrom('bme_works as w').innerJoin('bme_repairs as r', 'r.id', 'w.repair_id').select(['r.id', 'r.repair_no', 'r.status']).where('w.id', '=', id).executeTakeFirst(),
+    ]);
+    return { ...w, items, documents, auto_result: auto, missing: items.filter((i) => i.required && !i.outcome).length, repair: repair ?? null, for_repair: forRepair ?? null };
   }
 
   /** ჩეკლისტის შევსება (ნაწილობრივ შენახვაც): გაზომვა → ავტომატური შედეგი; შემოწმება → pass / fail / na (სავალდებულოზე na — არა) */
@@ -492,7 +533,7 @@ export class PmService {
   async complete(id: string, dto: CompleteDto, u: AuthUser, ctx: AuditContext) {
     this.full(u);
     const s = await this.settings();
-    let notify: { dept: string | null; resp: string | null; title: string; body: string } | null = null; let restored = false; let deviceId = '';
+    let notify: { dept: string | null; resp: string | null; title: string; body: string } | null = null; let restored = false; let deviceId = ''; let repairNo: string | null = null;
     await this.db.transaction().execute(async (trx) => {
       const w = await trx.selectFrom('bme_works as w').innerJoin('bme_work_kinds as k', 'k.id', 'w.kind_id').innerJoin('bme_devices as b', 'b.id', 'w.device_id')
         .selectAll('w').select(['k.needs_certificate', 'k.short_name', 'b.inv_no', 'b.name as device_name', 'b.department_id', 'b.responsible_user_id', 'b.status as device_status', 'b.status_reason'])
@@ -531,6 +572,9 @@ export class PmService {
       // ატვირთული სერტიფიკატის / აქტის ვადა = სერტიფიკატის ვადა
       if (dto.cert_valid_until) await trx.updateTable('bme_documents').set({ valid_until: dto.cert_valid_until }).where('work_id', '=', id).where('kind', '=', 'certificate').where('valid_until', 'is', null).execute();
       await this.event(trx, w.device_id, 'work_done', { work_id: id, work_no: w.work_no, kind: w.short_name, result: dto.result, next_due: next, suggested_status: suggested }, u);
+      // 0075: „ვერ გაიარა“ → შეკეთების ორდერი ავტომატურად (პარამეტრი); ორდერის შემოწმება → ორდერის ისტორია / დახურვა (engineer რეჟიმი)
+      if (dto.result === 'fail' && s.rep_pm_fail === 'auto') repairNo = (await this.repairFromWork(trx, s, id, u, false)).repair_no;
+      if (w.repair_id) await this.afterPostCheck(trx, s, w.repair_id, { id, work_no: w.work_no, result: dto.result }, u);
 
       // ავტომატური „შეზღუდული“ (ვადაგადაცილება) — აღდგენა
       if (dto.result !== 'fail' && w.device_status === 'restricted' && (w.status_reason ?? '').startsWith(AUTO_REASON)) {
@@ -545,7 +589,8 @@ export class PmService {
       }
       await this.audit.log(ctx, { action: 'COMPLETE_BME_WORK', entityName: 'bme_works', entityId: id, newData: { ...dto, items: dto.items?.length ?? 0, auto_result: auto, next_due: next, restored } }, trx);
       if (dto.result !== 'pass' && s.pm_fail_notify_dept) notify = { dept: w.department_id, resp: w.responsible_user_id,
-        title: `${w.inv_no} ${w.device_name}: ${w.short_name} — ${RESULT_KA[dto.result]}`, body: `${dto.result_note?.trim() ?? ''}${suggested ? ` · შეთავაზებული სტატუსი: ${STATUS_KA[suggested]}` : ''}` };
+        title: `${w.inv_no} ${w.device_name}: ${w.short_name} — ${RESULT_KA[dto.result]}`,
+        body: `${dto.result_note?.trim() ?? ''}${suggested ? ` · შეთავაზებული სტატუსი: ${STATUS_KA[suggested]}` : ''}${repairNo ? ` · შეკეთების ორდერი ${repairNo}` : ''}` };
     });
     // აქტის PDF → დოკუმენტებში (შენახული ასლი — უცვლელი)
     try { await this.storeAct(id, u); } catch (e) { /* PDF-ის შეცდომა დასრულებას არ აბრუნებს — აქტი ხელახლა იბეჭდება */ void e; }
@@ -557,6 +602,19 @@ export class PmService {
     return this.get(id, u);
   }
 
+  /** 0075: ორდერის შემოწმება დასრულდა → ორდერის ისტორია; engineer რეჟიმში შესრულებული ორდერი იხურება (გავლილი / პირობითად) */
+  private async afterPostCheck(trx: Ex, s: BmeSettings, repairId: string, w: { id: string; work_no: string; result: PmResult }, u: AuthUser) {
+    const r = await trx.selectFrom('bme_repairs').select(['id', 'repair_no', 'status', 'device_id', 'hold', 'post_check_work_id']).where('id', '=', repairId).forUpdate().executeTakeFirst();
+    if (!r) return;
+    await repEvent(trx, repairId, 'post_check', { work_id: w.id, work_no: w.work_no, result: w.result, done: true }, u.id);
+    if (r.post_check_work_id === w.id && r.status === 'done' && s.rep_close_mode === 'engineer' && w.result !== 'fail' && !r.hold) {
+      await trx.updateTable('bme_repairs').set({ status: 'closed', closed_at: sql`now()`, closed_by: u.id, close_kind: 'engineer', close_note: `შემოწმება ${w.work_no}: ${RESULT_KA[w.result]}`, updated_at: sql`now()` })
+        .where('id', '=', repairId).execute();
+      await repEvent(trx, repairId, 'closed', { kind: 'engineer', post_check: w.work_no }, u.id);
+      await devEvent(trx, r.device_id, 'repair_closed', { repair_id: repairId, repair_no: r.repair_no, kind: 'engineer' }, u.id);
+    }
+  }
+
   /** „ვერ გაიარა“ / „პირობითად“ → შეთავაზებული სტატუსის გამოყენება (ინჟინრის გადაწყვეტილებით; 0073-ის სტატუსის ცვლილება — მიზეზით, პერიოდით, შეტყობინებით) */
   async applyStatus(id: string, dto: { status: BmeStatus; reason?: string }, u: AuthUser, ctx: AuditContext) {
     this.full(u);
@@ -566,7 +624,8 @@ export class PmService {
     if (w.status !== 'done' || w.result === 'pass') throw new ConflictException('სტატუსის შეთავაზება მხოლოდ „პირობითად“ / „ვერ გაიარა“ შედეგზე');
     if (w.status_applied) throw new ConflictException('სტატუსი უკვე გამოყენებულია');
     const reason = `${w.work_no}: ${RESULT_KA[w.result as PmResult]}${dto.reason?.trim() ? ` — ${dto.reason.trim()}` : ''}`;
-    await this.bme.setStatus(w.device_id, { status: dto.status, reason }, u, ctx);
+    const rep = await this.db.selectFrom('bme_repairs').select('id').where('pm_work_id', '=', id).where('status', 'not in', ['rejected', 'duplicate', 'closed']).executeTakeFirst();
+    await this.bme.setStatus(w.device_id, { status: dto.status, reason }, u, ctx, { repairId: rep?.id ?? null });
     await this.db.updateTable('bme_works').set({ status_applied: true, updated_at: sql`now()` }).where('id', '=', id).execute();
     return this.get(id, u);
   }
