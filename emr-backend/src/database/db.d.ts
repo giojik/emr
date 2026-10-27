@@ -4773,6 +4773,61 @@ export interface RptFactQuality {
   triaged: Generated<number>;
 }
 
+export interface RptFactRoster {
+  census_h: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  day: string;
+  department_id: string;
+  duty_gaps_fact: Generated<number>;
+  duty_gaps_plan: Generated<number>;
+  no_show: Generated<number>;
+  nonurse_h: Generated<number>;
+  norm_gaps_fact: Generated<number>;
+  norm_gaps_plan: Generated<number>;
+  nurse_h: Generated<Numeric>;
+  open_fill_h: Generated<Numeric>;
+  open_late: Generated<number>;
+  open_lead_h: Generated<Numeric>;
+  open_n: Generated<number>;
+  open_ontime: Generated<number>;
+  open_unfilled: Generated<number>;
+  open_volunteer: Generated<number>;
+  over_h: Generated<number>;
+  pt_h: Generated<Numeric>;
+  shifts: Generated<number>;
+  swaps: Generated<number>;
+  swaps_approved: Generated<number>;
+  swaps_decided_h: Generated<Numeric>;
+  swaps_lapsed: Generated<number>;
+  swaps_refused: Generated<number>;
+  viol_continuous: Generated<number>;
+  viol_nights: Generated<number>;
+  viol_rest: Generated<number>;
+  viol_week: Generated<number>;
+}
+
+export interface RptFactRosterMonth {
+  abs_wd: Generated<number>;
+  closed_staff: Generated<number>;
+  computed_at: Generated<Timestamp>;
+  credit_h: Generated<Numeric>;
+  department_id: string;
+  emp_wd: Generated<number>;
+  fact_h: Generated<Numeric>;
+  holiday_h: Generated<Numeric>;
+  month: string;
+  night_h: Generated<Numeric>;
+  norm_h: Generated<Numeric>;
+  ot_comp_h: Generated<Numeric>;
+  ot_h: Generated<Numeric>;
+  ot_pay_h: Generated<Numeric>;
+  ot_staff: Generated<number>;
+  sick_wd: Generated<number>;
+  staff: Generated<number>;
+  under_staff: Generated<number>;
+  weekend_h: Generated<Numeric>;
+}
+
 export interface RptFactStock {
   consumption: Generated<Numeric>;
   day: string;
@@ -5959,6 +6014,8 @@ export interface DB {
   rpt_fact_or_room: RptFactOrRoom;
   rpt_fact_payer: RptFactPayer;
   rpt_fact_quality: RptFactQuality;
+  rpt_fact_roster: RptFactRoster;
+  rpt_fact_roster_month: RptFactRosterMonth;
   rpt_fact_stock: RptFactStock;
   rpt_kpi_targets: RptKpiTargets;
   rpt_kpis: RptKpis;

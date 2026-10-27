@@ -8,6 +8,7 @@ import { useModules } from '../../lib/modules';
 import { ApprovalsPage, MyHub, NewOpenShiftDialog, OpenShiftDialog, useInbox } from './RosterLeave';
 import HoursPage from './RosterHours';
 import { LoadCard } from './RosterLinks';
+import RosterReportsPage from './RosterReports';
 import RosterSetupPage from './RosterSetup';
 import RosterStaffPage from './RosterStaff';
 import {
@@ -26,7 +27,7 @@ export default function Roster() {
   const inbox = useInbox(!!enabled && !!refs.data);
   const n = inbox.data?.counts.total ?? 0;
   const tabs: [string, string, boolean][] = [
-    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true], ['approvals', `დასადასტურებელი${n ? ` (${n})` : ''}`, manager || n > 0], ['hours', 'საათები / ტაბელი', !!c?.timesheet],
+    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true], ['approvals', `დასადასტურებელი${n ? ` (${n})` : ''}`, manager || n > 0], ['hours', 'საათები / ტაბელი', !!c?.timesheet], ['reports', 'ანგარიშები', !!c?.reports],
     ['staff', 'თანამშრომლები', !!c && (c.staff_all || c.view_all || c.edit_depts.length > 0)], ['setup', 'ცნობარები', !!c && (c.setup || c.hr || c.edit_all || c.edit_depts.length > 0)]];
   const def = anyDept ? 'grid' : 'duty';
   const tab = sp.get('tab') ?? def;
@@ -41,7 +42,7 @@ export default function Roster() {
       </header>
       {!enabled ? <div className="content"><div className="card empty">მოდული „ცვლები და მორიგეობა“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
         : refs.error ? <div className="content"><ErrorBox error={refs.error} /></div>
-        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyHub refs={refs.data!} /> : tab === 'approvals' ? <ApprovalsPage refs={refs.data!} /> : tab === 'hours' ? <HoursPage refs={refs.data!} /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
+        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyHub refs={refs.data!} /> : tab === 'approvals' ? <ApprovalsPage refs={refs.data!} /> : tab === 'hours' ? <HoursPage refs={refs.data!} /> : tab === 'reports' ? <RosterReportsPage /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
         : tab === 'setup' ? <RosterSetupPage refs={refs.data!} /> : <GridPage refs={refs.data!} />}
     </>
   );

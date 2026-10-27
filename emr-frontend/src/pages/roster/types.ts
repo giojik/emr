@@ -50,7 +50,7 @@ export const SRC_KA: Record<string, string> = { absence: 'არყოფნა'
 export interface Refs { settings: Settings; positions: Position[]; templates: Template[]; duty_roles: DutyRole[]; patterns: Pattern[]; departments: Dept[]; rest: string;
   absence_types: AbsenceType[]; me: { id: string; name: string; department_id: string; category: Category | null } | null;
   can: { setup: boolean; hr: boolean; staff_all: boolean; edit_all: boolean; view_all: boolean; edit_depts: string[]; absence_all: boolean; absence_hr: boolean; absence_depts: string[];
-    timesheet: boolean; timesheet_all: boolean; timesheet_close: boolean } }
+    timesheet: boolean; timesheet_all: boolean; timesheet_close: boolean; reports?: boolean } }
 export const useRefs = () => useQuery({ queryKey: ['roster-refs'], queryFn: () => api<Refs>('/roster/refs') });
 
 export interface Staff { id: string; user_id: string | null; first_name: string; last_name: string; name: string; personal_number: string | null; phone: string | null; position_id: string | null;

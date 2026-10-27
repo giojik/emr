@@ -4,6 +4,7 @@ import { addDays, daysBetween, n, r1, r2, RptCommon, type RptScope, type RptSett
 import { TAT_EDGES } from './reporting-refresh';
 import { bedDays, categoryExpander, type Indicator, indicatorMatch, loadIndicators, rate } from '../quality/quality-metrics';
 import { ACC_KEYS, bmeKpis, bmeRptRules, zeroAcc } from '../bme/bme-reports-core';
+import { DAY_KEYS as R_DAY, MONTH_KEYS as R_MONTH, KPI_CODES as R_KPI, rosterKpis, zeroAcc as rZero, ACC_KEYS as R_ACC } from '../roster/roster-reports-core';
 
 /**
  * KPI-ების გამოთვლა მხოლოდ rpt_* ცხრილებიდან (READ_DB). თითო KPI-ის ფორმულა — აქ (ტექსტი — rpt_kpis.formula).
@@ -55,7 +56,7 @@ export class RptKpiService {
   /** პერიოდის ჯამები ყველა ფაქტიდან — ერთი გასაღებით (flow_*, beds_*, …) */
   async totals(scope: RptScope, from: string, to: string): Promise<Totals> {
     const t: Record<string, number> = {};
-    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind, ipc, ipcd, bme, bmeS] = await Promise.all([
+    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind, ipc, ipcd, bme, bmeS, rd, rm] = await Promise.all([
       sql<{ enc_type: string; visit_kind: string; encounters: number; cancelled: number; new_patients: number }>`
         SELECT f.enc_type, f.visit_kind, sum(f.encounters)::int AS encounters, sum(f.cancelled)::int AS cancelled, sum(f.new_patients)::int AS new_patients
           FROM rpt_fact_flow f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2`.execute(this.rdb),
@@ -115,6 +116,13 @@ export class RptKpiService {
         SELECT ${sql.join(ACC_KEYS.map((k) => sql`coalesce(sum(${sql.ref(`f.${k}`)}), 0)::text AS ${sql.ref(k)}`))}
           FROM rpt_fact_bme f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
       bmeRptRules(this.c.db),
+      // 0080: ცვლები / მორიგეობა — დღიური (დღე პერიოდში) + თვიური (თვე, რომლის 1-ელი რიცხვი პერიოდშია)
+      sql<Record<string, string>>`
+        SELECT ${sql.join(R_DAY.map((k) => sql`coalesce(sum(${sql.ref(`f.${k}`)}), 0)::text AS ${sql.ref(k)}`))}
+          FROM rpt_fact_roster f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
+      sql<Record<string, string>>`
+        SELECT ${sql.join(R_MONTH.map((k) => sql`coalesce(sum(${sql.ref(`f.${k}`)}), 0)::text AS ${sql.ref(k)}`))}
+          FROM rpt_fact_roster_month f WHERE f.month BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
     ]);
     t.days = daysBetween(from, to);
     for (const k of ['enc_all', 'enc_out', 'enc_lab', 'enc_emg', 'enc_cancelled', 'new_patients']) t[k] = 0;
@@ -152,6 +160,7 @@ export class RptKpiService {
     for (const [k, v] of Object.entries(ipcd.rows[0] ?? {})) t[`ipcd_${k}`] = n(v);
     for (const [k, v] of Object.entries(bme.rows[0] ?? {})) t[`bme_${k}`] = n(v);
     t.bme_w = Number(bmeS?.rpt_restricted_weight ?? 0); t.bme_ex = bmeS?.rpt_mtbf_exclude_user_error ? 1 : 0;
+    for (const [k, v] of Object.entries({ ...(rd.rows[0] ?? {}), ...(rm.rows[0] ?? {}) })) t[`roster_${k}`] = n(v);
     return t;
   }
 
@@ -250,7 +259,13 @@ export class RptKpiService {
         const a = zeroAcc(); for (const k of ACC_KEYS) a[k] = t[`bme_${k}`] ?? 0;
         return (bmeKpis(a, { rpt_restricted_weight: t.bme_w ?? 0, rpt_mtbf_exclude_user_error: !!t.bme_ex }) as Record<string, number | null>)[code];
       }
-      default: return code.startsWith('qm_ind_') ? this.indicatorValue(code.slice(7), t, s) : null;
+      default:
+        // 0080: ცვლები / მორიგეობა (ფორმულა — roster-reports-core.rosterKpis, იგივე, რაც ანგარიშში)
+        if (R_KPI.includes(code)) {
+          const a = rZero(); for (const k of R_ACC) a[k] = t[`roster_${k}`] ?? 0;
+          return (rosterKpis(a) as Record<string, number | null>)[code];
+        }
+        return code.startsWith('qm_ind_') ? this.indicatorValue(code.slice(7), t, s) : null;
     }
   }
 
@@ -285,7 +300,7 @@ export class RptKpiService {
     if (onlyActive) q = q.where('is_active', '=', true);
     const rows = await q.orderBy('sort_order').orderBy('code').execute();
     return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc)
-      && (k.category !== 'bme' || !!scope.bme));
+      && (k.category !== 'bme' || !!scope.bme) && (k.category !== 'roster' || !!scope.roster));
   }
 
   /** დროის მწკრივი: grain = day / week / month (KPI ითვლება თითო ინტერვალზე) */

@@ -1,6 +1,6 @@
 import { Field } from '../../components/ui';
 
-/** ცვლები / მორიგეობა (0077–0079): სამუშაო დროის წესები (warn / block), ნორმა, სხვა განყოფილება, შეტყობინებები, მორიგის ტელეფონი, კოპირება */
+/** ცვლები / მორიგეობა (0077–0080): სამუშაო დროის წესები (warn / block), ნორმა, სხვა განყოფილება, შეტყობინებები, მორიგის ტელეფონი, კოპირება */
 const MODES: [string, string][] = [['warn', 'გაფრთხილება'], ['block', 'დაბლოკვა'], ['off', 'გამორთული']];
 export function RosterSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
   const v = <T,>(k: string) => s[k] as T;
@@ -84,6 +84,22 @@ export function RosterSettings({ s, set }: { s: Record<string, unknown>; set: (v
               onChange={(e) => upd('nurse_ratio', { ...r, [k]: Number(e.target.value) })} />); })}</div></Field>
       </div>
       <span className="hint">ნორმა / ზეგანაკვეთის განმარტება — HR / იურისტის დადასტურებით (შრომის კოდექსი; სპეციფიკური რეჟიმი — 48 სთ). კავშირები მხოლოდ გამოქვეყნებულ განრიგს ეყრდნობა და ინფორმაციულია — გადაწყვეტილებას იღებს მომხმარებელი.</span>
+      <strong className="small">ანგარიშები / KPI (0080)</strong>
+      <div style={grid}>
+        <Field label="ნორმის შესრულება — „ნაკლები“ (%)" htmlFor="rs-low" hint="ამაზე დაბალი — ჩანს სიაში"><input id="rs-low" className="input mono" type="number" min={50} max={100} value={v<number>('rpt_norm_low_pct') ?? 90} onChange={(e) => upd('rpt_norm_low_pct', Number(e.target.value))} /></Field>
+        <Field label="ქრონიკული ზეგანაკვეთი — თვე (6-დან)" htmlFor="rs-chr" hint="ბოლო 6 დახურული თვიდან ≥ N-ში"><input id="rs-chr" className="input mono" type="number" min={1} max={6} value={v<number>('rpt_chronic_ot_months') ?? 3} onChange={(e) => upd('rpt_chronic_ot_months', Number(e.target.value))} /></Field>
+        <Field label="დასაფარი — „მალე იწყება“ (სთ)" htmlFor="rs-urg" hint="„ყურადღება“ — ღიაა და ამ საათებში იწყება"><input id="rs-urg" className="input mono" type="number" min={1} max={168} value={v<number>('rpt_open_urgent_hours') ?? 24} onChange={(e) => upd('rpt_open_urgent_hours', Number(e.target.value))} /></Field>
+        <Field label="ტაბელი დაუხურავია — დღე თვის შემდეგ" htmlFor="rs-late" hint="„ყურადღება“"><input id="rs-late" className="input mono" type="number" min={0} max={60} value={v<number>('rpt_close_late_days') ?? 5} onChange={(e) => upd('rpt_close_late_days', Number(e.target.value))} /></Field>
+        <Field label="მინ. ჯგუფი (ადამიანი)" htmlFor="rs-mg" hint="აგრეგატულ ხედვაში ამაზე მცირე ჯგუფის ბიულეტენი ცალკე არ ჩანს"><input id="rs-mg" className="input mono" type="number" min={1} max={20} value={v<number>('rpt_min_group') ?? 3} onChange={(e) => upd('rpt_min_group', Number(e.target.value))} /></Field>
+        <Field label="ბიულეტენის ტიპ(ებ)ის კოდი" htmlFor="rs-sick" hint="მძიმით, მაგ. SICK"><input id="rs-sick" className="input mono" value={(v<string[]>('rpt_sick_types') ?? ['SICK']).join(', ')}
+          onChange={(e) => upd('rpt_sick_types', e.target.value.toUpperCase().split(/[,\s]+/).filter(Boolean))} /></Field>
+        <Field label="მენეჯერული დაფა — KPI / „ყურადღება“" htmlFor="rs-dv"><select id="rs-dv" className="select" value={v<string>('dashboard_visibility') ?? 'report_users'} onChange={(e) => upd('dashboard_visibility', e.target.value)}>
+          <option value="report_users">დაფის ყველა მომხმარებელს</option><option value="roster_only">მხოლოდ განრიგის / HR უფლებით</option></select></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={v<boolean>('monthly_section') !== false} onChange={(e) => upd('monthly_section', e.target.checked)} /> თვიურ ანგარიშში — სექცია „პერსონალი / ცვლები“</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('rpt_bradford') === true} onChange={(e) => upd('rpt_bradford', e.target.checked)} /> Bradford factor (ბიულეტენი, S² × D) — HR-ის გადაწყვეტილებით</label>
+        </div>
+      </div>
       <span className="hint">შეტყობინება მხოლოდ EMR-ის ანგარიშიან თანამშრომლებს მიდის. ცვლის შაბლონები, მორიგის როლები, როტაცია, დღესასწაულები, პოზიციები — „ცვლები და მორიგეობა → ცნობარები“.</span>
     </div>
   );

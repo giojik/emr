@@ -10,6 +10,7 @@ import { has } from '../auth/roles';
 import { qmAttentionCounts } from '../quality/quality-metrics';
 import { ipcAttentionCounts } from '../ipc/ipc-facts';
 import { bmeAttentionCounts } from '../bme/bme-reports-core';
+import { rosterAttentionCounts } from '../roster/roster-reports-core';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
@@ -287,6 +288,25 @@ export class ReportingDashService {
         detail: 'სიცოცხ. შემანარჩუნებელი / მაღალი კრიტიკულობა, გეგმის ვადა გავიდა', ...(bme && { link: '/bme?tab=works&view=overdue' }) });
       if (B?.ct_expired) items.push({ kind: 'bme_contract_expired', severity: 'yellow', title: 'სერვისის კონტრაქტის ვადა გავიდა', value: B.ct_expired,
         detail: 'მოქმედ სტატუსში, აპარატები ჯერ კიდევ მიბმულია', ...(bme && { link: '/bme?tab=contracts' }) });
+    }
+    // 0080: ცვლები / მორიგეობა — რაოდენობები (ბმული — განრიგის / HR უფლებით)
+    if (scope.roster) {
+      const R = await rosterAttentionCounts(this.c.db, scope.all ? null : scope.depts);
+      const ro = has(u, 'admin', 'hr', 'roster', 'roster_all', 'roster_view', 'absence_approve');
+      if (R?.duty_gap) items.push({ kind: 'roster_duty_gap', severity: 'red', title: 'მორიგე არ არის დანიშნული (დღეს / ხვალ)', value: R.duty_gap,
+        detail: 'გამოქვეყნებულ განრიგში მორიგის როლი (I დონე) შევსებული არ არის', ...(ro && { link: '/roster?tab=duty' }) });
+      if (R?.open_urgent) items.push({ kind: 'roster_open_urgent', severity: 'red', title: 'დასაფარი ცვლა მალე იწყება — ჯერ ღიაა', value: R.open_urgent,
+        detail: 'ცვლა უახლოეს საათებში იწყება (rpt_open_urgent_hours)', ...(ro && { link: '/roster?tab=approvals' }) });
+      if (R?.load_none) items.push({ kind: 'roster_load_none', severity: 'red', title: 'სტაციონარში პაციენტია, ექთანი ცვლაში არ არის', value: R.load_none,
+        detail: 'გამოქვეყნებული განრიგის მიხედვით, ახლა', ...(ro && { link: '/roster?tab=duty' }) });
+      if (R?.load_over) items.push({ kind: 'roster_load_over', severity: 'yellow', title: 'პაციენტი / ექთანი ზღვარზე მეტია', value: R.load_over,
+        detail: 'ახლა, განყოფილების დონის ზღვრით (nurse_ratio)', ...(ro && { link: '/roster?tab=duty' }) });
+      if (R?.close_late) items.push({ kind: 'roster_close_late', severity: 'yellow', title: 'თვის ტაბელი დახურული არ არის', value: R.close_late,
+        detail: 'თვე დასრულდა, ტაბელი ჯერ არ დახურულა (rpt_close_late_days)', ...(ro && { link: '/roster?tab=hours' }) });
+      if (R?.chronic_ot) items.push({ kind: 'roster_chronic_ot', severity: 'yellow', title: 'ქრონიკული ზეგანაკვეთი', value: R.chronic_ot,
+        detail: 'ბოლო 6 დახურული თვიდან რამდენიმეში ზეგანაკვეთი (rpt_chronic_ot_months)', ...(ro && { link: '/roster?tab=reports&section=overtime' }) });
+      if (R?.absence_soon) items.push({ kind: 'roster_absence_soon', severity: 'yellow', title: 'არყოფნის მოთხოვნა გადაწყვეტილების გარეშე — 3 დღეში იწყება', value: R.absence_soon,
+        detail: 'ხელმძღვანელის / HR-ის დადასტურება', ...(ro && { link: '/roster?tab=approvals' }) });
     }
     items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'red' ? -1 : 1));
     return { from, to, stock_computed_at: st.computed_at, items };

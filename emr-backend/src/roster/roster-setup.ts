@@ -54,7 +54,9 @@ export class RosterSetupService {
         absence_all: as.all, absence_hr: as.hr, absence_depts: as.depts,
         // 0079: ტაბელი — შემდგენი / ხელმძღვანელი (განყოფილება), HR / roster_all / admin / ბუღალტერი (მთელი კლინიკა; ბუღალტერი — დახურული); დახურვა — HR
         timesheet: has(u, 'admin', 'hr', 'roster_all', 'accountant') || sc.edit.length > 0 || as.depts.length > 0,
-        timesheet_all: has(u, 'admin', 'hr', 'roster_all', 'accountant'), timesheet_close: has(u, 'admin', 'hr') },
+        timesheet_all: has(u, 'admin', 'hr', 'roster_all', 'accountant'), timesheet_close: has(u, 'admin', 'hr'),
+        // 0080: ანგარიშები / KPI (A2)
+        reports: has(u, 'admin', 'hr', 'roster_all', 'accountant', 'manager', 'viewer', 'roster_view') || sc.edit.length > 0 || as.depts.length > 0 },
     };
   }
 

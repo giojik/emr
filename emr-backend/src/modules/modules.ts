@@ -304,6 +304,11 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       link_consult: (v) => oneOf(v, ['off', 'hint', 'duty']), link_bme: (v) => oneOf(v, ['off', 'hint', 'duty']), link_or: (v) => oneOf(v, ['off', 'absence', 'absence_shift']),
       nurse_ratio: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every((k) => ['ward', 'intensive', 'icu'].includes(k))
         && ['ward', 'intensive', 'icu'].every((k) => int((v as Record<string, unknown>)[k], 1, 50)),
+      // 0080: ანგარიშები / KPI
+      rpt_norm_low_pct: (v) => int(v, 50, 100), rpt_chronic_ot_months: (v) => int(v, 1, 6), rpt_open_urgent_hours: (v) => int(v, 1, 168),
+      rpt_close_late_days: (v) => int(v, 0, 60), rpt_min_group: (v) => int(v, 1, 20), rpt_bradford: bool,
+      rpt_sick_types: (v) => Array.isArray(v) && v.length <= 10 && v.every((x) => typeof x === 'string' && /^[A-Z][A-Z0-9_]{1,19}$/.test(x)),
+      dashboard_visibility: (v) => oneOf(v, ['report_users', 'roster_only']), monthly_section: bool,
     },
     extra: async (s) => (s.night_from === s.night_to ? 'ღამის საათები: დასაწყისი და დასასრული ერთმანეთს არ უნდა ემთხვეოდეს' : null),
   },
