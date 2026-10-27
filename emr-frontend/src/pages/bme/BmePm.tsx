@@ -22,11 +22,13 @@ interface Work { id: string; work_no: string; device_id: string; plan_id: string
   performer_kind: 'internal' | 'external'; assignee_id: string | null; supplier_id: string | null; external_person: string | null; performed_on: string | null; result: Result | null; result_note: string | null;
   suggested_status: 'restricted' | 'down' | null; status_applied: boolean; cert_no: string | null; cert_valid_until: string | null; next_due: string | null; completed_at: string | null; cancel_reason: string | null;
   inv_no: string; device_name: string; device_status: string; department_name: string | null; room: string | null; kind_code: string; kind_name: string; kind_short: string; needs_certificate: boolean;
-  assignee_name: string | null; supplier_name: string | null; completed_by_name: string | null; manufacturer?: string | null; model?: string | null; serial_no?: string | null; days_left: number | null }
+  assignee_name: string | null; supplier_name: string | null; completed_by_name: string | null; manufacturer?: string | null; model?: string | null; serial_no?: string | null; days_left: number | null;
+  labor_hours?: string | null; labor_cost?: string; external_cost?: string; invoice_no?: string | null }
 interface WItem { id: string; sort_order: number; text: string; item_type: 'check' | 'measure'; unit: string | null; nominal: string | null; tolerance: string | null; limit_low: string | null; limit_high: string | null;
   critical: boolean; required: boolean; value_num: string | null; outcome: Outcome | null; note: string | null }
 interface WorkFull extends Work { items: WItem[]; documents: { id: string; kind: string; title: string; valid_until: string | null; original_name: string | null; created_at: string }[]; auto_result: Result; missing: number;
-  repair: { id: string; repair_no: string; status: string } | null; for_repair: { id: string; repair_no: string; status: string } | null }
+  repair: { id: string; repair_no: string; status: string } | null; for_repair: { id: string; repair_no: string; status: string } | null;
+  contract_covered: { id: string; contract_no: string } | null }
 type BoardRow = (Plan & { row: 'plan'; inv_no: string; device_name: string; department_name: string | null; room: string | null; criticality: string; due_date: string | null })
   | (Work & { row: 'work' });
 interface Meter { id: string; unit: string; value: string; read_on: string; note: string | null; user_name: string }
@@ -200,7 +202,7 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
   const w = q.data; const full = can(user, ...FULL);
   const open = !!w && (w.status === 'planned' || w.status === 'in_progress');
   const [vals, setVals] = useState<Record<string, Val>>({});
-  const [fin, setFin] = useState({ result: '' as Result | '', performed_on: todayISO(), result_note: '', cert_no: '', cert_valid_until: '' });
+  const [fin, setFin] = useState({ result: '' as Result | '', performed_on: todayISO(), result_note: '', cert_no: '', cert_valid_until: '', labor_hours: '', external_cost: '', invoice_no: '' });
   const [perf, setPerf] = useState<Perf | null>(null); const [sched, setSched] = useState('');
   const [file, setFile] = useState<File | null>(null);
   useEffect(() => {
@@ -228,7 +230,9 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
   const upload = useMutation({ mutationFn: () => { const fd = new FormData(); fd.append('file', file!); fd.append('kind', 'certificate'); if (fin.cert_valid_until) fd.append('valid_until', fin.cert_valid_until); return apiUpload<WorkFull>(`/bme/works/${id}/files`, fd); },
     onSuccess: (r) => { setFile(null); done(r); } });
   const complete = useMutation({ mutationFn: () => api<WorkFull>(`/bme/works/${id}/complete`, { body: { items: body(), result: fin.result || auto, performed_on: fin.performed_on, result_note: fin.result_note.trim() || null,
-    cert_no: fin.cert_no.trim() || null, cert_valid_until: fin.cert_valid_until || null } }), onSuccess: (r) => { done(r); toast.show('სამუშაო დასრულდა'); } });
+    cert_no: fin.cert_no.trim() || null, cert_valid_until: fin.cert_valid_until || null,
+    labor_hours: fin.labor_hours.trim() ? Number(fin.labor_hours) : null, external_cost: fin.external_cost.trim() ? Number(fin.external_cost) : 0, invoice_no: fin.invoice_no.trim() || null } }),
+    onSuccess: (r) => { done(r); toast.show('სამუშაო დასრულდა'); } });
   const cancel = useMutation({ mutationFn: (reason: string) => api<WorkFull>(`/bme/works/${id}/cancel`, { body: { reason } }), onSuccess: (r) => done(r) });
   const apply = useMutation({ mutationFn: (status: 'restricted' | 'down') => api<WorkFull>(`/bme/works/${id}/apply-status`, { body: { status } }), onSuccess: (r) => { done(r); toast.show('აპარატის სტატუსი შეიცვალა'); } });
   const [sp, setSp] = useSearchParams();
@@ -310,6 +314,13 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
                 <Field label="სერტიფიკატის №" htmlFor="wc" required={certNeed}><input id="wc" className="input mono" value={fin.cert_no} onChange={(e) => setFin({ ...fin, cert_no: e.target.value })} /></Field>
                 <Field label="სერტიფიკატის ვადა" htmlFor="wcv" required={certNeed} hint="შემდეგ ვადად აიღება (პარამეტრი)"><input id="wcv" className="input mono" type="date" value={fin.cert_valid_until} onChange={(e) => setFin({ ...fin, cert_valid_until: e.target.value })} /></Field>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <Field label="შრომა, სთ" htmlFor="wlh" hint="× შრომის განაკვეთი (პარამეტრი) — ანგარიშის ხარჯში"><input id="wlh" className="input mono" type="number" min={0} step={0.25} value={fin.labor_hours}
+                  onChange={(e) => setFin({ ...fin, labor_hours: e.target.value })} /></Field>
+                <Field label="გარე თანხა, ₾" htmlFor="wex" hint={w.contract_covered ? `კონტრაქტით დაფარულია (${w.contract_covered.contract_no}) — მხოლოდ დამატებითი ხარჯი` : 'მომწოდებლის მომსახურება / ნაწილები'}>
+                  <input id="wex" className="input mono" type="number" min={0} step={0.01} value={fin.external_cost} onChange={(e) => setFin({ ...fin, external_cost: e.target.value })} /></Field>
+                <Field label="ინვოისის №" htmlFor="winv"><input id="winv" className="input mono" value={fin.invoice_no} onChange={(e) => setFin({ ...fin, invoice_no: e.target.value })} /></Field>
+              </div>
               <Field label="კომენტარი" htmlFor="wn" required={result !== 'pass'}><input id="wn" className="input" value={fin.result_note} onChange={(e) => setFin({ ...fin, result_note: e.target.value })}
                 placeholder={result === 'fail' ? 'რა არ შეესაბამება, რა არის საჭირო' : ''} /></Field>
               {result !== 'pass' && <span className="hint">„{RESULT_KA[result]}“ — აპარატის სტატუსი ავტომატურად არ იცვლება: დასრულების შემდეგ შემოგთავაზებთ „{result === 'fail' ? 'გაუმართავი' : 'შეზღუდულად მუშა'}“-ს. „ვერ გაიარა“ — გეგმის ვადა არ გადაიწევს.</span>}
@@ -320,6 +331,8 @@ export function WorkDialog({ id, onClose }: { id: string; onClose: () => void })
               <strong>{RESULT_KA[w.result]}</strong>{w.result_note && <span>{w.result_note}</span>}
               {w.next_due && <span>· შემდეგი ვადა: <strong>{dateGe(w.next_due)}</strong></span>}
               {w.cert_no && <span>· სერტ. № {w.cert_no}{w.cert_valid_until ? ` (${dateGe(w.cert_valid_until)}-მდე)` : ''}</span>}
+              {(Number(w.labor_cost ?? 0) > 0 || Number(w.external_cost ?? 0) > 0) && <span>· ხარჯი: {(Number(w.labor_cost ?? 0) + Number(w.external_cost ?? 0)).toFixed(2)} ₾
+                {w.labor_hours ? ` (შრომა ${Number(w.labor_hours)} სთ)` : ''}{w.invoice_no ? ` · ინვ. ${w.invoice_no}` : ''}</span>}
               <span className="grow" />
               {w.suggested_status && !w.status_applied && full && w.device_status !== 'retired' && <button className="btn sm primary" type="button" disabled={apply.isPending}
                 onClick={() => { if (confirm(`აპარატის სტატუსი → „${w.suggested_status === 'down' ? 'გაუმართავი / შეკეთებაში' : 'შეზღუდულად მუშა'}“?`)) apply.mutate(w.suggested_status!); }}>

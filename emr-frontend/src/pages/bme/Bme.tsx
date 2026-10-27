@@ -9,6 +9,7 @@ import { dateGe, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import { DevicePm, DueChip, PmRefsPage, WorkDialog, WorksPage } from './BmePm';
 import { ContractDialog, ContractsPage, DeviceRepairs, RepairDialog, RepairsPage, RequestDialog } from './BmeRepair';
+import BmeReportsPage, { BME_RPT } from './BmeReports';
 
 // ---------------------------------------------------------------- ტიპები
 type Status = 'operational' | 'restricted' | 'down' | 'standby' | 'retired';
@@ -59,7 +60,8 @@ const grid3 = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(2
 
 export const StatusChip = ({ s }: { s: Status }) => <span className={`chip ${STATUS_CHIP[s]}`}>{STATUS_KA[s]}</span>;
 
-/** ბიომედ-აპარატურა (0073): რეესტრი (პასპორტი), მისაღები, გადაადგილებები, მიუბმელები, შემაჯამებელი, იმპორტი, ტიპები; 0074: სამუშაოები (PM / კალიბრაცია / ელ. უსაფრთხოება), ჩეკლისტები / სახეები */
+/** ბიომედ-აპარატურა (0073): რეესტრი (პასპორტი), მისაღები, გადაადგილებები, მიუბმელები, შემაჯამებელი, იმპორტი, ტიპები; 0074: სამუშაოები (PM / კალიბრაცია / ელ. უსაფრთხოება), ჩეკლისტები / სახეები;
+ *  0075: შეკეთება, კონტრაქტები; 0076: ანგარიშები / KPI */
 export default function Bme() {
   const { user } = useAuth(); const mods = useModules();
   const [sp, setSp] = useSearchParams();
@@ -67,7 +69,7 @@ export default function Bme() {
   const full = can(user, ...FULL);
   const tabs: [string, string, boolean][] = [['registry', 'რეესტრი', true], ['repairs', 'შეკეთება', true], ['works', 'სამუშაოები', true],
     ['contracts', 'კონტრაქტები', can(user, ...VIEW_ALL, 'procurement', 'procurement_approve', 'accountant')], ['incoming', 'მისაღები', full || can(user, 'bme_dept')], ['moves', 'გადაადგილებები', true],
-    ['unlinked', 'მიუბმელი ჩანაწერები', full], ['summary', 'შემაჯამებელი', can(user, ...VIEW_ALL)], ['import', 'იმპორტი', full], ['types', 'ტიპები', full], ['pmrefs', 'ჩეკლისტები / სახეები', full]];
+    ['unlinked', 'მიუბმელი ჩანაწერები', full], ['summary', 'შემაჯამებელი', can(user, ...VIEW_ALL)], ['reports', 'ანგარიშები', can(user, ...BME_RPT)], ['import', 'იმპორტი', full], ['types', 'ტიპები', full], ['pmrefs', 'ჩეკლისტები / სახეები', full]];
   const refs = useRefs();
   const tab = sp.get('tab') ?? 'registry';
   // QR / სკანერი: /bme?inv=BME-00012 → პასპორტი
@@ -88,7 +90,7 @@ export default function Bme() {
           {scan.error && <div className="content" style={{ paddingBottom: 0 }}><ErrorBox error={scan.error} /></div>}
           {tab === 'incoming' ? <Moves scope="incoming" /> : tab === 'moves' ? <Moves scope="" /> : tab === 'unlinked' ? <UnlinkedPage /> : tab === 'summary' ? <Summary />
             : tab === 'import' ? <ImportPage /> : tab === 'types' ? <TypesPage /> : tab === 'works' ? <WorksPage /> : tab === 'pmrefs' ? <PmRefsPage types={refs.data?.types ?? []} />
-            : tab === 'repairs' ? <RepairsPage /> : tab === 'contracts' ? <ContractsPage /> : <Registry />}
+            : tab === 'repairs' ? <RepairsPage /> : tab === 'contracts' ? <ContractsPage /> : tab === 'reports' ? <BmeReportsPage /> : <Registry />}
           {sp.get('device') && <DeviceDialog id={sp.get('device')!} onClose={() => { sp.delete('device'); setSp(sp, { replace: true }); }} />}
           {sp.get('work') && <WorkDialog id={sp.get('work')!} onClose={() => { sp.delete('work'); setSp(sp, { replace: true }); }} />}
           {sp.get('repair') && <RepairDialog id={sp.get('repair')!} onClose={() => { sp.delete('repair'); setSp(sp, { replace: true }); }} />}

@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ReportIncidentButton, openIncidentReport } from '../../components/IncidentReport';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { dateGe, hhmm, money, todayISO, tsDate } from '../../lib/format';
+import { BME_RPT, DeviceKpi } from './BmeReports';
 
 // ---------------------------------------------------------------- ტიპები (0075)
 type RStatus = 'requested' | 'triaged' | 'in_progress' | 'waiting_parts' | 'waiting_vendor' | 'done' | 'closed' | 'rejected' | 'duplicate';
@@ -500,10 +501,12 @@ export function DeviceRepairs({ device, retired }: { device: { id: string; inv_n
   const [sp, setSp] = useSearchParams();
   const q = useQuery({ queryKey: ['bme-device-repairs', device.id], queryFn: () => api<{ repairs: Repair[]; coverage: Coverage; contracts: (Contract & { in_force: boolean })[]; can_request: boolean }>(`/bme/devices/${device.id}/repairs`) });
   const [req, setReq] = useState(false);
+  const { user: me } = useAuth();
   if (q.isLoading) return <Loading />;
   const d = q.data; if (!d) return <ErrorBox error={q.error} />;
   return (
     <div className="stack">
+      {can(me, ...BME_RPT) && <DeviceKpi deviceId={device.id} />}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {d.coverage.coverage ? <span className="chip ok">{d.coverage.coverage === 'warranty' ? `ქარხნული გარანტია ${dateGe(d.coverage.until!)}-მდე` : `კონტრაქტი ${d.coverage.contract_no} — ${dateGe(d.coverage.until!)}-მდე`} · {d.coverage.supplier_name}</span>
           : <span className="chip">გარანტია / კონტრაქტი — არა</span>}

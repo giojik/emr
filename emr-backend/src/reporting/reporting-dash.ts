@@ -9,6 +9,7 @@ import type { AuthUser } from '../auth/roles';
 import { has } from '../auth/roles';
 import { qmAttentionCounts } from '../quality/quality-metrics';
 import { ipcAttentionCounts } from '../ipc/ipc-facts';
+import { bmeAttentionCounts } from '../bme/bme-reports-core';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
@@ -273,6 +274,19 @@ export class ReportingDashService {
         detail: `ღია ${I.signal_days} დღეზე მეტი`, ...(ipc && { link: '/ipc?tab=signals' }) });
       if (I && I.hh_pct !== null && I.hh_pct < I.hh_target) items.push({ kind: 'ipc_hh_low', severity: 'yellow', title: 'ხელის ჰიგიენა სამიზნეზე დაბალია', value: I.hh_pct, unit: 'pct',
         detail: `ამ თვეში ${I.hh_pct}% (${I.hh_opps} შესაძლებლობა), სამიზნე ${I.hh_target}%`, ...(ipc && { link: '/ipc?tab=audits' }) });
+    }
+    // 0076: ბიომედ-აპარატურა — რაოდენობები (ბმული — ინჟინერს / ნახვის უფლებით)
+    if (scope.bme) {
+      const B = await bmeAttentionCounts(this.c.db, scope.all ? null : scope.depts);
+      const bme = has(u, 'med_engineer', 'bme_view', 'bme_dept', 'admin');
+      if (B?.ls_down) items.push({ kind: 'bme_ls_down', severity: 'red', title: 'სიცოცხლის შემანარჩუნებელი აპარატი გაუმართავია', value: B.ls_down,
+        detail: 'ამჟამინდელი სტატუსი — „გაუმართავი“', ...(bme && { link: '/bme?tab=registry' }) });
+      if (B?.sla_breached) items.push({ kind: 'bme_sla_breached', severity: 'red', title: 'შეკეთების ორდერი — SLA დარღვეულია', value: B.sla_breached,
+        detail: 'ღია ორდერი, რეაგირების ან აღდგენის ვადა გავიდა', ...(bme && { link: '/bme?tab=repairs&view=sla' }) });
+      if (B?.pm_overdue) items.push({ kind: 'bme_pm_overdue', severity: 'yellow', title: 'PM / კალიბრაცია ვადაგადაცილებულია (კრიტიკული აპარატი)', value: B.pm_overdue,
+        detail: 'სიცოცხ. შემანარჩუნებელი / მაღალი კრიტიკულობა, გეგმის ვადა გავიდა', ...(bme && { link: '/bme?tab=works&view=overdue' }) });
+      if (B?.ct_expired) items.push({ kind: 'bme_contract_expired', severity: 'yellow', title: 'სერვისის კონტრაქტის ვადა გავიდა', value: B.ct_expired,
+        detail: 'მოქმედ სტატუსში, აპარატები ჯერ კიდევ მიბმულია', ...(bme && { link: '/bme?tab=contracts' }) });
     }
     items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'red' ? -1 : 1));
     return { from, to, stock_computed_at: st.computed_at, items };

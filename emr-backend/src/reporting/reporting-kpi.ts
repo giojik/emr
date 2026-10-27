@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { addDays, daysBetween, n, r1, r2, RptCommon, type RptScope, type RptSettings } from './reporting-common';
 import { TAT_EDGES } from './reporting-refresh';
 import { bedDays, categoryExpander, type Indicator, indicatorMatch, loadIndicators, rate } from '../quality/quality-metrics';
+import { ACC_KEYS, bmeKpis, bmeRptRules, zeroAcc } from '../bme/bme-reports-core';
 
 /**
  * KPI-ების გამოთვლა მხოლოდ rpt_* ცხრილებიდან (READ_DB). თითო KPI-ის ფორმულა — აქ (ტექსტი — rpt_kpis.formula).
@@ -54,7 +55,7 @@ export class RptKpiService {
   /** პერიოდის ჯამები ყველა ფაქტიდან — ერთი გასაღებით (flow_*, beds_*, …) */
   async totals(scope: RptScope, from: string, to: string): Promise<Totals> {
     const t: Record<string, number> = {};
-    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind, ipc, ipcd] = await Promise.all([
+    const [flow, beds, or, room, dx, stock, fin, hist, qm, qmHist, ind, ipc, ipcd, bme, bmeS] = await Promise.all([
       sql<{ enc_type: string; visit_kind: string; encounters: number; cancelled: number; new_patients: number }>`
         SELECT f.enc_type, f.visit_kind, sum(f.encounters)::int AS encounters, sum(f.cancelled)::int AS cancelled, sum(f.new_patients)::int AS new_patients
           FROM rpt_fact_flow f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')} GROUP BY 1, 2`.execute(this.rdb),
@@ -109,6 +110,11 @@ export class RptKpiService {
         SELECT coalesce(sum(patient_days), 0)::text AS pd, coalesce(sum(central_line_days), 0)::text AS cl, coalesce(sum(urinary_days), 0)::text AS uc,
                coalesce(sum(vent_days), 0)::text AS vent
           FROM rpt_fact_ipc_daily f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
+      // 0076: ბიომედ-აპარატურა
+      sql<Record<string, string>>`
+        SELECT ${sql.join(ACC_KEYS.map((k) => sql`coalesce(sum(${sql.ref(`f.${k}`)}), 0)::text AS ${sql.ref(k)}`))}
+          FROM rpt_fact_bme f WHERE f.day BETWEEN ${from}::date AND ${to}::date AND ${this.where(scope, 'f')}`.execute(this.rdb),
+      bmeRptRules(this.c.db),
     ]);
     t.days = daysBetween(from, to);
     for (const k of ['enc_all', 'enc_out', 'enc_lab', 'enc_emg', 'enc_cancelled', 'new_patients']) t[k] = 0;
@@ -144,6 +150,8 @@ export class RptKpiService {
     t.qm_triage_p50 = histPercentile(qh, 0.5) ?? NaN;
     for (const [k, v] of Object.entries(ipc.rows[0] ?? {})) t[`ipc_${k}`] = n(v);
     for (const [k, v] of Object.entries(ipcd.rows[0] ?? {})) t[`ipcd_${k}`] = n(v);
+    for (const [k, v] of Object.entries(bme.rows[0] ?? {})) t[`bme_${k}`] = n(v);
+    t.bme_w = Number(bmeS?.rpt_restricted_weight ?? 0); t.bme_ex = bmeS?.rpt_mtbf_exclude_user_error ? 1 : 0;
     return t;
   }
 
@@ -236,6 +244,12 @@ export class RptKpiService {
       case 'ipc_access_pct': return pct(t.ipc_ddd_access ?? 0, t.ipc_ddd ?? 0);
       case 'ipc_hh_pct': return pct(t.ipc_hh_done ?? 0, t.ipc_hh_opps ?? 0);
       case 'ipc_handrub_l': return rate(t.ipc_handrub_l ?? 0, t.ipcd_pd ?? 0, 1000);
+      // 0076: ბიომედ-აპარატურა (ფორმულა — bme-reports-core.bmeKpis, იგივე, რაც ანგარიშში)
+      case 'bme_availability_pct': case 'bme_avail_ls_pct': case 'bme_mttr_h': case 'bme_mtbf_d': case 'bme_sla_response_pct': case 'bme_sla_restore_pct':
+      case 'bme_pm_ontime_pct': case 'bme_user_error_pct': case 'bme_service_cost': {
+        const a = zeroAcc(); for (const k of ACC_KEYS) a[k] = t[`bme_${k}`] ?? 0;
+        return (bmeKpis(a, { rpt_restricted_weight: t.bme_w ?? 0, rpt_mtbf_exclude_user_error: !!t.bme_ex }) as Record<string, number | null>)[code];
+      }
       default: return code.startsWith('qm_ind_') ? this.indicatorValue(code.slice(7), t, s) : null;
     }
   }
@@ -270,7 +284,8 @@ export class RptKpiService {
     let q = this.c.db.selectFrom('rpt_kpis').select(['code', 'category', 'name', 'unit', 'direction', 'definition', 'formula', 'source', 'finance', 'snapshot', 'drill', 'sort_order']);
     if (onlyActive) q = q.where('is_active', '=', true);
     const rows = await q.orderBy('sort_order').orderBy('code').execute();
-    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc));
+    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc)
+      && (k.category !== 'bme' || !!scope.bme));
   }
 
   /** დროის მწკრივი: grain = day / week / month (KPI ითვლება თითო ინტერვალზე) */

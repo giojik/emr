@@ -149,6 +149,25 @@ function BmeSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<s
           <label className="row"><input type="checkbox" checked={!!v<boolean>('rep_notify_sms')} onChange={(e) => upd('rep_notify_sms', e.target.checked)} /> P1 / პაციენტის უსაფრთხოება — SMS-ითაც</label></div>
       </div>
       <span className="hint">ქარხნული გარანტია — აპარატის პასპორტის ველი; სერვისის კონტრაქტები — „ბიომედ-აპარატურა → კონტრაქტები“. გარე ხარჯი ხარჯის ჟურნალში მხოლოდ AP ინვოისით მოდის (ორმაგი აღრიცხვა არ ხდება).</span>
+      <strong className="small" style={{ marginTop: 8 }}>ანგარიშები / KPI (0076)</strong>
+      <div style={grid}>
+        <Field label="შეზღუდული დრო მოცდენაში" htmlFor="brw" hint="ხელმისაწვდომობის ფორმულაში „შეზღუდულად მუშა“-ს წონა">
+          <select id="brw" className="select" value={String(v<number>('rpt_restricted_weight') ?? 0)} onChange={(e) => upd('rpt_restricted_weight', Number(e.target.value))}>
+            <option value="0">არ ითვლება (0)</option><option value="0.5">ნახევრად (0.5)</option><option value="1">სრულად (1)</option></select></Field>
+        <Field label="კონტრაქტის ხარჯის განაწილება" htmlFor="brca" hint="კონტრაქტის აპარატებზე">
+          <select id="brca" className="select" value={v<string>('rpt_contract_alloc') ?? 'equal'} onChange={(e) => upd('rpt_contract_alloc', e.target.value)}>
+            <option value="equal">თანაბრად</option><option value="value">შეძენის ღირებულების პროპორციით</option></select></Field>
+        <Field label="PM ვადაში — დასაშვები დღეები" htmlFor="brpg" hint="ვადაში = შესრულება ≤ ვადა + N"><input id="brpg" className="input mono" type="number" min={0} max={60} value={v<number>('rpt_pm_grace_days') ?? 0}
+          onChange={(e) => upd('rpt_pm_grace_days', Number(e.target.value))} /></Field>
+        <Field label="COSR ზღვარი (%)" htmlFor="brcs" hint="სერვისის წლიური ხარჯი / შეძენის ღირებულება — ჩანაცვლების კანდიდატი"><input id="brcs" className="input mono" type="number" min={1} max={100} value={v<number>('rpt_cosr_warn_pct') ?? 10}
+          onChange={(e) => upd('rpt_cosr_warn_pct', Number(e.target.value))} /></Field>
+        <Field label="მენეჯერულ დაფაზე ჩანს" htmlFor="brdv">
+          <select id="brdv" className="select" value={v<string>('dashboard_visibility') ?? 'report_users'} onChange={(e) => upd('dashboard_visibility', e.target.value)}>
+            <option value="report_users">დაფის ყველა მომხმარებელს</option><option value="bme_only">მხოლოდ ბიომედ-უფლებით</option></select></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={!!v<boolean>('rpt_mtbf_exclude_user_error')} onChange={(e) => upd('rpt_mtbf_exclude_user_error', e.target.checked)} /> MTBF — „მომხმარებლის შეცდომა“ არ ითვლება</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('monthly_section') !== false} onChange={(e) => upd('monthly_section', e.target.checked)} /> თვიურ ანგარიშში — სექცია</label></div>
+      </div>
     </div>
   );
 }

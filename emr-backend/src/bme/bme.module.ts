@@ -6,11 +6,12 @@ import { PmController, PmService } from './bme-pm';
 import { BmePmJobsService } from './bme-pm-jobs';
 import { RepairController, RepairService } from './bme-repair';
 import { BmeRepairJobsService } from './bme-repair-jobs';
+import { BmeReportController, BmeReportService } from './bme-reports';
 
 /**
  * ბიომედ-აპარატურა: 0073 — რეესტრი / სტატუსი / გადაადგილება; 0074 — PM / კალიბრაცია / ელ. უსაფრთხოება (PmService იყენებს BmeService-ის სტატუსის ცვლილებას);
- * 0075 — შეკეთების ორდერი (RepairService → BmeService, PmService), სერვისის კონტრაქტები / SLA / გარანტია.
+ * 0075 — შეკეთების ორდერი (RepairService → BmeService, PmService), სერვისის კონტრაქტები / SLA / გარანტია; 0076 — ანგარიშები / KPI (BmeReportService).
  */
-@Module({ imports: [NotifyModule], controllers: [BmeController, PmController, RepairController, ContractController],
-  providers: [BmeService, PmService, BmePmJobsService, RepairService, ContractService, BmeRepairJobsService] })
+@Module({ imports: [NotifyModule], controllers: [BmeController, PmController, RepairController, ContractController, BmeReportController],
+  providers: [BmeService, PmService, BmePmJobsService, RepairService, ContractService, BmeRepairJobsService, BmeReportService] })
 export class BmeModule {}

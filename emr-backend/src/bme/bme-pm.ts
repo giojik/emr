@@ -238,7 +238,7 @@ export class PmService {
       .leftJoin('users as wc', 'wc.id', 'w.completed_by')
       .select(['w.id', 'w.work_no', 'w.device_id', 'w.plan_id', 'w.kind_id', 'w.checklist_id', 'w.status', 'w.due_date', 'w.scheduled_date', 'w.performer_kind', 'w.assignee_id', 'w.supplier_id',
         'w.external_person', 'w.started_at', 'w.performed_on', 'w.result', 'w.result_note', 'w.suggested_status', 'w.status_applied', 'w.cert_no', 'w.cert_valid_until', 'w.next_due',
-        'w.completed_at', 'w.cancel_reason', 'w.created_at',
+        'w.completed_at', 'w.cancel_reason', 'w.created_at', 'w.labor_hours', 'w.labor_cost', 'w.external_cost', 'w.invoice_no',
         'b.inv_no', 'b.name as device_name', 'b.status as device_status', 'b.department_id', 'd.name as department_name', 'b.room',
         'k.code as kind_code', 'k.name as kind_name', 'k.short_name as kind_short', 'k.needs_certificate',
         userName('wa').as('assignee_name'), 'ws.name as supplier_name', userName('wc').as('completed_by_name')]);
@@ -487,7 +487,12 @@ export class PmService {
       this.db.selectFrom('bme_repairs').select(['id', 'repair_no', 'status']).where('pm_work_id', '=', id).where('status', 'not in', ['rejected', 'duplicate']).executeTakeFirst(),
       this.db.selectFrom('bme_works as w').innerJoin('bme_repairs as r', 'r.id', 'w.repair_id').select(['r.id', 'r.repair_no', 'r.status']).where('w.id', '=', id).executeTakeFirst(),
     ]);
-    return { ...w, items, documents, auto_result: auto, missing: items.filter((i) => i.required && !i.outcome).length, repair: repair ?? null, for_repair: forRepair ?? null };
+    // 0076: აქტიური კონტრაქტი ფარავს ამ სამუშაოს სახეს → გარე ხარჯი კონტრაქტის ხარჯშია (მინიშნება ფორმაზე)
+    const covered = await this.db.selectFrom('bme_contracts as c').innerJoin('bme_contract_devices as cd', 'cd.contract_id', 'c.id').select(['c.id', 'c.contract_no'])
+      .where('cd.device_id', '=', w.device_id).where('c.status', '=', 'active').where(sql<boolean>`${w.kind_id}::uuid = ANY(c.covers_kinds)`)
+      .where(sql<boolean>`${today()} BETWEEN c.start_date AND c.end_date`).executeTakeFirst();
+    return { ...w, items, documents, auto_result: auto, missing: items.filter((i) => i.required && !i.outcome).length, repair: repair ?? null, for_repair: forRepair ?? null,
+      contract_covered: covered ?? null };
   }
 
   /** ჩეკლისტის შევსება (ნაწილობრივ შენახვაც): გაზომვა → ავტომატური შედეგი; შემოწმება → pass / fail / na (სავალდებულოზე na — არა) */
@@ -568,6 +573,10 @@ export class PmService {
       const suggested = SUGGEST[dto.result];
       await trx.updateTable('bme_works').set({ status: 'done', result: dto.result, result_note: dto.result_note?.trim() || null, performed_on: dto.performed_on,
         cert_no: dto.cert_no?.trim() || null, cert_valid_until: dto.cert_valid_until ?? null, next_due: next, suggested_status: suggested,
+        // 0076: ხარჯი (არჩევითი): შრომა = საათები × rep_labor_rate, გარე თანხა + ინვოისი
+        labor_hours: dto.labor_hours === undefined || dto.labor_hours === null ? null : String(dto.labor_hours),
+        labor_cost: String(Math.round((dto.labor_hours ?? 0) * (Number(s.rep_labor_rate) || 0) * 100) / 100),
+        external_cost: String(dto.external_cost ?? 0), invoice_no: dto.invoice_no?.trim() || null,
         completed_by: u.id, completed_at: sql`now()`, ...(!w.started_at && { started_at: sql`now()` }), updated_at: sql`now()` }).where('id', '=', id).execute();
       // ატვირთული სერტიფიკატის / აქტის ვადა = სერტიფიკატის ვადა
       if (dto.cert_valid_until) await trx.updateTable('bme_documents').set({ valid_until: dto.cert_valid_until }).where('work_id', '=', id).where('kind', '=', 'certificate').where('valid_until', 'is', null).execute();
@@ -763,6 +772,9 @@ class CompleteDto {
   @IsIn(RESULTS) result: PmResult; @IsISO8601(DATE) performed_on: string; @IsOptional() @IsString() @MaxLength(1000) result_note?: string | null;
   @IsOptional() @IsString() @MaxLength(60) cert_no?: string | null; @IsOptional() @IsISO8601(DATE) cert_valid_until?: string | null;
   @IsOptional() @IsArray() @ArrayMaxSize(80) @ValidateNested({ each: true }) @Type(() => ItemValueDto) items?: ItemValueDto[];
+  // 0076: ხარჯი
+  @IsOptional() @IsNumber() @Min(0) @Max(1000) labor_hours?: number | null; @IsOptional() @IsNumber() @Min(0) @Max(10_000_000) external_cost?: number | null;
+  @IsOptional() @IsString() @MaxLength(60) invoice_no?: string | null;
 }
 class ApplyStatusDto { @IsIn(['restricted', 'down']) status: BmeStatus; @IsOptional() @IsString() @MaxLength(400) reason?: string }
 class ReasonDto { @IsString() @Length(3, 500) reason: string }

@@ -158,7 +158,7 @@ chk "მარაგის დღეები: სურათი (computed_at),
 chk "მარაგის დღეები (reports): მხოლოდ თავისი განყოფილების ლოკაციები" "$(api GET "/reporting/stock-days" "$T_REP" | jq -r '[.rows[]|select(.department_name != null and (.department_name|test("რეპორტინგი") | not))]|length')" "0"
 
 step "6. KPI ცნობარი და სამიზნეები"
-chk "ცნობარი: 62 KPI (0066: + 11 ხარისხი; 0072: + 10 ინფექციის კონტროლი; ტესტის ინდიკატორების გარეშე), ყველას განმარტება / ფორმულა / წყარო" "$(api GET /reporting/kpis "$ADM" | jq -r '[.[]|select(.code|test("^qm_ind_e2e")|not)]|"\(length):\([.[]|select((.definition|length)>3 and (.formula|length)>3 and (.source|length)>2)]|length)"')" "62:62"
+chk "ცნობარი: 71 KPI (0066: + 11 ხარისხი; 0072: + 10 ინფექციის კონტროლი; 0076: + 9 ბიომედ-აპარატურა; ტესტის ინდიკატორების გარეშე), ყველას განმარტება / ფორმულა / წყარო" "$(api GET /reporting/kpis "$ADM" | jq -r '[.[]|select(.code|test("^qm_ind_e2e")|not)]|"\(length):\([.[]|select((.definition|length)>3 and (.formula|length)>3 and (.source|length)>2)]|length)"')" "71:71"
 chk "reports (განყ.) ცნობარს ვერ ცვლის (403); მიზეზის გარეშე → 400" "$(code PATCH /reporting/kpis/enc_total "$T_REP" -d '{"name":"x","reason":"ტესტ-E2E"}'):$(code PATCH /reporting/kpis/enc_total "$ADM" -d '{"name":"x y"}')" "403:400"
 chk "გადარქმევა + დამალვა (reports_all) → მიმოხილვაში არ ჩანს" "$(api PATCH /reporting/kpis/enc_emergency "$T_ALL" -d '{"name":"ტესტ-E2E გადაუდებელი","is_active":false,"reason":"ტესტ-E2E"}' | jq -r '"\(.name):\(.is_active)"'):$(api GET "/reporting/overview?from=$TODAY&to=$TODAY" "$ADM" | jq -r '[.kpis[]|select(.code=="enc_emergency")]|length')" "ტესტ-E2E გადაუდებელი:false:0"
 api PATCH /reporting/kpis/enc_emergency "$ADM" -d '{"name":"გადაუდებელი შემთხვევები","is_active":true,"reason":"ტესტ-E2E აღდგენა"}' >/dev/null
@@ -186,7 +186,7 @@ z = zipfile.ZipFile(sys.argv[1]); s = z.read('xl/worksheets/sheet1.xml').decode(
 print(f"{len(re.findall(r'<row ', s))}:{'occupancy_pct' in s}:{'სამიზნე' in s}")
 PY
 )
-chk "xlsx: სათაური + 62 ხაზი (0066: + 11 ხარისხი; 0072: + 10 IPC), KPI კოდი, სვეტები" "$XL" "63:True:True"
+chk "xlsx: სათაური + 71 ხაზი (0066: + 11 ხარისხი; 0072: + 10 IPC; 0076: + 9 ბიომედ), KPI კოდი, სვეტები" "$XL" "72:True:True"
 chk "xlsx: Content-Type / ფაილის სახელი" "$(grep -ci 'spreadsheetml' "$TMP/h1"):$(grep -i 'content-disposition' "$TMP/h1" | grep -c 'rpt_overview')" "1:1"
 curl -s -o "$TMP/s.csv" "$B/reporting/export?dataset=series&format=csv&kpi=enc_total&grain=day&from=$MONTH&to=$TODAY" -H "authorization: Bearer $ADM"
 chk "csv: UTF-8 BOM, სათაური, დღეების ხაზები" "$(head -c 3 "$TMP/s.csv" | od -An -tx1 | tr -d ' '):$(( $(wc -l < "$TMP/s.csv") ))" "efbbbf:$(( ( $(date -d "$TODAY" +%s) - $(date -d "$MONTH" +%s) ) / 86400 + 2 ))"

@@ -15,6 +15,7 @@ import { RptKpiService } from './reporting-kpi';
 import { ReportingOpsService } from './reporting-ops';
 import { QmReportsService } from '../quality/quality-reports';
 import { ipcRules } from '../ipc/ipc-common';
+import { bmeRptRules } from '../bme/bme-reports-core';
 
 /**
  * მენეჯერული ანგარიში (0063): პერიოდი (ჩვეულებრივ — თვე) → xlsx (რამდენიმე ფურცელი) და PDF (1–2 გვერდი: KPI-ები + 13 თვე).
@@ -25,7 +26,7 @@ import { ipcRules } from '../ipc/ipc-common';
 type Q = Record<string, string | undefined>;
 const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
 const MONTH_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
-const CAT_ORDER: Record<string, string> = { flow: 'პაციენტების ნაკადი', beds: 'საწოლები', or: 'საოპერაციო', dx: 'ინსტრუმენტული კვლევები', lab: 'ლაბორატორია', stock: 'მარაგი', finance: 'შემოსავალი / ხარჯი', quality: 'ხარისხი და ინციდენტები', ipc: 'ინფექციის კონტროლი' };
+const CAT_ORDER: Record<string, string> = { flow: 'პაციენტების ნაკადი', beds: 'საწოლები', or: 'საოპერაციო', dx: 'ინსტრუმენტული კვლევები', lab: 'ლაბორატორია', stock: 'მარაგი', finance: 'შემოსავალი / ხარჯი', quality: 'ხარისხი და ინციდენტები', ipc: 'ინფექციის კონტროლი', bme: 'ბიომედ-აპარატურა' };
 const STATUS_KA: Record<string, string> = { green: 'შესრულებულია', yellow: 'გაფრთხილება', red: 'არ სრულდება' };
 const UNIT_SFX: Record<string, string> = { count: '', pct: '%', days: ' დღე', hours: ' სთ', min: ' წთ', gel: ' ₾', ratio: '' };
 const TREND_KPIS = ['enc_total', 'admissions', 'occupancy_pct', 'alos', 'or_cases', 'lab_orders', 'dx_orders', 'stock_consumption', 'rev_net', 'costs_total', 'result'];
@@ -110,6 +111,8 @@ export class RptReportService {
     if (!quality) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'quality');
     // 0072: ინფექციის კონტროლი — KPI-ების სექცია (dashboard_visibility / monthly_section)
     if (!scope.ipc || (await ipcRules(this.c.db))?.monthly_section === false) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'ipc');
+    // 0076: ბიომედ-აპარატურა — KPI-ების სექცია (dashboard_visibility / monthly_section)
+    if (!scope.bme || (await bmeRptRules(this.c.db))?.monthly_section === false) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'bme');
     const closedOpen = finance?.open_months.length ? `ფინანსური პერიოდი ჯერ არ არის დახურული (${finance.open_months.join(', ')}) — ფინანსური ციფრები შეიძლება შეიცვალოს` : null;
     return { o, title: `მენეჯერული ანგარიში — ${periodLabel(o.from, o.to)}`, clinic: clinic?.name ?? '', scope_label: deptName, generated_at: new Date(),
       data_as_of: prev.data_as_of, prev, yoy, months, trend, flow, beds, or, imaging, lab, stock, finance, balances, doctors, quality, note: closedOpen, min_cases: s.min_cases };

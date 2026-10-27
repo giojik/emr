@@ -20,6 +20,9 @@ export interface BmeSettings {
   rep_who: 'all_staff' | 'bme_dept'; rep_sets_down: boolean; rep_notify_email: boolean; rep_notify_sms: boolean; rep_close_mode: 'confirm' | 'engineer'; rep_close_auto_days: number;
   rep_post_check: 'suggest' | 'required_life_support' | 'off'; rep_pm_fail: 'auto' | 'button'; rep_sla_response: number[]; rep_sla_restore: number[]; rep_sla_warn_pct: number;
   rep_labor_rate: number; rep_parts_location_id: string | null; rep_prefix: string; ct_remind_days: number[]; wr_remind_days: number[];
+  // 0076: ანგარიშები / KPI
+  rpt_restricted_weight: number; rpt_mtbf_exclude_user_error: boolean; rpt_contract_alloc: 'equal' | 'value'; rpt_cosr_warn_pct: number; rpt_pm_grace_days: number;
+  dashboard_visibility: 'report_users' | 'bme_only'; monthly_section: boolean;
 }
 
 export const STATUSES = ['operational', 'restricted', 'down', 'standby', 'retired'] as const;

@@ -714,9 +714,13 @@ export interface BmeWorks {
   created_by: string;
   device_id: string;
   due_date: string | null;
+  external_cost: Generated<Numeric>;
   external_person: string | null;
   id: Generated<string>;
+  invoice_no: string | null;
   kind_id: string;
+  labor_cost: Generated<Numeric>;
+  labor_hours: Numeric | null;
   next_due: string | null;
   performed_on: string | null;
   performer_kind: Generated<string>;
@@ -4304,6 +4308,40 @@ export interface RptFactBeds {
   transfers_out: Generated<number>;
 }
 
+export interface RptFactBme {
+  avail_h: Generated<Numeric>;
+  computed_at: Generated<Timestamp>;
+  cost_contract: Generated<Numeric>;
+  cost_external: Generated<Numeric>;
+  cost_labor: Generated<Numeric>;
+  cost_parts: Generated<Numeric>;
+  cost_pm: Generated<Numeric>;
+  day: string;
+  department_id: string | null;
+  down_h: Generated<Numeric>;
+  down_unpl_h: Generated<Numeric>;
+  failures: Generated<number>;
+  failures_ue: Generated<number>;
+  ls_avail_h: Generated<Numeric>;
+  ls_down_h: Generated<Numeric>;
+  ls_restricted_h: Generated<Numeric>;
+  nff: Generated<number>;
+  pm_due: Generated<number>;
+  pm_fail: Generated<number>;
+  pm_ontime: Generated<number>;
+  reopened: Generated<number>;
+  rep_down_h: Generated<Numeric>;
+  repairs_done: Generated<number>;
+  requests: Generated<number>;
+  restore_h: Generated<Numeric>;
+  restricted_h: Generated<Numeric>;
+  sla_resp_met: Generated<number>;
+  sla_resp_n: Generated<number>;
+  sla_rest_met: Generated<number>;
+  sla_rest_n: Generated<number>;
+  user_error: Generated<number>;
+}
+
 export interface RptFactDoctor {
   admissions: Generated<number>;
   day: string;
@@ -5555,6 +5593,7 @@ export interface DB {
   rpt_dashboard_kpis: RptDashboardKpis;
   rpt_deliveries: RptDeliveries;
   rpt_fact_beds: RptFactBeds;
+  rpt_fact_bme: RptFactBme;
   rpt_fact_doctor: RptFactDoctor;
   rpt_fact_doctor_rev: RptFactDoctorRev;
   rpt_fact_dx: RptFactDx;

@@ -272,6 +272,10 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       rep_labor_rate: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000,
       rep_parts_location_id: (v) => v === null || (typeof v === 'string' && UUID.test(v)), rep_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{1,8}$/.test(v),
       ct_remind_days: (v) => days4(v), wr_remind_days: (v) => days4(v),
+      // 0076: ანგარიშები / KPI
+      rpt_restricted_weight: (v) => v === 0 || v === 0.5 || v === 1, rpt_mtbf_exclude_user_error: bool, rpt_contract_alloc: (v) => oneOf(v, ['equal', 'value']),
+      rpt_cosr_warn_pct: (v) => int(v, 1, 100), rpt_pm_grace_days: (v) => int(v, 0, 60),
+      dashboard_visibility: (v) => oneOf(v, ['report_users', 'bme_only']), monthly_section: bool,
     },
     extra: async (s, db) => {
       const r = s.rep_sla_response as number[] | undefined; const t = s.rep_sla_restore as number[] | undefined;
