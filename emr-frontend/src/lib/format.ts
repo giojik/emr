@@ -37,6 +37,7 @@ export const ROLE_KA: Record<string, string> = {
   infection: 'ინფექციის კონტროლი', infection_dept: 'ინფექციის კონტროლი (განყოფილება)', infection_view: 'ინფექციის კონტროლის ანგარიშები',
   bme_dept: 'ბიომედ-აპარატურა (განყოფილება)', bme_view: 'ბიომედ-აპარატურის ნახვა',
   roster: 'განრიგის შემდგენი (განყოფილება)', roster_all: 'განრიგი (მთელი კლინიკა)', roster_view: 'განრიგის ნახვა',
+  absence_approve: 'არყოფნის დადასტურება (განყოფილება)',
 };
 export const REFERRAL_KA: Record<string, string> = { lab: 'ლაბორატორია', imaging: 'რადიოლოგია', hospitalization: 'ჰოსპიტალიზაცია', specialist_consult: 'კონსულტაცია' };
 export const SEVERITY_KA: Record<string, string> = { mild: 'მსუბუქი', moderate: 'საშუალო', severe: 'მძიმე' };

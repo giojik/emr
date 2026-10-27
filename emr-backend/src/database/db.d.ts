@@ -41,6 +41,90 @@ export type ReferralType = "hospitalization" | "imaging" | "lab" | "specialist_c
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AbsenceBalanceEntries {
+  absence_type_id: string;
+  created_at: Generated<Timestamp>;
+  days: Numeric;
+  id: Generated<Int8>;
+  kind: string;
+  period: Generated<number>;
+  reason: string | null;
+  request_id: string | null;
+  staff_id: string;
+  user_id: string | null;
+  year: number;
+}
+
+export interface AbsenceEntitlements {
+  absence_type_id: string;
+  days_per_year: Numeric;
+  note: string | null;
+  staff_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string;
+}
+
+export interface AbsenceRequests {
+  absence_type_id: string;
+  balance_year: number;
+  cancel_reason: string | null;
+  cancel_request_note: string | null;
+  cancel_requested_at: Timestamp | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  counted_days: Generated<string[]>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  date_from: string;
+  date_to: string;
+  days: Numeric;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  doc_mime: string | null;
+  doc_name: string | null;
+  doc_path: string | null;
+  document_no: string | null;
+  head_at: Timestamp | null;
+  head_by: string | null;
+  head_note: string | null;
+  head_skipped: Generated<boolean>;
+  hr_at: Timestamp | null;
+  hr_by: string | null;
+  hr_note: string | null;
+  id: Generated<string>;
+  no: Generated<Int8>;
+  note: string | null;
+  on_behalf: Generated<boolean>;
+  overdraw_reason: string | null;
+  reject_reason: string | null;
+  roster_applied: Json | null;
+  route: string;
+  shortened_from: string | null;
+  staff_id: string;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AbsenceTypes {
+  code: string;
+  color: Generated<string>;
+  counts_as_work: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  default_days: Numeric | null;
+  has_balance: Generated<boolean>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  paid: Generated<boolean>;
+  requires_document: Generated<boolean>;
+  route: Generated<string>;
+  self_request: Generated<boolean>;
+  short: string;
+  sort_order: Generated<number>;
+  unit: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AddressUnits {
   code: string;
   is_active: Generated<boolean>;
@@ -4298,6 +4382,40 @@ export interface RosterEntries {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RosterOpenShiftOffers {
+  created_at: Generated<Timestamp>;
+  note: string | null;
+  open_shift_id: string;
+  staff_id: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RosterOpenShifts {
+  absence_request_id: string | null;
+  cancel_reason: string | null;
+  category: string | null;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  day: string;
+  duty_level: number | null;
+  duty_role_id: string | null;
+  ends_at: Timestamp;
+  filled_entry_id: string | null;
+  hours: Numeric;
+  id: Generated<string>;
+  note: string | null;
+  roster_id: string;
+  shift_template_id: string;
+  source: string;
+  source_entry_id: string | null;
+  starts_at: Timestamp;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Rosters {
   closed_at: Timestamp | null;
   closed_by: string | null;
@@ -4312,6 +4430,29 @@ export interface Rosters {
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
+}
+
+export interface RosterSwaps {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  expires_at: Timestamp;
+  from_entry_id: string;
+  from_staff_id: string;
+  head_at: Timestamp | null;
+  head_by: string | null;
+  head_note: string | null;
+  id: Generated<string>;
+  kind: string;
+  no: Generated<Int8>;
+  note: string | null;
+  peer_at: Timestamp | null;
+  peer_note: string | null;
+  reason: string | null;
+  status: Generated<string>;
+  to_entry_id: string | null;
+  to_staff_id: string;
+  updated_at: Generated<Timestamp>;
+  warnings: Generated<Json>;
 }
 
 export interface RotationPatterns {
@@ -4837,6 +4978,18 @@ export interface StaffPositions {
   name: string;
   sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface StaffPrefs {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  day: string;
+  id: Generated<string>;
+  kind: string;
+  note: string | null;
+  part: Generated<string>;
+  shift_template_id: string | null;
+  staff_id: string;
 }
 
 export interface StayBedDays {
@@ -5466,6 +5619,10 @@ export interface Wards {
 }
 
 export interface DB {
+  absence_balance_entries: AbsenceBalanceEntries;
+  absence_entitlements: AbsenceEntitlements;
+  absence_requests: AbsenceRequests;
+  absence_types: AbsenceTypes;
   address_units: AddressUnits;
   allergen_cross_reactivity: AllergenCrossReactivity;
   allergen_group_terms: AllergenGroupTerms;
@@ -5741,6 +5898,9 @@ export interface DB {
   roles: Roles;
   roster_changes: RosterChanges;
   roster_entries: RosterEntries;
+  roster_open_shift_offers: RosterOpenShiftOffers;
+  roster_open_shifts: RosterOpenShifts;
+  roster_swaps: RosterSwaps;
   rosters: Rosters;
   rotation_patterns: RotationPatterns;
   rpt_attention_sent: RptAttentionSent;
@@ -5779,6 +5939,7 @@ export interface DB {
   staff_member_departments: StaffMemberDepartments;
   staff_members: StaffMembers;
   staff_positions: StaffPositions;
+  staff_prefs: StaffPrefs;
   staffing_norms: StaffingNorms;
   stay_bed_days: StayBedDays;
   stay_billing: StayBilling;

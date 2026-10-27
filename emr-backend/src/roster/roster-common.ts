@@ -15,6 +15,10 @@ export interface RosterSettings {
   max_week_hours: number; week_mode: RuleMode; max_consecutive_nights: number; nights_mode: RuleMode;
   norm_mode: 'warn' | 'off'; cross_department: 'allow' | 'warn' | 'block';
   publish_notify: boolean; change_notify: boolean; duty_phone: 'all' | 'staff' | 'off'; copy_mode: 'weekday' | 'date';
+  // 0078: არყოფნა, გაცვლა, დასაფარი, სურვილები
+  absence_unit_mode: 'weekdays' | 'roster'; accrual: 'annual' | 'monthly'; balance_overdraw: 'block' | 'warn';
+  swap_approval: 'head' | 'none'; swap_min_notice_hours: number; open_shift_volunteer: boolean; open_shift_notify: boolean;
+  prefs_mode: 'warn' | 'off'; prefs_deadline_day: number; unavailable_max_per_month: number;
 }
 
 export const CATEGORIES = ['doctor', 'nurse', 'junior', 'tech', 'admin', 'other'] as const;
@@ -50,6 +54,42 @@ export async function rosterScope(db: Ex, u: AuthUser): Promise<Scope> {
     UNION SELECT department_id FROM users WHERE id = ${u.id} AND department_id IS NOT NULL`.execute(db);
   return { editAll, viewAll, edit: r.rows.map((x) => x.id) };
 }
+/**
+ * 0078 — არყოფნის დადასტურების არე. all: admin / hr / roster_all (მთელი კლინიკა); hr: HR-ის ნაბიჯი (admin / hr);
+ * depts: ხელმძღვანელის ნაბიჯი თავის განყოფილებ(ებ)ში — roster ან absence_approve (rpt_user_scopes ∪ users.department_id).
+ */
+export const ABSENCE_ALL: Role[] = ['admin', 'hr', 'roster_all'];
+export const ABSENCE_HR: Role[] = ['admin', 'hr'];
+export interface AbsScope { all: boolean; hr: boolean; depts: string[] }
+export async function absenceScope(db: Ex, u: AuthUser): Promise<AbsScope> {
+  const all = has(u, ...ABSENCE_ALL); const hr = has(u, ...ABSENCE_HR);
+  if (!has(u, 'roster', 'absence_approve')) return { all, hr, depts: [] };
+  const r = await sql<{ id: string }>`SELECT department_id AS id FROM rpt_user_scopes WHERE user_id = ${u.id}
+    UNION SELECT department_id FROM users WHERE id = ${u.id} AND department_id IS NOT NULL`.execute(db);
+  return { all, hr, depts: r.rows.map((x) => x.id) };
+}
+export const canHead = (s: AbsScope, dept: string) => s.all || s.depts.includes(dept);
+/** განყოფილების ხელმძღვანელის ნაბიჯის შემსრულებლები (roster / absence_approve, განყოფილების არით) — შეტყობინებისთვის და „ერთადერთი ხელმძღვანელის“ შესამოწმებლად */
+export async function headApprovers(db: Ex, dept: string): Promise<string[]> {
+  const r = await sql<{ id: string }>`SELECT u.id FROM users u JOIN user_capabilities c ON c.user_id = u.id
+    WHERE u.is_active AND c.capabilities && ARRAY['roster', 'absence_approve']::VARCHAR(30)[]
+      AND (u.department_id = ${dept} OR EXISTS (SELECT 1 FROM rpt_user_scopes s WHERE s.user_id = u.id AND s.department_id = ${dept}))`.execute(db);
+  return r.rows.map((x) => x.id);
+}
+/** მომხმარებლები უფლებით (მთელი კლინიკა) — HR ნაბიჯის შეტყობინებისთვის */
+export async function usersWithCaps(db: Ex, caps: Role[]): Promise<string[]> {
+  const r = await sql<{ id: string }>`SELECT u.id FROM users u JOIN user_capabilities c ON c.user_id = u.id
+    WHERE u.is_active AND c.capabilities && ${sql.val(caps)}::VARCHAR(30)[]`.execute(db);
+  return r.rows.map((x) => x.id);
+}
+/** განყოფილების განრიგის შემდგენები (roster არე) + მთელი კლინიკის (roster_all) — დასაფარი / გაცვლა */
+export async function rosterEditors(db: Ex, dept: string): Promise<string[]> {
+  const r = await sql<{ id: string }>`SELECT u.id FROM users u JOIN user_capabilities c ON c.user_id = u.id
+    WHERE u.is_active AND (c.capabilities && ARRAY['roster_all']::VARCHAR(30)[] OR (c.capabilities && ARRAY['roster']::VARCHAR(30)[]
+      AND (u.department_id = ${dept} OR EXISTS (SELECT 1 FROM rpt_user_scopes s WHERE s.user_id = u.id AND s.department_id = ${dept}))))`.execute(db);
+  return r.rows.map((x) => x.id);
+}
+
 export const canEdit = (s: Scope, dept: string) => s.editAll || s.edit.includes(dept);
 export const canView = (s: Scope, dept: string) => s.viewAll || canEdit(s, dept);
 export function needEdit(s: Scope, dept: string) { if (!canEdit(s, dept)) throw new ForbiddenException('ამ განყოფილების განრიგის მართვის უფლება არ გაქვთ'); }

@@ -38,6 +38,26 @@ export function RosterSettings({ s, set }: { s: Record<string, unknown>; set: (v
           <label className="row"><input type="checkbox" checked={v<boolean>('change_notify') !== false} onChange={(e) => upd('change_notify', e.target.checked)} /> ცვლილება გამოქვეყნების შემდეგ — შეტყობინება</label>
         </div>
       </div>
+      <strong className="small">შვებულება / არყოფნა, გაცვლა, დასაფარი, სურვილები (0078)</strong>
+      <div style={grid}>
+        <Field label="სამუშაო დღის დათვლა" htmlFor="rs-unit" hint="„სამუშაო დღე“ ერთეულის ტიპებზე"><select id="rs-unit" className="select" value={v<string>('absence_unit_mode') ?? 'weekdays'} onChange={(e) => upd('absence_unit_mode', e.target.value)}>
+          <option value="weekdays">ორშ.–პარ., დღესასწაულების გარეშე</option><option value="roster">დაგეგმილი ცვლებით (განრიგის თვეებში)</option></select></Field>
+        <Field label="ბალანსის დარიცხვა" htmlFor="rs-acc" hint="მიღების / წასვლის წელს — პროპორციულად"><select id="rs-acc" className="select" value={v<string>('accrual') ?? 'annual'} onChange={(e) => upd('accrual', e.target.value)}>
+          <option value="annual">წლის დასაწყისში — მთლიანად</option><option value="monthly">ყოველთვიურად (1/12)</option></select></Field>
+        <Field label="ნაშთის გადაჭარბება" htmlFor="rs-over"><select id="rs-over" className="select" value={v<string>('balance_overdraw') ?? 'block'} onChange={(e) => upd('balance_overdraw', e.target.value)}>
+          <option value="block">დაბლოკვა (HR — მიზეზით)</option><option value="warn">გაფრთხილება</option></select></Field>
+        <Field label="გაცვლის დადასტურება" htmlFor="rs-swap"><select id="rs-swap" className="select" value={v<string>('swap_approval') ?? 'head'} onChange={(e) => upd('swap_approval', e.target.value)}>
+          <option value="head">კოლეგა → განრიგის შემდგენი</option><option value="none">მხოლოდ კოლეგის თანხმობა</option></select></Field>
+        <Field label="გაცვლა — მინ. წინასწარ (სთ)" htmlFor="rs-notice"><input id="rs-notice" className="input mono" type="number" min={0} max={168} value={v<number>('swap_min_notice_hours') ?? 12} onChange={(e) => upd('swap_min_notice_hours', Number(e.target.value))} /></Field>
+        <Field label="„არ შემიძლია“ — გაფრთხილება ბადეში" htmlFor="rs-pm"><select id="rs-pm" className="select" value={v<string>('prefs_mode') ?? 'warn'} onChange={(e) => upd('prefs_mode', e.target.value)}>
+          <option value="warn">გაფრთხილება</option><option value="off">გამორთული</option></select></Field>
+        <Field label="სურვილების ვადა (წინა თვის რიცხვი)" htmlFor="rs-dl" hint="0 — ვადის გარეშე; შემდგენს არ ეხება"><input id="rs-dl" className="input mono" type="number" min={0} max={28} value={v<number>('prefs_deadline_day') ?? 0} onChange={(e) => upd('prefs_deadline_day', Number(e.target.value))} /></Field>
+        <Field label="„არ შემიძლია“ — მაქს. დღე თვეში" htmlFor="rs-lim" hint="0 — შეუზღუდავი; შემდგენს არ ეხება"><input id="rs-lim" className="input mono" type="number" min={0} max={31} value={v<number>('unavailable_max_per_month') ?? 4} onChange={(e) => upd('unavailable_max_per_month', Number(e.target.value))} /></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={v<boolean>('open_shift_volunteer') !== false} onChange={(e) => upd('open_shift_volunteer', e.target.checked)} /> დასაფარი — „ავიღებ“ (მოხალისე)</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('open_shift_notify') !== false} onChange={(e) => upd('open_shift_notify', e.target.checked)} /> დასაფარი — შეტყობინება კოლეგებს</label>
+        </div>
+      </div>
       <span className="hint">შეტყობინება მხოლოდ EMR-ის ანგარიშიან თანამშრომლებს მიდის. ცვლის შაბლონები, მორიგის როლები, როტაცია, დღესასწაულები, პოზიციები — „ცვლები და მორიგეობა → ცნობარები“.</span>
     </div>
   );

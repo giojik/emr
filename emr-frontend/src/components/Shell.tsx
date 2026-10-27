@@ -56,7 +56,7 @@ const HOME: Record<Role, string> = {
   quality: '/quality', quality_dept: '/quality', quality_view: '/quality',
   infection: '/ipc', infection_dept: '/ipc', infection_view: '/dashboard',
   bme_dept: '/bme', bme_view: '/bme',
-  roster: '/roster', roster_all: '/roster', roster_view: '/roster',
+  roster: '/roster', roster_all: '/roster', roster_view: '/roster', absence_approve: '/roster?tab=approvals',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

@@ -65,7 +65,7 @@ api PUT /modules/roster "$ADM" -d '{"enabled":true,"reason":"ტესტ-E2E"}'
 
 step "1. მოდული, უფლებები, პარამეტრები"
 CAPS=$(api GET /roles/capabilities "$ADM")
-chk "უფლებები: roster, roster_all, roster_view (44)" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="roster" or .code=="roster_all" or .code=="roster_view")]|length'):$(echo "$CAPS" | jq length)" "3:44"
+chk "უფლებები: roster, roster_all, roster_view (45; 0078: + absence_approve)" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="roster" or .code=="roster_all" or .code=="roster_view")]|length'):$(echo "$CAPS" | jq length)" "3:45"
 chk "შაბლონ-როლი „განრიგის შემდგენი“ (roster)" "$(api GET /roles "$ADM" | jq -r '.[]|select(.code=="roster_planner")|.capabilities|join(",")')" "roster"
 chk "უცნობი პარამეტრი / ზედიზედ 100 სთ / უცნობი რეჟიმი — 400" "$(code PUT /modules/roster "$ADM" -d '{"settings":{"foo":1},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"max_continuous_hours":100},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"rest_mode":"hard"},"reason":"ტესტ"}')" "400:400:400"
 chk "პარამეტრის ცვლა: შემდგენი — 403" "$(code PUT /modules/roster "$PL" -d '{"settings":{"rest_mode":"warn"},"reason":"ტესტ ტესტ"}')" "403"

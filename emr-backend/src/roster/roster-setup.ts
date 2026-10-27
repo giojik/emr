@@ -10,7 +10,7 @@ import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { ModulesService } from '../modules/modules';
 import {
-  CATEGORIES, CATEGORY_KA, EMPLOYMENT, REST, ROSTER_HR, ROSTER_SETUP, SHIFT_KINDS, STAFF_ALL, canEdit, canView, rosterScope, shiftTimes, staffName,
+  CATEGORIES, CATEGORY_KA, EMPLOYMENT, REST, ROSTER_HR, ROSTER_SETUP, SHIFT_KINDS, STAFF_ALL, absenceScope, canEdit, canView, rosterScope, shiftTimes, staffName,
   type RosterSettings,
 } from './roster-common';
 
@@ -31,20 +31,27 @@ export class RosterSetupService {
   async refs(u: AuthUser) {
     const settings = await this.settings();
     const sc = await rosterScope(this.db, u);
-    const [positions, templates, duty_roles, patterns, departments] = await Promise.all([
+    const as = await absenceScope(this.db, u);
+    const [positions, templates, duty_roles, patterns, departments, absence_types, me] = await Promise.all([
       this.db.selectFrom('staff_positions as p').selectAll('p').select(sql<number>`(SELECT count(*)::int FROM staff_members s WHERE s.position_id = p.id AND s.is_active)`.as('staff'))
         .orderBy('p.sort_order').orderBy('p.name').execute(),
       this.db.selectFrom('shift_templates').selectAll().orderBy('sort_order').orderBy('code').execute(),
       this.db.selectFrom('duty_roles as r').leftJoin('departments as d', 'd.id', 'r.department_id').selectAll('r').select('d.name as department_name').orderBy('r.sort_order').orderBy('r.name').execute(),
       this.db.selectFrom('rotation_patterns').selectAll().orderBy('code').execute(),
       this.db.selectFrom('departments').select(['id', 'name', 'code', 'type']).where('is_active', '=', true).orderBy('name').execute(),
+      this.db.selectFrom('absence_types').selectAll().orderBy('sort_order').orderBy('name').execute(),
+      this.db.selectFrom('staff_members as s').leftJoin('staff_positions as p', 'p.id', 's.position_id').select(['s.id', staffName('s').as('name'), 's.department_id', 'p.category'])
+        .where('s.user_id', '=', u.id).executeTakeFirst(),
     ]);
     return {
       settings, positions, patterns, duty_roles,
       templates: templates.map((x) => ({ ...x, hours: shiftTimes('2026-01-15', x.start_time, x.end_time, x.break_min, x.counted_hours === null ? null : Number(x.counted_hours)).hours })),
       departments: departments.map((d) => ({ ...d, can_edit: canEdit(sc, d.id), can_view: canView(sc, d.id) })),
       categories: CATEGORIES.map((c) => ({ code: c, name: CATEGORY_KA[c] })), kinds: SHIFT_KINDS, employment: EMPLOYMENT, rest: REST,
-      can: { setup: has(u, ...ROSTER_SETUP), hr: has(u, ...ROSTER_HR), staff_all: has(u, ...STAFF_ALL), edit_all: sc.editAll, view_all: sc.viewAll, edit_depts: sc.edit },
+      absence_types, me: me ?? null,
+      can: { setup: has(u, ...ROSTER_SETUP), hr: has(u, ...ROSTER_HR), staff_all: has(u, ...STAFF_ALL), edit_all: sc.editAll, view_all: sc.viewAll, edit_depts: sc.edit,
+        // 0078: არყოფნის დადასტურება (ხელმძღვანელი — განყოფილებები / მთელი კლინიკა; HR ნაბიჯი)
+        absence_all: as.all, absence_hr: as.hr, absence_depts: as.depts },
     };
   }
 

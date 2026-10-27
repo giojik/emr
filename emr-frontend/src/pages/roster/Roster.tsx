@@ -1,26 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ApiError, api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { hhmm, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
+import { ApprovalsPage, MyHub, NewOpenShiftDialog, OpenShiftDialog, useInbox } from './RosterLeave';
 import RosterSetupPage from './RosterSetup';
 import RosterStaffPage from './RosterStaff';
 import {
   CAT_KA, DOW_KA, KIND_KA, STATUS_KA, ddmm, monthLabel, timeRange, useRefs,
-  type Category, type Entry, type Refs, type RosterDetail, type RosterRow, type Template, type Violation,
+  type Category, type Entry, type OpenShift, type Refs, type RosterDetail, type RosterRow, type Template, type Violation,
 } from './types';
 
-/** ცვლები და მორიგეობა (0077): განრიგი (ბადე), მორიგეები ახლა, ჩემი განრიგი, თანამშრომლები, ცნობარები */
+/** ცვლები და მორიგეობა (0077–0078): განრიგი (ბადე), მორიგეები ახლა, ჩემი განრიგი (+ არყოფნა / გაცვლა / სურვილები / დასაფარი), დასადასტურებელი, თანამშრომლები, ცნობარები */
 export default function Roster() {
   const mods = useModules(); const refs = useRefs();
   const [sp] = useSearchParams();
   const enabled = mods.data?.find((m) => m.code === 'roster')?.enabled;
   const c = refs.data?.can;
   const anyDept = !!refs.data?.departments.some((d) => d.can_view);
+  const manager = !!c && (c.absence_all || c.absence_depts.length > 0 || c.edit_all || c.edit_depts.length > 0);
+  const inbox = useInbox(!!enabled && !!refs.data);
+  const n = inbox.data?.counts.total ?? 0;
   const tabs: [string, string, boolean][] = [
-    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true],
+    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true], ['approvals', `დასადასტურებელი${n ? ` (${n})` : ''}`, manager || n > 0],
     ['staff', 'თანამშრომლები', !!c && (c.staff_all || c.view_all || c.edit_depts.length > 0)], ['setup', 'ცნობარები', !!c && (c.setup || c.hr || c.edit_all || c.edit_depts.length > 0)]];
   const def = anyDept ? 'grid' : 'duty';
   const tab = sp.get('tab') ?? def;
@@ -35,7 +39,7 @@ export default function Roster() {
       </header>
       {!enabled ? <div className="content"><div className="card empty">მოდული „ცვლები და მორიგეობა“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
         : refs.error ? <div className="content"><ErrorBox error={refs.error} /></div>
-        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyPage /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
+        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyHub refs={refs.data!} /> : tab === 'approvals' ? <ApprovalsPage refs={refs.data!} /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
         : tab === 'setup' ? <RosterSetupPage refs={refs.data!} /> : <GridPage refs={refs.data!} />}
     </>
   );
@@ -85,7 +89,8 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
   const [brush, setBrush] = useState<Brush>(null);
   const [duty, setDuty] = useState<{ id: string; level: number } | null>(null);
   const [cat, setCat] = useState<string>('');
-  const [dlg, setDlg] = useState<null | { kind: 'entry'; entry: Entry } | { kind: 'add'; staff: string; day: string } | { kind: 'publish' } | { kind: 'rotation' } | { kind: 'history' } | { kind: 'copy' } | { kind: 'clear' }>(null);
+  const [dlg, setDlg] = useState<null | { kind: 'entry'; entry: Entry } | { kind: 'add'; staff: string; day: string } | { kind: 'publish' } | { kind: 'rotation' } | { kind: 'history' } | { kind: 'copy' } | { kind: 'clear' }
+    | { kind: 'open'; o: OpenShift } | { kind: 'newopen' }>(null);
   const [err, setErr] = useState<unknown>(null);
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['roster', id] }); void qc.invalidateQueries({ queryKey: ['roster-list'] }); };
   const add = useMutation({
@@ -101,6 +106,11 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
     return m;
   }, [r]);
   const vio = useMemo(() => { const m = new Map<string, Violation[]>(); for (const v of r?.violations ?? []) for (const e of v.entry_ids) (m.get(e) ?? m.set(e, []).get(e)!).push(v); return m; }, [r]);
+  // 0078: არყოფნა / სურვილები / დასაფარი — უჯრებზე
+  const absBy = useMemo(() => { const m = new Map<string, RosterDetail['absences'][number]>(); for (const a of r?.absences ?? []) for (const d of r?.days ?? []) if (d.day >= a.date_from && d.day <= a.date_to) {
+    const k = `${a.staff_id}|${d.day}`; if (!m.has(k) || a.status === 'approved') m.set(k, a); } return m; }, [r]);
+  const prefBy = useMemo(() => { const m = new Map<string, RosterDetail['prefs']>(); for (const p of r?.prefs ?? []) { const k = `${p.staff_id}|${p.day}`; (m.get(k) ?? m.set(k, []).get(k)!).push(p); } return m; }, [r]);
+  const openBy = useMemo(() => { const m = new Map<string, OpenShift[]>(); for (const o of r?.open_shifts ?? []) (m.get(o.day) ?? m.set(o.day, []).get(o.day)!).push(o); return m; }, [r]);
   if (q.isLoading) return <Loading />;
   if (q.error || !r) return <ErrorBox error={q.error} />;
   const draft = r.status === 'draft'; const edit = r.can_edit;
@@ -125,6 +135,7 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
         {r.warnings > 0 && <span className="chip warn">გაფრთხილება: {r.warnings}</span>}
         {r.gaps.length > 0 && <span className="chip warn" title="შევსების ნორმა">ნორმის ხარვეზი: {r.gaps.length}</span>}
         {r.duty_gaps.length > 0 && <span className="chip warn">მორიგე დაუნიშნავი: {r.duty_gaps.length}</span>}
+        {r.open_shifts.length > 0 && <span className="chip danger" title="ღია ცვლები (არყოფნა / გაუქმება / ხელით)">დასაფარი: {r.open_shifts.length}</span>}
         <select className="select" aria-label="კატეგორია" style={{ maxWidth: 190, height: 34 }} value={cat} onChange={(e) => setCat(e.target.value)}>
           <option value="">ყველა კატეგორია</option>{(Object.keys(CAT_KA) as Category[]).map((k) => <option key={k} value={k}>{CAT_KA[k]}</option>)}<option value="-">პოზიციის გარეშე</option></select>
         <span className="grow" />
@@ -133,6 +144,7 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
           <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'rotation' })}>როტაცია</button>
           <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'clear' })}>გასუფთავება</button>
           <button className="btn sm primary" type="button" onClick={() => setDlg({ kind: 'publish' })}>გამოქვეყნება</button></>}
+        {edit && r.status === 'published' && <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'newopen' })}>+ დასაფარი</button>}
       </div>
       {edit && draft && (
         <div className="card card-pad row" style={{ flexWrap: 'wrap', gap: 6, padding: 10 }} role="toolbar" aria-label="ფუნჯი">
@@ -165,10 +177,16 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
                 <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', whiteSpace: 'nowrap' }}>
                   <strong>{s.name}</strong>{!s.home && <span className="chip info" style={{ height: 18, fontSize: 10, marginLeft: 4 }} title="სხვა განყოფილებიდან / დამატებითი">დამ.</span>}
                   <div className="small muted">{s.position_name ?? 'პოზიციის გარეშე'}{Number(s.fte) !== 1 ? ` · ${Number(s.fte)} განაკვ.` : ''}</div></td>
-                {r.days.map((d) => { const es = byCell.get(`${s.id}|${d.day}`) ?? []; return (
-                  <td key={d.day} onClick={() => cellClick(s.id, d.day)} style={{ padding: 2, textAlign: 'center', cursor: edit ? 'pointer' : 'default', verticalAlign: 'middle',
-                    background: d.holiday ? '#fff6f5' : d.dow >= 6 ? '#fffbf2' : undefined, borderLeft: '1px solid var(--line-soft)' }}
-                    aria-label={`${s.name}, ${ddmm(d.day)}${es.length ? `: ${es.map((e) => e.code).join(', ')}` : ''}`}>
+                {r.days.map((d) => { const es = byCell.get(`${s.id}|${d.day}`) ?? []; const ab = absBy.get(`${s.id}|${d.day}`); const pf = prefBy.get(`${s.id}|${d.day}`) ?? [];
+                  const un = pf.find((p) => p.kind === 'unavailable'); const pr = pf.find((p) => p.kind === 'prefer'); return (
+                  <td key={d.day} onClick={() => cellClick(s.id, d.day)} style={{ padding: 2, textAlign: 'center', cursor: edit ? 'pointer' : 'default', verticalAlign: 'middle', position: 'relative',
+                    background: ab ? `${ab.color}${ab.status === 'approved' ? '33' : '1a'}` : d.holiday ? '#fff6f5' : d.dow >= 6 ? '#fffbf2' : undefined, borderLeft: '1px solid var(--line-soft)',
+                    outline: ab && ab.status !== 'approved' ? `1px dashed ${ab.color}` : undefined, outlineOffset: -2 }}
+                    title={[ab ? `${ab.name}${ab.no ? ` #${ab.no}` : ''}${ab.status !== 'approved' ? ' (განხილვაში)' : ''}` : '', un ? `⊘ არ შემიძლია${un.part !== 'all' ? (un.part === 'night' ? ' (ღამე)' : ' (დღე)') : ''}${un.note ? ` — ${un.note}` : ''}` : '',
+                      pr ? `♡ მირჩევნია${pr.code ? ` ${pr.code}` : ''}${pr.note ? ` — ${pr.note}` : ''}` : ''].filter(Boolean).join('\n') || undefined}
+                    aria-label={`${s.name}, ${ddmm(d.day)}${es.length ? `: ${es.map((e) => e.code).join(', ')}` : ''}${ab ? ` · ${ab.name}` : ''}${un ? ' · არ შემიძლია' : ''}`}>
+                    {ab && !es.length && <span className="small" style={{ color: ab.color, fontWeight: 700 }}>{ab.short}</span>}
+                    {(un || pr) && <span aria-hidden="true" style={{ position: 'absolute', top: 0, right: 1, fontSize: 9, lineHeight: 1, color: un ? 'var(--danger)' : '#16a34a' }}>{un ? '⊘' : '♡'}</span>}
                     {es.map((e) => { const vs = vio.get(e.id) ?? []; const blk = vs.some((v) => v.mode === 'block'); return (
                       <button key={e.id} type="button" className="mono" onClick={(ev) => { ev.stopPropagation(); chipClick(e); }}
                         title={`${e.code} ${e.start_local}–${e.end_local} · ${Number(e.hours)} სთ${e.duty_role_id ? ` · ${refs.duty_roles.find((x) => x.id === e.duty_role_id)?.name ?? 'მორიგე'}${e.duty_level === 2 ? ' (II)' : ''}` : ''}${e.note ? ` · ${e.note}` : ''}${vs.length ? `\n${vs.map((v) => `⚠ ${v.message}`).join('\n')}` : ''}`}
@@ -180,6 +198,15 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
                 <td className="mono small" style={{ whiteSpace: 'nowrap' }}>{t ? `${t.shifts} / ${t.nights} / ${t.duty}` : '—'}</td>
               </tr>); })}
             {!staff.length && <tr><td colSpan={r.days.length + 3} className="muted">თანამშრომელი არ არის — დაამატეთ „თანამშრომლები“ ჩანართში (ძირითადი ან დამატებითი განყოფილება)</td></tr>}
+            {r.open_shifts.length > 0 && <tr>
+              <td style={{ position: 'sticky', left: 0, background: '#fff1f2' }} className="small"><strong>დასაფარი</strong><div className="muted">ღია ცვლები</div></td>
+              {r.days.map((d) => { const os = openBy.get(d.day) ?? []; return (
+                <td key={d.day} style={{ textAlign: 'center', background: '#fff1f2', padding: 2 }}>
+                  {os.map((o) => <button key={o.id} type="button" className="mono" title={`${o.code} ${hhmm(o.starts_at)}–${hhmm(o.ends_at)}${o.offers?.length ? ` · ავიღებ: ${o.offers.map((x) => x.name).join(', ')}` : ''}${o.note ? ` · ${o.note}` : ''}`}
+                    onClick={() => edit && setDlg({ kind: 'open', o })} style={{ display: 'block', width: '100%', border: `1px dashed ${o.color}`, borderRadius: 4, padding: '1px 0', margin: '1px 0', color: o.color, background: '#fff', fontSize: 11, fontWeight: 700, cursor: edit ? 'pointer' : 'default' }}>
+                    {o.code}{o.offers?.length ? `✋${o.offers.length}` : ''}</button>)}
+                </td>); })}
+              <td colSpan={2} style={{ background: '#fff1f2' }} /></tr>}
             {(r.gaps.length > 0 || r.duty_gaps.length > 0) && <tr>
               <td style={{ position: 'sticky', left: 0, background: 'var(--surface-2)' }} className="small"><strong>ხარვეზები</strong><div className="muted">ნორმა / მორიგე</div></td>
               {r.days.map((d) => { const g = gapsBy(d.day); const dg = dgapsBy(d.day); return (
@@ -203,6 +230,8 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
       {dlg?.kind === 'copy' && <CopyDialog r={r} refs={refs} onClose={() => setDlg(null)} onDone={(m) => { setDlg(null); refresh(); onToast(m); }} />}
       {dlg?.kind === 'clear' && <ClearDialog r={r} onClose={() => setDlg(null)} onDone={(m) => { setDlg(null); refresh(); onToast(m); }} />}
       {dlg?.kind === 'history' && <HistoryDialog id={r.id} onClose={() => setDlg(null)} />}
+      {dlg?.kind === 'open' && <OpenShiftDialog o={dlg.o} staff={r.staff.filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name }))} onClose={() => setDlg(null)} onDone={(m) => { setDlg(null); refresh(); onToast(m); }} />}
+      {dlg?.kind === 'newopen' && <NewOpenShiftDialog rosterId={r.id} refs={refs} deptId={r.department_id} days={r.days.map((d) => d.day)} onClose={() => setDlg(null)} onDone={() => { setDlg(null); refresh(); onToast('დასაფარი შეიქმნა'); }} />}
     </div>
   );
 }
@@ -212,6 +241,7 @@ function Legend({ refs }: { refs: Refs }) {
     {refs.templates.filter((t) => t.is_active).map((t) => <span key={t.id} className="row" style={{ gap: 4 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 3, background: t.color }} />
       <strong className="mono">{t.code}</strong> {t.name} · {t.hours} სთ</span>)}
     <span>★ მორიგე (I) · ☆ მორიგე (II)</span><span style={{ color: '#d97706' }}>▢ გაფრთხილება</span><span style={{ color: 'var(--danger)' }}>▢ დაბლოკვა</span>
+    <span>ფერადი ფონი — არყოფნა (წყვეტილი ჩარჩო — განხილვაში)</span><span><span style={{ color: 'var(--danger)' }}>⊘</span> არ შემიძლია · <span style={{ color: '#16a34a' }}>♡</span> მირჩევნია</span>
   </div>;
 }
 
@@ -262,7 +292,9 @@ function EntryDialog({ r, refs, e, onClose, onDone }: { r: RosterDetail; refs: R
   const save = useMutation({ mutationFn: () => { const [di, dl] = f.duty.split('|');
     return api(`/roster/entries/${e.id}`, { method: 'PATCH', body: { shift_template_id: f.tpl, duty_role_id: di || null, duty_level: di ? Number(dl) : null,
       start_time: f.start && f.end ? f.start : null, end_time: f.start && f.end ? f.end : null, note: f.note.trim() || null, ...(pub && { reason: reason.trim() }) } }); }, onSuccess: onDone });
-  const rm = useMutation({ mutationFn: () => api(`/roster/entries/${e.id}/remove`, { body: pub ? { reason: reason.trim() } : {} }), onSuccess: onDone });
+  const [toOpen, setToOpen] = useState(true); const [rep, setRep] = useState('');
+  const rm = useMutation({ mutationFn: () => api(`/roster/entries/${e.id}/remove`, { body: pub ? { reason: reason.trim(), open_shift: toOpen } : {} }), onSuccess: onDone });
+  const rp = useMutation({ mutationFn: () => api(`/roster/entries/${e.id}/replace`, { body: { staff_id: rep, ...(pub && { reason: reason.trim() }) } }), onSuccess: onDone });
   const vs = r.violations.filter((v) => v.entry_ids.includes(e.id));
   const can = r.can_edit;
   return <Modal title={`${st?.name ?? ''} · ${ddmm(e.day)} · ${e.code}`} onClose={onClose} footer={can ? <>
@@ -273,9 +305,14 @@ function EntryDialog({ r, refs, e, onClose, onDone }: { r: RosterDetail; refs: R
     <div className="stack">
       <span className="small">{hhmm(e.starts_at)}–{hhmm(e.ends_at)} · {Number(e.hours)} სთ · {KIND_KA[e.kind]}</span>
       {vs.map((v, i) => <div key={i} className={`alert ${v.mode === 'block' ? 'danger' : 'warn'}`}>{v.message}</div>)}
-      {can ? <><ShiftFields refs={refs} r={r} f={f} set={(k, v) => setF({ ...f, [k]: v })} /><ReasonField need={pub} value={reason} set={setReason} /></>
+      {can ? <><ShiftFields refs={refs} r={r} f={f} set={(k, v) => setF({ ...f, [k]: v })} /><ReasonField need={pub} value={reason} set={setReason} />
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}><span className="small">ჩანაცვლება:</span>
+          <select className="select" aria-label="ვინ ჩაანაცვლებს" style={{ maxWidth: 240, height: 32 }} value={rep} onChange={(x) => setRep(x.target.value)}>
+            <option value="">—</option>{r.staff.filter((s) => s.is_active && s.id !== e.staff_id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <button className="btn sm" type="button" disabled={!rep || rp.isPending || (pub && reason.trim().length < 3)} onClick={() => rp.mutate()}>ჩანაცვლება</button></div>
+        {pub && <label className="row small"><input type="checkbox" checked={toOpen} onChange={(x) => setToOpen(x.target.checked)} /> მოხსნისას — „დასაფარი“ (კოლეგებს ეგზავნება შეტყობინება)</label>}</>
         : e.note && <span>{e.note}</span>}
-      <ErrorBox error={save.error ?? rm.error} />
+      <ErrorBox error={save.error ?? rm.error ?? rp.error} />
     </div>
   </Modal>;
 }
@@ -359,13 +396,14 @@ function ClearDialog({ r, onClose, onDone }: { r: RosterDetail; onClose: () => v
   </Modal>;
 }
 
-const CH_KA: Record<string, string> = { created: 'შეიქმნა', add: 'დამატება', change: 'ცვლილება', remove: 'მოხსნა', publish: 'გამოქვეყნება', copy: 'კოპირება', rotation: 'როტაცია', bulk: 'მასობრივი' };
+const CH_KA: Record<string, string> = { created: 'შეიქმნა', add: 'დამატება', change: 'ცვლილება', remove: 'მოხსნა', publish: 'გამოქვეყნება', copy: 'კოპირება', rotation: 'როტაცია', bulk: 'მასობრივი',
+  swap: 'გაცვლა', give: 'გადაცემა', replace: 'ჩანაცვლება', absence: 'არყოფნა', fill: 'დასაფარის შევსება' };
 function HistoryDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ['roster-changes', id], queryFn: () => api<{ id: string; kind: string; reason: string | null; data: Record<string, unknown>; created_at: string; user_name: string; staff_name: string | null }[]>(`/roster/rosters/${id}/changes`) });
   return <Modal title="განრიგის ისტორია" width={720} onClose={onClose}>
     {q.isLoading ? <Loading /> : <table className="table small"><thead><tr><th>დრო</th><th>ქმედება</th><th>თანამშრომელი</th><th>დეტალი</th><th>მიზეზი</th><th>ვინ</th></tr></thead>
       <tbody>{q.data?.map((c) => <tr key={c.id}><td style={{ whiteSpace: 'nowrap' }}>{tsDate(c.created_at)} {hhmm(c.created_at)}</td><td>{CH_KA[c.kind] ?? c.kind}</td><td>{c.staff_name ?? ''}</td>
-        <td className="mono">{c.data.day ? `${ddmm(String(c.data.day))} ` : ''}{c.data.from ? `${String(c.data.from)} → ` : ''}{String(c.data.code ?? '')}
+        <td className="mono">{c.data.day ? `${ddmm(String(c.data.day))} ` : ''}{c.data.from ? `${String(c.data.from)} → ` : ''}{String(c.data.code ?? '')}{c.data.from_name ? ` (${String(c.data.from_name)} →)` : ''}
           {c.data.created !== undefined ? `+${String(c.data.created)}${c.data.skipped ? ` / გამოტ. ${String(c.data.skipped)}` : ''}` : ''}{c.data.entries !== undefined ? `${String(c.data.entries)} ჩანაწ.` : ''}</td>
         <td>{c.reason ?? ''}</td><td>{c.user_name}</td></tr>)}</tbody></table>}
     <ErrorBox error={q.error} />
@@ -411,34 +449,6 @@ function DutyPage({ refs }: { refs: Refs }) {
             <tbody>{q.data.on_shift.map((d) => <tr key={d.id}><td><strong>{d.staff_name}</strong>{d.duty_name ? ` ★ ${d.duty_name}` : ''}</td><td>{d.position_name ?? '—'}</td><td className="mono">{d.code}</td>
               <td>{hhmm(d.starts_at)}–{hhmm(d.ends_at)}</td><td className="mono">{d.phone ?? ''}</td></tr>)}</tbody></table> : <span className="muted small">არავინ</span>}</section>}
       </>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- ჩემი განრიგი
-function MyPage() {
-  const [sp, setSp] = useSearchParams();
-  const month = sp.get('month') ?? todayISO().slice(0, 7);
-  const q = useQuery({ queryKey: ['roster-my', month], queryFn: () => api<{ staff: { id: string; name: string } | null; month: string; hours?: number;
-    entries: { id: string; day: string; code: string; shift_name: string; kind: string; color: string; starts_at: string; ends_at: string; hours: string; department_name: string; duty_name: string | null; duty_level: number | null; note: string | null }[] }>('/roster/my', { query: { month } }) });
-  useEffect(() => { if (!sp.get('month')) { sp.set('month', month); setSp(sp, { replace: true }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (m: string) => { sp.set('month', m); setSp(sp, { replace: true }); };
-  return (
-    <div className="content">
-      <div className="row">
-        <button className="btn" type="button" aria-label="წინა თვე" onClick={() => set(prevMonth(month))}>‹</button>
-        <input className="input" type="month" aria-label="თვე" style={{ maxWidth: 170, height: 38 }} value={month} onChange={(e) => e.target.value && set(e.target.value)} />
-        <button className="btn" type="button" aria-label="შემდეგი თვე" onClick={() => set(nextMonth(month))}>›</button>
-        <span className="grow" />{q.data?.staff && <span>{q.data.staff.name} · <strong>{q.data.hours ?? 0} სთ</strong> · {q.data.entries.length} ცვლა</span>}
-      </div>
-      <ErrorBox error={q.error} />
-      {q.isLoading ? <Loading /> : !q.data?.staff ? <div className="card empty">თქვენი ანგარიში თანამშრომლების რეესტრში არ არის მიბმული — მიმართეთ განრიგის შემდგენს / HR-ს.</div>
-        : <div className="card"><table className="table"><thead><tr><th>დღე</th><th>ცვლა</th><th>დრო</th><th>სთ</th><th>განყოფილება</th><th>მორიგეობა</th><th>შენიშვნა</th></tr></thead>
-          <tbody>{q.data.entries.map((e) => <tr key={e.id}><td style={{ whiteSpace: 'nowrap' }}>{ddmm(e.day)} <span className="muted">{DOW_KA[((new Date(`${e.day}T00:00:00Z`).getUTCDay() + 6) % 7) + 1]}</span></td>
-            <td><span className="mono" style={{ background: e.color, color: '#fff', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>{e.code}</span> <span className="small">{e.shift_name}</span></td>
-            <td>{hhmm(e.starts_at)}–{hhmm(e.ends_at)}</td><td className="mono">{Number(e.hours)}</td><td>{e.department_name}</td>
-            <td>{e.duty_name ? `${e.duty_level === 2 ? '☆' : '★'} ${e.duty_name}` : ''}</td><td className="small">{e.note ?? ''}</td></tr>)}
-            {!q.data.entries.length && <tr><td colSpan={7} className="muted">{monthLabel(month)} — გამოქვეყნებულ განრიგში ცვლა არ გაქვთ</td></tr>}</tbody></table></div>}
     </div>
   );
 }

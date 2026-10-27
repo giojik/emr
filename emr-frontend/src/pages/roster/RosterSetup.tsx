@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe } from '../../lib/format';
-import { CAT_KA, DOW_KA, KIND_KA, timeRange, type Category, type DutyRole, type Kind, type Pattern, type Position, type Refs, type Template } from './types';
+import { CAT_KA, DOW_KA, KIND_KA, ROUTE_KA, timeRange, type AbsenceType, type Category, type DutyRole, type Kind, type Pattern, type Position, type Refs, type Template } from './types';
 
 /** ცნობარები (0077): პოზიციები, ცვლის შაბლონები, მორიგის როლები, როტაციის ნიმუშები, დღესასწაულები, შევსების ნორმა */
 export default function RosterSetupPage({ refs }: { refs: Refs }) {
@@ -19,6 +19,7 @@ export default function RosterSetupPage({ refs }: { refs: Refs }) {
       {c.setup && <Patterns refs={refs} onDone={done} />}
       {c.hr && <Positions refs={refs} onDone={done} />}
       {c.hr && <Holidays onDone={done} />}
+      {c.hr && <AbsenceTypes refs={refs} onDone={done} />}
     </div>
   );
 }
@@ -235,6 +236,51 @@ function NormDialog({ refs, dept, n, onClose, onDone }: { refs: Refs; dept: stri
         <input type="checkbox" checked={f.wd.includes(w)} onChange={(e) => setF({ ...f, wd: e.target.checked ? [...f.wd, w] : f.wd.filter((x) => x !== w) })} />{DOW_KA[w]}</label>)}</div></Field>
       <label className="row"><input type="checkbox" checked={f.hol} onChange={(e) => setF({ ...f, hol: e.target.checked })} /> დღესასწაულზეც მოქმედებს</label>
       {n && <label className="row"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} /> აქტიური</label>}
+      <ErrorBox error={m.error} />
+    </div></Modal>;
+}
+
+// ---------------------------------------------------------------- არყოფნის ტიპები (0078)
+function AbsenceTypes({ refs, onDone }: { refs: Refs; onDone: () => void }) {
+  const [e, setE] = useState<AbsenceType | 'new' | null>(null);
+  return <Section title="არყოფნის ტიპები" hint="შვებულება / ბიულეტენი / მივლინება… ბალანსი, ერთეული, დადასტურების მარშრუტი, დოკუმენტი. ცვლილება არსებულ მოთხოვნებს არ ცვლის (მარშრუტი მოთხოვნაზე ფიქსირდება)."
+    action={<button className="btn sm primary" type="button" onClick={() => setE('new')}>+ ტიპი</button>}>
+    <table className="table small"><thead><tr><th>კოდი</th><th>დასახელება</th><th>ერთეული</th><th>ბალანსი</th><th>მარშრუტი</th><th>დოკ.</th><th>ანაზღ.</th><th /></tr></thead>
+      <tbody>{refs.absence_types.map((t) => <tr key={t.id} className="clickable" onClick={() => setE(t)}>
+        <td className="mono"><span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: t.color, marginRight: 4 }} />{t.code} <strong>{t.short}</strong></td>
+        <td>{t.name}</td><td>{t.unit === 'workday' ? 'სამუშაო დღე' : 'კალენდარული'}</td><td>{t.has_balance ? (t.default_days !== null ? `${Number(t.default_days)} / წელი` : 'ხელით') : '—'}</td>
+        <td>{ROUTE_KA[t.route]}{t.self_request ? '' : ' · მხოლოდ ხელმძღვანელი / HR'}</td><td>{t.requires_document ? '✓' : ''}</td><td>{t.paid ? '✓' : ''}{t.counts_as_work ? ' · ნამუშ.' : ''}</td>
+        <td>{!t.is_active && <span className="chip">გათიშული</span>}</td></tr>)}</tbody></table>
+    {e && <AbsenceTypeDialog t={e === 'new' ? null : e} onClose={() => setE(null)} onDone={() => { setE(null); onDone(); }} />}
+  </Section>;
+}
+function AbsenceTypeDialog({ t, onClose, onDone }: { t: AbsenceType | null; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState({ code: t?.code ?? '', name: t?.name ?? '', short: t?.short ?? '', color: t?.color ?? '#94a3b8', paid: t?.paid ?? true, counts_as_work: t?.counts_as_work ?? false,
+    unit: t?.unit ?? 'workday', has_balance: t?.has_balance ?? false, default_days: t?.default_days !== null && t?.default_days !== undefined ? String(Number(t.default_days)) : '', route: t?.route ?? 'head_hr',
+    requires_document: t?.requires_document ?? false, self_request: t?.self_request ?? true, is_active: t?.is_active ?? true, sort_order: String(t?.sort_order ?? 100) });
+  const m = useMutation({ mutationFn: () => api(t ? `/roster/absence-types/${t.id}` : '/roster/absence-types', { method: t ? 'PATCH' : 'POST', body: {
+    ...(!t && { code: f.code }), name: f.name.trim(), short: f.short.trim(), color: f.color, paid: f.paid, counts_as_work: f.counts_as_work, unit: f.unit, has_balance: f.has_balance,
+    default_days: f.has_balance && f.default_days !== '' ? Number(f.default_days) : null, route: f.route, requires_document: f.requires_document, self_request: f.self_request,
+    sort_order: Number(f.sort_order) || 100, ...(t && { is_active: f.is_active }) } }), onSuccess: onDone });
+  const ck = (k: 'paid' | 'counts_as_work' | 'has_balance' | 'requires_document' | 'self_request' | 'is_active', l: string) => <label className="row"><input type="checkbox" checked={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /> {l}</label>;
+  return <Modal title={t ? t.name : 'ახალი არყოფნის ტიპი'} onClose={onClose} footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button>
+    <button className="btn primary" type="button" disabled={m.isPending || f.name.trim().length < 2 || !f.short.trim() || (!t && !/^[A-Z][A-Z0-9_]{1,19}$/.test(f.code))} onClick={() => m.mutate()}>შენახვა</button></>}>
+    <div className="stack">
+      <div className="row" style={{ gap: 8 }}>
+        {!t && <Field label="კოდი" htmlFor="at-c" required><input id="at-c" className="input mono" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') })} /></Field>}
+        <Field label="მოკლე (ბადეში)" htmlFor="at-s" required hint="≤ 3 სიმბოლო"><input id="at-s" className="input" maxLength={3} value={f.short} onChange={(e) => setF({ ...f, short: e.target.value })} /></Field>
+        <Field label="ფერი" htmlFor="at-k"><input id="at-k" className="input" type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} /></Field></div>
+      <Field label="დასახელება" htmlFor="at-n" required><input id="at-n" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+      <div className="row" style={{ gap: 8 }}>
+        <Field label="ერთეული" htmlFor="at-u"><select id="at-u" className="select" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value as AbsenceType['unit'] })}>
+          <option value="workday">სამუშაო დღე (ორშ.–პარ., დღესასწაულების გარეშე)</option><option value="calendar">კალენდარული დღე</option></select></Field>
+        <Field label="დადასტურება" htmlFor="at-r"><select id="at-r" className="select" value={f.route} onChange={(e) => setF({ ...f, route: e.target.value as AbsenceType['route'] })}>
+          {Object.entries(ROUTE_KA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field></div>
+      {ck('has_balance', 'ბალანსით (წლიური ნორმა / ჟურნალი)')}
+      {f.has_balance && <Field label="წლიური ნორმა (დღე)" htmlFor="at-d" hint="ცარიელი — მხოლოდ ხელით (მაგ. ნაცვლად დასვენება). შრომის კოდექსის მინიმუმი — 24 სამუშაო დღე. ინდივიდუალური — „დასადასტურებელი → ბალანსები“."><input id="at-d" className="input mono" style={{ maxWidth: 120 }} type="number" step="0.5" min={0} value={f.default_days} onChange={(e) => setF({ ...f, default_days: e.target.value })} /></Field>}
+      {ck('requires_document', 'დოკუმენტი სავალდებულოა (HR ნაბიჯამდე)')}{ck('self_request', 'თანამშრომელს შეუძლია თავად მოთხოვნა')}{ck('paid', 'ანაზღაურებადი')}{ck('counts_as_work', 'ითვლება ნამუშევრად (ტაბელი — 0079)')}
+      <Field label="რიგი" htmlFor="at-o"><input id="at-o" className="input mono" style={{ maxWidth: 120 }} type="number" value={f.sort_order} onChange={(e) => setF({ ...f, sort_order: e.target.value })} /></Field>
+      {t && ck('is_active', 'აქტიური')}
       <ErrorBox error={m.error} />
     </div></Modal>;
 }

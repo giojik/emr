@@ -21,9 +21,32 @@ export interface Pattern { id: string; code: string; name: string; cycle: string
 export interface Dept { id: string; name: string; code: string; type: string; can_edit: boolean; can_view: boolean }
 export interface Settings { rest_min_hours: number; rest_mode: Mode; max_continuous_hours: number; continuous_mode: Mode; max_week_hours: number; week_mode: Mode;
   max_consecutive_nights: number; nights_mode: Mode; norm_mode: 'warn' | 'off'; cross_department: 'allow' | 'warn' | 'block'; publish_notify: boolean; change_notify: boolean;
-  duty_phone: 'all' | 'staff' | 'off'; copy_mode: 'weekday' | 'date' }
+  duty_phone: 'all' | 'staff' | 'off'; copy_mode: 'weekday' | 'date';
+  absence_unit_mode: 'weekdays' | 'roster'; accrual: 'annual' | 'monthly'; balance_overdraw: 'block' | 'warn'; swap_approval: 'head' | 'none'; swap_min_notice_hours: number;
+  open_shift_volunteer: boolean; open_shift_notify: boolean; prefs_mode: 'warn' | 'off'; prefs_deadline_day: number; unavailable_max_per_month: number }
+/** 0078: არყოფნის ტიპი */
+export interface AbsenceType { id: string; code: string; name: string; short: string; color: string; paid: boolean; counts_as_work: boolean; unit: 'workday' | 'calendar'; has_balance: boolean;
+  default_days: string | null; route: 'head_hr' | 'head' | 'hr' | 'none'; requires_document: boolean; self_request: boolean; is_active: boolean; sort_order: number }
+export const ROUTE_KA: Record<string, string> = { head_hr: 'ხელმძღვანელი → HR', head: 'ხელმძღვანელი', hr: 'HR', none: 'მხოლოდ რეგისტრაცია' };
+export const ABS_STATUS: Record<string, [string, string]> = { head: ['warn', 'ხელმძღვანელთან'], hr: ['warn', 'HR-თან'], approved: ['ok', 'დადასტურებული'], rejected: ['danger', 'უარყოფილი'], cancelled: ['', 'გაუქმებული'] };
+export const SWAP_STATUS: Record<string, [string, string]> = { peer: ['warn', 'კოლეგასთან'], head: ['warn', 'ხელმძღვანელთან'], approved: ['ok', 'შესრულებული'], rejected: ['danger', 'უარყოფილი'],
+  declined: ['danger', 'კოლეგამ უარი თქვა'], cancelled: ['', 'გაუქმებული'], expired: ['', 'ვადაგასული'] };
+export interface AbsenceRow { id: string; no: string; staff_id: string; staff_name: string; staff_user_id: string | null; department_id: string; department_name: string; position_name: string | null;
+  absence_type_id: string; type_code: string; type_name: string; short: string; color: string; has_balance: boolean; requires_document: boolean; date_from: string; date_to: string; days: string;
+  balance_year: number; status: string; route: string; note: string | null; document_no: string | null; has_file: boolean; on_behalf: boolean; head_skipped: boolean; cancel_requested_at: string | null;
+  cancel_request_note: string | null; reject_reason: string | null; cancel_reason: string | null; overdraw_reason: string | null; created_at: string; decided_at: string | null; created_by_name: string | null;
+  can_act: boolean; can_cancel_decide: boolean }
+export interface SwapRow { id: string; no: string; kind: 'swap' | 'give'; status: string; status_name: string; note: string | null; warnings: string[]; expires_at: string; created_at: string;
+  peer_note: string | null; head_note: string | null; reason: string | null; from_staff_id: string; to_staff_id: string; a_staff_name: string; b_staff_name: string;
+  a_day: string; a_starts_at: string; a_ends_at: string; a_code: string; a_department: string; b_day: string | null; b_starts_at: string | null; b_ends_at: string | null; b_code: string | null; b_department: string | null;
+  direction?: 'in' | 'out' }
+export interface OpenShift { id: string; roster_id?: string; department_id?: string; department_name?: string; day: string; shift_template_id: string; code: string; shift_name?: string; color: string;
+  starts_at: string; ends_at: string; hours: string; duty_role_id: string | null; duty_name: string | null; duty_level: number | null; category: Category | null; source: 'absence' | 'cancel' | 'manual';
+  note: string | null; offers?: { staff_id: string; name: string; status?: string; note?: string | null }[]; my_offer?: string | null; busy?: boolean; absent?: boolean }
+export const SRC_KA: Record<string, string> = { absence: 'არყოფნა', cancel: 'გაუქმება', manual: 'ხელით' };
 export interface Refs { settings: Settings; positions: Position[]; templates: Template[]; duty_roles: DutyRole[]; patterns: Pattern[]; departments: Dept[]; rest: string;
-  can: { setup: boolean; hr: boolean; staff_all: boolean; edit_all: boolean; view_all: boolean; edit_depts: string[] } }
+  absence_types: AbsenceType[]; me: { id: string; name: string; department_id: string; category: Category | null } | null;
+  can: { setup: boolean; hr: boolean; staff_all: boolean; edit_all: boolean; view_all: boolean; edit_depts: string[]; absence_all: boolean; absence_hr: boolean; absence_depts: string[] } }
 export const useRefs = () => useQuery({ queryKey: ['roster-refs'], queryFn: () => api<Refs>('/roster/refs') });
 
 export interface Staff { id: string; user_id: string | null; first_name: string; last_name: string; name: string; personal_number: string | null; phone: string | null; position_id: string | null;
@@ -43,6 +66,11 @@ export interface RosterDetail {
   duty_gaps: { day: string; duty_role_id: string; name: string; have: number; need: number }[];
   totals: Record<string, { hours: number; shifts: number; nights: number; weekend: number; holiday: number; duty: number }>;
   holidays: { day: string; name: string }[]; blocking: number; warnings: number;
+  // 0078
+  absences: { id: string | null; no: string | null; staff_id: string; date_from: string; date_to: string; status: string; absence_type_id: string | null; short: string; color: string; name: string }[];
+  absence_detail: boolean;
+  prefs: { staff_id: string; day: string; kind: 'unavailable' | 'prefer'; part: 'all' | 'day' | 'night'; shift_template_id: string | null; code: string | null; note: string | null }[];
+  open_shifts: OpenShift[];
 }
 export const STATUS_KA: Record<string, [string, string]> = { none: ['', 'არ არის'], draft: ['warn', 'მონახაზი'], published: ['ok', 'გამოქვეყნებული'], closed: ['info', 'დახურული'] };
 export const timeRange = (t: { start_time: string; end_time: string }) => `${t.start_time.slice(0, 5)}–${t.end_time.slice(0, 5)}`;

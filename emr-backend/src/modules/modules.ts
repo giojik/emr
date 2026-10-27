@@ -294,6 +294,10 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       max_consecutive_nights: (v) => int(v, 1, 14), nights_mode: (v) => oneOf(v, ['block', 'warn', 'off']),
       norm_mode: (v) => oneOf(v, ['warn', 'off']), cross_department: (v) => oneOf(v, ['allow', 'warn', 'block']),
       publish_notify: bool, change_notify: bool, duty_phone: (v) => oneOf(v, ['all', 'staff', 'off']), copy_mode: (v) => oneOf(v, ['weekday', 'date']),
+      // 0078: არყოფნა, გაცვლა, დასაფარი, სურვილები
+      absence_unit_mode: (v) => oneOf(v, ['weekdays', 'roster']), accrual: (v) => oneOf(v, ['annual', 'monthly']), balance_overdraw: (v) => oneOf(v, ['block', 'warn']),
+      swap_approval: (v) => oneOf(v, ['head', 'none']), swap_min_notice_hours: (v) => int(v, 0, 168), open_shift_volunteer: bool, open_shift_notify: bool,
+      prefs_mode: (v) => oneOf(v, ['warn', 'off']), prefs_deadline_day: (v) => int(v, 0, 28), unavailable_max_per_month: (v) => int(v, 0, 31),
     },
   },
   asset_register: {
