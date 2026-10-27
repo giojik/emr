@@ -227,7 +227,8 @@ chk "განყოფილება (შემდგენი) — 200, xlsx"
 WB=$(unzip -p "$TMP/d1.xlsx" xl/workbook.xml 2>/dev/null)
 chk "  … 3 ფურცელი: ტაბელი / ჯამები / არყოფნები" "$(echo "$WB" | grep -o 'sheet name="[^"]*"' | cut -d'"' -f2 | paste -sd, -)" "ტაბელი,ჯამები,არყოფნები"
 SH2=$(unzip -p "$TMP/d1.xlsx" xl/worksheets/sheet2.xml 2>/dev/null)
-has "  … ჯამებში ექთანი 1 + ზეგანაკვეთი $OT1" "$(echo "$SH2" | grep -o "საათ-75.\{0,4000\}" | head -c 4000)" "<v>$OT1</v>"
+# 0080a: ექთანი 1-ის სტრიქონი — XML-ის </row>-ზე დაყოფით და grep -F-ით (UTF-8 ლოკალში `grep -o '….\{0,4000\}'` წუთობით გრძელდებოდა)
+has "  … ჯამებში ექთანი 1 + ზეგანაკვეთი $OT1" "$(echo "$SH2" | LC_ALL=C sed 's#</row>#</row>\n#g' | LC_ALL=C grep -F "საათ-75" | head -c 4000)" "<v>$OT1</v>"
 has "  … ტაბელში „დახურული“ და კოდი „გ“" "$(unzip -p "$TMP/d1.xlsx" xl/worksheets/sheet1.xml)" "დახურული"
 chk "ექთანი — 403; შემდგენი მთელი კლინიკა — 403; HR / ბუღალტერი მთელი კლინიკა — 200" "$(dl x "&department_id=$D1" "$N1" | cut -d: -f1):$(dl x "" "$PL" | cut -d: -f1):$(dl all "" "$HR" | cut -d: -f1):$(dl acc "" "$AC" | cut -d: -f1)"  "403:403:200:200"
 has "  … HR — D2 (წინასწარი) შედის; ბუღალტერი — მხოლოდ დახურული" "$(unzip -p "$TMP/all.xlsx" xl/worksheets/sheet1.xml | grep -o "რეანიმაცია $S — წინასწარი" | head -1)" "წინასწარი"
