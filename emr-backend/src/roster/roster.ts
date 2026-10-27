@@ -439,7 +439,10 @@ export class RosterService {
       .leftJoin('staff_members as s', 's.id', 'e.staff_id').leftJoin('staff_positions as p', 'p.id', 's.position_id')
       .select(['e.id', 'e.staff_id', sql<string>`to_char(e.day, 'YYYY-MM-DD')`.as('day'), 'e.shift_template_id', 't.code', 't.kind', 't.color', 'e.starts_at', 'e.ends_at', 'e.hours',
         'e.duty_role_id', 'e.duty_level', 'e.note', 'p.category',
-        sql<string>`to_char(e.starts_at AT TIME ZONE ${tz}, 'HH24:MI')`.as('start_local'), sql<string>`to_char(e.ends_at AT TIME ZONE ${tz}, 'HH24:MI')`.as('end_local')])
+        sql<string>`to_char(e.starts_at AT TIME ZONE ${tz}, 'HH24:MI')`.as('start_local'), sql<string>`to_char(e.ends_at AT TIME ZONE ${tz}, 'HH24:MI')`.as('end_local'),
+        // 0079: ფაქტი
+        'e.att_status', 'e.actual_hours', 'e.actual_note', sql<string | null>`to_char(e.actual_start AT TIME ZONE ${tz}, 'HH24:MI')`.as('actual_start_local'),
+        sql<string | null>`to_char(e.actual_end AT TIME ZONE ${tz}, 'HH24:MI')`.as('actual_end_local')])
       .where('e.roster_id', '=', r.id).where('e.status', '=', 'active').orderBy('e.starts_at').execute();
     const staffIds = [...new Set(entries.map((e) => e.staff_id))];
     const c = await this.context(ex, r, staffIds);

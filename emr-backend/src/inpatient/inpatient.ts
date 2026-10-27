@@ -15,6 +15,7 @@ import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { probe, sendRaw, wristbandPdf, wristbandZpl, type WristbandData } from './wristband';
 import { ipcBedCheck, ipcRules, isoReplaceLegacy, isoStart } from '../ipc/ipc-common';
+import { RosterLookup } from '../roster/roster-common';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -139,7 +140,7 @@ export class PrinterTestDto { @IsOptional() @IsBoolean() print?: boolean }
 @Injectable()
 export class InpatientService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService,
-    private readonly notifications: NotificationsService) {}
+    private readonly notifications: NotificationsService, private readonly roster: RosterLookup) {}
 
   settings() { return this.modules.require<InpatientSettings>('inpatient'); }
   /** @internal (0041: გამოიყენება გადაყვანა / გაწერა / ეპიკრიზი სერვისებში) */
@@ -368,7 +369,10 @@ export class InpatientService {
         sql<number>`(SELECT count(*)::int FROM bed_assignments a WHERE a.department_id = d.id AND a.ended_at IS NULL AND a.bed_id IS NULL)`.as('awaiting'),
         sql<number>`(SELECT count(*)::int FROM inpatient_planned p WHERE p.department_id = d.id AND p.status = 'waiting' AND p.planned_date = (now() AT TIME ZONE ${TZ})::date)`.as('planned_today')])
       .where('d.type', '=', 'inpatient').where('d.is_active', '=', true).groupBy(['d.id', 'd.name']).orderBy('d.name').execute();
-    return { settings: s, departments: rows, my_department_id: me.department_id };
+    // 0079: დატვირთვა — პაციენტი / ექთანი ახლა ცვლაში (ცვლები / მორიგეობა; ინფორმაციული)
+    const load = await this.roster.load();
+    const departments = rows.map((d) => { const l = load?.find((x) => x.department_id === d.id); return { ...d, load: l ? { patients: l.patients, nurses: l.nurses, ratio: l.ratio, limit: l.limit, level: l.level } : null }; });
+    return { settings: s, departments, my_department_id: me.department_id, roster_load: !!load };
   }
 
   async board(departmentId: string, u: AuthUser) {

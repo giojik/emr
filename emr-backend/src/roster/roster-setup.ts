@@ -51,7 +51,10 @@ export class RosterSetupService {
       absence_types, me: me ?? null,
       can: { setup: has(u, ...ROSTER_SETUP), hr: has(u, ...ROSTER_HR), staff_all: has(u, ...STAFF_ALL), edit_all: sc.editAll, view_all: sc.viewAll, edit_depts: sc.edit,
         // 0078: არყოფნის დადასტურება (ხელმძღვანელი — განყოფილებები / მთელი კლინიკა; HR ნაბიჯი)
-        absence_all: as.all, absence_hr: as.hr, absence_depts: as.depts },
+        absence_all: as.all, absence_hr: as.hr, absence_depts: as.depts,
+        // 0079: ტაბელი — შემდგენი / ხელმძღვანელი (განყოფილება), HR / roster_all / admin / ბუღალტერი (მთელი კლინიკა; ბუღალტერი — დახურული); დახურვა — HR
+        timesheet: has(u, 'admin', 'hr', 'roster_all', 'accountant') || sc.edit.length > 0 || as.depts.length > 0,
+        timesheet_all: has(u, 'admin', 'hr', 'roster_all', 'accountant'), timesheet_close: has(u, 'admin', 'hr') },
     };
   }
 
@@ -246,7 +249,9 @@ export class RosterSetupService {
     };
     try {
       return await this.db.transaction().execute(async (trx) => {
-        const r = id ? await trx.updateTable('staff_members').set(v).where('id', '=', id).returningAll().executeTakeFirstOrThrow()
+        // 0079: მხოლოდ დამატებითი განყოფილებების ცვლილება — ცარიელი UPDATE არა (ადრე — 500)
+        const r = id ? (Object.keys(v).length ? await trx.updateTable('staff_members').set(v).where('id', '=', id).returningAll().executeTakeFirstOrThrow()
+          : await trx.selectFrom('staff_members').selectAll().where('id', '=', id).executeTakeFirstOrThrow())
           : await trx.insertInto('staff_members').values({ first_name: first!.trim(), last_name: last!.trim(), department_id: dept, created_by: u.id, ...v }).returningAll().executeTakeFirstOrThrow();
         if (d.extra_department_ids !== undefined) {
           await trx.deleteFrom('staff_member_departments').where('staff_id', '=', r.id).execute();

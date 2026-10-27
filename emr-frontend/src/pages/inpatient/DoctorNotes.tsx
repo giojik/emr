@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, openBlob } from '../../api/client';
+import { OnDutyHint } from '../roster/RosterLinks';
 import type { Department, Doctor } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
@@ -248,8 +249,9 @@ function ConsultDialog({ encounterId, onClose, onDone }: { encounterId: string; 
           <Field label="განყოფილება / სპეციალობა" htmlFor="cq-d"><select id="cq-d" className="select" value={dep} onChange={(e) => { setDep(e.target.value); setDoc(''); }}>
             <option value="">—</option>{deps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
           <Field label="ექიმი (არასავალდებულო)" htmlFor="cq-x" hint="მითითებისას — მხოლოდ მას ეგზავნება"><select id="cq-x" className="select" value={doc} onChange={(e) => setDoc(e.target.value)}>
-            <option value="">— განყოფილების ნებისმიერი ექიმი —</option>{doctors.data?.filter((x) => !dep || x.department_id === dep).map((x) => <option key={x.id} value={x.id}>{x.last_name} {x.first_name}{x.specialty ? ` · ${x.specialty}` : ''}</option>)}</select></Field>
+            <option value="">— განყოფილების ნებისმიერი ექიმი —</option>{doctors.data?.filter((x) => !dep || x.department_id === dep || x.id === doc).map((x) => <option key={x.id} value={x.id}>{x.last_name} {x.first_name}{x.specialty ? ` · ${x.specialty}` : ''}</option>)}</select></Field>
         </div>
+        {dep && <OnDutyHint purpose="consult" departmentId={dep} selected={doc} onPick={setDoc} />}
         <div className="seg" role="group" aria-label="სასწრაფოობა" style={{ width: 'max-content' }}>
           {(['routine', 'urgent', 'emergency'] as const).map((k) => <button key={k} type="button" aria-pressed={urg === k} onClick={() => setUrg(k)}>{URG[k][1]}</button>)}</div>
         <Field label="კითხვა / მიზეზი" htmlFor="cq-q" required><textarea id="cq-q" className="textarea" rows={4} value={q} onChange={(e) => setQ(e.target.value)} /></Field>

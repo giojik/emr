@@ -30,7 +30,9 @@ export interface Occupant {
 export interface IncomingTransfer { id: string; encounter_id: string; reason: string; requested_at: string; adm_no: string; severity: string | null; isolation: string | null; first_name: string; last_name: string; gender: string; from_department: string }
 export interface BoardBed extends Bed { occupant: Occupant | null; reservation: { id: string; plan_no: string; planned_date: string; patient_name: string } | null }
 export interface Board { department: { id: string; name: string }; settings: InpatientSettings; can_assign: boolean; can_manage: boolean; wards: (Omit<Ward, 'beds'> & { beds: BoardBed[] })[]; awaiting: Occupant[]; incoming_transfers: IncomingTransfer[] }
-export interface CensusRow { id: string; name: string; beds: number; overflow: number; free: number; occupied: number; occupied_overflow: number; reserved: number; cleaning: number; blocked: number; awaiting: number; planned_today: number }
+export interface CensusRow { id: string; name: string; beds: number; overflow: number; free: number; occupied: number; occupied_overflow: number; reserved: number; cleaning: number; blocked: number; awaiting: number; planned_today: number;
+  /** 0079: ცვლები / მორიგეობა — ექთანი ახლა / პაციენტი (ინფორმაციული) */
+  load?: { patients: number; nurses: number; ratio: number | null; limit: number; level: 'ok' | 'over' | 'none' } | null }
 export interface StayListItem {
   encounter_id: string; adm_no: string; status: string; source: string; severity: string | null; isolation: string | null; admitted_at: string; ended_at: string | null; patient_id: string;
   first_name: string; last_name: string; personal_number: string | null; birth_date: string; gender: string; department_id: string; department_name: string; bed_code: string | null; doctor_name: string | null;
@@ -63,7 +65,7 @@ export const occupantChips = (o: Occupant) => <>
 </>;
 
 export const useStructure = (all = false) => useQuery({ queryKey: ['ipd-structure', all], queryFn: () => api<Structure>('/inpatient/structure', { query: { all } }) });
-export const useCensus = () => useQuery({ queryKey: ['ipd-census'], queryFn: () => api<{ settings: InpatientSettings; departments: CensusRow[]; my_department_id: string | null }>('/inpatient/census'), refetchInterval: 60_000 });
+export const useCensus = () => useQuery({ queryKey: ['ipd-census'], queryFn: () => api<{ settings: InpatientSettings; departments: CensusRow[]; my_department_id: string | null; roster_load?: boolean }>('/inpatient/census'), refetchInterval: 60_000 });
 
 /** 409 CONFIRM_REQUIRED (სქესი / იზოლაცია) — მომხმარებელი ადასტურებს და მოთხოვნა მეორდება confirm:true-ით */
 export async function withConfirm<T>(fn: (confirm: boolean) => Promise<T>): Promise<T | null> {

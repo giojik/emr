@@ -15,6 +15,7 @@ import type { DB } from '../database/db';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { InpatientModule, InpatientService } from './inpatient';
+import { RosterLookup } from '../roster/roster-common';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -91,7 +92,7 @@ export class NoteTemplateDto {
 @Injectable()
 export class NotesService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly ipd: InpatientService,
-              private readonly bell: NotificationsService) {}
+              private readonly bell: NotificationsService, private readonly roster: RosterLookup) {}
 
   // ---------------------------------------------------------------- საერთო
   async stay(encounterId: string, ex: Ex = this.db) {
@@ -416,7 +417,12 @@ export class NotesService {
       await this.audit.log(ctx, { action: 'CONSULT_REQUEST', entityName: 'consultations', entityId: c.id, newData: dto }, trx);
       return { c, st };
     });
-    const to = res.c.target_doctor_id ? [res.c.target_doctor_id] : res.c.target_department_id ? await this.doctorsOf(res.c.target_department_id) : [];
+    let to = res.c.target_doctor_id ? [res.c.target_doctor_id] : res.c.target_department_id ? await this.doctorsOf(res.c.target_department_id) : [];
+    // 0079 (link_consult = duty): სასწრაფო / გადაუდებელი განყოფილებაზე — მხოლოდ მორიგე / ცვლაში მყოფ ექიმ(ებ)ს (თუ არიან; სხვა შემთხვევაში — ყველას)
+    if (!res.c.target_doctor_id && res.c.target_department_id && res.c.urgency !== 'routine' && (await this.roster.settings())?.link_consult === 'duty') {
+      const duty = (await this.roster.now({ departmentId: res.c.target_department_id, category: 'doctor' })).map((p) => p.user_id).filter((x): x is string => !!x && x !== u.id);
+      if (duty.length) to = duty;
+    }
     await this.notifyIds(to, { kind: 'ipd_consult', title: `კონსულტაცია (${URGENCY_KA[res.c.urgency]}): ${res.st.last_name} ${res.st.first_name}`, body: res.c.question.slice(0, 200),
       item: res.st.adm_no, entityId: res.c.id, link: `/inpatient?tab=consults`, urgent: res.c.urgency !== 'routine' }, u.id);
     return (await this.consultBase().where('c.id', '=', res.c.id).executeTakeFirst())!;

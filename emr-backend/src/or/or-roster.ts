@@ -11,6 +11,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { ModulesService } from '../modules/modules';
 import { OR_READ } from './or-admin';
 import { OR_SETTINGS_0049, orEvent, TZ, type Ex, type OrSettings, type Trx } from './or-shared';
+import { RosterLookup, localDay } from '../roster/roster-common';
 
 const NO_ANESTHESIOLOGIST = ['local', 'none'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,7 +25,9 @@ export class RosterDayDto {
   @IsOptional() @IsString() @MaxLength(500) note?: string;
 }
 
-export interface DayMember { user_id: string; name: string; role_code: string; role_name: string; grp: string; source: 'room' | 'day'; override_id: string | null }
+export interface DayMember { user_id: string; name: string; role_code: string; role_name: string; grp: string; source: 'room' | 'day'; override_id: string | null;
+  /** 0079: დადასტურებული არყოფნა ამ დღეს (ცვლები / მორიგეობა, link_or ≠ off) — ავტომატურად გუნდში არ ემატება */
+  absent?: boolean }
 
 /**
  * ოთახის გუნდი (0049, room_teams): მუდმივი გუნდი ოთახზე + დღის ცვლილება („დღეს X → OR2“ / „დღეს Y არ არის“).
@@ -35,7 +38,24 @@ export interface DayMember { user_id: string; name: string; role_code: string; r
  */
 @Injectable()
 export class OrRosterService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService, private readonly lookup: RosterLookup) {}
+
+  /**
+   * 0079 — ცვლები / მორიგეობა (link_or): გუნდის წევრის დამატებისას გაფრთხილებები (CONFIRM_REQUIRED):
+   * absence — დადასტურებული არყოფნა ოპერაციის დღე(ებ)ში; absence_shift — + „განრიგში ამ დროს ცვლა არ აქვს“ (თუ ძირითადი განყოფილების განრიგი გამოქვეყნებულია).
+   */
+  async rosterWarnings(ex: Ex, userId: string, name: string, from: Date, to: Date): Promise<string[]> {
+    const s = await this.lookup.settings(ex);
+    if (!s || s.link_or === 'off') return [];
+    const out: string[] = [];
+    const ab = (await this.lookup.absentUsers([userId], localDay(from), localDay(new Date(to.getTime() - 1)), ex)).get(userId);
+    if (ab) out.push(`${name} — არყოფნაშია (#${ab.no}, ${ab.from.slice(8)}.${ab.from.slice(5, 7)}–${ab.to.slice(8)}.${ab.to.slice(5, 7)})`);
+    else if (s.link_or === 'absence_shift') {
+      const c = await this.lookup.shiftCoverage([userId], from, to, ex);
+      if (c.rostered.has(userId) && !c.covered.has(userId)) out.push(`${name} — განრიგში ამ დროს ცვლა არ აქვს`);
+    }
+    return out;
+  }
 
   async settings(): Promise<OrSettings> { return { ...OR_SETTINGS_0049, ...(await this.modules.require<OrSettings>('or')) }; }
   private me(u: AuthUser, ex: Ex = this.db) { return ex.selectFrom('users').select(['id', 'department_id', 'is_section_head']).where('id', '=', u.id).executeTakeFirstOrThrow(); }
@@ -70,7 +90,11 @@ export class OrRosterService {
       .where('d.day', '=', day).where('d.cancelled_at', 'is', null).where('d.room_id', 'in', roomIds).where('x.is_active', '=', true).where('r.is_active', '=', true).execute();
     const all = [...perm.map((p) => ({ ...p, source: 'room' as const, override_id: null })), ...moved.map((m) => ({ ...m, room_id: m.room_id!, role_code: m.role_code!, source: 'day' as const, override_id: m.id }))]
       .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
-    for (const m of all) out.get(m.room_id)?.push({ user_id: m.user_id, name: m.name, role_code: m.role_code, role_name: m.role_name, grp: m.grp, source: m.source, override_id: m.override_id });
+    // 0079: დადასტურებული არყოფნა (ცვლები / მორიგეობა)
+    const s = await this.lookup.settings(ex);
+    const absent = s && s.link_or !== 'off' ? await this.lookup.absentUsers([...new Set(all.map((m) => m.user_id))], day, day, ex) : new Map();
+    for (const m of all) out.get(m.room_id)?.push({ user_id: m.user_id, name: m.name, role_code: m.role_code, role_name: m.role_name, grp: m.grp, source: m.source, override_id: m.override_id,
+      ...(absent.has(m.user_id) && { absent: true }) });
     return out;
   }
 
@@ -87,6 +111,7 @@ export class OrRosterService {
       const day = (await sql<{ d: string }>`SELECT (${c.scheduled_start}::timestamptz AT TIME ZONE ${TZ})::date::text AS d`.execute(trx)).rows[0].d;
       desired = (await this.dayTeams(day, [c.room_id], trx)).get(c.room_id) ?? [];
       if (NO_ANESTHESIOLOGIST.includes(c.anesthesia_type)) desired = desired.filter((d) => d.grp !== 'anesthesia');
+      desired = desired.filter((d) => !d.absent);     // 0079: არყოფნაში მყოფი ავტომატურად არ ემატება
     }
     const rows = await trx.selectFrom('or_case_team as t').innerJoin('or_team_roles as r', 'r.code', 't.role_code')
       .select(['t.id', 't.role_code', 't.user_id', 't.auto', 't.removed_at', 't.removed_auto', 't.out_at', 'r.multiple', 'r.name as role_name'])

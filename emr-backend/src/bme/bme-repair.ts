@@ -15,6 +15,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { NotifyService } from '../notify/notify.service';
+import { RosterLookup } from '../roster/roster-common';
 import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
 import { stockRules } from '../stock/stock-rules';
@@ -42,7 +43,7 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 export class RepairService {
   constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly modules: ModulesService,
     private readonly notifications: NotificationsService, private readonly notify: NotifyService, private readonly storage: StorageService,
-    private readonly bme: BmeService, private readonly pm: PmService) {}
+    private readonly bme: BmeService, private readonly pm: PmService, private readonly roster: RosterLookup) {}
 
   private settings() { return this.modules.require<BmeSettings>('bme'); }
   private full(u: AuthUser) { if (!has(u, ...BME_FULL)) throw new ForbiddenException('შეკეთების ორდერის მართვა — სამედიცინო ინჟინერი'); }
@@ -272,7 +273,13 @@ export class RepairService {
     const ids = await usersWithCaps(this.db, ['med_engineer']);
     for (const id of ids) if (id !== except) await this.notifications.notify(id, n);
     if (!external || (!s.rep_notify_email && !s.rep_notify_sms)) return;
-    const cs = ids.length ? await this.db.selectFrom('users').select(['email', 'phone']).where('id', 'in', ids).execute() : [];
+    // 0079 (link_bme = duty): ელფოსტა / SMS — მხოლოდ ახლა ცვლაში / მორიგე ინჟინერ(ებ)ს (თუ არიან); ეკრანზე — ყველას
+    let ext = ids;
+    if ((await this.roster.settings())?.link_bme === 'duty') {
+      const duty = (await this.roster.now({ capability: 'med_engineer' })).map((p) => p.user_id).filter((x): x is string => !!x && ids.includes(x));
+      if (duty.length) ext = duty;
+    }
+    const cs = ext.length ? await this.db.selectFrom('users').select(['email', 'phone']).where('id', 'in', ext).execute() : [];
     if (s.rep_notify_email) { const em = cs.map((c) => c.email).filter((x): x is string => !!x); if (em.length) await this.notify.email(em, `EMR · ${n.title}`, `${n.title}\n\n${n.body ?? ''}`); }
     if (s.rep_notify_sms) { const ph = cs.map((c) => c.phone).filter((x): x is string => !!x); if (ph.length) await this.notify.sms(ph, `EMR ბიომედ: ${n.title}`.slice(0, 300)); }
   }

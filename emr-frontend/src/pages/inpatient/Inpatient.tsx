@@ -19,6 +19,7 @@ import { DepartmentHandover } from './Nursing';
 import { DepartmentOrders } from './Orders';
 import { RequestDialog } from '../or/Dialogs';
 import { useOrModule } from '../or/types';
+import { LoadBadge } from '../roster/RosterLinks';
 import { BED_ST, chipOf, ISOLATION_KA, occupantChips, SEVERITY_KA, SOURCE_KA, STAY_ST, useCensus, withConfirm, type Board, type BoardBed, type IncomingTransfer, type Occupant, type Planned, type StayListItem } from './types';
 
 const ADMITTERS = ['admin', 'receptionist', 'doctor'] as const;
@@ -479,19 +480,19 @@ function Census() {
       {q.isLoading ? <Loading /> : (
         <div className="card"><table className="table">
           <thead><tr><th>განყოფილება</th><th className="num">საწოლი</th><th className="num">დაკავებული</th><th className="num">დატვირთვა</th><th className="num">თავისუფალი</th><th className="num">დაჯავშნილი</th>
-            <th className="num">დასალაგებელი</th><th className="num">დაბლოკილი</th><th className="num">ელოდება საწოლს</th><th className="num">გეგმიური დღეს</th></tr></thead>
+            <th className="num">დასალაგებელი</th><th className="num">დაბლოკილი</th><th className="num">ელოდება საწოლს</th><th className="num">გეგმიური დღეს</th>{q.data?.roster_load && <th title="ცვლები და მორიგეობა — ექთანი ახლა ცვლაში (გამოქვეყნებული განრიგი) / პაციენტი; ინფორმაციული">ექთანი ახლა</th>}</tr></thead>
           <tbody>{q.data?.departments.map((d) => (
             <tr key={d.id}><td><Link to={`/inpatient?tab=board&department_id=${d.id}`}><strong>{d.name}</strong></Link></td>
               <td className="num">{d.beds}{d.overflow ? <span className="small muted"> +{d.overflow}</span> : ''}</td>
               <td className="num">{d.occupied}{d.occupied_overflow ? <span className="small muted"> ({d.occupied_overflow} დამატ.)</span> : ''}</td>
               <td className="num">{pct(d.occupied - d.occupied_overflow, d.beds)}</td><td className="num">{d.free}</td><td className="num">{d.reserved}</td>
               <td className="num">{d.cleaning}</td><td className="num">{d.blocked}</td>
-              <td className="num">{d.awaiting ? <span className="chip warn">{d.awaiting}</span> : 0}</td><td className="num">{d.planned_today}</td></tr>))}
+              <td className="num">{d.awaiting ? <span className="chip warn">{d.awaiting}</span> : 0}</td><td className="num">{d.planned_today}</td>{q.data?.roster_load && <td><LoadBadge l={d.load} /></td>}</tr>))}
             <tr><td><strong>სულ</strong></td><td className="num"><strong>{tot('beds')}</strong></td><td className="num"><strong>{tot('occupied')}</strong></td><td className="num"><strong>{pct(tot('occupied') - tot('occupied_overflow'), tot('beds'))}</strong></td>
-              <td className="num">{tot('free')}</td><td className="num">{tot('reserved')}</td><td className="num">{tot('cleaning')}</td><td className="num">{tot('blocked')}</td><td className="num">{tot('awaiting')}</td><td className="num">{tot('planned_today')}</td></tr>
+              <td className="num">{tot('free')}</td><td className="num">{tot('reserved')}</td><td className="num">{tot('cleaning')}</td><td className="num">{tot('blocked')}</td><td className="num">{tot('awaiting')}</td><td className="num">{tot('planned_today')}</td>{q.data?.roster_load && <td />}</tr>
           </tbody>
         </table></div>)}
-      <span className="small muted">დატვირთვა — ძირითადი საწოლების მიხედვით (დამატებითი საწოლები ცალკე).</span>
+      <span className="small muted">დატვირთვა — ძირითადი საწოლების მიხედვით (დამატებითი საწოლები ცალკე).{q.data?.roster_load ? ' „ექთანი ახლა“ — ცვლების გამოქვეყნებული განრიგით (ინფორმაციული).' : ''}</span>
     </div>
   );
 }

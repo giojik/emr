@@ -5,8 +5,8 @@ import { ApiError, api, apiUpload, openBlob } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, hhmm, todayISO, tsDate } from '../../lib/format';
 import {
-  ABS_STATUS, CAT_KA, DOW_KA, ROUTE_KA, SRC_KA, SWAP_STATUS, ddmm, monthLabel,
-  type AbsenceRow, type AbsenceType, type OpenShift, type Refs, type SwapRow,
+  ABS_STATUS, CAT_KA, DOW_KA, ROUTE_KA, SRC_KA, SWAP_STATUS, ddmm, fmtH, monthLabel,
+  type AbsenceRow, type AbsenceType, type OpenShift, type Refs, type SwapRow, type TsRow,
 } from './types';
 
 /** 0078: თვითმომსახურება (ჩემი განრიგი → არყოფნა / გაცვლები / სურვილები / დასაფარი) და „დასადასტურებელი“ (ხელმძღვანელი / HR / შემდგენი) */
@@ -37,6 +37,21 @@ export function MyHub({ refs }: { refs: Refs }) {
   );
 }
 
+/** 0079: ჩემი საათები — გეგმა / ფაქტი / ნორმა / ზეგანაკვეთი / ღამე / დღესასწაული (დახურული თვე — snapshot, სხვა — წინასწარი) */
+function MyHours({ month }: { month: string }) {
+  const q = useQuery({ queryKey: ['roster-my-hours', month], queryFn: () => api<{ month: string; closed?: boolean; row: TsRow | null }>('/roster/my/hours', { query: { month } }) });
+  const x = q.data?.row;
+  if (!x) return null;
+  const item = (l: string, v: string, hint?: string) => <div className="stack" style={{ gap: 0 }} title={hint}><span className="small muted">{l}</span><strong className="mono">{v}</strong></div>;
+  return <section className="card card-pad row" style={{ gap: 22, flexWrap: 'wrap' }} aria-label="ჩემი საათები">
+    {item('ფაქტი, სთ', fmtH(x.total_hours ?? x.worked_hours), `გეგმა: ${fmtH(x.plan_hours)}`)}{item('ნორმა, სთ', fmtH(x.norm_hours), 'სამუშაო დღეები × დღის ნორმა × განაკვეთი − არყოფნა')}
+    {item('ზეგანაკვეთი, სთ', fmtH(x.overtime_hours))}{x.ot_comp_hours ? item('ნაცვლად დასვენება', `${x.comp_days} დღე`, `${fmtH(x.ot_comp_hours)} სთ`) : null}
+    {item('ღამე, სთ', fmtH(x.person.night ?? x.night_hours))}{item('დღესასწაული, სთ', fmtH(x.person.holiday ?? x.holiday_hours))}
+    {(x.person.no_show ?? x.no_show) > 0 && item('არ გამოცხადდა', String(x.person.no_show ?? x.no_show))}
+    <span className={`chip ${q.data?.closed ? 'info' : 'warn'}`} style={{ alignSelf: 'center' }}>{q.data?.closed ? 'თვე დახურულია' : 'წინასწარი'}</span>
+  </section>;
+}
+
 function MySchedule({ refs }: { refs: Refs }) {
   const [sp, setSp] = useSearchParams();
   const month = sp.get('month') ?? todayISO().slice(0, 7);
@@ -55,6 +70,7 @@ function MySchedule({ refs }: { refs: Refs }) {
       <span className="grow" />{q.data?.staff && <span>{q.data.staff.name} · <strong>{q.data.hours ?? 0} სთ</strong> · {q.data.entries.length} ცვლა</span>}
     </div>
     <ErrorBox error={q.error} />
+    <MyHours month={month} />
     {mineAbs.length > 0 && <div className="row small" style={{ flexWrap: 'wrap', gap: 8 }}>{mineAbs.map((a) => <span key={a.id} className="chip info"><TypeDot c={a.color} />{a.type_name}: {period(a.date_from, a.date_to)} · {ABS_STATUS[a.status]?.[1]}</span>)}</div>}
     {q.isLoading ? <Loading /> : <div className="card"><table className="table"><thead><tr><th>დღე</th><th>ცვლა</th><th>დრო</th><th>სთ</th><th>განყოფილება</th><th>მორიგეობა</th><th>შენიშვნა</th><th /></tr></thead>
       <tbody>{q.data?.entries.map((e) => <tr key={e.id}><td style={{ whiteSpace: 'nowrap' }}>{ddmm(e.day)} <span className="muted">{DOW_KA[dowOf(e.day)]}</span></td>
@@ -236,7 +252,9 @@ export function AbsenceDialog({ id, onClose }: { id: string; onClose: () => void
   const save = useMutation({ mutationFn: () => api(`/roster/absences/${id}`, { method: 'PATCH', body: { document_no: doc } }), onSuccess: () => { setDoc(null); done(); } });
   const up = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('file', f); return apiUpload(`/roster/absences/${id}/document`, fd); }, onSuccess: done });
   const a = q.data; const b = errBody(act.error);
-  return <Modal title={a ? `#${a.no} · ${a.type_name}` : 'მოთხოვნა'} width={620} onClose={onClose} footer={<button className="btn" type="button" onClick={onClose}>დახურვა</button>}>
+  return <Modal title={a ? `#${a.no} · ${a.type_name}` : 'მოთხოვნა'} width={620} onClose={onClose} footer={<>
+    {a && a.status !== 'rejected' && a.status !== 'cancelled' && <button className="btn" type="button" onClick={() => printApplication(a)} title="განცხადების ფორმა (ბეჭდვა / PDF)">ბეჭდვა — განცხადება</button>}
+    <span className="grow" /><button className="btn" type="button" onClick={onClose}>დახურვა</button></>}>
     {q.isLoading || !a ? <><Loading /><ErrorBox error={q.error} /></> : <div className="stack">
       <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}><Chip m={ABS_STATUS} s={a.status} /><strong>{a.staff_name}</strong><span className="muted">{a.department_name}</span></div>
       <span>{period(a.date_from, a.date_to)} · <strong>{Number(a.days)}</strong> {a.has_balance ? 'დღე (ბალანსიდან)' : 'დღე'}{a.shortened_from ? ` · ადრე დასრულდა (იყო ${dateGe(a.shortened_from)}-მდე)` : ''}</span>
@@ -278,6 +296,27 @@ export function AbsenceDialog({ id, onClose }: { id: string; onClose: () => void
       <ErrorBox error={act.error ?? save.error ?? up.error} />
     </div>}
   </Modal>;
+}
+
+/** 0079: არყოფნის განცხადების ფორმა (ბრაუზერის ბეჭდვა) — თანამშრომლის ხელმოწერა, ხელმძღვანელის / HR-ის ვიზა */
+function printApplication(a: AbsDetail) {
+  const e = (x: string | null | undefined) => (x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const w = window.open('', '_blank', 'width=820,height=1000');
+  if (!w) return;
+  w.document.write(`<!doctype html><html lang="ka"><head><meta charset="utf-8"><title>განცხადება #${e(a.no)}</title><style>
+    @page{size:A4;margin:20mm} body{font:14px/1.6 system-ui,sans-serif;color:#111;margin:0} .r{text-align:right} h1{font-size:18px;text-align:center;margin:40px 0 24px}
+    .s{margin-top:56px;display:grid;grid-template-columns:1fr 1fr;gap:48px} .s div{border-top:1px solid #111;padding-top:4px;font-size:12px} .v{margin-top:40px;font-size:12px} .v div{margin-top:18px}
+  </style></head><body>
+    <div class="r">ადამიანური რესურსების მართვის სამსახურს<br>${e(a.department_name)}<br>${e(a.position_name)}<br><strong>${e(a.staff_name)}</strong></div>
+    <h1>განცხადება</h1>
+    <p>გთხოვთ, მომცეთ ${e(a.type_name.toLowerCase())} ${dateGe(a.date_from)}-დან ${dateGe(a.date_to)}-ის ჩათვლით (${Number(a.days)} ${a.has_balance || a.type_code === 'ANNUAL' ? 'სამუშაო ' : ''}დღე).</p>
+    ${a.note ? `<p>${e(a.note)}</p>` : ''}${a.document_no ? `<p>დოკუმენტი №: ${e(a.document_no)}</p>` : ''}
+    <div class="s"><div>თარიღი: ${dateGe(a.created_at.slice(0, 10))}</div><div>ხელმოწერა</div></div>
+    <div class="v"><div>განყოფილების ხელმძღვანელი: ${a.head_at ? `${e(a.head_by_name)} · ${dateGe(a.head_at.slice(0, 10))} (EMR)` : '______________________'}</div>
+      <div>HR: ${a.hr_at ? `${e(a.hr_by_name)} · ${dateGe(a.hr_at.slice(0, 10))} (EMR)` : '______________________'}</div>
+      <div style="color:#555">EMR მოთხოვნა #${e(a.no)} · სტატუსი: ${e(ABS_STATUS[a.status]?.[1] ?? a.status)}</div></div>
+    <script>window.onload=()=>window.print()</script></body></html>`);
+  w.document.close();
 }
 
 // ---------------------------------------------------------------- „არ შემიძლია“ / სურვილები

@@ -61,7 +61,8 @@ export default function Roster() {
                 {!room.staff.length && <tr><td className="muted small">მუდმივი გუნდი არ არის</td></tr>}
               </tbody></table>
               <div className="card-pad small" style={{ borderTop: '1px solid var(--line-soft)' }}><span className="muted">დღის გუნდი: </span>
-                {room.team.length ? room.team.map((m) => <span key={`${m.user_id}${m.role_code}`} className={`chip ${m.source === 'day' ? 'info' : ''}`} style={{ margin: 2 }}>{m.name.split(' ')[0]} · {m.role_name}</span>) : '—'}</div>
+                {room.team.length ? room.team.map((m) => <span key={`${m.user_id}${m.role_code}`} className={`chip ${m.absent ? 'danger' : m.source === 'day' ? 'info' : ''}`} style={{ margin: 2, textDecoration: m.absent ? 'line-through' : undefined }}
+                  title={m.absent ? 'არყოფნაშია (ცვლები და მორიგეობა) — ოპერაციის გუნდში ავტომატურად არ ემატება' : undefined}>{m.name.split(' ')[0]} · {m.role_name}{m.absent ? ' · არყოფნა' : ''}</span>) : '—'}</div>
             </section>))}
         </div>
       </>}

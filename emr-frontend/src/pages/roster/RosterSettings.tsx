@@ -1,6 +1,6 @@
 import { Field } from '../../components/ui';
 
-/** ცვლები / მორიგეობა (0077): სამუშაო დროის წესები (warn / block), ნორმა, სხვა განყოფილება, შეტყობინებები, მორიგის ტელეფონი, კოპირება */
+/** ცვლები / მორიგეობა (0077–0079): სამუშაო დროის წესები (warn / block), ნორმა, სხვა განყოფილება, შეტყობინებები, მორიგის ტელეფონი, კოპირება */
 const MODES: [string, string][] = [['warn', 'გაფრთხილება'], ['block', 'დაბლოკვა'], ['off', 'გამორთული']];
 export function RosterSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
   const v = <T,>(k: string) => s[k] as T;
@@ -58,6 +58,32 @@ export function RosterSettings({ s, set }: { s: Record<string, unknown>; set: (v
           <label className="row"><input type="checkbox" checked={v<boolean>('open_shift_notify') !== false} onChange={(e) => upd('open_shift_notify', e.target.checked)} /> დასაფარი — შეტყობინება კოლეგებს</label>
         </div>
       </div>
+      <strong className="small">საათები / ტაბელი, თვის დახურვა, კავშირები (0079)</strong>
+      <div style={grid}>
+        <Field label="კვირის ნორმა (სთ, FTE 1.0)" htmlFor="rs-wn" hint="დღის ნორმა = კვირის / 5 × FTE"><input id="rs-wn" className="input mono" type="number" min={20} max={60} value={v<number>('week_norm_hours') ?? 40} onChange={(e) => upd('week_norm_hours', Number(e.target.value))} /></Field>
+        <Field label="ზეგანაკვეთი" htmlFor="rs-ob" hint="ფაქტი + ჩათვლილი არყოფნა − თვის ნორმა"><select id="rs-ob" className="select" value={v<string>('overtime_basis') ?? 'month'} onChange={(e) => upd('overtime_basis', e.target.value)}>
+          <option value="month">თვის ნორმაზე მეტი</option><option value="off">არ ითვლება (მხოლოდ საათები)</option></select></Field>
+        <Field label="ზეგანაკვეთი დახურვისას (ნაგულისხმევი)" htmlFor="rs-od" hint="HR ცვლის თითოეულ თანამშრომელზე"><select id="rs-od" className="select" value={v<string>('overtime_default') ?? 'pay'} onChange={(e) => upd('overtime_default', e.target.value)}>
+          <option value="pay">ანაზღაურება</option><option value="comp">ნაცვლად დასვენება (COMP)</option></select></Field>
+        <Field label="COMP — არყოფნის ტიპის კოდი" htmlFor="rs-ct" hint="ბალანსიანი ტიპი (ნაგულისხმევი COMP)"><input id="rs-ct" className="input mono" value={v<string>('comp_absence_type') ?? 'COMP'} onChange={(e) => upd('comp_absence_type', e.target.value.toUpperCase())} /></Field>
+        <Field label="ღამის საათები" htmlFor="rs-nf" hint="შრომის კოდექსი: 22:00–06:00"><div className="row" style={{ gap: 6 }}>
+          <input id="rs-nf" className="input mono" type="time" value={v<string>('night_from') ?? '22:00'} onChange={(e) => upd('night_from', e.target.value)} />
+          <input className="input mono" type="time" aria-label="ღამის საათების დასასრული" value={v<string>('night_to') ?? '06:00'} onChange={(e) => upd('night_to', e.target.value)} /></div></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24 }}>
+          <label className="row"><input type="checkbox" checked={v<boolean>('close_requires_submit') !== false} onChange={(e) => upd('close_requires_submit', e.target.checked)} /> დახურვამდე — შემდგენის წარდგენა</label>
+        </div>
+        <Field label="კონსულტაცია — მორიგე ექიმი" htmlFor="rs-lc"><select id="rs-lc" className="select" value={v<string>('link_consult') ?? 'hint'} onChange={(e) => upd('link_consult', e.target.value)}>
+          <option value="hint">მოთხოვნისას ჩანს</option><option value="duty">ჩანს + სასწრაფო — მხოლოდ მორიგეს</option><option value="off">გამორთული</option></select></Field>
+        <Field label="ბიომედი — მორიგე ინჟინერი" htmlFor="rs-lb"><select id="rs-lb" className="select" value={v<string>('link_bme') ?? 'hint'} onChange={(e) => upd('link_bme', e.target.value)}>
+          <option value="hint">შეკეთებაზე ჩანს</option><option value="duty">ჩანს + P1 / უსაფრთხოება: SMS / ელფოსტა — მხოლოდ მორიგეს</option><option value="off">გამორთული</option></select></Field>
+        <Field label="საოპერაციოს გუნდი" htmlFor="rs-lo" hint="გუნდში დამატებისას — დასადასტურებელი გაფრთხილება"><select id="rs-lo" className="select" value={v<string>('link_or') ?? 'absence'} onChange={(e) => upd('link_or', e.target.value)}>
+          <option value="absence">არყოფნა (+ დღის გუნდში ავტომატურად არ ემატება)</option><option value="absence_shift">არყოფნა + „განრიგში ცვლა არ აქვს“</option><option value="off">გამორთული</option></select></Field>
+        <Field label="პაციენტი / ექთანი — ზღვარი" htmlFor="rs-nr" hint="პალატა / ინტენსიური / რეანიმაცია; ინფორმაციული"><div className="row" style={{ gap: 6 }}>
+          {(['ward', 'intensive', 'icu'] as const).map((k, i) => { const r = (v<Record<string, number>>('nurse_ratio') ?? { ward: 8, intensive: 4, icu: 2 }); return (
+            <input key={k} id={i === 0 ? 'rs-nr' : undefined} className="input mono" type="number" min={1} max={50} style={{ maxWidth: 70 }} aria-label={`ზღვარი — ${k}`} value={r[k] ?? 8}
+              onChange={(e) => upd('nurse_ratio', { ...r, [k]: Number(e.target.value) })} />); })}</div></Field>
+      </div>
+      <span className="hint">ნორმა / ზეგანაკვეთის განმარტება — HR / იურისტის დადასტურებით (შრომის კოდექსი; სპეციფიკური რეჟიმი — 48 სთ). კავშირები მხოლოდ გამოქვეყნებულ განრიგს ეყრდნობა და ინფორმაციულია — გადაწყვეტილებას იღებს მომხმარებელი.</span>
       <span className="hint">შეტყობინება მხოლოდ EMR-ის ანგარიშიან თანამშრომლებს მიდის. ცვლის შაბლონები, მორიგის როლები, როტაცია, დღესასწაულები, პოზიციები — „ცვლები და მორიგეობა → ცნობარები“.</span>
     </div>
   );

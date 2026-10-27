@@ -19,6 +19,10 @@ export interface RosterSettings {
   absence_unit_mode: 'weekdays' | 'roster'; accrual: 'annual' | 'monthly'; balance_overdraw: 'block' | 'warn';
   swap_approval: 'head' | 'none'; swap_min_notice_hours: number; open_shift_volunteer: boolean; open_shift_notify: boolean;
   prefs_mode: 'warn' | 'off'; prefs_deadline_day: number; unavailable_max_per_month: number;
+  // 0079: საათები / ტაბელი, დახურვა, კავშირები
+  week_norm_hours: number; overtime_basis: 'month' | 'off'; overtime_default: 'pay' | 'comp'; comp_absence_type: string; night_from: string; night_to: string;
+  close_requires_submit: boolean; link_consult: 'off' | 'hint' | 'duty'; link_bme: 'off' | 'hint' | 'duty'; link_or: 'off' | 'absence' | 'absence_shift';
+  nurse_ratio: { ward: number; intensive: number; icu: number };
 }
 
 export const CATEGORIES = ['doctor', 'nurse', 'junior', 'tech', 'admin', 'other'] as const;
@@ -105,6 +109,9 @@ export function localMs(day: string, hhmm: string) {
   const guess = Date.parse(`${day}T${hhmm.slice(0, 5)}:00Z`);
   return guess - offsetMin(new Date(guess)) * 60000;
 }
+/** UTC ms → ადგილობრივი თარიღი (YYYY-MM-DD) */
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+export const localDay = (t: number | Date) => dayFmt.format(typeof t === 'number' ? new Date(t) : t);
 export const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
 /** ISO კვირის დღე 1 (ორშ.) … 7 (კვ.) */
@@ -186,13 +193,27 @@ export function evaluate(entries: RuleEntry[], s: RosterSettings): Violation[] {
   return out;
 }
 
-/** სხვა მოდულებისთვის (0079: კონსულტაცია, ბიომედი, საოპერაციო): ვინ არის მორიგე / ცვლაში. გამორთული მოდული — ცარიელი */
+/** ექთანი / პაციენტი — ზღვარი განყოფილების დონით (ინფორმაციული; ავტომატური გადაწყვეტილება არ არის) */
+export const ratioLimit = (s: Pick<RosterSettings, 'nurse_ratio'>, careLevel: string | null | undefined) =>
+  (s.nurse_ratio ?? { ward: 8, intensive: 4, icu: 2 })[(careLevel ?? 'ward') as 'ward' | 'intensive' | 'icu'] ?? 8;
+export interface NowPerson { user_id: string | null; staff_id: string; name: string; phone: string | null; position_name: string | null; category: string | null; department_id: string;
+  department_name: string; code: string; kind: string; starts_at: Date | string; ends_at: Date | string; duty_name: string | null; duty_level: number | null }
+
+/**
+ * სხვა მოდულებისთვის (0079): ვინ არის მორიგე / ცვლაში, არყოფნა, ექთნების რაოდენობა ახლა. ყველგან — მხოლოდ გამოქვეყნებული / დახურული განრიგი.
+ * გამორთული მოდული — ცარიელი შედეგი (settings → null).
+ */
 @Injectable()
 export class RosterLookup {
   constructor(@InjectDb() private readonly db: Database) {}
   async enabled(ex: Ex = this.db) {
     const m = await ex.selectFrom('system_modules').select(['enabled']).where('code', '=', 'roster').executeTakeFirst();
     return !!m?.enabled;
+  }
+  /** მოდულის პარამეტრები (გამორთული — null) */
+  async settings(ex: Ex = this.db): Promise<RosterSettings | null> {
+    const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'roster').executeTakeFirst();
+    return m?.enabled ? (m.settings as unknown as RosterSettings) : null;
   }
   /** გამოქვეყნებული განრიგის მორიგეები მოცემულ მომენტში */
   async onDuty(at: Date, f: { departmentId?: string; dutyRoleId?: string } = {}, ex: Ex = this.db) {
@@ -208,6 +229,83 @@ export class RosterLookup {
     if (f.departmentId) q = q.where('r.department_id', '=', f.departmentId);
     if (f.dutyRoleId) q = q.where('e.duty_role_id', '=', f.dutyRoleId);
     return q.execute();
+  }
+  /**
+   * ახლა ცვლაში (მორიგე — პირველი): განყოფილება (განრიგის), კატეგორია (პოზიციით), უფლება (ანგარიშის) — მაგ. კონსულტაცია: განყოფილება + ექიმი;
+   * ბიომედი: med_engineer. „მორიგეობა სახლიდან“ შედის (გამოძახებადია).
+   */
+  async now(f: { departmentId?: string; category?: string; capability?: string }, at = new Date(), ex: Ex = this.db): Promise<NowPerson[]> {
+    if (!(await this.enabled(ex))) return [];
+    let q = ex.selectFrom('roster_entries as e').innerJoin('rosters as r', 'r.id', 'e.roster_id').innerJoin('staff_members as s', 's.id', 'e.staff_id')
+      .innerJoin('departments as d', 'd.id', 'r.department_id').innerJoin('shift_templates as t', 't.id', 'e.shift_template_id')
+      .leftJoin('staff_positions as p', 'p.id', 's.position_id').leftJoin('users as u', 'u.id', 's.user_id').leftJoin('duty_roles as dr', 'dr.id', 'e.duty_role_id')
+      .select(['s.user_id', 'e.staff_id', staffName('s').as('name'), sql<string | null>`coalesce(dr.phone, s.phone, u.phone)`.as('phone'), 'p.name as position_name', 'p.category',
+        'r.department_id', 'd.name as department_name', 't.code', 't.kind', 'e.starts_at', 'e.ends_at', 'dr.name as duty_name', 'e.duty_level'])
+      .where('e.status', '=', 'active').where('r.status', 'in', ['published', 'closed']).where('e.starts_at', '<=', at).where('e.ends_at', '>', at)
+      .orderBy(sql`e.duty_role_id IS NULL`).orderBy('e.duty_level').orderBy('s.last_name');
+    if (f.departmentId) q = q.where('r.department_id', '=', f.departmentId);
+    if (f.category) q = q.where('p.category', '=', f.category);
+    if (f.capability) q = q.where('s.user_id', 'is not', null).where((eb) => eb.exists(eb.selectFrom('user_capabilities as c').select('c.user_id').whereRef('c.user_id', '=', 's.user_id')
+      .where(sql<boolean>`c.capabilities && ARRAY[${f.capability}]::VARCHAR(30)[]`)));
+    const rows = await q.execute();
+    const seen = new Set<string>();
+    return rows.filter((x) => (seen.has(x.staff_id) ? false : (seen.add(x.staff_id), true)));
+  }
+  /** დადასტურებული არყოფნა (ანგარიშიანი თანამშრომლები) დღეებში [from, to] — ტიპის გარეშე (კონფიდენციალურობა, 0078 D4) */
+  async absentUsers(userIds: string[], from: string, to: string, ex: Ex = this.db) {
+    const out = new Map<string, { no: string; from: string; to: string }>();
+    if (!userIds.length || !(await this.enabled(ex))) return out;
+    const rows = await ex.selectFrom('absence_requests as a').innerJoin('staff_members as s', 's.id', 'a.staff_id')
+      .select(['s.user_id', sql<string>`a.no::text`.as('no'), sql<string>`to_char(a.date_from, 'YYYY-MM-DD')`.as('from'), sql<string>`to_char(a.date_to, 'YYYY-MM-DD')`.as('to')])
+      .where('s.user_id', 'in', userIds).where('a.status', '=', 'approved').where('a.date_from', '<=', to).where('a.date_to', '>=', from).execute();
+    for (const r of rows) if (r.user_id) out.set(r.user_id, { no: r.no, from: r.from, to: r.to });
+    return out;
+  }
+  /**
+   * ცვლის დაფარვა ინტერვალში: rostered — ვისი ძირითადი განყოფილების თვის განრიგი გამოქვეყნებულია (მაშინ ცვლის არქონას აზრი აქვს);
+   * covered — ვისაც [from, to)-ს გადამფარავი აქტიური ცვლა აქვს (ნებისმიერ გამოქვეყნებულ განრიგში).
+   */
+  async shiftCoverage(userIds: string[], from: Date, to: Date, ex: Ex = this.db) {
+    const res = { rostered: new Set<string>(), covered: new Set<string>() };
+    if (!userIds.length || !(await this.enabled(ex))) return res;
+    const month = `${localDay(from).slice(0, 7)}-01`;
+    const [ros, cov] = await Promise.all([
+      ex.selectFrom('staff_members as s').innerJoin('rosters as r', 'r.department_id', 's.department_id').select('s.user_id')
+        .where('s.user_id', 'in', userIds).where('r.month', '=', month).where('r.status', 'in', ['published', 'closed']).execute(),
+      ex.selectFrom('roster_entries as e').innerJoin('rosters as r', 'r.id', 'e.roster_id').innerJoin('staff_members as s', 's.id', 'e.staff_id').select('s.user_id')
+        .where('s.user_id', 'in', userIds).where('e.status', '=', 'active').where('r.status', 'in', ['published', 'closed']).where('e.starts_at', '<', to).where('e.ends_at', '>', from).execute(),
+    ]);
+    for (const r of ros) if (r.user_id) res.rostered.add(r.user_id);
+    for (const r of cov) if (r.user_id) res.covered.add(r.user_id);
+    return res;
+  }
+  /** ექთნები ახლა ცვლაში (კატეგორია „ექთანი“, „მორიგეობა სახლიდან“ გარდა) — განყოფილება → რაოდენობა */
+  async nursesNow(departmentIds: string[], at = new Date(), ex: Ex = this.db) {
+    const out = new Map<string, number>();
+    if (!departmentIds.length || !(await this.enabled(ex))) return out;
+    const rows = await ex.selectFrom('roster_entries as e').innerJoin('rosters as r', 'r.id', 'e.roster_id').innerJoin('staff_members as s', 's.id', 'e.staff_id')
+      .innerJoin('staff_positions as p', 'p.id', 's.position_id').innerJoin('shift_templates as t', 't.id', 'e.shift_template_id')
+      .select(['r.department_id', sql<number>`count(DISTINCT e.staff_id)::int`.as('n')])
+      .where('r.department_id', 'in', departmentIds).where('e.status', '=', 'active').where('r.status', 'in', ['published', 'closed'])
+      .where('e.starts_at', '<=', at).where('e.ends_at', '>', at).where('p.category', '=', 'nurse').where('t.kind', '<>', 'oncall_home')
+      .groupBy('r.department_id').execute();
+    for (const r of rows) out.set(r.department_id, r.n);
+    return out;
+  }
+  /** სტაციონარის / ICU დატვირთვა ახლა: პაციენტი (აქტიური მიმაგრება) / ექთანი ცვლაში; ზღვარი — nurse_ratio (care_level) */
+  async load(at = new Date(), ex: Ex = this.db) {
+    const s = await this.settings(ex);
+    if (!s) return null;
+    const deps = await ex.selectFrom('departments as d').select(['d.id', 'd.name', 'd.care_level',
+      sql<number>`(SELECT count(*)::int FROM bed_assignments a WHERE a.department_id = d.id AND a.ended_at IS NULL)`.as('patients')])
+      .where('d.type', '=', 'inpatient').where('d.is_active', '=', true).orderBy('d.name').execute();
+    const nurses = await this.nursesNow(deps.map((d) => d.id), at, ex);
+    return deps.map((d) => {
+      const n = nurses.get(d.id) ?? 0; const limit = ratioLimit(s, d.care_level);
+      const ratio = n ? Math.round((d.patients / n) * 10) / 10 : null;
+      return { department_id: d.id, department_name: d.name, care_level: d.care_level, patients: d.patients, nurses: n, ratio, limit,
+        level: d.patients === 0 ? 'ok' : !n ? 'none' : ratio! > limit ? 'over' : 'ok' };
+    });
   }
 }
 

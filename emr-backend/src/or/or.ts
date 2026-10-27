@@ -671,10 +671,10 @@ export class OrService {
         }
         if (c.scheduled_start && !started) {
           const cf = await this.conflicts(trx, c, c.room_id!, new Date(c.scheduled_start), new Date(c.scheduled_end!), s.turnover_min, [x.id]);
-          if (cf.people.length && !dto.confirm) {
-            const w = cf.people.map((pp) => `${pp.name} ამავე დროს — ${pp.case_no}${pp.room_code ? ` (ოთახი ${pp.room_code})` : ''}`);
-            throw new ConflictException({ code: 'CONFIRM_REQUIRED', message: w.join('; '), warnings: w });
-          }
+          const w = cf.people.map((pp) => `${pp.name} ამავე დროს — ${pp.case_no}${pp.room_code ? ` (ოთახი ${pp.room_code})` : ''}`);
+          // 0079: ცვლები / მორიგეობა — არყოფნა / ცვლის არქონა (link_or)
+          w.push(...await this.roster.rosterWarnings(trx, x.id, `${x.last_name} ${x.first_name}`, new Date(c.scheduled_start), new Date(c.scheduled_end!)));
+          if (w.length && !dto.confirm) throw new ConflictException({ code: 'CONFIRM_REQUIRED', message: w.join('; '), warnings: w });
         }
         const row = await trx.insertInto('or_case_team').values({ case_id: c.id, role_code: role.code, user_id: x.id, added_by: u.id, in_at: started ? at : null })
           .returning('id').executeTakeFirstOrThrow();

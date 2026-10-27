@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ReportIncidentButton, openIncidentReport } from '../../components/IncidentReport';
 import { ErrorBox, Field, Loading, Modal, useDebounced, useToast } from '../../components/ui';
 import { dateGe, hhmm, money, todayISO, tsDate } from '../../lib/format';
+import { OnDutyHint } from '../roster/RosterLinks';
 import { BME_RPT, DeviceKpi } from './BmeReports';
 
 // ---------------------------------------------------------------- ტიპები (0075)
@@ -391,6 +392,7 @@ function TriagePanel({ r, refs, onDone }: { r: RepairFull; refs: Refs; onDone: (
           <option value="">— უცვლელი —</option><option value="down">გაუმართავი</option><option value="restricted">შეზღუდულად მუშა</option><option value="operational">მუშა</option></select></Field>
         <Field label="შემცვლელი აპარატი" htmlFor="tl"><input id="tl" className="input" value={f.loaner_text} onChange={(e) => setF({ ...f, loaner_text: e.target.value })} placeholder="მაგ. BME-00042 / მომწოდებლის დროებითი" /></Field>
       </div>
+      <OnDutyHint purpose="bme" selected={f.assignee_id} pickLabel="მინიჭება" onPick={(id) => refs.engineers.some((e) => e.id === id) && setF((x) => ({ ...x, assignee_id: id }))} />
       {f.performer_kind === 'external' && <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
         {cov?.coverage && <label className="row"><input type="checkbox" checked={f.use_coverage} onChange={(e) => setF({ ...f, use_coverage: e.target.checked })} /> დაფარულია ({cov.coverage === 'warranty' ? 'გარანტია' : 'კონტრაქტი'}) — SLA {cov.response_hours ? 'კონტრაქტიდან' : 'პარამეტრებიდან'}</label>}
         {!r.vendor_called_at && <label className="row"><input type="checkbox" checked={f.vendor_called} onChange={(e) => setF({ ...f, vendor_called: e.target.checked })} /> მომწოდებელი უკვე გამოძახებულია</label>}

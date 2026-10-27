@@ -93,7 +93,9 @@ export interface CaseRow {
 }
 export interface TeamMember { id: string; role_code: string; role_name: string; grp: string; user_id: string; name: string; added_at: string; in_at: string | null; out_at: string | null;
   replaced_by: string | null; removed_at: string | null; remove_reason: string | null; added_by_name: string | null; auto: boolean; removed_auto: boolean }
-export interface DayMember { user_id: string; name: string; role_code: string; role_name: string; grp: string; source: 'room' | 'day'; override_id: string | null }
+export interface DayMember { user_id: string; name: string; role_code: string; role_name: string; grp: string; source: 'room' | 'day'; override_id: string | null;
+  /** 0079: არყოფნაშია (ცვლები / მორიგეობა) — ოპერაციის გუნდში ავტომატურად არ ემატება */
+  absent?: boolean }
 export interface CaseTime { id: string; kind: TimeKind; at: string; destination: string | null; created_at: string; correction_reason: string | null; superseded_by: string | null; by_name: string }
 export interface WhoCheck { id: string; phase: string; answers: { item_id: string; label: string; answer: string }[]; note: string | null; done_at: string; voided_at: string | null;
   void_reason: string | null; by_name: string }

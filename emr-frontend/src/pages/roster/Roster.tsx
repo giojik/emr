@@ -6,14 +6,16 @@ import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { hhmm, todayISO, tsDate } from '../../lib/format';
 import { useModules } from '../../lib/modules';
 import { ApprovalsPage, MyHub, NewOpenShiftDialog, OpenShiftDialog, useInbox } from './RosterLeave';
+import HoursPage from './RosterHours';
+import { LoadCard } from './RosterLinks';
 import RosterSetupPage from './RosterSetup';
 import RosterStaffPage from './RosterStaff';
 import {
-  CAT_KA, DOW_KA, KIND_KA, STATUS_KA, ddmm, monthLabel, timeRange, useRefs,
+  ATT_KA, CAT_KA, DOW_KA, KIND_KA, STATUS_KA, ddmm, monthLabel, timeRange, useRefs,
   type Category, type Entry, type OpenShift, type Refs, type RosterDetail, type RosterRow, type Template, type Violation,
 } from './types';
 
-/** ცვლები და მორიგეობა (0077–0078): განრიგი (ბადე), მორიგეები ახლა, ჩემი განრიგი (+ არყოფნა / გაცვლა / სურვილები / დასაფარი), დასადასტურებელი, თანამშრომლები, ცნობარები */
+/** ცვლები და მორიგეობა (0077–0079): განრიგი (ბადე, ფაქტი), მორიგეები ახლა (+ დატვირთვა), ჩემი განრიგი (+ არყოფნა / გაცვლა / სურვილები / დასაფარი / საათები), დასადასტურებელი, საათები / ტაბელი, თანამშრომლები, ცნობარები */
 export default function Roster() {
   const mods = useModules(); const refs = useRefs();
   const [sp] = useSearchParams();
@@ -24,7 +26,7 @@ export default function Roster() {
   const inbox = useInbox(!!enabled && !!refs.data);
   const n = inbox.data?.counts.total ?? 0;
   const tabs: [string, string, boolean][] = [
-    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true], ['approvals', `დასადასტურებელი${n ? ` (${n})` : ''}`, manager || n > 0],
+    ['grid', 'განრიგი', anyDept], ['duty', 'მორიგეები', true], ['my', 'ჩემი განრიგი', true], ['approvals', `დასადასტურებელი${n ? ` (${n})` : ''}`, manager || n > 0], ['hours', 'საათები / ტაბელი', !!c?.timesheet],
     ['staff', 'თანამშრომლები', !!c && (c.staff_all || c.view_all || c.edit_depts.length > 0)], ['setup', 'ცნობარები', !!c && (c.setup || c.hr || c.edit_all || c.edit_depts.length > 0)]];
   const def = anyDept ? 'grid' : 'duty';
   const tab = sp.get('tab') ?? def;
@@ -39,7 +41,7 @@ export default function Roster() {
       </header>
       {!enabled ? <div className="content"><div className="card empty">მოდული „ცვლები და მორიგეობა“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
         : refs.error ? <div className="content"><ErrorBox error={refs.error} /></div>
-        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyHub refs={refs.data!} /> : tab === 'approvals' ? <ApprovalsPage refs={refs.data!} /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
+        : tab === 'duty' ? <DutyPage refs={refs.data!} /> : tab === 'my' ? <MyHub refs={refs.data!} /> : tab === 'approvals' ? <ApprovalsPage refs={refs.data!} /> : tab === 'hours' ? <HoursPage refs={refs.data!} /> : tab === 'staff' ? <RosterStaffPage refs={refs.data!} />
         : tab === 'setup' ? <RosterSetupPage refs={refs.data!} /> : <GridPage refs={refs.data!} />}
     </>
   );
@@ -145,6 +147,7 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
           <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'clear' })}>გასუფთავება</button>
           <button className="btn sm primary" type="button" onClick={() => setDlg({ kind: 'publish' })}>გამოქვეყნება</button></>}
         {edit && r.status === 'published' && <button className="btn sm" type="button" onClick={() => setDlg({ kind: 'newopen' })}>+ დასაფარი</button>}
+        {!draft && refs.can.timesheet && <Link className="btn sm" to={`/roster?tab=hours&month=${r.month.slice(0, 7)}&dept=${r.department_id}`}>ტაბელი</Link>}
       </div>
       {edit && draft && (
         <div className="card card-pad row" style={{ flexWrap: 'wrap', gap: 6, padding: 10 }} role="toolbar" aria-label="ფუნჯი">
@@ -159,7 +162,8 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
             {duties.flatMap((d) => [<option key={`${d.id}1`} value={`${d.id}|1`}>★ {d.name}</option>, ...(d.has_backup ? [<option key={`${d.id}2`} value={`${d.id}|2`}>☆ {d.name} (II)</option>] : [])])}</select>}
           <span className="small muted grow" style={{ textAlign: 'right' }}>{brush ? (brush.kind === 'erase' ? 'დააჭირეთ ცვლას წასაშლელად' : 'დააჭირეთ უჯრას — დაემატება') : 'ფუნჯის გარეშე: უჯრა → ფორმა'}</span>
         </div>)}
-      {!draft && edit && <span className="hint">განრიგი გამოქვეყნებულია: ცვლილება — უჯრაზე / ცვლაზე დაჭერით, მიზეზით (ისტორიაში იწერება, თანამშრომელს ეგზავნება შეტყობინება).</span>}
+      {!draft && edit && <span className="hint">განრიგი გამოქვეყნებულია: ცვლილება — უჯრაზე / ცვლაზე დაჭერით, მიზეზით (ისტორიაში იწერება, თანამშრომელს ეგზავნება შეტყობინება). ფაქტი (გადახრა, „არ გამოცხადდა“) — ცვლაზე დაჭერით → „ფაქტი“; • — ფაქტი შესწორდა.</span>}
+      {r.status === 'closed' && <span className="hint">თვე დახურულია — ცვლილება შეუძლებელია (HR: „საათები / ტაბელი“ → ხელახლა გახსნა).</span>}
       <ErrorBox error={err} />
       <div className="card" style={{ overflow: 'auto', maxHeight: '70vh' }}>
         <table className="table roster-grid" style={{ fontSize: 12, borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -189,10 +193,11 @@ function Grid({ id, refs, onToast }: { id: string; refs: Refs; onToast: (m: stri
                     {(un || pr) && <span aria-hidden="true" style={{ position: 'absolute', top: 0, right: 1, fontSize: 9, lineHeight: 1, color: un ? 'var(--danger)' : '#16a34a' }}>{un ? '⊘' : '♡'}</span>}
                     {es.map((e) => { const vs = vio.get(e.id) ?? []; const blk = vs.some((v) => v.mode === 'block'); return (
                       <button key={e.id} type="button" className="mono" onClick={(ev) => { ev.stopPropagation(); chipClick(e); }}
-                        title={`${e.code} ${e.start_local}–${e.end_local} · ${Number(e.hours)} სთ${e.duty_role_id ? ` · ${refs.duty_roles.find((x) => x.id === e.duty_role_id)?.name ?? 'მორიგე'}${e.duty_level === 2 ? ' (II)' : ''}` : ''}${e.note ? ` · ${e.note}` : ''}${vs.length ? `\n${vs.map((v) => `⚠ ${v.message}`).join('\n')}` : ''}`}
+                        title={`${e.code} ${e.start_local}–${e.end_local} · ${Number(e.hours)} სთ${e.duty_role_id ? ` · ${refs.duty_roles.find((x) => x.id === e.duty_role_id)?.name ?? 'მორიგე'}${e.duty_level === 2 ? ' (II)' : ''}` : ''}${e.note ? ` · ${e.note}` : ''}${e.att_status !== 'plan' ? `\nფაქტი: ${ATT_KA[e.att_status]}${e.att_status === 'worked' ? ` ${Number(e.actual_hours)} სთ${e.actual_start_local ? ` (${e.actual_start_local}–${e.actual_end_local})` : ''}` : ''}${e.actual_note ? ` — ${e.actual_note}` : ''}` : ''}${vs.length ? `\n${vs.map((v) => `⚠ ${v.message}`).join('\n')}` : ''}`}
                         style={{ display: 'block', width: '100%', border: 0, borderRadius: 4, padding: '2px 0', margin: '1px 0', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                          background: e.color, outline: vs.length ? `2px solid ${blk ? 'var(--danger)' : '#d97706'}` : undefined, outlineOffset: -2 }}>
-                        {e.code}{e.duty_role_id ? (e.duty_level === 2 ? '☆' : '★') : ''}</button>); })}
+                          background: e.color, outline: vs.length ? `2px solid ${blk ? 'var(--danger)' : '#d97706'}` : undefined, outlineOffset: -2,
+                          opacity: e.att_status === 'no_show' ? 0.45 : 1, textDecoration: e.att_status === 'no_show' ? 'line-through' : undefined }}>
+                        {e.code}{e.duty_role_id ? (e.duty_level === 2 ? '☆' : '★') : ''}{e.att_status === 'worked' ? <sup aria-label="ფაქტი შესწორდა">•</sup> : ''}</button>); })}
                   </td>); })}
                 <td className="mono" style={{ textAlign: 'right' }}>{t?.hours ?? 0}</td>
                 <td className="mono small" style={{ whiteSpace: 'nowrap' }}>{t ? `${t.shifts} / ${t.nights} / ${t.duty}` : '—'}</td>
@@ -313,8 +318,42 @@ function EntryDialog({ r, refs, e, onClose, onDone }: { r: RosterDetail; refs: R
         {pub && <label className="row small"><input type="checkbox" checked={toOpen} onChange={(x) => setToOpen(x.target.checked)} /> მოხსნისას — „დასაფარი“ (კოლეგებს ეგზავნება შეტყობინება)</label>}</>
         : e.note && <span>{e.note}</span>}
       <ErrorBox error={save.error ?? rm.error ?? rp.error} />
+      {r.status !== 'draft' && <ActualSection r={r} e={e} kind={t?.kind ?? e.kind} onDone={onDone} />}
     </div>
   </Modal>;
+}
+
+/** 0079: ფაქტი — გეგმით / შესწორებული (რეალური დრო ან საათები; OC — გამოძახების საათები) / არ გამოცხადდა. მხოლოდ გამოქვეყნებულში, დღეს / წარსულში */
+function ActualSection({ r, e, kind, onDone }: { r: RosterDetail; e: Entry; kind: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ status: e.att_status === 'plan' ? 'worked' : e.att_status, start: e.actual_start_local ?? '', end: e.actual_end_local ?? '', hours: e.actual_hours ? String(Number(e.actual_hours)) : '', note: e.actual_note ?? '', reason: '' });
+  const m = useMutation({ mutationFn: (status: string) => api(`/roster/entries/${e.id}/actual`, { body: { status, reason: f.reason.trim(), note: f.note.trim() || null,
+    ...(status === 'worked' && { ...(f.start && f.end && { start_time: f.start, end_time: f.end }), ...(f.hours !== '' && { hours: Number(f.hours) }) }) } }), onSuccess: onDone });
+  const future = e.day > todayISO(); const can = r.can_edit && r.status === 'published' && !future;
+  const oc = kind === 'oncall_home';
+  const cur = e.att_status === 'plan' ? `გეგმით (${Number(e.hours)} სთ)` : e.att_status === 'no_show' ? 'არ გამოცხადდა (0 სთ)' : `შესწორებული: ${Number(e.actual_hours)} სთ${e.actual_start_local ? ` (${e.actual_start_local}–${e.actual_end_local})` : ''}`;
+  return <section className="card card-pad stack" style={{ gap: 8, background: 'var(--surface-2)' }}>
+    <div className="row"><strong className="small grow">ფაქტი: {cur}{e.actual_note ? ` — ${e.actual_note}` : ''}</strong>
+      {can && !open && <button className="btn sm" type="button" onClick={() => setOpen(true)}>შესწორება</button>}</div>
+    {!can && r.status === 'published' && future && <span className="small muted">ფაქტი — ცვლის დღეს ან შემდეგ</span>}
+    {can && open && <>
+      <div className="seg" role="group" aria-label="ფაქტის სტატუსი" style={{ width: 'max-content' }}>
+        <button type="button" aria-pressed={f.status === 'worked'} onClick={() => setF({ ...f, status: 'worked' })}>{oc ? 'გამოძახება' : 'ნამუშევარი (გადახრა)'}</button>
+        <button type="button" aria-pressed={f.status === 'no_show'} onClick={() => setF({ ...f, status: 'no_show' })}>არ გამოცხადდა</button></div>
+      {f.status === 'worked' && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {!oc && <><Field label="რეალური დასაწყისი" htmlFor="ac-s"><input id="ac-s" className="input mono" type="time" value={f.start} onChange={(x) => setF({ ...f, start: x.target.value })} /></Field>
+          <Field label="რეალური დასასრული" htmlFor="ac-e"><input id="ac-e" className="input mono" type="time" value={f.end} onChange={(x) => setF({ ...f, end: x.target.value })} /></Field></>}
+        <Field label={oc ? 'გამოძახებით ნამუშევარი, სთ' : 'ჩასათვლელი საათები'} htmlFor="ac-h" hint={oc ? 'სავალდებულო' : 'ცარიელი — დროიდან (− შესვენება)'}>
+          <input id="ac-h" className="input mono" type="number" min={0} max={48} step={0.25} style={{ maxWidth: 110 }} value={f.hours} onChange={(x) => setF({ ...f, hours: x.target.value })} /></Field></div>}
+      <Field label="შენიშვნა" htmlFor="ac-n"><input id="ac-n" className="input" value={f.note} maxLength={500} onChange={(x) => setF({ ...f, note: x.target.value })} /></Field>
+      <Field label="მიზეზი" htmlFor="ac-r" required hint="ისტორიაში იწერება"><input id="ac-r" className="input" value={f.reason} maxLength={500} onChange={(x) => setF({ ...f, reason: x.target.value })} /></Field>
+      <div className="row" style={{ gap: 6 }}>
+        {e.att_status !== 'plan' && <button className="btn sm" type="button" disabled={m.isPending || f.reason.trim().length < 3} onClick={() => m.mutate('plan')}>გეგმაზე დაბრუნება</button>}
+        <span className="grow" /><button className="btn sm" type="button" onClick={() => setOpen(false)}>გაუქმება</button>
+        <button className="btn sm primary" type="button" disabled={m.isPending || f.reason.trim().length < 3 || (f.status === 'worked' && (!!f.start !== !!f.end || (!f.start && f.hours === '') || (oc && f.hours === '')))}
+          onClick={() => m.mutate(f.status)}>ფაქტის შენახვა</button></div>
+      <ErrorBox error={m.error} /></>}
+  </section>;
 }
 
 function PublishDialog({ r, onClose, onDone }: { r: RosterDetail; onClose: () => void; onDone: () => void }) {
@@ -397,14 +436,17 @@ function ClearDialog({ r, onClose, onDone }: { r: RosterDetail; onClose: () => v
 }
 
 const CH_KA: Record<string, string> = { created: 'შეიქმნა', add: 'დამატება', change: 'ცვლილება', remove: 'მოხსნა', publish: 'გამოქვეყნება', copy: 'კოპირება', rotation: 'როტაცია', bulk: 'მასობრივი',
-  swap: 'გაცვლა', give: 'გადაცემა', replace: 'ჩანაცვლება', absence: 'არყოფნა', fill: 'დასაფარის შევსება' };
+  swap: 'გაცვლა', give: 'გადაცემა', replace: 'ჩანაცვლება', absence: 'არყოფნა', fill: 'დასაფარის შევსება',
+  actual: 'ფაქტი', submit: 'ტაბელის წარდგენა', close: 'თვის დახურვა', reopen: 'ხელახლა გახსნა' };
 function HistoryDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ['roster-changes', id], queryFn: () => api<{ id: string; kind: string; reason: string | null; data: Record<string, unknown>; created_at: string; user_name: string; staff_name: string | null }[]>(`/roster/rosters/${id}/changes`) });
   return <Modal title="განრიგის ისტორია" width={720} onClose={onClose}>
     {q.isLoading ? <Loading /> : <table className="table small"><thead><tr><th>დრო</th><th>ქმედება</th><th>თანამშრომელი</th><th>დეტალი</th><th>მიზეზი</th><th>ვინ</th></tr></thead>
       <tbody>{q.data?.map((c) => <tr key={c.id}><td style={{ whiteSpace: 'nowrap' }}>{tsDate(c.created_at)} {hhmm(c.created_at)}</td><td>{CH_KA[c.kind] ?? c.kind}</td><td>{c.staff_name ?? ''}</td>
         <td className="mono">{c.data.day ? `${ddmm(String(c.data.day))} ` : ''}{c.data.from ? `${String(c.data.from)} → ` : ''}{String(c.data.code ?? '')}{c.data.from_name ? ` (${String(c.data.from_name)} →)` : ''}
-          {c.data.created !== undefined ? `+${String(c.data.created)}${c.data.skipped ? ` / გამოტ. ${String(c.data.skipped)}` : ''}` : ''}{c.data.entries !== undefined ? `${String(c.data.entries)} ჩანაწ.` : ''}</td>
+          {c.data.created !== undefined ? `+${String(c.data.created)}${c.data.skipped ? ` / გამოტ. ${String(c.data.skipped)}` : ''}` : ''}{c.data.entries !== undefined ? `${String(c.data.entries)} ჩანაწ.` : ''}
+          {c.kind === 'actual' ? ` · ${ATT_KA[String(c.data.status)] ?? ''} ${String(c.data.hours)} სთ (გეგმა ${String(c.data.plan)})` : ''}
+          {c.kind === 'close' && c.data.overtime !== undefined ? `ზეგანაკვ. ${String(c.data.overtime)} სთ${c.data.comp_days ? ` · COMP ${String(c.data.comp_days)} დღე` : ''}` : ''}</td>
         <td>{c.reason ?? ''}</td><td>{c.user_name}</td></tr>)}</tbody></table>}
     <ErrorBox error={q.error} />
   </Modal>;
@@ -443,6 +485,7 @@ function DutyPage({ refs }: { refs: Refs }) {
             <div className="row"><strong className="grow">{u.name}</strong>{u.phone && <span className="mono small">☎ {u.phone}</span>}</div>
             <span className="small" style={{ color: 'var(--danger)' }}>ამ მომენტში მორიგე არ არის დანიშნული{u.department_name ? ` · ${u.department_name}` : ''}</span></section>)}
         </div>
+        {!at && <LoadCard />}
         {!groups.length && !q.data?.uncovered.length && <div className="card empty">მორიგეები არ არის (მორიგის როლები — „ცნობარები“; განრიგში — ★)</div>}
         {dept && <section className="card card-pad stack"><strong>ცვლაში ახლა — {refs.departments.find((d) => d.id === dept)?.name}</strong>
           {q.data?.on_shift.length ? <table className="table small"><thead><tr><th>თანამშრომელი</th><th>პოზიცია</th><th>ცვლა</th><th>დრო</th><th>ტელეფონი</th></tr></thead>

@@ -298,7 +298,14 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       absence_unit_mode: (v) => oneOf(v, ['weekdays', 'roster']), accrual: (v) => oneOf(v, ['annual', 'monthly']), balance_overdraw: (v) => oneOf(v, ['block', 'warn']),
       swap_approval: (v) => oneOf(v, ['head', 'none']), swap_min_notice_hours: (v) => int(v, 0, 168), open_shift_volunteer: bool, open_shift_notify: bool,
       prefs_mode: (v) => oneOf(v, ['warn', 'off']), prefs_deadline_day: (v) => int(v, 0, 28), unavailable_max_per_month: (v) => int(v, 0, 31),
+      // 0079: საათები / ტაბელი, დახურვა, კავშირები
+      week_norm_hours: (v) => int(v, 20, 60), overtime_basis: (v) => oneOf(v, ['month', 'off']), overtime_default: (v) => oneOf(v, ['pay', 'comp']),
+      comp_absence_type: (v) => typeof v === 'string' && /^[A-Z][A-Z0-9_]{1,19}$/.test(v), night_from: hhmm, night_to: hhmm, close_requires_submit: bool,
+      link_consult: (v) => oneOf(v, ['off', 'hint', 'duty']), link_bme: (v) => oneOf(v, ['off', 'hint', 'duty']), link_or: (v) => oneOf(v, ['off', 'absence', 'absence_shift']),
+      nurse_ratio: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every((k) => ['ward', 'intensive', 'icu'].includes(k))
+        && ['ward', 'intensive', 'icu'].every((k) => int((v as Record<string, unknown>)[k], 1, 50)),
     },
+    extra: async (s) => (s.night_from === s.night_to ? 'ღამის საათები: დასაწყისი და დასასრული ერთმანეთს არ უნდა ემთხვეოდეს' : null),
   },
   asset_register: {
     keys: {

@@ -50,6 +50,7 @@ export interface AbsenceBalanceEntries {
   period: Generated<number>;
   reason: string | null;
   request_id: string | null;
+  roster_id: string | null;
   staff_id: string;
   user_id: string | null;
   year: number;
@@ -4362,6 +4363,13 @@ export interface RosterChanges {
 }
 
 export interface RosterEntries {
+  actual_at: Timestamp | null;
+  actual_by: string | null;
+  actual_end: Timestamp | null;
+  actual_hours: Numeric | null;
+  actual_note: string | null;
+  actual_start: Timestamp | null;
+  att_status: Generated<string>;
   cancel_reason: string | null;
   cancelled_at: Timestamp | null;
   cancelled_by: string | null;
@@ -4417,6 +4425,7 @@ export interface RosterOpenShifts {
 }
 
 export interface Rosters {
+  close_note: string | null;
   closed_at: Timestamp | null;
   closed_by: string | null;
   created_at: Generated<Timestamp>;
@@ -4428,6 +4437,8 @@ export interface Rosters {
   published_at: Timestamp | null;
   published_by: string | null;
   status: Generated<string>;
+  timesheet_submitted_at: Timestamp | null;
+  timesheet_submitted_by: string | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -4453,6 +4464,31 @@ export interface RosterSwaps {
   to_staff_id: string;
   updated_at: Generated<Timestamp>;
   warnings: Generated<Json>;
+}
+
+export interface RosterTimesheets {
+  absence: Generated<Json>;
+  comp_days: Numeric | null;
+  created_at: Generated<Timestamp>;
+  credit_hours: Numeric | null;
+  days: Generated<Json>;
+  fte: Numeric;
+  holiday_hours: Generated<Numeric>;
+  home: boolean;
+  night_hours: Generated<Numeric>;
+  no_show: Generated<number>;
+  norm_hours: Numeric | null;
+  ot_comp_hours: Numeric | null;
+  ot_pay_hours: Numeric | null;
+  overtime_hours: Numeric | null;
+  person: Generated<Json>;
+  plan_hours: Generated<Numeric>;
+  roster_id: string;
+  shifts: Generated<number>;
+  staff_id: string;
+  total_hours: Numeric | null;
+  weekend_hours: Generated<Numeric>;
+  worked_hours: Generated<Numeric>;
 }
 
 export interface RotationPatterns {
@@ -5901,6 +5937,7 @@ export interface DB {
   roster_open_shift_offers: RosterOpenShiftOffers;
   roster_open_shifts: RosterOpenShifts;
   roster_swaps: RosterSwaps;
+  roster_timesheets: RosterTimesheets;
   rosters: Rosters;
   rotation_patterns: RotationPatterns;
   rpt_attention_sent: RptAttentionSent;

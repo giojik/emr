@@ -23,7 +23,10 @@ export interface Settings { rest_min_hours: number; rest_mode: Mode; max_continu
   max_consecutive_nights: number; nights_mode: Mode; norm_mode: 'warn' | 'off'; cross_department: 'allow' | 'warn' | 'block'; publish_notify: boolean; change_notify: boolean;
   duty_phone: 'all' | 'staff' | 'off'; copy_mode: 'weekday' | 'date';
   absence_unit_mode: 'weekdays' | 'roster'; accrual: 'annual' | 'monthly'; balance_overdraw: 'block' | 'warn'; swap_approval: 'head' | 'none'; swap_min_notice_hours: number;
-  open_shift_volunteer: boolean; open_shift_notify: boolean; prefs_mode: 'warn' | 'off'; prefs_deadline_day: number; unavailable_max_per_month: number }
+  open_shift_volunteer: boolean; open_shift_notify: boolean; prefs_mode: 'warn' | 'off'; prefs_deadline_day: number; unavailable_max_per_month: number;
+  // 0079
+  week_norm_hours: number; overtime_basis: 'month' | 'off'; overtime_default: 'pay' | 'comp'; comp_absence_type: string; night_from: string; night_to: string; close_requires_submit: boolean;
+  link_consult: 'off' | 'hint' | 'duty'; link_bme: 'off' | 'hint' | 'duty'; link_or: 'off' | 'absence' | 'absence_shift'; nurse_ratio: { ward: number; intensive: number; icu: number } }
 /** 0078: არყოფნის ტიპი */
 export interface AbsenceType { id: string; code: string; name: string; short: string; color: string; paid: boolean; counts_as_work: boolean; unit: 'workday' | 'calendar'; has_balance: boolean;
   default_days: string | null; route: 'head_hr' | 'head' | 'hr' | 'none'; requires_document: boolean; self_request: boolean; is_active: boolean; sort_order: number }
@@ -46,14 +49,17 @@ export interface OpenShift { id: string; roster_id?: string; department_id?: str
 export const SRC_KA: Record<string, string> = { absence: 'არყოფნა', cancel: 'გაუქმება', manual: 'ხელით' };
 export interface Refs { settings: Settings; positions: Position[]; templates: Template[]; duty_roles: DutyRole[]; patterns: Pattern[]; departments: Dept[]; rest: string;
   absence_types: AbsenceType[]; me: { id: string; name: string; department_id: string; category: Category | null } | null;
-  can: { setup: boolean; hr: boolean; staff_all: boolean; edit_all: boolean; view_all: boolean; edit_depts: string[]; absence_all: boolean; absence_hr: boolean; absence_depts: string[] } }
+  can: { setup: boolean; hr: boolean; staff_all: boolean; edit_all: boolean; view_all: boolean; edit_depts: string[]; absence_all: boolean; absence_hr: boolean; absence_depts: string[];
+    timesheet: boolean; timesheet_all: boolean; timesheet_close: boolean } }
 export const useRefs = () => useQuery({ queryKey: ['roster-refs'], queryFn: () => api<Refs>('/roster/refs') });
 
 export interface Staff { id: string; user_id: string | null; first_name: string; last_name: string; name: string; personal_number: string | null; phone: string | null; position_id: string | null;
   position_name: string | null; category: Category | null; department_id: string; department_name: string; fte: string; employment: string; hired_on: string | null; left_on: string | null;
   is_active: boolean; notes: string | null; user_email: string | null; user_active: boolean | null; extra_department_ids: string[] }
 export interface Entry { id: string; staff_id: string; day: string; shift_template_id: string; code: string; kind: Kind; color: string; starts_at: string; ends_at: string; hours: string;
-  duty_role_id: string | null; duty_level: number | null; note: string | null; category: Category | null; start_local: string; end_local: string }
+  duty_role_id: string | null; duty_level: number | null; note: string | null; category: Category | null; start_local: string; end_local: string;
+  /** 0079: ფაქტი */
+  att_status: 'plan' | 'worked' | 'no_show'; actual_hours: string | null; actual_note: string | null; actual_start_local: string | null; actual_end_local: string | null }
 export interface Violation { rule: 'rest' | 'continuous' | 'week' | 'nights'; mode: Mode; staff_id: string; entry_ids: string[]; day: string; message: string }
 export interface RosterRow { id: string | null; department_id: string; department_name: string; status: 'none' | 'draft' | 'published' | 'closed'; version: number | null; published_at: string | null;
   entries: number; staff: number; members: number; can_edit: boolean }
@@ -74,3 +80,25 @@ export interface RosterDetail {
 }
 export const STATUS_KA: Record<string, [string, string]> = { none: ['', 'არ არის'], draft: ['warn', 'მონახაზი'], published: ['ok', 'გამოქვეყნებული'], closed: ['info', 'დახურული'] };
 export const timeRange = (t: { start_time: string; end_time: string }) => `${t.start_time.slice(0, 5)}–${t.end_time.slice(0, 5)}`;
+
+// ---------------------------------------------------------------- 0079: საათები / ტაბელი
+export const ATT_KA: Record<string, string> = { plan: 'გეგმით', worked: 'შესწორებული ფაქტი', no_show: 'არ გამოცხადდა' };
+export interface AbsSum { type_id: string; code: string; short: string; name: string; paid: boolean; counts_as_work: boolean; days: number; workdays: number }
+export interface TsRow {
+  staff_id: string; name: string; personal_number: string | null; position_name: string | null; category: Category | null; department_id: string; department_name: string; fte: number;
+  home: boolean; shifts: number; plan_hours: number; worked_hours: number; night_hours: number; holiday_hours: number; weekend_hours: number; no_show: number;
+  total_hours: number | null; credit_hours: number | null; norm_hours: number | null; overtime_hours: number | null; ot_pay_hours: number | null; ot_comp_hours: number | null; comp_days: number | null;
+  person: { night?: number; holiday?: number; weekend?: number; no_show?: number; workdays?: number }; absence: AbsSum[]; days: Record<string, string>;
+}
+export interface Timesheet {
+  roster: { id: string; department_id: string; department_name: string; month: string; status: 'published' | 'closed'; timesheet_submitted_at: string | null; submitted_by_name: string | null;
+    closed_at: string | null; closed_by_name: string | null; close_note: string | null };
+  source: 'live' | 'snapshot'; preliminary: boolean; ended: boolean; stale: { no: string; staff_name: string; status: string; date_from: string; date_to: string }[];
+  settings: { week_norm_hours: number; overtime_basis: string; overtime_default: 'pay' | 'comp'; night_from: string; night_to: string; close_requires_submit: boolean; comp_absence_type: string };
+  workdays: number; days: { day: string; dow: number; holiday: string | null }[]; rows: TsRow[];
+  totals: Record<string, number>; checks: { pending: { no: string; staff_name: string; status: string }[]; open_shifts: number; no_show: number };
+  can: { actual: boolean; submit: boolean; close: boolean; reopen: boolean; export: boolean; pii: boolean };
+}
+export interface TsOverview { month: string; ended: boolean; rows: { id: string; department_id: string; department_name: string; status: 'published' | 'closed'; timesheet_submitted_at: string | null;
+  closed_at: string | null; staff: number; actuals: number; overtime: number | null; stale: number }[]; can: { export_all: boolean; close: boolean } }
+export const fmtH = (h: number | null | undefined) => (h === null || h === undefined ? '—' : String(Math.round(h * 100) / 100));
