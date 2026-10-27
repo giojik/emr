@@ -1097,6 +1097,21 @@ export interface DrgVersions {
   version_no: number;
 }
 
+export interface DutyRoles {
+  categories: Generated<string[]>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string | null;
+  has_backup: Generated<boolean>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  phone: string | null;
+  required_count: Generated<number>;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DxDevices {
   ae_title: string | null;
   id: Generated<string>;
@@ -3961,6 +3976,13 @@ export interface ProcSupplierPrices {
   vat_rate: Generated<Numeric>;
 }
 
+export interface PublicHolidays {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  day: string;
+  name: string;
+}
+
 export interface QmAnalyses {
   action_taken: string | null;
   approved_at: Timestamp | null;
@@ -4240,6 +4262,65 @@ export interface Roles {
   is_system: Generated<boolean>;
   name: string;
   sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface RosterChanges {
+  created_at: Generated<Timestamp>;
+  data: Generated<Json>;
+  entry_id: string | null;
+  id: Generated<Int8>;
+  kind: string;
+  reason: string | null;
+  roster_id: string;
+  staff_id: string | null;
+  user_id: string;
+}
+
+export interface RosterEntries {
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  day: string;
+  duty_level: number | null;
+  duty_role_id: string | null;
+  ends_at: Timestamp;
+  hours: Numeric;
+  id: Generated<string>;
+  note: string | null;
+  roster_id: string;
+  shift_template_id: string;
+  staff_id: string;
+  starts_at: Timestamp;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Rosters {
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string;
+  id: Generated<string>;
+  month: string;
+  note: string | null;
+  published_at: Timestamp | null;
+  published_by: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
+export interface RotationPatterns {
+  code: string;
+  created_at: Generated<Timestamp>;
+  cycle: string[];
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -4688,6 +4769,74 @@ export interface ServiceTariffs {
   id: Generated<string>;
   is_active: Generated<boolean>;
   title: string;
+}
+
+export interface ShiftTemplates {
+  break_min: Generated<number>;
+  categories: Generated<string[]>;
+  code: string;
+  color: Generated<string>;
+  counted_hours: Numeric | null;
+  created_at: Generated<Timestamp>;
+  department_ids: Generated<string[]>;
+  end_time: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  sort_order: Generated<number>;
+  start_time: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface StaffingNorms {
+  category: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string;
+  holidays: Generated<boolean>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  min_count: number;
+  shift_template_id: string;
+  updated_at: Generated<Timestamp>;
+  weekdays: Generated<number[]>;
+}
+
+export interface StaffMemberDepartments {
+  department_id: string;
+  staff_id: string;
+}
+
+export interface StaffMembers {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string;
+  employment: Generated<string>;
+  first_name: string;
+  fte: Generated<Numeric>;
+  hired_on: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  last_name: string;
+  left_on: string | null;
+  notes: string | null;
+  personal_number: string | null;
+  phone: string | null;
+  position_id: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface StaffPositions {
+  category: string;
+  code: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface StayBedDays {
@@ -5391,6 +5540,7 @@ export interface DB {
   drg_schemes: DrgSchemes;
   drg_version_groups: DrgVersionGroups;
   drg_versions: DrgVersions;
+  duty_roles: DutyRoles;
   dx_devices: DxDevices;
   dx_images: DxImages;
   dx_item_files: DxItemFiles;
@@ -5569,6 +5719,7 @@ export interface DB {
   proc_requisition_lines: ProcRequisitionLines;
   proc_requisitions: ProcRequisitions;
   proc_supplier_prices: ProcSupplierPrices;
+  public_holidays: PublicHolidays;
   qm_analyses: QmAnalyses;
   qm_analysis_factors: QmAnalysisFactors;
   qm_analysis_team: QmAnalysisTeam;
@@ -5588,6 +5739,10 @@ export interface DB {
   referral_type_tariffs: ReferralTypeTariffs;
   referrals: Referrals;
   roles: Roles;
+  roster_changes: RosterChanges;
+  roster_entries: RosterEntries;
+  rosters: Rosters;
+  rotation_patterns: RotationPatterns;
   rpt_attention_sent: RptAttentionSent;
   rpt_balance_snapshot: RptBalanceSnapshot;
   rpt_dashboard_kpis: RptDashboardKpis;
@@ -5620,6 +5775,11 @@ export interface DB {
   scrub_overrides: ScrubOverrides;
   scrub_rules: ScrubRules;
   service_tariffs: ServiceTariffs;
+  shift_templates: ShiftTemplates;
+  staff_member_departments: StaffMemberDepartments;
+  staff_members: StaffMembers;
+  staff_positions: StaffPositions;
+  staffing_norms: StaffingNorms;
   stay_bed_days: StayBedDays;
   stay_billing: StayBilling;
   stay_deposits: StayDeposits;

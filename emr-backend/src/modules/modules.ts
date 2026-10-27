@@ -285,6 +285,17 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       return null;
     },
   },
+  // 0077: ცვლები / მორიგეობა
+  roster: {
+    keys: {
+      rest_min_hours: (v) => int(v, 0, 48), rest_mode: (v) => oneOf(v, ['block', 'warn', 'off']),
+      max_continuous_hours: (v) => int(v, 8, 48), continuous_mode: (v) => oneOf(v, ['block', 'warn', 'off']),
+      max_week_hours: (v) => int(v, 20, 120), week_mode: (v) => oneOf(v, ['block', 'warn', 'off']),
+      max_consecutive_nights: (v) => int(v, 1, 14), nights_mode: (v) => oneOf(v, ['block', 'warn', 'off']),
+      norm_mode: (v) => oneOf(v, ['warn', 'off']), cross_department: (v) => oneOf(v, ['allow', 'warn', 'block']),
+      publish_notify: bool, change_notify: bool, duty_phone: (v) => oneOf(v, ['all', 'staff', 'off']), copy_mode: (v) => oneOf(v, ['weekday', 'date']),
+    },
+  },
   asset_register: {
     keys: {
       inv_prefix: (v) => typeof v === 'string' && /^[A-Z0-9]{0,8}$/.test(v),

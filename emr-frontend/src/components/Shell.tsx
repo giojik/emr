@@ -26,6 +26,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting
   { to: '/assets', label: 'ინვენტარი', module: 'asset_register' },
   { to: '/bme', label: 'ბიომედ-აპარატურა', module: 'bme' },
   { to: '/cssd', label: 'სტერილიზაცია', module: 'cssd' },
+  { to: '/roster', label: 'ცვლები და მორიგეობა', module: 'roster' },
   { to: '/dashboard', label: 'მენეჯერული დაფა', roles: ['admin', 'reports', 'reports_all', 'manager', 'viewer'], module: 'reporting' },
   { to: '/quality', label: 'ხარისხი და ინციდენტები', module: 'quality' },
   { to: '/ipc', label: 'ინფექციის კონტროლი', roles: ['infection', 'infection_dept', 'infection_view'], module: 'ipc' },
@@ -55,6 +56,7 @@ const HOME: Record<Role, string> = {
   quality: '/quality', quality_dept: '/quality', quality_view: '/quality',
   infection: '/ipc', infection_dept: '/ipc', infection_view: '/dashboard',
   bme_dept: '/bme', bme_view: '/bme',
+  roster: '/roster', roster_all: '/roster', roster_view: '/roster',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {

@@ -7,6 +7,7 @@ import { tsDate } from '../../lib/format';
 import { useModules, type SystemModule } from '../../lib/modules';
 import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
+import { RosterSettings } from '../roster/RosterSettings';
 
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
 export default function Modules() {
@@ -40,6 +41,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.description && <span className="small muted">{m.description}</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
+      {m.code === 'roster' && <RosterSettings s={s} set={setS} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}

@@ -36,7 +36,7 @@ mkuser() {
 }
 
 step "1. უფლებების კატალოგი და სისტემური როლები"
-chk "41 უფლება (0048: + საოპერაციო — 3; 0051: + შესყიდვები — 2; 0054: + ტარიფები — 2; 0055: + DRG — 2; 0060: + რეპორტინგი — 3; 0064: + ხარისხი — 3; 0067: + ინფექციის კონტროლი — 3; 0073: + ბიომედ-აპარატურა — 2)" "$(api GET /roles/capabilities "$ADM" | jq length)" "41"
+chk "44 უფლება (0048: + საოპერაციო — 3; 0051: + შესყიდვები — 2; 0054: + ტარიფები — 2; 0055: + DRG — 2; 0060: + რეპორტინგი — 3; 0064: + ხარისხი — 3; 0067: + ინფექციის კონტროლი — 3; 0073: + ბიომედ-აპარატურა — 2; 0077: + ცვლები / მორიგეობა — 3)" "$(api GET /roles/capabilities "$ADM" | jq length)" "44"
 chk "სისტემური როლები (14)" "$(api GET /roles "$ADM" | jq '[.[]|select(.is_system)]|length')" "14"
 SYS_DOC=$(api GET /roles "$ADM" | jq -r '.[]|select(.code=="doctor")|.id'); SYS_ADM=$(api GET /roles "$ADM" | jq -r '.[]|select(.code=="admin")|.id')
 chk "სისტემური როლის უფლებების შეცვლა — 403" "$(code PATCH "/roles/$SYS_DOC" "$ADM" -d '{"capabilities":["doctor","billing"]}')" "403"

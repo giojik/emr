@@ -28,6 +28,7 @@ import Clinic from './pages/admin/Clinic';
 import Modules from './pages/admin/Modules';
 import Assets from './pages/assets/Assets';
 import Bme from './pages/bme/Bme';
+import Roster from './pages/roster/Roster';
 import Cssd from './pages/cssd/Cssd';
 import Inpatient from './pages/inpatient/Inpatient';
 import Stay from './pages/inpatient/Stay';
@@ -115,6 +116,7 @@ export default function App() {
         <Route path="/collection" element={<Guard roles={['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor']}><Collection /></Guard>} />
         <Route path="/assets" element={<Assets />} />
         <Route path="/bme" element={<Bme />} />
+        <Route path="/roster" element={<Roster />} />
         <Route path="/cssd" element={<Cssd />} />
         <Route path="/inpatient" element={<Guard roles={IPD_READ}><Inpatient /></Guard>} />
         <Route path="/inpatient/stay/:id" element={<Guard roles={IPD_READ}><Stay /></Guard>} />
