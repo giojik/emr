@@ -95,7 +95,7 @@ ND=$(( ${#DL[@]} < 16 ? ${#DL[@]} : 16 )); DL=("${DL[@]:0:$ND}")
 S2D=(); for x in "${W[@]}"; do case "$x" in "$S2_ANN"|"$SICK_A"|"$SICK_B") continue ;; esac; S2D+=("$x"); done   # ექთანი 2: D ×3 + OC
 
 step "1. უფლებები, პარამეტრები"
-chk "უფლებები — 45 (ახალი არ ემატება)" "$(api GET /roles/capabilities "$ADM" | jq length)" "45"
+chk "უფლებები — 47 (0079 ახალი არ ემატება; 0081: + worklist_manage, worklist_all)" "$(api GET /roles/capabilities "$ADM" | jq length)" "47"
 chk "პარამეტრები: overtime_basis = x / night_from = night_to / nurse_ratio.icu = 0 / link_or = x — 400" "$(code PUT /modules/roster "$ADM" -d '{"settings":{"overtime_basis":"x"},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"night_from":"22:00","night_to":"22:00"},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"nurse_ratio":{"ward":8,"intensive":4,"icu":0}},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"link_or":"x"},"reason":"ტესტ"}')" "400:400:400:400"
 chk "  … week_norm_hours = 10 / comp_absence_type = 'x' — 400" "$(code PUT /modules/roster "$ADM" -d '{"settings":{"week_norm_hours":10},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"comp_absence_type":"x"},"reason":"ტესტ"}')" "400:400"
 chk "refs: ახალი პარამეტრები (week_norm_hours, link_consult, nurse_ratio.icu)" "$(api GET /roster/refs "$PL" | jq -r '.settings|"\(.week_norm_hours):\(.link_consult):\(.nurse_ratio.icu)"')" "40:hint:2"

@@ -1,0 +1,50 @@
+import { Field } from '../../components/ui';
+import { useWlRefs } from './types';
+
+/** სამუშაო სიები (0081): მინიჭების წესი, შესრულება / ხელახლა გახსნა, ვადა / შეხსენება / ესკალაცია, შეტყობინებები, პაციენტი, წყაროები, მთვლელი, საწყისი გვერდი */
+export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void; enabled: boolean }) {
+  const v = <T,>(k: string) => s[k] as T;
+  const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
+  const refs = useWlRefs(enabled);
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 } as const;
+  const due = (v<number[]>('due_default_hours') ?? [0, 24, 4]);
+  const sources = (v<Record<string, boolean>>('sources') ?? {});
+  const groups = new Map<string, { code: string; name: string; who: string; module_enabled: boolean }[]>();
+  for (const x of refs.data?.sources ?? []) groups.set(x.group, [...(groups.get(x.group) ?? []), x]);
+  return (
+    <div className="stack">
+      <strong className="small">ხელით შექმნილი დავალებები</strong>
+      <div style={grid}>
+        <Field label="სხვისთვის მინიჭება" htmlFor="wl-as" hint="საკუთარ თავზე, განყოფილების რიგში და მორიგეზე — ყოველთვის"><select id="wl-as" className="select" value={v<string>('assign_scope') ?? 'any'} onChange={(e) => upd('assign_scope', e.target.value)}>
+          <option value="any">ნებისმიერს (აუდიტით)</option><option value="department">თავის განყოფილებ(ებ)ში + სხვა განყოფილების რიგში</option><option value="managers">სხვისთვის — მხოლოდ ხელმძღვანელს (worklist_manage)</option></select></Field>
+        <Field label="შესრულების კომენტარი" htmlFor="wl-dc"><select id="wl-dc" className="select" value={v<string>('done_comment') ?? 'urgent'} onChange={(e) => upd('done_comment', e.target.value)}>
+          <option value="off">არჩევითი</option><option value="urgent">სავალდებულო — სასწრაფოზე</option><option value="all">სავალდებულო — ყველაზე</option></select></Field>
+        <Field label="ხელახლა გახსნა (დღე)" htmlFor="wl-rd" hint="შემქმნელი / ხელმძღვანელი; 0 — აკრძალული"><input id="wl-rd" className="input mono" type="number" min={0} max={90} value={v<number>('reopen_days') ?? 7} onChange={(e) => upd('reopen_days', Number(e.target.value))} /></Field>
+        {(['ჩვეულებრივი', 'მაღალი', 'სასწრაფო'] as const).map((l, i) => <Field key={l} label={`ნაგულისხმევი ვადა — ${l} (სთ)`} htmlFor={`wl-dd${i}`} hint="0 — ვადის გარეშე; კატეგორიის SLA უპირატესია">
+          <input id={`wl-dd${i}`} className="input mono" type="number" min={0} max={2160} value={due[i] ?? 0} onChange={(e) => { const n = [...due]; n[i] = Number(e.target.value); upd('due_default_hours', n); }} /></Field>)}
+        <Field label="ესკალაცია ხელმძღვანელზე (სთ ვადის შემდეგ)" htmlFor="wl-eh" hint="0 — გამორთული; მიმღები — worklist_manage (განყოფილება) + შემქმნელი"><input id="wl-eh" className="input mono" type="number" min={0} max={720} value={v<number>('escalate_hours') ?? 0} onChange={(e) => upd('escalate_hours', Number(e.target.value))} /></Field>
+        <div className="stack" style={{ gap: 6, marginTop: 24, gridColumn: 'span 2' }}>
+          <label className="row"><input type="checkbox" checked={v<boolean>('remind_at_due') !== false} onChange={(e) => upd('remind_at_due', e.target.checked)} /> ვადის დადგომისას — შეხსენება შემსრულებელს</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('notify_assign') !== false} onChange={(e) => upd('notify_assign', e.target.checked)} /> მინიჭება / გადანაწილება — შეტყობინება მიმღებ(ებ)ს</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('notify_done') !== false} onChange={(e) => upd('notify_done', e.target.checked)} /> შესრულება / გაუქმება — შეტყობინება შემქმნელს</label>
+          <label className="row"><input type="checkbox" checked={v<boolean>('patient_tasks') !== false} onChange={(e) => upd('patient_tasks', e.target.checked)} /> პაციენტთან მიბმა (დავალება არ არის დანიშნულება)</label>
+        </div>
+      </div>
+      <strong className="small">„ჩემი დავალებები“</strong>
+      <div style={grid}>
+        <Field label="მთვლელი (მენიუში)" htmlFor="wl-b"><select id="wl-b" className="select" value={v<string>('badge') ?? 'all'} onChange={(e) => upd('badge', e.target.value)}>
+          <option value="all">ყველა ღია</option><option value="overdue">მხოლოდ ვადაგადაცილებული</option><option value="off">არ ჩანს</option></select></Field>
+        <Field label="ავტომატური განახლება (წმ)" htmlFor="wl-rs"><input id="wl-rs" className="input mono" type="number" min={30} max={600} value={v<number>('refresh_seconds') ?? 60} onChange={(e) => upd('refresh_seconds', Number(e.target.value))} /></Field>
+        <label className="row" style={{ marginTop: 24 }}><input type="checkbox" checked={!!v<boolean>('home_tasks')} onChange={(e) => upd('home_tasks', e.target.checked)} /> საწყისი გვერდი ყველასთვის — „ჩემი დავალებები“</label>
+      </div>
+      <strong className="small">სისტემური წყაროები</strong>
+      {!enabled ? <span className="hint">წყაროების სია ჩანს ჩართულ მოდულზე.</span> : <div style={grid}>
+        {[...groups.entries()].map(([g, list]) => <div key={g} className="stack" style={{ gap: 4 }}><span className="small muted">{g}</span>
+          {list.map((x) => <label key={x.code} className="row small" title={`ვის: ${x.who}`}><input type="checkbox" checked={sources[x.code] !== false} onChange={(e) => {
+            const n = { ...sources }; if (e.target.checked) delete n[x.code]; else n[x.code] = false; upd('sources', n); }} /> {x.name}{!x.module_enabled && <span className="muted"> (მოდული გამორთულია)</span>}</label>)}
+        </div>)}
+      </div>}
+      <span className="hint">სისტემური ჩანაწერი პირდაპირ წყაროდან ითვლება, მოდულის არსებული წვდომის წესით (admin-ის უფლება პასუხისმგებლობას არ ქმნის). გამორთული წყარო „ჩემს დავალებებში“ არ ჩანს — თავის მოდულში უცვლელად რჩება.</span>
+    </div>
+  );
+}

@@ -16,5 +16,6 @@ import { RosterReportController, RosterReportService } from './roster-reports';
 @Module({
   controllers: [RosterSetupController, RosterController, AbsenceController, RosterFlowsController, TimesheetController, RosterReportController],
   providers: [RosterSetupService, RosterService, AbsenceService, RosterFlowsService, TimesheetService, RosterReportService],
+  exports: [RosterFlowsService],   // 0081: სამუშაო სიები („დასადასტურებელი“)
 })
 export class RosterModule {}

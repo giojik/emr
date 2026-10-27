@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
+import { SOURCE_CODES } from '../worklist/worklist-common';
 
 /**
  * მოდულები და პარამეტრები (0037): კლინიკა რთავს / თიშავს მოდულს და ცვლის მის პარამეტრებს.
@@ -311,6 +312,17 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       dashboard_visibility: (v) => oneOf(v, ['report_users', 'roster_only']), monthly_section: bool,
     },
     extra: async (s) => (s.night_from === s.night_to ? 'ღამის საათები: დასაწყისი და დასასრული ერთმანეთს არ უნდა ემთხვეოდეს' : null),
+  },
+  // 0081: სამუშაო სიები
+  worklist: {
+    keys: {
+      assign_scope: (v) => oneOf(v, ['any', 'department', 'managers']), done_comment: (v) => oneOf(v, ['off', 'urgent', 'all']), reopen_days: (v) => int(v, 0, 90),
+      remind_at_due: bool, escalate_hours: (v) => int(v, 0, 720),
+      due_default_hours: (v) => Array.isArray(v) && v.length === 3 && v.every((x) => int(x, 0, 2160)),
+      notify_assign: bool, notify_done: bool, patient_tasks: bool,
+      sources: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => SOURCE_CODES.includes(k) && typeof x === 'boolean'),
+      badge: (v) => oneOf(v, ['all', 'overdue', 'off']), refresh_seconds: (v) => int(v, 30, 600), home_tasks: bool,
+    },
   },
   asset_register: {
     keys: {

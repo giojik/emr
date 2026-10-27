@@ -5709,6 +5709,65 @@ export interface Wards {
   updated_at: Generated<Timestamp>;
 }
 
+export interface WlCategories {
+  allow_patient: Generated<boolean>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  default_department_id: string | null;
+  default_role_id: string | null;
+  default_target_kind: string | null;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  sla_hours: number | null;
+  sort_order: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface WlTaskEvents {
+  created_at: Generated<Timestamp>;
+  data: Json | null;
+  id: Generated<Int8>;
+  kind: string;
+  note: string | null;
+  task_id: string;
+  user_id: string | null;
+}
+
+export interface WlTasks {
+  assignee_id: string | null;
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by: string | null;
+  category_id: string | null;
+  claimed_at: Timestamp | null;
+  claimed_by: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  description: string | null;
+  done_at: Timestamp | null;
+  done_by: string | null;
+  done_note: string | null;
+  due_at: Timestamp | null;
+  encounter_id: string | null;
+  escalated_at: Timestamp | null;
+  id: Generated<string>;
+  patient_id: string | null;
+  priority: Generated<string>;
+  reminded_at: Timestamp | null;
+  started_at: Timestamp | null;
+  status: Generated<string>;
+  target_department_id: string | null;
+  target_duty_role_id: string | null;
+  target_kind: string;
+  target_role_id: string | null;
+  task_no: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   absence_balance_entries: AbsenceBalanceEntries;
   absence_entitlements: AbsenceEntitlements;
@@ -6075,4 +6134,7 @@ export interface DB {
   user_roles: UserRoles;
   users: Users;
   wards: Wards;
+  wl_categories: WlCategories;
+  wl_task_events: WlTaskEvents;
+  wl_tasks: WlTasks;
 }

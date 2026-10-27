@@ -41,7 +41,7 @@ mkuser() {
 }
 
 step "0. მომზადება"
-chk "უფლებების კატალოგში 45 უფლება (0030: + storekeeper, stock_manager; 0048: + or_schedule, anesthesiologist, or_nurse; 0051: + procurement, procurement_approve; 0054: + tariffs, tariffs_approve; 0055: + drg, drg_admin; 0060: + reports, reports_all, reports_phi; 0064: + quality, quality_dept, quality_view; 0067: + infection, infection_dept, infection_view; 0073: + bme_dept, bme_view; 0077: + roster, roster_all, roster_view; 0078: + absence_approve)" "$(api GET /roles/capabilities "$ADM" | jq length)" "45"
+chk "უფლებების კატალოგში 47 უფლება (0030: + storekeeper, stock_manager; 0048: + or_schedule, anesthesiologist, or_nurse; 0051: + procurement, procurement_approve; 0054: + tariffs, tariffs_approve; 0055: + drg, drg_admin; 0060: + reports, reports_all, reports_phi; 0064: + quality, quality_dept, quality_view; 0067: + infection, infection_dept, infection_view; 0073: + bme_dept, bme_view; 0077: + roster, roster_all, roster_view; 0078: + absence_approve; 0081: + worklist_manage, worklist_all)" "$(api GET /roles/capabilities "$ADM" | jq length)" "47"
 chk "ახალი უფლებები: accountant, manager, hr, med_engineer, viewer" \
   "$(api GET /roles/capabilities "$ADM" | jq -r '[.[].code|select(.=="accountant" or .=="manager" or .=="hr" or .=="med_engineer" or .=="viewer")]|length')" "5"
 DEPS=$(api GET /departments "$ADM"); DA=$(echo "$DEPS" | jq -r '.[0].id // empty'); DB=$(echo "$DEPS" | jq -r '.[1].id // empty')

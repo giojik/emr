@@ -13,6 +13,7 @@ import AppointmentDialog from '../components/AppointmentDialog';
 import ConsentsPanel from '../components/ConsentsPanel';
 import { CumulativeModal } from './lab/Cumulative';
 import DocumentsPanel from '../components/DocumentsPanel';
+import PatientTasks from './worklist/PatientTasks';
 import { OrderDialog } from './encounter/DiagnosticsPanel';
 import { ImplantsPanel } from './or/Library';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
@@ -68,6 +69,7 @@ export default function PatientCard() {
         {!mgrOnly && <ImplantsPanel patientId={x.id} />}
         {!mgrOnly && <ConsentsPanel patientId={x.id} scope="patient" canSign={front || clinical} />}
         {!mgrOnly && <DocumentsPanel patientId={x.id} canUpload={front || clinical} canDeactivate={front} />}
+        {!mgrOnly && (front || clinical) && <PatientTasks patientId={x.id} patientName={name} />}
 
         <section className="card">
           <div className="card-head"><h2>ვიზიტების ისტორია</h2><span className="small muted">{visits.data?.length ?? 0}</span></div>

@@ -1,4 +1,5 @@
 import NotificationBell from './NotificationBell';
+import WorklistBadge from './WorklistBadge';
 import { IncidentReportHost } from './IncidentReport';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { can, type Role, type SessionUser } from '../api/client';
@@ -8,6 +9,7 @@ import { useModules } from '../lib/modules';
 
 /** roles — ვის ჩანს (ცარიელი — ყველა უფლებიანს); module — მხოლოდ ჩართული მოდულისას (0037) */
 const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting?: [string, string]; not?: Role[] }[] = [
+  { to: '/tasks', label: 'ჩემი დავალებები', module: 'worklist' },
   { to: '/reception', label: 'რეგისტრატურა', roles: ['admin', 'receptionist', 'manager', 'viewer'] },
   { to: '/patients', label: 'პაციენტები', roles: ['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'manager'] },
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
@@ -57,9 +59,11 @@ const HOME: Record<Role, string> = {
   infection: '/ipc', infection_dept: '/ipc', infection_view: '/dashboard',
   bme_dept: '/bme', bme_view: '/bme',
   roster: '/roster', roster_all: '/roster', roster_view: '/roster', absence_approve: '/roster?tab=approvals',
+  worklist_manage: '/tasks?tab=team', worklist_all: '/tasks?tab=team',
 };
-/** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით */
-export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>) {
+/** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით; override — მოდულის პარამეტრი (0081: „ჩემი დავალებები“ ყველასთვის) */
+export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>, override?: string | null) {
+  if (override && user.caps.length) return override;
   const order = [...(user.roles[0]?.capabilities ?? []), ...user.caps];
   for (const c of order) if (HOME[c]) return HOME[c];
   return user.caps.length ? '/patients' : '/no-access';
@@ -90,6 +94,7 @@ export default function Shell() {
               <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
               <span className="small muted" title={user.roles.map((r) => r.name).join(', ')}>{user.roles[0]?.name ?? ROLE_KA[user.role] ?? user.role}{user.roles.length > 1 ? ` +${user.roles.length - 1}` : ''}</span>
             </div>
+            <WorklistBadge />
             <NotificationBell />
             <button type="button" className="icon-btn" aria-label="გასვლა" title="გასვლა" onClick={async () => { await logout(); nav('/login'); }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 4h4v16h-4" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></svg>

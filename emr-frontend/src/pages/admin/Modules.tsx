@@ -8,6 +8,7 @@ import { useModules, type SystemModule } from '../../lib/modules';
 import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 import { RosterSettings } from '../roster/RosterSettings';
+import { WorklistSettings } from '../worklist/WorklistSettings';
 
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
 export default function Modules() {
@@ -42,6 +43,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
       {m.code === 'roster' && <RosterSettings s={s} set={setS} />}
+      {m.code === 'worklist' && <WorklistSettings s={s} set={setS} enabled={m.enabled} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}

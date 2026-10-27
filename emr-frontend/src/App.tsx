@@ -4,6 +4,10 @@ import { can, type Role } from './api/client';
 import { useAuth } from './auth/AuthContext';
 import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
+import { useQuery } from '@tanstack/react-query';
+import { api } from './api/client';
+import type { SystemModule } from './lib/modules';
+import Tasks from './pages/worklist/Tasks';
 import Cashier from './pages/Cashier';
 import ChangePassword from './pages/ChangePassword';
 import Collection from './pages/Collection';
@@ -67,13 +71,22 @@ import { AntibiogramPage } from './pages/ipc/Abg';
 
 const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'];
 
+/** 0081: „ჩემი დავალებები“ — საწყისი გვერდი (მოდულის პარამეტრი home_tasks) */
+function useHomeOverride() {
+  const { user } = useAuth();
+  const mods = useQuery({ queryKey: ['modules'], queryFn: () => api<SystemModule[]>('/modules'), staleTime: 5 * 60_000, enabled: !!user && !user.mustChangePassword });
+  const m = user ? mods.data?.find((x) => x.code === 'worklist') : undefined;
+  return m?.enabled && (m.settings as { home_tasks?: boolean }).home_tasks ? '/tasks' : null;
+}
+
 function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   const { user, ready } = useAuth();
+  const home = useHomeOverride();
   const loc = useLocation();
   if (!ready) return <Loading />;
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   if (user.mustChangePassword && loc.pathname !== '/change-password') return <Navigate to="/change-password" replace />;
-  if (roles && !can(user, ...roles)) return <Navigate to={homeFor(user)} replace />;
+  if (roles && !can(user, ...roles)) return <Navigate to={homeFor(user, home)} replace />;
   return <>{children}</>;
 }
 
@@ -94,6 +107,7 @@ function AdminHome() {
 
 export default function App() {
   const { user } = useAuth();
+  const home = useHomeOverride();
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -104,6 +118,7 @@ export default function App() {
         <Route path="/reports" element={<Guard roles={['admin', 'accountant', 'viewer', 'manager']}><Reports /></Guard>} />
         <Route path="/dashboard" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><Dashboard /></Guard>} />
         <Route path="/no-access" element={<NoAccess />} />
+        <Route path="/tasks" element={<Tasks />} />
         <Route path="/patients" element={<Guard roles={['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'manager']}><Patients /></Guard>} />
         <Route path="/patients/new" element={<Guard roles={['admin', 'receptionist']}><PatientNew /></Guard>} />
         <Route path="/patients/:id" element={<PatientCard />} />
@@ -167,7 +182,7 @@ export default function App() {
           <Route path="audit" element={<Guard roles={['admin']}><Audit /></Guard>} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to={user ? homeFor(user) : '/login'} replace />} />
+      <Route path="*" element={<Navigate to={user ? homeFor(user, home) : '/login'} replace />} />
     </Routes>
   );
 }

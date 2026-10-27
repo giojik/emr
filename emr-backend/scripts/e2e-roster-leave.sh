@@ -82,7 +82,7 @@ W=(); x="$M-01"; while [ "${x:0:7}" = "$M" ]; do isw "$x" && W+=("$x"); x=$(date
 
 step "1. უფლება, პარამეტრები, არყოფნის ტიპები"
 CAPS=$(api GET /roles/capabilities "$ADM")
-chk "უფლება absence_approve; სულ 45" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="absence_approve")]|length'):$(echo "$CAPS" | jq length)" "1:45"
+chk "უფლება absence_approve; სულ 47 (0081: + worklist_manage, worklist_all)" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="absence_approve")]|length'):$(echo "$CAPS" | jq length)" "1:47"
 chk "პარამეტრები: swap_approval = x / prefs_deadline_day = 40 / უცნობი accrual — 400" "$(code PUT /modules/roster "$ADM" -d '{"settings":{"swap_approval":"x"},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"prefs_deadline_day":40},"reason":"ტესტ"}'):$(code PUT /modules/roster "$ADM" -d '{"settings":{"accrual":"weekly"},"reason":"ტესტ"}')" "400:400:400"
 TY=$(api GET /roster/absence-types "$N1")
 chk "8 seed ტიპი; ANNUAL — 24 სამუშაო დღე, ხელმძღვანელი → HR; SICK — HR, დოკუმენტით" "$(echo "$TY" | jq '[.[]|select(.code|test("^(ANNUAL|UNPAID|SICK|MATERNITY|STUDY|TRIP|COMP|OTHER)$"))]|length'):$(echo "$TY" | jq -r '.[]|select(.code=="ANNUAL")|"\(.default_days|tonumber|floor):\(.unit):\(.route)"'):$(echo "$TY" | jq -r '.[]|select(.code=="SICK")|"\(.route):\(.requires_document)"')" "8:24:workday:head_hr:hr:true"

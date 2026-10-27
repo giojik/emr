@@ -60,7 +60,7 @@ ORIG=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="bme")|{enabled, setti
 [ -n "$ORIG" ] || die "მოდული bme ვერ მოიძებნა"
 
 step "1. მოდული, უფლებები, პარამეტრები"
-chk "უფლებები: bme_dept, bme_view (45; 0077: + roster, roster_all, roster_view; 0078: + absence_approve)" "$(api GET /roles/capabilities "$ADM" | jq -r '[.[]|select(.code=="bme_dept" or .code=="bme_view" or .code=="med_engineer")]|length'):$(api GET /roles/capabilities "$ADM" | jq length)" "3:45"
+chk "უფლებები: bme_dept, bme_view (47; 0077: + roster, roster_all, roster_view; 0078: + absence_approve; 0081: + worklist_manage, worklist_all)" "$(api GET /roles/capabilities "$ADM" | jq -r '[.[]|select(.code=="bme_dept" or .code=="bme_view" or .code=="med_engineer")]|length'):$(api GET /roles/capabilities "$ADM" | jq length)" "3:47"
 chk "შაბლონ-როლი „სამედიცინო ინჟინერი“ (med_engineer + reports_all)" "$(api GET /roles "$ADM" | jq -r '.[]|select(.code=="biomed_engineer")|.capabilities|sort|join(",")')" "med_engineer,reports_all"
 chk "უცნობი პარამეტრი — 400; ლაბ. block — 400 (მხოლოდ warn / off)" "$(code PUT /modules/bme "$ADM" -d '{"settings":{"foo":1},"reason":"ტესტ"}'):$(code PUT /modules/bme "$ADM" -d '{"settings":{"area_lab":"block"},"reason":"ტესტ"}')" "400:400"
 chk "ცვლა: ინჟინერი — 403" "$(code PUT /modules/bme "$ENG" -d '{"settings":{"move_mode":"direct"},"reason":"ტესტ ტესტ"}')" "403"

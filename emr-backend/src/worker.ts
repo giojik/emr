@@ -9,6 +9,7 @@ import { LabAlertsService } from './lab-gateway/lab-alerts.service';
 import { StockAlertsService } from './stock/stock-alerts';
 import { InpatientRemindersService } from './inpatient/inpatient-reminders';
 import { TariffTickService } from './tariffs/tariff-tick';
+import { WorklistJobsService } from './worklist/worklist-jobs';
 import { RptRefreshService } from './reporting/reporting-refresh';
 import { RptJobsService } from './reporting/reporting-jobs';
 import { WorkerModule } from './worker.module';
@@ -91,8 +92,13 @@ async function bootstrap() {
     log.log(`ბიომედ შეკეთება: SLA ${r.sla_warn}/${r.sla_breach}, დახურვა ${r.auto_closed}, კონტრაქტი ${r.contract_reminders}, გარანტია ${r.warranty_reminders}`); })
     .catch((e) => log.error(`ბიომედ შეკეთება: ${(e as Error).message}`));
   const repTimer = setInterval(repTick, 15 * 60_000); setTimeout(repTick, 210_000);
-  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); clearInterval(repTimer); });
-  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); clearInterval(repTimer); });
+  // 0081: სამუშაო სიები — ვადის შეხსენება / ესკალაცია — ყოველ 5 წუთში
+  const wl = app.get(WorklistJobsService);
+  const wlTick = () => void wl.tick().then((r) => { if (r.reminded || r.escalated) log.log(`დავალებები: შეხსენება ${r.reminded}, ესკალაცია ${r.escalated}`); })
+    .catch((e) => log.error(`დავალებები: ${(e as Error).message}`));
+  const wlTimer = setInterval(wlTick, 5 * 60_000); setTimeout(wlTick, 220_000);
+  process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); clearInterval(repTimer); clearInterval(wlTimer); });
+  process.once('SIGINT', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); clearInterval(repTimer); clearInterval(wlTimer); });
 
   log.log('EMR worker started (queues: none yet)');
 }
