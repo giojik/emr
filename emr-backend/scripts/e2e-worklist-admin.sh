@@ -2,7 +2,7 @@
 # =====================================================================
 # e2e-worklist-admin.sh — სამუშაო სიები, ეტაპი 2 (0082): ადმინისტრაცია / ლოჯისტიკის სისტემური წყაროები
 #   პარამეტრები (ვალიდაცია), კატალოგი (51 წყარო), მარაგი (RQ: დამტკიცება → გაცემა → მიღება, SLA / urgent, dept_side heads / all,
-#   უხელმძღვანელო განყოფილება, ჩამოწერა, ინვენტარიზაცია, ვადა, მინიმუმი, კარანტინი), შესყიდვები (PR: L1 → ფინანსური → PO-ს გარეშე → PO;
+#   უხელმძღვანელო განყოფილება, ჩამოწერა, ინვენტარიზაცია, ვადა, მინიმუმი, კარანტინი, ცარიელი ამპულა — ნარკოტიკული ხარჯი მოწმით → ფარმაცევტი), შესყიდვები (PR: L1 → ფინანსური → PO-ს გარეშე → PO;
 #   PO დამტკიცება, ვადაგადაცილებული PO), მომწოდებლის ინვოისი (შეჯერება, ვადა), პერიოდის დახურვა (period_lock), ტარიფი / გადამხდელის წესი
 #   (approval = required), CSSD (Bowie-Dick, BI, ვადა განყოფილებაში, გაწვევა), ინვენტარი (გადაადგილება: პასუხისმგებელი → ხელმძღვანელი →
 #   საწყობის მენეჯერი; ჩამოწერის აქტი), რეგისტრატურა (დაუხურავი ჩაწერა, გეგმიური ჰოსპიტალიზაცია, reg_scope), სალარო (override-ის ვალი),
@@ -156,6 +156,22 @@ api POST "/stock/lots/$LQ/status" "$PH" -d '{"status":"quarantine","reason":"ტ
 chk "stk_quarantine: საწყობის მენეჯერს და ფარმაცევტს; მესაწყობეს — არა" "$(inm "stk_quarantine:$LQ" "$SM"):$(inm "stk_quarantine:$LQ" "$PH"):$(inm "stk_quarantine:$LQ" "$SK")" "1:1:0"
 api POST "/stock/lots/$LQ/status" "$SM" -d '{"status":"active","reason":"ტესტ-E2E: შემოწმდა"}' >/dev/null
 chk "გააქტიურება → ქრება" "$(inm "stk_quarantine:$LQ" "$SM")" "0"
+# ცარიელი ამპულა (0082a): ნარკოტიკული → D1 ქვესაწყობი → ხარჯი პაციენტზე მოწმით → ფარმაცევტი ადასტურებს
+modset stock '{"empty_return_classes":["narcotic"]}' >/dev/null
+GN=$(api POST /pharmacy/generics "$PH" -d "{\"inn\":\"ტესტ-E2E WA მორფინი $S\",\"form_code\":\"INJ_SOL\",\"strength\":\"10 მგ/მლ\",\"controlled_class\":\"narcotic\",\"dose_unit\":\"mg\",\"dose_per_unit\":10}" | jq -r '.id // empty')
+NAR=$(api POST /stock/items "$SM" -d "{\"name\":\"ტესტ-E2E WA Morphini 1% $S\",\"category_id\":\"$(cat_id MED)\",\"generic_id\":\"$GN\",\"base_unit\":\"ampoule\"}" | jq -r '.id // empty')
+RCN=$(api POST /stock/receipts "$SK" -d "{\"location_id\":\"$WC\",\"lines\":[{\"item_id\":\"$NAR\",\"qty\":5,\"lot_no\":\"WN$S\",\"expires_on\":\"$D1Y\",\"price\":2,\"vat_rate\":0}]}" | jq -r '.id // empty')
+api POST "/stock/receipts/$RCN/post" "$SK" >/dev/null
+LNA=$(api GET "/stock/balances?location_id=$WC&item_id=$NAR" "$SM" | jq -r '.rows[0].lot_id // empty')
+TN=$(api POST /stock/transfers "$SK" -d "{\"doc_type\":\"transfer\",\"from_location_id\":\"$WC\",\"to_location_id\":\"$SUB1\",\"lines\":[{\"lot_id\":\"$LNA\",\"qty_base\":3}]}" | jq -r '.id // empty')
+api POST "/stock/docs/$TN/receive" "$HD" -d '{"action":"receive"}' >/dev/null
+CNR=$(api POST /stock/consumptions "$NR" -d "{\"location_id\":\"$SUB1\",\"patient_id\":\"$PAT\",\"lines\":[{\"item_id\":\"$NAR\",\"qty_base\":1,\"dose_given\":5,\"dose_wasted\":5}],\"witness\":{\"username\":\"e2e.wa.54.$S@test.local\",\"password\":\"E2e-$S-pass-54\"}}")
+chk "ნარკოტიკული ხარჯი პაციენტზე (D1, მოწმით) — CN" "$(echo "$CNR" | jq -r '.doc_no // .message | tostring | test("^CN")')" "true"
+X=$(it "stk_empties:$SUB1" "$PH")
+chk "stk_empties: ფარმაცევტს — „ცარიელი ამპულა“ (1 ხაზი, მაღალი); მესაწყობეს / ექთანს (ფარმაცევტი არსებობს) — არა" "$(echo "$X" | jq -r '"\(.detail|test("^1 ხაზი")):\(.priority)"'):$(inm "stk_empties:$SUB1" "$SK"):$(inm "stk_empties:$SUB1" "$NR")" "true:high:0:0"
+EL=$(api GET "/stock/controlled/empties?location_id=$SUB1" "$PH" | jq -c '[.[].id]')
+api POST /stock/controlled/empties/confirm "$PH" -d "{\"line_ids\":$EL}" >/dev/null
+chk "ცარიელის დადასტურება → ქრება" "$(inm "stk_empties:$SUB1" "$PH")" "0"
 
 step "4. შესყიდვები"
 modset procurement '{"po_mode":"optional","pr_approval_levels":2,"pr_finance_threshold":1000,"controlled_pharmacist":true,"po_overdue_alert":true}' >/dev/null
