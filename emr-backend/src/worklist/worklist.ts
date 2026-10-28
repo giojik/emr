@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCod
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsIn, IsISO8601, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import type { Request } from 'express';
-import { sql } from 'kysely';
+import { sql, type RawBuilder } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
@@ -34,7 +34,7 @@ export class WorklistService {
     return (a.created_at ?? '').localeCompare(b.created_at ?? '');
   }
 
-  async mine(u: AuthUser, q: { source?: string; overdue?: string }) {
+  async mine(u: AuthUser, q: { source?: string; overdue?: string }, noCache = false) {
     const s = await this.tasks.settings();
     const mods = await enabledModules(this.db);
     const [sys, own] = await Promise.all([
@@ -49,7 +49,7 @@ export class WorklistService {
     }
     if (q.overdue === '1') items = items.filter((x) => x.overdue);
     const totals = { total: items.length, overdue: items.filter((x) => x.overdue).length, urgent: items.filter((x) => x.priority === 'urgent').length };
-    if (!q.source && q.overdue !== '1') countCache.set(u.id, { t: Date.now(), v: totals });   // 0082: მთვლელის ქეში — მხოლოდ ფილტრის გარეშე სიიდან
+    if (!noCache && !q.source && q.overdue !== '1') countCache.set(u.id, { t: Date.now(), v: totals });   // 0082: მთვლელის ქეში — მხოლოდ ფილტრის გარეშე სიიდან
     return { generated_at: new Date().toISOString(), refresh_seconds: s.refresh_seconds, totals, sources: [...summary.values()], items };
   }
 
@@ -108,6 +108,69 @@ export class WorklistService {
       .$if(!!q.department_id, (x) => x.where('department_id', '=', q.department_id!)).executeTakeFirstOrThrow();
     return { tasks: rows, done_7d: done7.n, departments: [...by.values()].sort((a, b) => b.overdue - a.overdue || b.open - a.open),
       assignees: [...people.entries()].map(([id, p]) => ({ user_id: id, ...p })).sort((a, b) => b.overdue - a.overdue || b.open - a.open) };
+  }
+
+  // ------------------------------------------------------------------ 0082b: შემოწმება (admin / worklist_all, მხოლოდ წაკითხვა)
+  /** სხვა მომხმარებლის „ჩემი დავალებები“ — იმავე წესით, რაც მას თავად უჩანს (კონფიგურაციის შესამოწმებლად); აუდიტი WL_PREVIEW */
+  async preview(userId: string, u: AuthUser, req: Request) {
+    const t = (await sql<{ id: string; role: string | null; is_active: boolean; is_section_head: boolean; email: string; capabilities: string[] | null; department_name: string | null; name: string }>`
+      SELECT x.id, x.role::text AS role, x.is_active, x.is_section_head, x.email, c.capabilities, d.name AS department_name, x.last_name || ' ' || x.first_name AS name
+        FROM users x LEFT JOIN user_capabilities c ON c.user_id = x.id LEFT JOIN departments d ON d.id = x.department_id WHERE x.id = ${userId}`.execute(this.db)).rows[0];
+    if (!t) throw new NotFoundException('მომხმარებელი ვერ მოიძებნა');
+    const target: AuthUser = { id: t.id, role: t.role ?? '', caps: (t.capabilities ?? []) as Role[], name: t.name, mustChangePassword: false };
+    const r = await this.mine(target, {}, true);
+    await this.audit.log(auditCtx(req), { action: 'WL_PREVIEW', entityName: 'users', entityId: t.id, newData: { by: u.id, total: r.totals.total } });
+    return { user: { id: t.id, name: t.name, email: t.email, is_active: t.is_active, is_section_head: t.is_section_head, department_name: t.department_name, caps: target.caps },
+      totals: r.totals, sources: r.sources, items: r.items };
+  }
+
+  /** კონფიგურაციის ხარვეზები, რომლებზეც სისტემური ჩანაწერის ადრესატი დგას (A1 / B1) */
+  async diagnostics(includeTest = false) {
+    const REAL = includeTest ? sql`TRUE` : sql`u.email NOT LIKE '%@test.local'`;
+    const mods = await enabledModules(this.db);
+    const out: { level: 'error' | 'warn' | 'info'; code: string; message: string; total: number; items: string[] }[] = [];
+    const push = (level: 'error' | 'warn' | 'info', code: string, message: string, items: string[]) => { if (items.length) out.push({ level, code, message, total: items.length, items: items.slice(0, 50) }); }   // უახლესი — ზემოთ; ≤ 50;
+    const q = async (x: RawBuilder<unknown>) => ((await x.execute(this.db)).rows as { n: string }[]).map((r) => r.n);
+    const HEAD = sql`(u.is_section_head OR 'manager' = ANY (coalesce(c.capabilities, '{}')))`;
+    // განყოფილების ქვესაწყობი, რომლის განყოფილებას ხელმძღვანელი არ ჰყავს → RQ-ს ვერავინ ამტკიცებს (admin-ის გარდა)
+    push('error', 'NO_HEAD_APPROVE', 'განყოფილების ქვესაწყობი „დამტკიცება საჭიროა“, მაგრამ განყოფილებას ხელმძღვანელი არ ჰყავს — მოთხოვნას (RQ) მხოლოდ admin ამტკიცებს და ის არავის სიაში ჩანს',
+      await q(sql`SELECT l.name || ' (' || d.name || ')' AS n FROM stock_locations l JOIN departments d ON d.id = l.department_id
+        WHERE l.is_active AND d.is_active AND (${includeTest} OR l.name NOT LIKE 'ტესტ-E2E%') AND l.requires_approval AND l.kind NOT IN ('lab', 'transit') AND NOT EXISTS (SELECT 1 FROM users u LEFT JOIN user_capabilities c ON c.user_id = u.id
+          WHERE u.is_active AND ${REAL} AND u.department_id = d.id AND ${HEAD}) ORDER BY l.created_at DESC, 1`));
+    push('warn', 'NO_HEAD', 'აქტიური განყოფილება ხელმძღვანელის გარეშე — dept_side = heads-ზე ჩანაწერს (მიღება, CSSD, გეგმიური) განყოფილების ყველა წევრი ხედავს',
+      await q(sql`SELECT d.name AS n FROM departments d WHERE d.is_active AND (${includeTest} OR d.name NOT LIKE 'ტესტ-E2E%') AND EXISTS (SELECT 1 FROM users u WHERE u.is_active AND ${REAL} AND u.department_id = d.id)
+        AND NOT EXISTS (SELECT 1 FROM users u LEFT JOIN user_capabilities c ON c.user_id = u.id WHERE u.is_active AND ${REAL} AND u.department_id = d.id AND ${HEAD}) ORDER BY d.created_at DESC, 1`));
+    push('warn', 'LOC_NO_MEMBERS', 'განყოფილების ლოკაცია, რომლის განყოფილებას აქტიური წევრი არ ჰყავს — მიღება საწყობის მენეჯერთან გადადის',
+      await q(sql`SELECT l.name || ' (' || d.name || ')' AS n FROM stock_locations l JOIN departments d ON d.id = l.department_id
+        WHERE l.is_active AND (${includeTest} OR l.name NOT LIKE 'ტესტ-E2E%') AND l.kind NOT IN ('lab', 'cssd', 'pharmacy', 'transit') AND NOT EXISTS (SELECT 1 FROM users u WHERE u.is_active AND ${REAL} AND u.department_id = d.id)
+          AND NOT EXISTS (SELECT 1 FROM staff_members s JOIN users u ON u.id = s.user_id WHERE s.is_active AND u.is_active AND ${REAL} AND s.department_id = d.id) ORDER BY l.created_at DESC, 1`));
+    push('warn', 'CSSD_NO_STAFF', 'CSSD ერთეული, რომლის განყოფილებაში აქტიური თანამშრომელი არ არის — BI / Bowie-Dick არავის სიაში ჩანს',
+      await q(sql`SELECT l.name AS n FROM stock_locations l WHERE l.is_active AND (${includeTest} OR l.name NOT LIKE 'ტესტ-E2E%') AND l.kind = 'cssd'
+        AND (l.department_id IS NULL OR NOT EXISTS (SELECT 1 FROM users u WHERE u.is_active AND ${REAL} AND u.department_id = l.department_id)) ORDER BY l.created_at DESC, 1`));
+    push('warn', 'CLINICAL_NO_DEPT', 'ექთანი / ექიმი განყოფილების გარეშე — განყოფილების ჩანაწერებს (მიღება, მინიმუმი, CSSD, გეგმიური) ვერ მიიღებს',
+      await q(sql`SELECT u.last_name || ' ' || u.first_name || ' <' || u.email || '>' AS n FROM users u JOIN user_capabilities c ON c.user_id = u.id
+        WHERE u.is_active AND u.department_id IS NULL AND c.capabilities && ARRAY['nurse', 'doctor']::varchar[] AND ${REAL} ORDER BY u.created_at DESC, 1`));
+    // ადრესატის გარეშე დარჩენილი უფლებები (ჩართული მოდულით)
+    const capNeed: [string, string, string][] = [['stock', 'storekeeper', 'მესაწყობე — საწყობის გაცემა / მიღება'], ['stock', 'stock_manager', 'საწყობის მენეჯერი — ჩამოწერა, ინვენტარიზაცია, PR L1'],
+      ['stock', 'pharmacist', 'ფარმაცევტი — ცარიელი ამპულა, აფთიაქის გაცემა'], ['procurement', 'procurement', 'შესყიდვები — PR → PO, ვადაგადაცილებული PO'],
+      ['procurement', 'procurement_approve', 'ფინანსური დამტკიცება — PR / PO ზღვარს ზემოთ'], ['procurement', 'accountant', 'ბუღალტერი — ინვოისები, ქლეიმები, პერიოდი'],
+      ['inpatient', 'billing', 'ბილინგი — ფინალიზაცია, ქლეიმის დანაკლისი'], ['tariffs', 'tariffs_approve', 'ტარიფის დამტკიცება (approval = required)'], ['core', 'receptionist', 'რეგისტრატორი — ჩაწერა, გეგმიური, ვალი']];
+    const caps = new Set((await sql<{ c: string }>`SELECT DISTINCT unnest(c.capabilities) AS c FROM user_capabilities c JOIN users u ON u.id = c.user_id
+      WHERE u.is_active AND ${REAL}`.execute(this.db)).rows.map((r) => r.c));
+    push('info', 'NO_CAP', 'აქტიური მომხმარებელი ამ უფლებით არ არის — შესაბამისი წყაროები არავის სიაში ჩანს', capNeed.filter(([m, c]) => mods.has(m) && !caps.has(c)).map(([, c, d]) => `${c} — ${d}`));
+    const w = await wlSettings(this.db);
+    if (!w.enabled) out.unshift({ level: 'error', code: 'MODULE_OFF', message: 'მოდული „სამუშაო სიები“ გამორთულია', total: 1, items: ['ადმინისტრირება → მოდულები'] });
+    const off = Object.entries(w.s.sources ?? {}).filter(([, v]) => v === false).map(([k]) => `${k} — ${SOURCES[k]?.name ?? ''}`);
+    push('info', 'SOURCES_OFF', 'გამორთული წყაროები', off);
+    return { generated_at: new Date().toISOString(), dept_side: w.s.dept_side, reg_scope: w.s.reg_scope, issues: out };
+  }
+
+  /** სიისთვის: აქტიური მომხმარებლები (სატესტოს გარდა) */
+  async previewUsers(includeTest = false) {
+    return (await sql<{ id: string; email: string; is_section_head: boolean; department_name: string | null; capabilities: string[] | null; name: string }>`
+      SELECT u.id, u.email, u.is_section_head, d.name AS department_name, c.capabilities, u.last_name || ' ' || u.first_name AS name
+        FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN user_capabilities c ON c.user_id = u.id
+       WHERE u.is_active AND (${includeTest} OR u.email NOT LIKE '%@test.local') ORDER BY d.name NULLS FIRST, u.last_name`.execute(this.db)).rows;
   }
 
   // ------------------------------------------------------------------ კატეგორიები
@@ -228,4 +291,8 @@ export class WorklistController {
   @Post('tasks/:id/reopen') @HttpCode(200) reopen(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.t.reopen(id, d.reason, u, auditCtx(r)); }
   @Post('tasks/:id/comment') @HttpCode(200) comment(@Param('id', ParseUUIDPipe) id: string, @Body() d: CommentDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.t.comment(id, d.note, u, auditCtx(r)); }
   @Post('run-jobs') @HttpCode(200) @Roles('admin') run(@Body() d: RunDto) { return this.jobs.tick(d ?? {}); }
+  // 0082b: შემოწმება — სხვისი სია / კონფიგურაციის ხარვეზები (admin / worklist_all)
+  @Get('check/users') @Roles('admin', 'worklist_all') checkUsers(@Query('include_test') t?: string) { return this.s.previewUsers(t === '1'); }
+  @Get('check/diagnostics') @Roles('admin', 'worklist_all') diagnostics(@Query('include_test') t?: string) { return this.s.diagnostics(t === '1'); }
+  @Get('check/preview/:userId') @Roles('admin', 'worklist_all') preview(@Param('userId', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.preview(id, u, r); }
 }

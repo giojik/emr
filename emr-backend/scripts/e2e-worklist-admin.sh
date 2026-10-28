@@ -6,7 +6,8 @@
 #   PO დამტკიცება, ვადაგადაცილებული PO), მომწოდებლის ინვოისი (შეჯერება, ვადა), პერიოდის დახურვა (period_lock), ტარიფი / გადამხდელის წესი
 #   (approval = required), CSSD (Bowie-Dick, BI, ვადა განყოფილებაში, გაწვევა), ინვენტარი (გადაადგილება: პასუხისმგებელი → ხელმძღვანელი →
 #   საწყობის მენეჯერი; ჩამოწერის აქტი), რეგისტრატურა (დაუხურავი ჩაწერა, გეგმიური ჰოსპიტალიზაცია, reg_scope), სალარო (override-ის ვალი),
-#   A1 (admin / საწყობის მენეჯერი — მფლობელის არსებობისას არა), წყაროს გამორთვა, ყველა წყარო — 200.
+#   A1 (admin / საწყობის მენეჯერი — მფლობელის არსებობისას არა), წყაროს გამორთვა, ყველა წყარო — 200;
+#   0082b — სხვისი სიის ნახვა (preview), კონფიგურაციის ხარვეზები (diagnostics), მომხმარებლების სია (users).
 # ბოლოს: სატესტო ჩანაწერები გაუქმებულია / გათიშულია; მოდულების პარამეტრები — საწყისი.
 # გამოყენება:  bash scripts/e2e-worklist-admin.sh [API_URL]
 # =====================================================================
@@ -306,6 +307,16 @@ chk "გადახდა → ქრება" "$(inm "cash_debt:$ENC" "$RC")" 
 step "10. admin, მთვლელი"
 chk "admin-ს (მხოლოდ admin) ახალ წყაროებში არაფერი" "$(api GET /worklist/mine "$ADM" | jq -r '[.items[]|select(.source|test("^(stk|proc|ap|fin|bill|tariff|cssd|asset|reg|cash)_"))]|length')" "0"
 chk "მთვლელი ითვლის სისტემურ ჩანაწერებს (D1-ის ხელმძღვანელი: სასწრაფო RQ)" "$(api GET /worklist/count "$HD" | jq -r '.urgent >= 1')" "true"
+
+step "10a. შემოწმება — სხვისი სია / კონფიგურაცია (0082b)"
+api POST "/stock/requests" "$NR" -d "{\"from_location_id\":\"$WC\",\"to_location_id\":\"$SUB1\",\"notes\":\"ტესტ-E2E check\",\"lines\":[{\"item_id\":\"$MED\",\"qty\":1}]}" > "$TMP/rqc"
+RQC=$(jq -r '.id // empty' "$TMP/rqc"); api POST "/stock/requests/$RQC/submit" "$NR" >/dev/null
+chk "preview: ხელმძღვანელის სია admin-ის მხრიდან = მისი საკუთარი (ჯამი, stk_approve)" "$(api GET "/worklist/check/preview/$HDID" "$ADM" | jq -r --arg k "stk_approve:$RQC" '"\(.totals.total):\([.items[]|select(.key==$k)]|length)"')" "$(api GET /worklist/mine "$HD" | jq -r '.totals.total'):1"
+chk "preview / diagnostics / users — ექთანს 403" "$(code GET "/worklist/check/preview/$HDID" "$NR"):$(code GET /worklist/check/diagnostics "$NR"):$(code GET /worklist/check/users "$NR")" "403:403:403"
+DG=$(api GET "/worklist/check/diagnostics?include_test=1" "$ADM")
+chk "diagnostics: D2 — ხელმძღვანელის გარეშე (NO_HEAD); ნაგულისხმევად სატესტო განყოფილება არ ჩანს" "$(echo "$DG" | jq -r --arg d "ტესტ-E2E WA ქირურგია $S" '[.issues[]|select(.code=="NO_HEAD")|.items[]|select(.==$d)]|length'):$(api GET /worklist/check/diagnostics "$ADM" | jq -r --arg d "ტესტ-E2E WA ქირურგია $S" '[.issues[]|.items[]|select(.==$d)]|length')" "1:0"
+chk "users: ნაგულისხმევად სატესტო (@test.local) არ ჩანს; include_test=1 — ჩანს" "$(api GET /worklist/check/users "$ADM" | jq -r --arg e "e2e.wa.54.$S@test.local" '[.[]|select(.email==$e)]|length'):$(api GET "/worklist/check/users?include_test=1" "$ADM" | jq -r --arg e "e2e.wa.54.$S@test.local" '[.[]|select(.email==$e)]|length')" "0:1"
+api POST "/stock/requests/$RQC/cancel" "$NR" -d '{"reason":"ტესტ-E2E"}' >/dev/null
 
 step "11. გასუფთავება"
 api POST "/stock/requests/$RQU/cancel" "$NR" -d '{"reason":"ტესტ-E2E"}' >/dev/null
