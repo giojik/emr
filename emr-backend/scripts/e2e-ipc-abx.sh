@@ -94,7 +94,7 @@ chk "ცეფტრიაქსონი: ემპირიული, J18.9, W
   "empiric:J18.9:watch:72:not_required"
 R=$(api POST "$OR1" "$DR" -d "$(med "$G_P" scheduled 500 PO TID)")
 chk "პარაცეტამოლი (არა-ანტიმიკრობული): ჩვენების გარეშე ✓, abx ველები ცარიელი" "$(echo "$R" | jq -r '"\(.id!=null):\(.abx_indication):\(.abx_review_due)"')" "true:null:null"
-O_A=$(api POST "$OR2" "$DR" -d "$(plus "$(med "$G_A" scheduled 500 PO TID)" '{"abx_indication":"targeted"}')" | jq -r '.id // empty')
+O_A=$(api POST "$OR2" "$DR" -d "$(plus "$(med "$G_A" scheduled 500 PO Q8H)" '{"abx_indication":"targeted"}')" | jq -r '.id // empty')
 O_X=$(api POST "$OR2" "$DR" -d "$(plus "$(med "$G_X" scheduled 100 IV Q24H)" '{"abx_indication":"prophylaxis"}')" | jq -r '.id // empty')
 [ -n "$O_C" ] && [ -n "$O_A" ] && [ -n "$O_X" ] || die "დანიშნულებები ვერ შეიქმნა"
 chk "ერთჯერადი ანტიბიოტიკი — time-out არ ენიჭება" "$(api POST "$OR2" "$DR" -d "$(plus "$(med "$G_A" once 500 PO)" '{"abx_indication":"prophylaxis"}')" | jq -r '"\(.abx_indication):\(.abx_review_due)"')" "prophylaxis:null"

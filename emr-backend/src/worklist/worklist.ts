@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
+import { abxPolicy } from '../ipc/ipc-common';
 import { PRI_RANK, SOURCES, TARGET_KA, enabledModules, isAll, manageDepts, memberDepts, wlSettings, type WlItem } from './worklist-common';
 import { WorklistJobsService } from './worklist-jobs';
 import { WorklistSources } from './worklist-sources';
@@ -154,15 +155,56 @@ export class WorklistService {
     const capNeed: [string, string, string][] = [['stock', 'storekeeper', 'მესაწყობე — საწყობის გაცემა / მიღება'], ['stock', 'stock_manager', 'საწყობის მენეჯერი — ჩამოწერა, ინვენტარიზაცია, PR L1'],
       ['stock', 'pharmacist', 'ფარმაცევტი — ცარიელი ამპულა, აფთიაქის გაცემა'], ['procurement', 'procurement', 'შესყიდვები — PR → PO, ვადაგადაცილებული PO'],
       ['procurement', 'procurement_approve', 'ფინანსური დამტკიცება — PR / PO ზღვარს ზემოთ'], ['procurement', 'accountant', 'ბუღალტერი — ინვოისები, ქლეიმები, პერიოდი'],
-      ['inpatient', 'billing', 'ბილინგი — ფინალიზაცია, ქლეიმის დანაკლისი'], ['tariffs', 'tariffs_approve', 'ტარიფის დამტკიცება (approval = required)'], ['core', 'receptionist', 'რეგისტრატორი — ჩაწერა, გეგმიური, ვალი']];
+      ['inpatient', 'billing', 'ბილინგი — ფინალიზაცია, ქლეიმის დანაკლისი'], ['tariffs', 'tariffs_approve', 'ტარიფის დამტკიცება (approval = required)'], ['core', 'receptionist', 'რეგისტრატორი — ჩაწერა, გეგმიური, ვალი'],
+      // 0083: კლინიკური
+      ['inpatient', 'doctor', 'ექიმი — დოკუმენტაცია, დანიშნულებები, კონსულტაცია, NEWS2'], ['inpatient', 'nurse', 'ექთანი — MAR, შკალები, ვიტალები, გადაბარება'],
+      ['or', 'anesthesiologist', 'ანესთეზიოლოგი — წინასაოპერაციო შეფასება, ანესთეზიის რუკა, PACU'], ['or', 'or_nurse', 'საოპერაციო ექთანი — PACU']];
     const caps = new Set((await sql<{ c: string }>`SELECT DISTINCT unnest(c.capabilities) AS c FROM user_capabilities c JOIN users u ON u.id = c.user_id
       WHERE u.is_active AND ${REAL}`.execute(this.db)).rows.map((r) => r.c));
     push('info', 'NO_CAP', 'აქტიური მომხმარებელი ამ უფლებით არ არის — შესაბამისი წყაროები არავის სიაში ჩანს', capNeed.filter(([m, c]) => mods.has(m) && !caps.has(c)).map(([, c, d]) => `${c} — ${d}`));
+    // ---- 0083: კლინიკური წყაროების ადრესატები
+    const INPD = sql`d.is_active AND d.type = 'inpatient' AND (${includeTest} OR d.name NOT LIKE 'ტესტ-E2E%') AND EXISTS (SELECT 1 FROM beds b JOIN wards w ON w.id = b.ward_id WHERE w.department_id = d.id AND b.is_active)`;
+    const headOf = (cap: string) => sql`EXISTS (SELECT 1 FROM users u JOIN user_capabilities c ON c.user_id = u.id WHERE u.is_active AND ${REAL} AND u.department_id = d.id
+      AND ${cap} = ANY (c.capabilities) AND (u.is_section_head OR 'manager' = ANY (c.capabilities)))`;
+    if (mods.has('inpatient')) {
+      const ipd = ((await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'inpatient').executeTakeFirst())?.settings ?? {}) as Record<string, unknown>;
+      const hasCap = (c: string) => caps.has(c);
+      const mode = (ipd.med_verifier as string) ?? 'both';
+      if ((ipd.med_verification ?? 'high_risk') !== 'off' && (mode === 'pharmacist' ? !hasCap('pharmacist') : mode === 'head_nurse' || !hasCap('pharmacist'))) {
+        push('error', 'NO_VERIFIER', `დანიშნულების ვერიფიკაცია (med_verifier = ${mode}) — დამდასტურებელი არ არის: ${mode === 'pharmacist' ? 'ფარმაცევტი' : 'განყოფილების მთავარი ექთანი (ფარმაცევტიც არ არის)'} — დანიშნულება არავის სიაში ჩანს`,
+          mode === 'pharmacist' ? ['pharmacist — აქტიური მომხმარებელი არ არის'] : await q(sql`SELECT d.name AS n FROM departments d WHERE ${INPD} AND NOT EXISTS (SELECT 1 FROM users u JOIN user_capabilities c ON c.user_id = u.id
+            WHERE u.is_active AND ${REAL} AND u.department_id = d.id AND 'nurse' = ANY (c.capabilities) AND u.is_section_head) ORDER BY d.created_at DESC, 1`));
+      }
+      const pol = await abxPolicy(this.db);
+      if (pol.restrict_mode !== 'off') {
+        const noInf = !hasCap('infection'); const noPh = !hasCap('pharmacist');
+        if (pol.approver === 'ipc' && noInf) push('error', 'NO_ABX_APPROVER', 'შეზღუდული ანტიბიოტიკის დამტკიცება (abx_approver = ipc) — ინფექციის კონტროლის (infection) მომხმარებელი არ არის', ['infection']);
+        else if (pol.approver !== 'ipc' && noPh && (pol.approver === 'department' || noInf)) push('error', 'NO_ABX_APPROVER',
+          `შეზღუდული ანტიბიოტიკის დამტკიცება (abx_approver = ${pol.approver}) — ფარმაცევტი არ არის და განყოფილებას ხელმძღვანელი ექიმი არ ჰყავს`,
+          await q(sql`SELECT d.name AS n FROM departments d WHERE ${INPD} AND NOT ${headOf('doctor')} ORDER BY d.created_at DESC, 1`));
+      }
+      if (ipd.epicrisis_cosign === true) push('error', 'NO_EPI_COSIGNER', 'ეპიკრიზის თანახელმოწერა ჩართულია, მაგრამ განყოფილებას ხელმძღვანელი ექიმი არ ჰყავს — ეპიკრიზი არავის სიაში ჩანს',
+        await q(sql`SELECT d.name AS n FROM departments d WHERE ${INPD} AND NOT ${headOf('doctor')} ORDER BY d.created_at DESC, 1`));
+      push('warn', 'NO_ATTENDING', 'აქტიური ჰოსპიტალიზაცია მკურნალი ექიმის გარეშე / მკურნალი არააქტიურია — ექიმის ჩანაწერები ხელმძღვანელთან / განყოფილების ექიმებთან მიდის',
+        await q(sql`SELECT st.adm_no || ' — ' || p.last_name || ' ' || p.first_name AS n FROM inpatient_stays st JOIN encounters e ON e.id = st.encounter_id JOIN patients p ON p.id = st.patient_id
+          LEFT JOIN users au ON au.id = e.attending_doctor_id WHERE st.status = 'active' AND (${includeTest} OR p.last_name NOT LIKE 'ტესტ-E2E%') AND (au.id IS NULL OR NOT au.is_active)
+          ORDER BY st.admitted_at DESC, 1`));
+      push('warn', 'DEPT_NO_NURSE', 'საწოლიანი განყოფილება აქტიური ექთნის გარეშე (users.department_id) — MAR / შკალები / ვიტალები არავის სიაში ჩანს',
+        await q(sql`SELECT d.name AS n FROM departments d WHERE ${INPD} AND NOT EXISTS (SELECT 1 FROM users u JOIN user_capabilities c ON c.user_id = u.id
+          WHERE u.is_active AND ${REAL} AND u.department_id = d.id AND 'nurse' = ANY (c.capabilities)) ORDER BY d.created_at DESC, 1`));
+    }
+    if (mods.has('or')) {
+      const or = ((await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'or').executeTakeFirst())?.settings ?? {}) as Record<string, unknown>;
+      if ((or.or_scheduling ?? 'coordinator') === 'coordinator' && !caps.has('or_schedule'))
+        push('error', 'NO_OR_SCHEDULER', 'or_scheduling = coordinator, მაგრამ or_schedule არავის აქვს — გეგმიურ მოთხოვნას მხოლოდ admin გეგმავს (სიაში — ქირურგს / ხელმძღვანელს)', ['or_schedule']);
+    }
     const w = await wlSettings(this.db);
+    if (w.s.nurse_scope === 'on_shift' && !mods.has('roster'))
+      push('info', 'NURSE_SCOPE_NO_ROSTER', 'nurse_scope = on_shift, მაგრამ „ცვლები და მორიგეობა“ გამორთულია — ექთნის ჩანაწერები განყოფილების ყველა ექთანთან მიდის', ['roster']);
     if (!w.enabled) out.unshift({ level: 'error', code: 'MODULE_OFF', message: 'მოდული „სამუშაო სიები“ გამორთულია', total: 1, items: ['ადმინისტრირება → მოდულები'] });
     const off = Object.entries(w.s.sources ?? {}).filter(([, v]) => v === false).map(([k]) => `${k} — ${SOURCES[k]?.name ?? ''}`);
     push('info', 'SOURCES_OFF', 'გამორთული წყაროები', off);
-    return { generated_at: new Date().toISOString(), dept_side: w.s.dept_side, reg_scope: w.s.reg_scope, issues: out };
+    return { generated_at: new Date().toISOString(), dept_side: w.s.dept_side, reg_scope: w.s.reg_scope, nurse_scope: w.s.nurse_scope, issues: out };
   }
 
   /** სიისთვის: აქტიური მომხმარებლები (სატესტოს გარდა) */

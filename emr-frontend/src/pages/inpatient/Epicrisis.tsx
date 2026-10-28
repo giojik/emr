@@ -73,7 +73,7 @@ export default function EpicrisisPanel({ encounterId, diagnoses, encounterActive
   const err = save.error ?? act.error ?? create.error ?? addDx.error ?? delDx.error;
 
   return (
-    <section className="card">
+    <section className="card" id="epicrisis">
       {toast.node}
       <div className="card-head" style={{ flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0 }}>ეპიკრიზი</h2>

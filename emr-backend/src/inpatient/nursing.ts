@@ -88,6 +88,16 @@ export class NoteDto {
   @IsOptional() @ValidateNested() @Type(() => SbarDto) sbar?: SbarDto;
 }
 export class VoidDto { @IsString() @Length(3, 1000) reason: string }
+/** 0083 (F): ხაზის / კათეტერის საჭიროების გადახედვა („საჭიროება შეფასდა“) */
+export class LineReviewDto { @IsOptional() @IsString() @MaxLength(500) note?: string }
+/** 0083 (D): NEWS2 — ექიმის შეფასება */
+export const NEWS2_ACTIONS = ['monitor', 'treatment', 'escalated', 'transfer', 'other'] as const;
+export const NEWS2_ACTION_KA: Record<string, string> = { monitor: 'დაკვირვება გრძელდება', treatment: 'მკურნალობა შეიცვალა', escalated: 'ესკალაცია (უფროსი / რეანიმაცია)',
+  transfer: 'გადაყვანა (ICU / სხვა)', other: 'სხვა' };
+export class News2ReviewDto {
+  @IsIn(NEWS2_ACTIONS as unknown as string[]) action: (typeof NEWS2_ACTIONS)[number];
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+}
 
 interface ScaleItem { key: string; label: string; options: { label: string; points: number }[] }
 interface ScaleBand { min: number; max: number; label: string; level: 'none' | 'low' | 'medium' | 'high' }
@@ -350,6 +360,50 @@ export class NursingService {
     });
   }
 
+  /**
+   * 0083 (F): ხაზის / კათეტერის საჭიროება შეფასდა — სამუშაო სიაში (nur_line) ჩანაწერი ქრება და line_review_hours-ის შემდეგ ბრუნდება.
+   * წერს მიმდინარე განყოფილების ექთანი / ექიმი (როგორც ამოღება).
+   */
+  async reviewLine(id: string, dto: LineReviewDto, u: AuthUser, ctx: AuditContext) {
+    return this.db.transaction().execute(async (trx) => {
+      const l = await trx.selectFrom('lines_drains').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+      if (!l || l.voided_at) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
+      if (l.removed_at) throw new ConflictException('უკვე ამოღებულია');
+      const st = await this.stay(l.encounter_id, trx);
+      if (st.status !== 'active') throw new ConflictException('ჰოსპიტალიზაცია აქტიური არ არის');
+      if (!(await this.canWrite(u, st.department_id))) throw new ForbiddenException('შეფასებას წერს მიმდინარე განყოფილების ექთანი ან ექიმი');
+      const note = dto.note?.trim() || null;
+      const r = await trx.updateTable('lines_drains').set({ reviewed_at: sql`now()`, reviewed_by: u.id, review_note: note }).where('id', '=', id)
+        .returning(['reviewed_at']).executeTakeFirstOrThrow();
+      await this.ipd.event(trx, { encounter_id: l.encounter_id, kind: 'line_reviewed', data: { line_id: id, kind: l.kind, note } }, u);
+      await this.audit.log(ctx, { action: 'IPD_LINE_REVIEW', entityName: 'lines_drains', entityId: id, newData: { note } }, trx);
+      return { id, reviewed_at: r.reviewed_at };
+    });
+  }
+
+  /**
+   * 0083 (D): NEWS2 — ექიმის შეფასება გაზომვაზე (news2_reviews — უცვლელი ჟურნალი). წერს ექიმი: მკურნალი ან მიმდინარე განყოფილების ექიმი (admin).
+   * სამუშაო სიაში (news2_review) ჩანაწერი ქრება; ახალი გაზომვა უფრო მაღალი დონით ან 4 სთ-ის შემდეგ — თავიდან.
+   */
+  async reviewNews2(vitalsId: string, dto: News2ReviewDto, u: AuthUser, ctx: AuditContext) {
+    if (!has(u, 'doctor', 'admin')) throw new ForbiddenException('NEWS2-ს აფასებს ექიმი');
+    const note = dto.note?.trim() || null;
+    if (dto.action === 'other' && (note?.length ?? 0) < 3) throw new BadRequestException('„სხვა“ — მიუთითეთ შენიშვნა');
+    return this.db.transaction().execute(async (trx) => {
+      const v = await trx.selectFrom('encounter_vitals').select(['id', 'encounter_id', 'news2', 'news2_level', 'voided_at']).where('id', '=', vitalsId).executeTakeFirst();
+      if (!v || v.voided_at) throw new NotFoundException('გაზომვა ვერ მოიძებნა');
+      if (v.news2 == null || !v.news2_level) throw new BadRequestException('გაზომვას NEWS2 არ აქვს');
+      const st = await this.stay(v.encounter_id, trx);
+      if (st.status !== 'active') throw new ConflictException('ჰოსპიტალიზაცია აქტიური არ არის');
+      if (!has(u, 'admin') && st.attending_doctor_id !== u.id && !(await this.canWrite(u, st.department_id))) throw new ForbiddenException('აფასებს მკურნალი ან განყოფილების ექიმი');
+      const r = await trx.insertInto('news2_reviews').values({ encounter_id: v.encounter_id, vitals_id: v.id, score: v.news2, level: v.news2_level, action: dto.action, note, reviewed_by: u.id })
+        .returningAll().executeTakeFirstOrThrow().catch((e: unknown) => mapPgError(e, { ux_news2_review_vitals: 'ეს გაზომვა უკვე შეფასებულია' }));
+      await this.ipd.event(trx, { encounter_id: v.encounter_id, kind: 'news2_reviewed', data: { vitals_id: v.id, score: v.news2, level: v.news2_level, action: dto.action, note } }, u);
+      await this.audit.log(ctx, { action: 'IPD_NEWS2_REVIEW', entityName: 'encounter_vitals', entityId: v.id, newData: { action: dto.action, note } }, trx);
+      return r;
+    });
+  }
+
   // ---------------------------------------------------------------- ჩანაწერები / ცვლა
   /** მიმდინარე ცვლის დასაწყისი (shift_times, კლინიკის დროით) */
   async shiftStart(ex: Ex = this.db) {
@@ -454,13 +508,21 @@ export class NursingService {
       return { code: d.code, name: d.name, due_at: dueAt, overdue: dueAt.getTime() < Date.now(), last_at: last?.assessed_at ?? null };
     });
     const lines = await this.db.selectFrom('lines_drains as l').leftJoin('users as x', 'x.id', 'l.inserted_by').leftJoin('users as y', 'y.id', 'l.removed_by')
+      .leftJoin('users as z', 'z.id', 'l.reviewed_by')
       .selectAll('l').select([sql<string | null>`x.last_name || ' ' || x.first_name`.as('inserted_by_name'), sql<string | null>`y.last_name || ' ' || y.first_name`.as('removed_by_name'),
+        sql<string | null>`z.last_name || ' ' || z.first_name`.as('reviewed_by_name'),
         sql<number>`extract(epoch FROM coalesce(l.removed_at, now()) - l.inserted_at)::int / 3600`.as('hours')])
       .where('l.encounter_id', '=', encounterId).orderBy(sql`l.removed_at IS NULL`, 'desc').orderBy('l.inserted_at', 'desc').execute();
     const notes = await this.db.selectFrom('nursing_notes as n').leftJoin('users as x', 'x.id', 'n.author_id').leftJoin('users as y', 'y.id', 'n.ack_by')
       .selectAll('n').select([sql<string>`x.last_name || ' ' || x.first_name`.as('author_name'), sql<string | null>`y.last_name || ' ' || y.first_name`.as('ack_by_name')])
       .where('n.encounter_id', '=', encounterId).orderBy('n.created_at', 'desc').limit(100).execute();
+    // 0083 (D): NEWS2-ის ექიმის შეფასებები (ბოლო 30)
+    const news2Reviews = await this.db.selectFrom('news2_reviews as r').leftJoin('users as x', 'x.id', 'r.reviewed_by')
+      .selectAll('r').select(sql<string>`x.last_name || ' ' || x.first_name`.as('reviewed_by_name'))
+      .where('r.encounter_id', '=', encounterId).orderBy('r.reviewed_at', 'desc').limit(30).execute();
+    const canReview = st.status === 'active' && has(u, 'doctor', 'admin') && (has(u, 'admin') || st.attending_doctor_id === u.id || await this.canWrite(u, st.department_id));
     return {
+      can_review_news2: canReview, news2_reviews: news2Reviews.map((r) => ({ ...r, action_ka: NEWS2_ACTION_KA[r.action] ?? r.action })),
       can_write: st.status === 'active' && await this.canWrite(u, st.department_id), age: st.age, news2_applicable: s.news2_enabled && st.age >= 16,
       settings: { news2_alert: s.news2_alert, news2_urgent: s.news2_urgent, glucose_low: s.glucose_low, glucose_high: s.glucose_high, line_alert_hours: s.line_alert_hours ?? {} },
       vitals, fluid: await this.fluid(encounterId, Math.min(days, 7)), scale_defs: defs, scales, scales_due: due,
@@ -521,6 +583,10 @@ export class NursingController {
   line(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: LineDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.addLine(eid, d, u, auditCtx(r)); }
   @Post('lines/:id/remove') @HttpCode(200) @Roles(...WRITE)
   remove(@Param('id', ParseUUIDPipe) id: string, @Body() d: LineRemoveDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.removeLine(id, d, u, auditCtx(r)); }
+  @Post('lines/:id/review') @HttpCode(200) @Roles(...WRITE)
+  reviewLine(@Param('id', ParseUUIDPipe) id: string, @Body() d: LineReviewDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.reviewLine(id, d, u, auditCtx(r)); }
+  @Post('vitals/:id/news2-review') @HttpCode(200) @Roles('admin', 'doctor')
+  news2Review(@Param('id', ParseUUIDPipe) id: string, @Body() d: News2ReviewDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.reviewNews2(id, d, u, auditCtx(r)); }
   @Post('stays/:eid/nursing-notes') @Roles(...WRITE)
   note(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.addNote(eid, d, u, auditCtx(r)); }
   @Post('nursing-notes/:id/ack') @HttpCode(200) @Roles(...WRITE)

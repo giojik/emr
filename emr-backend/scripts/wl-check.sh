@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# wl-check.sh — სამუშაო სიები: რეალური ანგარიშების შემოწმება (0082b). მხოლოდ წაკითხვა — არაფერს ქმნის / ცვლის.
+# wl-check.sh — სამუშაო სიები: რეალური ანგარიშების შემოწმება (0082b; 0083 — კლინიკური ხარვეზებიც: ვერიფიკაცია, ანტიბიოტიკის დამტკიცება, ეპიკრიზი, მკურნალი, ექთანი, საოპერაციო). მხოლოდ წაკითხვა — არაფერს ქმნის / ცვლის.
 #   1) კონფიგურაციის ხარვეზები, რომლებზეც სისტემური ჩანაწერის ადრესატი დგას: განყოფილება ხელმძღვანელის გარეშე, ქვესაწყობი
 #      დამტკიცებით, მაგრამ დამმტკიცებლის გარეშე, ექთანი / ექიმი განყოფილების გარეშე, CSSD თანამშრომლის გარეშე, უფლება ადრესატის გარეშე;
 #   2) თითო აქტიურ მომხმარებელზე (სატესტო @test.local-ის გარდა) — „ჩემი დავალებები“ იმავე წესით, რაც მას თავად უჩანს:
@@ -25,7 +25,7 @@ QT=""; [ "${TEST:-0}" = "1" ] && QT="?include_test=1"
 printf '\n\033[1m1. კონფიგურაცია\033[0m\n'
 D=$(api "/worklist/check/diagnostics$QT")
 echo "$D" | jq -e '.issues' >/dev/null 2>&1 || { echo "  ✗ /worklist/check/diagnostics: $(echo "$D" | head -c 300)"; exit 1; }
-echo "  dept_side = $(echo "$D" | jq -r .dept_side) · reg_scope = $(echo "$D" | jq -r .reg_scope)"
+echo "  dept_side = $(echo "$D" | jq -r .dept_side) · reg_scope = $(echo "$D" | jq -r .reg_scope) · nurse_scope = $(echo "$D" | jq -r .nurse_scope)"
 if [ "$(echo "$D" | jq '.issues|length')" = "0" ]; then printf '  \033[32m✓\033[0m ხარვეზი არ არის\n'; fi
 echo "$D" | jq -r '.issues[] | (if .level=="error" then "\u001b[31m✗\u001b[0m" elif .level=="warn" then "\u001b[33m!\u001b[0m" else "\u001b[36mi\u001b[0m" end) + " " + .message + "\n" + ([.items[] | "      · " + .] | join("\n")) + (if (.total // 0) > (.items|length) then "\n      … და კიდევ \(.total - (.items|length))" else "" end)' | sed 's/^/  /'
 

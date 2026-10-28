@@ -7,7 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
-import { SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
+import { OBS_KEYS, SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
 
 /**
  * მოდულები და პარამეტრები (0037): კლინიკა რთავს / თიშავს მოდულს და ცვლის მის პარამეტრებს.
@@ -327,6 +327,12 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       sla_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => (SLA_KEYS as readonly string[]).includes(k) && int(x, 0, 720)),
       period_close_day: (v) => int(v, 1, 28), claim_build_day: (v) => int(v, 1, 28), ipd_finalize_days: (v) => int(v, 0, 30), appt_open_days: (v) => int(v, 0, 14),
       debt_days: (v) => int(v, 1, 365), reg_scope: (v) => oneOf(v, ['all', 'department']), bi_due_hours: (v) => int(v, 1, 168),
+      // 0083: კლინიკური წყაროები
+      nurse_scope: (v) => oneOf(v, ['department', 'on_shift']), mar_due_ahead_min: (v) => int(v, 0, 720),
+      obs_minutes: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => (OBS_KEYS as readonly string[]).includes(k) && int(x, 15, 1440)),
+      news2_review_min: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => ['alert', 'urgent'].includes(k) && int(x, 5, 720)),
+      line_review_hours: (v) => int(v, 1, 168), draft_hours: (v) => int(v, 0, 168), amb_open_days: (v) => int(v, 1, 90), or_ahead_hours: (v) => int(v, 1, 168),
+      pacu_long_hours: (v) => int(v, 1, 48),
     },
   },
   asset_register: {

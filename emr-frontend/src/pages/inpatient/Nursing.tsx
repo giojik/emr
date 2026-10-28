@@ -22,7 +22,10 @@ export interface ScaleDef { code: string; name: string; description: string | nu
 interface Assessment { id: string; scale_code: string; scale_name: string; answers: Record<string, number>; score: number; band_label: string | null; level: string | null; note: string | null;
   assessed_at: string; assessed_by_name: string; voided_at: string | null; void_reason: string | null }
 interface Line { id: string; kind: string; kind_ka: string; site: string | null; size: string | null; details: string | null; inserted_at: string; inserted_by_name: string | null; inserted_where: string | null;
-  removed_at: string | null; removed_by_name: string | null; removal_reason: string | null; hours: number; alert_hours: number; voided_at: string | null }
+  removed_at: string | null; removed_by_name: string | null; removal_reason: string | null; hours: number; alert_hours: number; voided_at: string | null;
+  reviewed_at: string | null; reviewed_by_name: string | null; review_note: string | null }
+/** 0083 (D): NEWS2 — ექიმის შეფასება */
+interface News2Review { id: string; vitals_id: string; score: number; level: Level; action: string; action_ka: string; note: string | null; reviewed_by_name: string; reviewed_at: string }
 interface Sbar { s?: string; b?: string; a?: string; r?: string }
 export interface Summary {
   shift_start: string; vitals: Partial<Vitals> | null; mar: { missed: number; given: number; due_next: number; refused: number };
@@ -31,6 +34,7 @@ export interface Summary {
 interface Note { id: string; kind: 'note' | 'handover'; text: string | null; sbar: Sbar | null; summary: Summary | null; shift_start: string | null; author_id: string; author_name: string; created_at: string;
   ack_at: string | null; ack_by_name: string | null; voided_at: string | null; void_reason: string | null }
 interface NursingData {
+  can_review_news2: boolean; news2_reviews: News2Review[];
   can_write: boolean; age: number; news2_applicable: boolean; settings: { news2_alert: number; news2_urgent: number; glucose_low: number; glucose_high: number; line_alert_hours: Record<string, number> };
   vitals: Vitals[]; fluid: FluidData; scale_defs: ScaleDef[]; scales: Assessment[]; scales_due: { code: string; name: string; due_at: string; overdue: boolean; last_at: string | null }[];
   lines: Line[]; notes: Note[]; shift_start: string;
@@ -127,11 +131,22 @@ function flag(v: Vitals, k: string, d: NursingData): string {
 const Cell = ({ c, children }: { c: string; children: ReactNode }) => <td className="mono" style={{ textAlign: 'center', color: c === 'danger' ? 'var(--danger)' : c === 'warn' ? 'var(--warn-ink)' : undefined, fontWeight: c ? 600 : undefined,
   background: c === 'danger' ? 'var(--danger-weak)' : c === 'warn' ? 'var(--warn-weak)' : undefined }}>{children}</td>;
 
+const ALERT_LEVELS: Level[] = ['low_red', 'medium', 'high'];
 function VitalsTab({ d, encounterId, toast }: { d: NursingData; encounterId: string; toast: (m: string) => void }) {
   const [add, setAdd] = useState(false); const [voidV, setVoidV] = useState<Vitals | null>(null); const [showVoid, setShowVoid] = useState(false);
+  const [rev, setRev] = useState<Vitals | null>(null);
   const rows = d.vitals.filter((v) => showVoid || !v.voided_at);
+  // 0083 (D): ბოლო გაზომვა ზღვარზე / ზემოთ — ექიმის შეფასება
+  const last = d.vitals.find((v) => !v.voided_at && v.news2 != null);
+  const reviewedIds = new Set(d.news2_reviews.map((r) => r.vitals_id));
+  const alerting = (v: Vitals) => v.news2 != null && (v.news2 >= d.settings.news2_alert || (!!v.news2_level && ALERT_LEVELS.includes(v.news2_level)));
+  const needs = last && alerting(last) && !reviewedIds.has(last.id) ? last : null;
   return (
     <div className="stack" style={{ gap: 12 }}>
+      {needs && <div className="alert warn row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <span>⚠ NEWS2 {needs.news2} ({dt(needs.recorded_at)}) — საჭიროა ექიმის შეფასება</span><span className="grow" />
+        {d.can_review_news2 && <button className="btn sm primary" type="button" onClick={() => setRev(needs)}>შეფასდა…</button>}
+      </div>}
       <div className="row" style={{ gap: 8 }}>
         {d.can_write && <button className="btn primary sm" type="button" onClick={() => setAdd(true)}>+ ვიტალები</button>}
         {!d.news2_applicable && <span className="small muted">NEWS2 — {d.age < 16 ? '16 წლამდე არ ითვლება' : 'გამორთულია'}</span>}
@@ -151,14 +166,37 @@ function VitalsTab({ d, encounterId, toast }: { d: NursingData; encounterId: str
               <Cell c={flag(v, 'o2', d)}>{v.o2_supplement == null ? '' : v.o2_supplement ? `O₂${v.o2_flow ? ` ${n1(v.o2_flow)}ლ` : ''}` : 'ჰაერი'}</Cell>
               <Cell c={flag(v, 'temp', d)}>{n1(v.temperature)}</Cell><Cell c={flag(v, 'acvpu', d)}>{v.consciousness ?? ''}</Cell>
               <Cell c={flag(v, 'pain', d)}>{v.pain ?? ''}</Cell><Cell c={flag(v, 'glucose', d)}>{n1(v.glucose)}</Cell>
-              <td><News2Chip score={v.news2} level={v.news2_level} /></td>
+              <td><News2Chip score={v.news2} level={v.news2_level} />{reviewedIds.has(v.id) && <span className="chip ok" title="ექიმმა შეაფასა"> ✓</span>}</td>
               <td className="small muted">{v.taken_by_name}{v.notes ? <div title={v.notes}>📝</div> : null}</td>
               <td>{d.can_write && !v.voided_at && <button className="btn sm" type="button" onClick={() => setVoidV(v)}>გაუქმება</button>}</td>
             </tr>))}</tbody></table></div>)}
       <div className="small muted">ფერი — NEWS2-ის კომპონენტის ქულა (ყვითელი 1–2, წითელი 3); გლუკოზა — {d.settings.glucose_low}–{d.settings.glucose_high} მმოლ/ლ-ის გარეთ. NEWS2 მხოლოდ მინიშნებაა — კლინიკური შეფასება ექიმისაა.</div>
       {add && <VitalsDialog encounterId={encounterId} adult={d.news2_applicable} onClose={() => setAdd(false)} onDone={toast} />}
       {voidV && <VoidDialog kind="vitals" id={voidV.id} title={`ვიტალები — ${dt(voidV.recorded_at)}`} onClose={() => setVoidV(null)} onDone={toast} />}
+      {d.news2_reviews.length > 0 && <details><summary className="small muted">NEWS2 — ექიმის შეფასებები ({d.news2_reviews.length})</summary><table className="table"><tbody>{d.news2_reviews.map((r) => (
+        <tr key={r.id}><td className="small">{dt(r.reviewed_at)}</td><td><News2Chip score={r.score} level={r.level} /></td><td>{r.action_ka}{r.note && <div className="small muted">{r.note}</div>}</td>
+          <td className="small muted">{r.reviewed_by_name}</td></tr>))}</tbody></table></details>}
+      {rev && <News2ReviewDialog v={rev} encounterId={encounterId} onClose={() => setRev(null)} onDone={toast} />}
     </div>
+  );
+}
+const NEWS2_ACTIONS: [string, string][] = [['monitor', 'დაკვირვება გრძელდება'], ['treatment', 'მკურნალობა შეიცვალა'], ['escalated', 'ესკალაცია (უფროსი / რეანიმაცია)'],
+  ['transfer', 'გადაყვანა (ICU / სხვა)'], ['other', 'სხვა']];
+function News2ReviewDialog({ v, encounterId, onClose, onDone }: { v: Vitals; encounterId: string; onClose: () => void; onDone: (m: string) => void }) {
+  const inval = useInval(encounterId); const [action, setAction] = useState('monitor'); const [note, setNote] = useState('');
+  const m = useMutation({ mutationFn: () => api(`/inpatient/vitals/${v.id}/news2-review`, { body: { action, note: note.trim() || undefined } }),
+    onSuccess: () => { onDone('NEWS2 — შეფასება ჩაიწერა'); inval(); onClose(); } });
+  return (
+    <Modal title={`NEWS2 ${v.news2} — ექიმის შეფასება`} onClose={onClose} width={520}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending || (action === 'other' && note.trim().length < 3)} onClick={() => m.mutate()}>შენახვა</button></>}>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="small muted">გაზომვა: {dt(v.recorded_at)} · <News2Chip score={v.news2} level={v.news2_level} /></span>
+        <Field label="ქმედება" htmlFor="n2-a"><select id="n2-a" className="select" value={action} onChange={(e) => setAction(e.target.value)}>{NEWS2_ACTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="შენიშვნა" htmlFor="n2-n" required={action === 'other'}><textarea id="n2-n" className="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        <span className="hint">შეფასება სამუშაო სიიდან ხსნის ამ გაზომვას; უფრო მაღალი დონე ან 4 სთ-ის შემდეგ ახალი გაზომვა — თავიდან.</span>
+        <ErrorBox error={m.error} />
+      </div>
+    </Modal>
   );
 }
 
@@ -370,7 +408,7 @@ export function ScaleDialog({ encounterId, def, marEntryId, onClose, onDone }: {
 // ---------------------------------------------------------------- ხაზები / დრენაჟები
 const age = (h: number) => (h >= 48 ? `${Math.floor(h / 24)} დღე ${h % 24} სთ` : `${h} სთ`);
 function LinesTab({ d, encounterId, toast }: { d: NursingData; encounterId: string; toast: (m: string) => void }) {
-  const [add, setAdd] = useState(false); const [rm, setRm] = useState<Line | null>(null); const [vo, setVo] = useState<Line | null>(null);
+  const [add, setAdd] = useState(false); const [rm, setRm] = useState<Line | null>(null); const [vo, setVo] = useState<Line | null>(null); const [rv, setRv] = useState<Line | null>(null);
   const open = d.lines.filter((l) => !l.removed_at && !l.voided_at); const past = d.lines.filter((l) => l.removed_at || l.voided_at);
   return (
     <div className="stack" style={{ gap: 12 }}>
@@ -381,8 +419,10 @@ function LinesTab({ d, encounterId, toast }: { d: NursingData; encounterId: stri
           <tr key={l.id}>
             <td><strong>{l.kind_ka}</strong>{l.size && <span className="small muted"> · {l.size}</span>}<div className="small muted">{l.site}{l.details ? ` · ${l.details}` : ''}</div></td>
             <td className="small">{dt(l.inserted_at)}<div className="muted">{l.inserted_where ?? l.inserted_by_name}</div></td>
-            <td><span className={`chip ${over ? 'danger' : ''}`} title={l.alert_hours ? `შეხსენების ზღვარი: ${l.alert_hours} სთ` : ''}>{over ? '⚠ ' : ''}{age(l.hours)}</span></td>
-            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{d.can_write && <><button className="btn sm" type="button" onClick={() => setRm(l)}>ამოღება</button>{' '}
+            <td><span className={`chip ${over ? 'danger' : ''}`} title={l.alert_hours ? `შეხსენების ზღვარი: ${l.alert_hours} სთ` : ''}>{over ? '⚠ ' : ''}{age(l.hours)}</span>
+              {l.reviewed_at && <div className="small muted" title={l.review_note ?? ''}>საჭიროება შეფასდა: {dt(l.reviewed_at)} · {l.reviewed_by_name}</div>}</td>
+            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{d.can_write && <>{over && <><button className="btn sm" type="button" onClick={() => setRv(l)}>საჭიროება შეფასდა</button>{' '}</>}
+              <button className="btn sm" type="button" onClick={() => setRm(l)}>ამოღება</button>{' '}
               <button className="btn sm" type="button" onClick={() => setVo(l)}>გაუქმება</button></>}</td>
           </tr>);
       })}</tbody></table>}
@@ -391,6 +431,7 @@ function LinesTab({ d, encounterId, toast }: { d: NursingData; encounterId: stri
           <td className="small">{dt(l.inserted_at)} → {l.removed_at ? dt(l.removed_at) : '—'}</td><td className="small">{age(l.hours)}</td><td className="small muted">{l.removal_reason}</td></tr>))}</tbody></table></details>}
       {add && <LineDialog encounterId={encounterId} onClose={() => setAdd(false)} onDone={toast} />}
       {rm && <RemoveLineDialog line={rm} encounterId={encounterId} onClose={() => setRm(null)} onDone={toast} />}
+      {rv && <ReviewLineDialog line={rv} encounterId={encounterId} onClose={() => setRv(null)} onDone={toast} />}
       {vo && <VoidDialog kind="line" id={vo.id} title={vo.kind_ka} onClose={() => setVo(null)} onDone={toast} />}
     </div>
   );
@@ -432,6 +473,22 @@ function RemoveLineDialog({ line, encounterId, onClose, onDone }: { line: Line; 
       <div className="stack" style={{ gap: 12 }}>
         <Field label="დრო" htmlFor="rl-t"><input id="rl-t" className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
         <Field label="მიზეზი" htmlFor="rl-r"><input id="rl-r" className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="დაგეგმილი შეცვლა / ფლებიტი / აღარ სჭირდება" /></Field>
+        <ErrorBox error={m.error} />
+      </div>
+    </Modal>
+  );
+}
+
+/** 0083 (F): საჭიროების გადახედვა — ხაზი რჩება; სამუშაო სიაში თავიდან line_review_hours-ის შემდეგ */
+function ReviewLineDialog({ line, encounterId, onClose, onDone }: { line: Line; encounterId: string; onClose: () => void; onDone: (m: string) => void }) {
+  const inval = useInval(encounterId); const [note, setNote] = useState('');
+  const m = useMutation({ mutationFn: () => api(`/inpatient/lines/${line.id}/review`, { body: { note: note.trim() || undefined } }), onSuccess: () => { onDone(`${line.kind_ka} — საჭიროება შეფასდა`); inval(); onClose(); } });
+  return (
+    <Modal title={`საჭიროება შეფასდა — ${line.kind_ka}`} onClose={onClose} width={480}
+      footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={m.isPending} onClick={() => m.mutate()}>შენახვა</button></>}>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="small muted">{line.site ?? ''} · {age(line.hours)} — ხაზი ჯერ კიდევ საჭიროა (თუ არა — „ამოღება“).</span>
+        <Field label="შენიშვნა" htmlFor="rv-n"><input id="rv-n" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="მაგ. ინტრავენური თერაპია გრძელდება; ადგილი სუფთაა" /></Field>
         <ErrorBox error={m.error} />
       </div>
     </Modal>

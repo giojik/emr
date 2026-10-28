@@ -9,6 +9,7 @@ import { viewScope } from '../bme/bme-common';
 import { RosterFlowsService } from '../roster/roster-flows';
 import { SOURCES, TZ, WL_DEFAULTS, dayEnd, iso, zonedMidnight, type Priority, type WlItem, type WlSettings } from './worklist-common';
 import { AdminCtx, WorklistAdminSources, type Row, type SourceGroup } from './worklist-sources-admin';
+import { WorklistClinicalSources } from './worklist-sources-clinical';
 
 /**
  * სისტემური წყაროები (A1 — ვირტუალური): ღია საქმე პირდაპირ წყაროს ცხრილიდან, მოდულის არსებული წვდომის წესით (C1).
@@ -23,7 +24,7 @@ const pri = (p: number | null | undefined): Priority => (p === 1 ? 'urgent' : p 
 export class WorklistSources {
   private readonly log = new Logger('Worklist');
   private readonly groups: SourceGroup[];
-  constructor(@InjectDb() private readonly db: Database, private readonly rosterFlows: RosterFlowsService, admin: WorklistAdminSources) {
+  constructor(@InjectDb() private readonly db: Database, private readonly rosterFlows: RosterFlowsService, admin: WorklistAdminSources, clinical: WorklistClinicalSources) {
     this.groups = [
       { module: 'quality', codes: ['qm_triage', 'qm_review', 'qm_capa_due', 'qm_effect'], fetch: (u, c) => this.qmManager(u, c) },
       { module: 'quality', codes: ['qm_analysis', 'qm_capa'], fetch: (u, c) => this.qmMine(u, c) },
@@ -33,6 +34,7 @@ export class WorklistSources {
       { module: 'roster', codes: ['roster_absence', 'roster_swap', 'roster_offer', 'roster_peer'], fetch: (u) => this.rosterInbox(u) },
       { module: 'roster', codes: ['roster_timesheet'], fetch: (u) => this.rosterTimesheet(u) },
       ...admin.groups(),   // 0082: ადმინისტრაცია / ლოჯისტიკა
+      ...clinical.groups(),   // 0083: კლინიკური (ექიმი / ექთანი)
     ];
   }
 

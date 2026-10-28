@@ -2,9 +2,12 @@ import { Field } from '../../components/ui';
 import { useWlRefs } from './types';
 
 /** სამუშაო სიები (0081): მინიჭების წესი, შესრულება / ხელახლა გახსნა, ვადა / შეხსენება / ესკალაცია, შეტყობინებები, პაციენტი, წყაროები, მთვლელი, საწყისი გვერდი;
- *  0082: ადმინისტრაცია / ლოჯისტიკის წყაროები — განყოფილების მხარე, SLA, ვადები, რეგისტრატურის არე */
+ *  0082: ადმინისტრაცია / ლოჯისტიკის წყაროები — განყოფილების მხარე, SLA, ვადები, რეგისტრატურის არე;
+ *  0083: კლინიკური წყაროები — ექთნის არე (nurse_scope), MAR, NEWS2 (დაკვირვების სიხშირე / შეფასების ვადა), ხაზები, ჩანაწერები, საოპერაციო */
 const SLA: [string, string, number][] = [['stk_approve', 'RQ — დამტკიცება', 24], ['stk_issue', 'RQ — გაცემა', 24], ['stk_receive', 'მიღება („გზაში“)', 24],
-  ['stk_urgent', 'სასწრაფო RQ (სამივე ნაბიჯი)', 4], ['proc_approve', 'PR / PO — დამტკიცება', 48], ['asset_move', 'ინვენტარის გადაადგილება', 72]];
+  ['stk_urgent', 'სასწრაფო RQ (სამივე ნაბიჯი)', 4], ['proc_approve', 'PR / PO — დამტკიცება', 48], ['asset_move', 'ინვენტარის გადაადგილება', 72],
+  ['med_verify', 'დანიშნულების ვერიფიკაცია', 2], ['med_approve', 'ანტიბიოტიკის დამტკიცება', 4], ['doc_cosign', 'ეპიკრიზის თანახელმოწერა', 24], ['or_docs', 'ოქმი / ანესთეზიის რუკა (დასრულებიდან)', 24]];
+const OBS: [string, string, number][] = [['zero', 'NEWS2 = 0', 720], ['low', 'NEWS2 1–4', 240], ['low_red', 'ერთ პარამეტრზე 3', 60], ['medium', 'NEWS2 5–6', 60], ['high', 'NEWS2 ≥ 7', 30]];
 export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void; enabled: boolean }) {
   const v = <T,>(k: string) => s[k] as T;
   const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
@@ -13,6 +16,8 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
   const due = (v<number[]>('due_default_hours') ?? [0, 24, 4]);
   const sources = (v<Record<string, boolean>>('sources') ?? {});
   const sla = (v<Record<string, number>>('sla_hours') ?? {});
+  const obs = (v<Record<string, number>>('obs_minutes') ?? {});
+  const rev = (v<{ alert?: number; urgent?: number }>('news2_review_min') ?? {});
   const num = (k: string, label: string, def: number, min: number, max: number, hint?: string) => <Field key={k} label={label} htmlFor={`wl-${k}`} hint={hint}>
     <input id={`wl-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? def} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
   const groups = new Map<string, { code: string; name: string; who: string; module_enabled: boolean }[]>();
@@ -57,6 +62,24 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
         {num('debt_days', 'გადახდის ნებართვის ვალი — ბოლო N დღე', 30, 1, 365)}
         {num('bi_due_hours', 'BI-ს პასუხის ვადა (სთ)', 48, 1, 168)}
       </div>
+      <strong className="small">კლინიკური წყაროები (ექიმი / ექთანი)</strong>
+      <div style={grid}>
+        <Field label="ექთნის საქმე (MAR, შკალები, ვიტალები, გადაბარება, ICU)" htmlFor="wl-ns" hint="ცვლაში არავინ / „ცვლები“ გამორთულია → განყოფილების ყველა ექთანი"><select id="wl-ns" className="select" value={v<string>('nurse_scope') ?? 'department'} onChange={(e) => upd('nurse_scope', e.target.value)}>
+          <option value="department">განყოფილების ყველა ექთანი</option><option value="on_shift">მხოლოდ ცვლაში მყოფი (D4 განრიგით)</option></select></Field>
+        {num('mar_due_ahead_min', 'MAR — „ახლა შესასრულებელი“: წინ (წთ)', 60, 0, 720)}
+        {num('line_review_hours', 'ხაზის / კათეტერის გადახედვა — ყოველ (სთ)', 24, 1, 168, 'line_alert_hours-ის შემდეგ; „საჭიროება შეფასდა“')}
+        {num('draft_hours', 'ხელმოუწერელი ჩანაწერი — (სთ) შემდეგ', 12, 0, 168, '0 — მაშინვე')}
+        {num('amb_open_days', 'დაუხურავი ამბულატორიული ვიზიტი — ბოლო N დღე', 7, 1, 90)}
+        {num('or_ahead_hours', 'საოპერაციო: შეფასება / მზადყოფნა — ოპერაციამდე (სთ)', 24, 1, 168)}
+        {num('pacu_long_hours', 'PACU — დიდხანს (სთ)', 4, 1, 48)}
+        {([['alert', 'NEWS2 — ექიმის შეფასება (წთ)', 60], ['urgent', 'NEWS2 ≥ სასწრაფო ზღვარი — შეფასება (წთ)', 30]] as const).map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-nr-${k}`}>
+          <input id={`wl-nr-${k}`} className="input mono" type="number" min={5} max={720} value={rev[k] ?? d} onChange={(e) => upd('news2_review_min', { alert: rev.alert ?? 60, urgent: rev.urgent ?? 30, [k]: Number(e.target.value) })} /></Field>)}
+      </div>
+      <span className="small muted">ვიტალური ნიშნების გაზომვის სიხშირე NEWS2-ის დონით, წუთი (RCP 2017; რეანიმაციაში — მონიტორინგის ფურცელი)</span>
+      <div style={grid}>
+        {OBS.map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-obs-${k}`}><input id={`wl-obs-${k}`} className="input mono" type="number" min={15} max={1440} value={obs[k] ?? d}
+          onChange={(e) => upd('obs_minutes', { ...Object.fromEntries(OBS.map(([x, , y]) => [x, obs[x] ?? y])), [k]: Number(e.target.value) })} /></Field>)}
+      </div>
       <span className="small muted">ვადა იქ, სადაც წყაროს თავისი არ აქვს — გაგზავნიდან, საათი (0 — ვადის გარეშე)</span>
       <div style={grid}>
         {SLA.map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-sla-${k}`}><input id={`wl-sla-${k}`} className="input mono" type="number" min={0} max={720} value={sla[k] ?? d}
@@ -69,7 +92,7 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
             const n = { ...sources }; if (e.target.checked) delete n[x.code]; else n[x.code] = false; upd('sources', n); }} /> {x.name}{!x.module_enabled && <span className="muted"> (მოდული გამორთულია)</span>}</label>)}
         </div>)}
       </div>}
-      <span className="hint">სისტემური ჩანაწერი პირდაპირ წყაროდან ითვლება, მოდულის არსებული წვდომის წესით (admin-ის უფლება პასუხისმგებლობას არ ქმნის). ლოჯისტიკის წყაროები ჩნდება ლოკაციის / ობიექტის მფლობელთან — ზოგადი უფლება (საწყობის მენეჯერი …) მხოლოდ მფლობელის არარსებობისას. გამორთული წყარო „ჩემს დავალებებში“ არ ჩანს — თავის მოდულში უცვლელად რჩება.</span>
+      <span className="hint">სისტემური ჩანაწერი პირდაპირ წყაროდან ითვლება, მოდულის არსებული წვდომის წესით (admin-ის უფლება პასუხისმგებლობას არ ქმნის). ლოჯისტიკის წყაროები ჩნდება ლოკაციის / ობიექტის მფლობელთან — ზოგადი უფლება (საწყობის მენეჯერი …) მხოლოდ მფლობელის არარსებობისას. კლინიკური: ექიმის საქმე — მკურნალთან (არ არის — ხელმძღვანელთან / განყოფილების ექიმებთან), ექთნის — განყოფილების ექთნებთან. გამორთული წყარო „ჩემს დავალებებში“ არ ჩანს — თავის მოდულში უცვლელად რჩება.</span>
     </div>
   );
 }

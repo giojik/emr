@@ -53,17 +53,41 @@ export interface WlSettings {
   reg_scope: 'all' | 'department';
   /** BI-ს პასუხის ვადა — ციკლიდან N საათი */
   bi_due_hours: number;
+  // ---- 0083: კლინიკური წყაროები
+  /** ექთნის შესასრულებელი საქმე: department — განყოფილების ექთნები; on_shift — ახლა ცვლაში მყოფი (D4; ცვლაში არავინ / roster გამორთული → department) */
+  nurse_scope: 'department' | 'on_shift';
+  /** MAR: „ახლა შესასრულებელი“ — ფანჯარა წინ, წუთი */
+  mar_due_ahead_min: number;
+  /** ვიტალური ნიშნების გაზომვის სიხშირე NEWS2-ის დონით, წუთი (RCP 2017): ქულა 0 / 1–4 / ერთ პარამეტრზე 3 / 5–6 / ≥ 7 */
+  obs_minutes: Record<ObsKey, number>;
+  /** NEWS2 — ექიმის შეფასების ვადა, წუთი: alert (≥ news2_alert) / urgent (≥ news2_urgent) */
+  news2_review_min: { alert: number; urgent: number };
+  /** ხაზის / კათეტერის საჭიროების გადახედვა — ყოველ N საათში (line_alert_hours-ის შემდეგ) */
+  line_review_hours: number;
+  /** ხელმოუწერელი ჩანაწერი — N საათის შემდეგ */
+  draft_hours: number;
+  /** დაუხურავი ამბულატორიული ვიზიტი — ბოლო N დღე */
+  amb_open_days: number;
+  /** საოპერაციო: წინასაოპერაციო შეფასება / მზადყოფნა — ოპერაციამდე N საათი */
+  or_ahead_hours: number;
+  /** PACU — N საათზე მეტი → მაღალი */
+  pacu_long_hours: number;
 }
-export const SLA_KEYS = ['stk_approve', 'stk_issue', 'stk_receive', 'stk_urgent', 'proc_approve', 'asset_move'] as const;
+export const OBS_KEYS = ['zero', 'low', 'low_red', 'medium', 'high'] as const;
+export type ObsKey = (typeof OBS_KEYS)[number];
+export const SLA_KEYS = ['stk_approve', 'stk_issue', 'stk_receive', 'stk_urgent', 'proc_approve', 'asset_move', 'med_verify', 'med_approve', 'doc_cosign', 'or_docs'] as const;
 export type SlaKey = (typeof SLA_KEYS)[number];
 export const WL_DEFAULTS: WlSettings = {
   assign_scope: 'any', done_comment: 'urgent', reopen_days: 7, remind_at_due: true, escalate_hours: 0, due_default_hours: [0, 24, 4],
   notify_assign: true, notify_done: true, patient_tasks: true, sources: {}, badge: 'all', refresh_seconds: 60, home_tasks: false,
-  dept_side: 'heads', stk_expiry_days: 30, sla_hours: { stk_approve: 24, stk_issue: 24, stk_receive: 24, stk_urgent: 4, proc_approve: 48, asset_move: 72 },
+  dept_side: 'heads', stk_expiry_days: 30,
+  sla_hours: { stk_approve: 24, stk_issue: 24, stk_receive: 24, stk_urgent: 4, proc_approve: 48, asset_move: 72, med_verify: 2, med_approve: 4, doc_cosign: 24, or_docs: 24 },
   period_close_day: 10, claim_build_day: 5, ipd_finalize_days: 3, appt_open_days: 2, debt_days: 30, reg_scope: 'all', bi_due_hours: 48,
+  nurse_scope: 'department', mar_due_ahead_min: 60, obs_minutes: { zero: 720, low: 240, low_red: 60, medium: 60, high: 30 }, news2_review_min: { alert: 60, urgent: 30 },
+  line_review_hours: 24, draft_hours: 12, amb_open_days: 7, or_ahead_hours: 24, pacu_long_hours: 4,
 };
 
-/** სისტემური წყაროების კატალოგი (კოდი → ჯგუფი / დასახელება / მოდული). 0082 — ადმინისტრაცია / ლოჯისტიკა; 0083–0084 — დაემატება. module = 'core' — ყოველთვის ჩართული */
+/** სისტემური წყაროების კატალოგი (კოდი → ჯგუფი / დასახელება / მოდული). 0082 — ადმინისტრაცია / ლოჯისტიკა; 0083 — კლინიკური; 0084 — დაემატება. module = 'core' — ყოველთვის ჩართული */
 export const SOURCES: Record<string, { group: string; name: string; module: string; who: string }> = {
   qm_triage: { group: 'ხარისხი', name: 'ინციდენტის ტრიაჟი', module: 'quality', who: 'ხარისხის მენეჯერი (quality)' },
   qm_analysis: { group: 'ხარისხი', name: 'ინციდენტის ანალიზი (გამომძიებელი / გუნდი)', module: 'quality', who: 'გამომძიებელი, RCA გუნდის წევრი' },
@@ -122,6 +146,41 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   reg_appt: { group: 'რეგისტრატურა / სალარო', name: 'ჩაწერის დრო გავიდა — „მოვიდა“ / „არ გამოცხადდა“', module: 'core', who: 'რეგისტრატორი' },
   reg_planned: { group: 'რეგისტრატურა / სალარო', name: 'გეგმიური ჰოსპიტალიზაცია — დღეს / გადაცილებული', module: 'inpatient', who: 'რეგისტრატორი + განყოფილება (dept_side)' },
   cash_debt: { group: 'რეგისტრატურა / სალარო', name: 'გადახდის ნებართვით გახსნილი ვიზიტი — ვალი', module: 'core', who: 'რეგისტრატორი / ბილინგი' },
+  // ---- 0083: კლინიკური დოკუმენტაცია (ექიმი)
+  doc_admission: { group: 'კლინიკური დოკუმენტაცია', name: 'მიმღები გასინჯვა — ხელმოსაწერი', module: 'inpatient', who: 'მკურნალი ექიმი (არ არის — ხელმძღვანელი / განყოფილების ექიმები)' },
+  doc_progress: { group: 'კლინიკური დოკუმენტაცია', name: 'დღიური აკლია (გუშინ)', module: 'inpatient', who: 'მკურნალი ექიმი' },
+  doc_draft: { group: 'კლინიკური დოკუმენტაცია', name: 'ხელმოუწერელი ჩანაწერი (ჩემი)', module: 'inpatient', who: 'ავტორი' },
+  doc_discharge: { group: 'კლინიკური დოკუმენტაცია', name: 'გაწერილი — დოკუმენტაცია დაუხურავია (ეპიკრიზი)', module: 'inpatient', who: 'მკურნალი ექიმი' },
+  doc_cosign: { group: 'კლინიკური დოკუმენტაცია', name: 'ეპიკრიზი — თანახელმოწერა', module: 'inpatient', who: 'განყოფილების ხელმძღვანელი (ხელმომწერის გარდა)' },
+  doc_consent: { group: 'კლინიკური დოკუმენტაცია', name: 'სავალდებულო თანხმობა აკლია', module: 'inpatient', who: 'მკურნალი ექიმი' },
+  amb_open: { group: 'კლინიკური დოკუმენტაცია', name: 'ამბულატორიული ვიზიტი დაუხურავია', module: 'core', who: 'ვიზიტის ექიმი' },
+  // ---- 0083: დანიშნულებები / MAR
+  med_verify: { group: 'დანიშნულებები / MAR', name: 'დანიშნულების ვერიფიკაცია', module: 'inpatient', who: 'med_verifier: ფარმაცევტი / განყოფილების მთავარი ექთანი / ორივე' },
+  med_rejected: { group: 'დანიშნულებები / MAR', name: 'ვერიფიკაციაზე უარი — დანიშნულება გადასახედია', module: 'inpatient', who: 'დამნიშნავი' },
+  med_approve: { group: 'დანიშნულებები / MAR', name: 'შეზღუდული ანტიბიოტიკი — დამტკიცება', module: 'inpatient', who: 'abx_approver: განყოფილების ხელმძღვანელი / ფარმაცევტი / ინფექციის კონტროლი' },
+  med_verbal: { group: 'დანიშნულებები / MAR', name: 'ზეპირი დანიშნულება — დადასტურება', module: 'inpatient', who: 'დამნიშნავი ექიმი' },
+  med_abx_end: { group: 'დანიშნულებები / MAR', name: 'ანტიბიოტიკი სრულდება 24 სთ-ში', module: 'inpatient', who: 'დამნიშნავი + მკურნალი ექიმი' },
+  mar_due: { group: 'დანიშნულებები / MAR', name: 'MAR — ახლა შესასრულებელი დოზები (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
+  mar_missed: { group: 'დანიშნულებები / MAR', name: 'MAR — ვადაგადაცილებული / გამოტოვებული (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
+  // ---- 0083: კონსულტაცია / გადაყვანა
+  consult_todo: { group: 'კონსულტაცია / გადაყვანა', name: 'კონსულტაცია — მოთხოვნილი', module: 'inpatient', who: 'სამიზნე ექიმი / განყოფილების ექიმები (სასწრაფო + duty — მორიგე)' },
+  transfer_in: { group: 'კონსულტაცია / გადაყვანა', name: 'გადმოყვანის მოთხოვნა', module: 'inpatient', who: 'მიმღები განყოფილება (dept_side)' },
+  // ---- 0083: საექთნო / NEWS2
+  nur_scale: { group: 'საექთნო / NEWS2', name: 'სავალდებულო შკალები — ვადა (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
+  nur_line: { group: 'საექთნო / NEWS2', name: 'ხაზი / კათეტერი — საჭიროების შეფასება', module: 'inpatient', who: 'მკურნალი ექიმი + განყოფილების ექთნები' },
+  nur_handover: { group: 'საექთნო / NEWS2', name: 'ცვლის გადაბარება — მისაღები', module: 'inpatient', who: 'განყოფილების ექთნები (ავტორის გარდა)' },
+  nur_obs: { group: 'საექთნო / NEWS2', name: 'ვიტალური ნიშნები — გაზომვის ვადა (NEWS2)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
+  news2_review: { group: 'საექთნო / NEWS2', name: 'NEWS2 — ექიმის შეფასება', module: 'inpatient', who: 'მკურნალი ექიმი (სასწრაფოზე + ხელმძღვანელი)' },
+  // ---- 0083: ICU
+  icu_sheet: { group: 'ICU', name: 'მონიტორინგის ფურცელი — შეუვსებელი', module: 'icu', who: 'ICU-ს ექთნები' },
+  icu_bundle: { group: 'ICU', name: 'VAP / CLABSI bundle — დღეს', module: 'icu', who: 'ICU-ს ექთნები' },
+  icu_sofa: { group: 'ICU', name: 'SOFA — დღეს', module: 'icu', who: 'მკურნალი + ICU-ს ექიმები' },
+  // ---- 0083: საოპერაციო / PACU
+  or_request: { group: 'საოპერაციო / PACU', name: 'ოპერაციის მოთხოვნა — დაგეგმვა / დადასტურება', module: 'or', who: 'or_scheduling: კოორდინატორი / ქირურგი + ხელმძღვანელი' },
+  or_preop: { group: 'საოპერაციო / PACU', name: 'წინასაოპერაციო შეფასება (ანესთეზიოლოგი)', module: 'or', who: 'გუნდის ანესთეზიოლოგი → ხელმძღვანელი → ანესთეზიოლოგები' },
+  or_ready: { group: 'საოპერაციო / PACU', name: 'მზადყოფნის ჩეკლისტი — არასრული', module: 'or', who: 'ქირურგიული განყოფილება (dept_side)' },
+  or_docs: { group: 'საოპერაციო / PACU', name: 'ოქმი / ანესთეზიის რუკა — ხელმოსაწერი', module: 'or', who: 'ოქმი — ოპერატორი; რუკა — გუნდის ანესთეზიოლოგი' },
+  or_pacu: { group: 'საოპერაციო / PACU', name: 'PACU — პაციენტი (გაწერა / დიდხანს)', module: 'or', who: 'PACU-ს ექთანი + გუნდის ანესთეზიოლოგი' },
 };
 export const SOURCE_CODES = Object.keys(SOURCES);
 

@@ -88,7 +88,7 @@ export default function Stay() {
   const q = useQuery({ queryKey: ['ipd-stay', id], queryFn: () => api<StayDetail>(`/inpatient/stays/${id}`) });
   const s = q.data;
   const { hash } = useLocation();
-  useEffect(() => { if (s && (hash === '#billing' || hash === '#icu' || hash === '#notes' || hash === '#scrub')) setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400); }, [s?.encounter_id, hash]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (s && ['#billing', '#icu', '#notes', '#scrub', '#nursing', '#mar', '#orders', '#epicrisis'].includes(hash)) setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400); }, [s?.encounter_id, hash]);   // eslint-disable-line react-hooks/exhaustive-deps
   const board = useQuery({ queryKey: ['ipd-board', s?.current?.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: s!.current!.department_id } }), enabled: !!s?.current && s.can.assign });
   const printers = useQuery({ queryKey: ['printers', 'wristband'], queryFn: () => api<Printer[]>('/inpatient/printers', { query: { kind: 'wristband' } }), enabled: s?.settings.wristband_print === 'zpl' });
   const [err, setErr] = useState<unknown>(null);

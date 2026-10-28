@@ -2938,6 +2938,9 @@ export interface LinesDrains {
   removal_reason: string | null;
   removed_at: Timestamp | null;
   removed_by: string | null;
+  review_note: string | null;
+  reviewed_at: Timestamp | null;
+  reviewed_by: string | null;
   site: string | null;
   size: string | null;
   void_reason: string | null;
@@ -3228,6 +3231,18 @@ export interface MicroReports {
   kind: string;
   order_item_id: string;
   snapshot: Json;
+}
+
+export interface News2Reviews {
+  action: string;
+  encounter_id: string;
+  id: Generated<string>;
+  level: string;
+  note: string | null;
+  reviewed_at: Generated<Timestamp>;
+  reviewed_by: string;
+  score: number;
+  vitals_id: string;
 }
 
 export interface NoteTemplates {
@@ -5976,6 +5991,7 @@ export interface DB {
   micro_panel_items: MicroPanelItems;
   micro_panels: MicroPanels;
   micro_reports: MicroReports;
+  news2_reviews: News2Reviews;
   note_templates: NoteTemplates;
   nursing_notes: NursingNotes;
   or_anesthesia_meds: OrAnesthesiaMeds;
