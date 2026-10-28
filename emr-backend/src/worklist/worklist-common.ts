@@ -32,13 +32,38 @@ export interface WlSettings {
   refresh_seconds: number;
   /** „ჩემი დავალებები“ — საწყისი გვერდი ყველასთვის */
   home_tasks: boolean;
+  // ---- 0082: ადმინისტრაცია / ლოჯისტიკის წყაროები
+  /** განყოფილების მხარე (მიღება, CSSD-ის გაწვევა / ვადა, გეგმიური ჰოსპიტალიზაცია): heads — ხელმძღვანელი (უხელმძღვანელოზე — ყველა წევრი) / all — ყველა წევრი */
+  dept_side: 'heads' | 'all';
+  /** მარაგის ვადა: „იწურება“ — N დღეში (0 — მხოლოდ ვადაგასული) */
+  stk_expiry_days: number;
+  /** ვადა (სთ) წყაროებზე, რომლებსაც თავისი ვადა არ აქვს — გაგზავნიდან; 0 — ვადის გარეშე */
+  sla_hours: Record<SlaKey, number>;
+  /** წინა თვის დახურვის ვადა — მიმდინარე თვის N რიცხვი */
+  period_close_day: number;
+  /** „ქლეიმის გარეშე“ (წინა თვე) — ჩნდება მიმდინარე თვის N რიცხვიდან */
+  claim_build_day: number;
+  /** გაწერილის ფინალიზაციის ვადა — გაწერიდან N დღე */
+  ipd_finalize_days: number;
+  /** დაუხურავი ჩაწერა — ბოლო N დღე (0 — მხოლოდ დღეს) */
+  appt_open_days: number;
+  /** გადახდის ნებართვით გახსნილი ვიზიტის ვალი — ბოლო N დღე */
+  debt_days: number;
+  /** რეგისტრატურა: all — მთელი კლინიკა / department — საკუთარი განყოფილება(ები) */
+  reg_scope: 'all' | 'department';
+  /** BI-ს პასუხის ვადა — ციკლიდან N საათი */
+  bi_due_hours: number;
 }
+export const SLA_KEYS = ['stk_approve', 'stk_issue', 'stk_receive', 'stk_urgent', 'proc_approve', 'asset_move'] as const;
+export type SlaKey = (typeof SLA_KEYS)[number];
 export const WL_DEFAULTS: WlSettings = {
   assign_scope: 'any', done_comment: 'urgent', reopen_days: 7, remind_at_due: true, escalate_hours: 0, due_default_hours: [0, 24, 4],
   notify_assign: true, notify_done: true, patient_tasks: true, sources: {}, badge: 'all', refresh_seconds: 60, home_tasks: false,
+  dept_side: 'heads', stk_expiry_days: 30, sla_hours: { stk_approve: 24, stk_issue: 24, stk_receive: 24, stk_urgent: 4, proc_approve: 48, asset_move: 72 },
+  period_close_day: 10, claim_build_day: 5, ipd_finalize_days: 3, appt_open_days: 2, debt_days: 30, reg_scope: 'all', bi_due_hours: 48,
 };
 
-/** სისტემური წყაროების კატალოგი (კოდი → ჯგუფი / დასახელება / მოდული). 0082–0084 — დაემატება */
+/** სისტემური წყაროების კატალოგი (კოდი → ჯგუფი / დასახელება / მოდული). 0082 — ადმინისტრაცია / ლოჯისტიკა; 0083–0084 — დაემატება. module = 'core' — ყოველთვის ჩართული */
 export const SOURCES: Record<string, { group: string; name: string; module: string; who: string }> = {
   qm_triage: { group: 'ხარისხი', name: 'ინციდენტის ტრიაჟი', module: 'quality', who: 'ხარისხის მენეჯერი (quality)' },
   qm_analysis: { group: 'ხარისხი', name: 'ინციდენტის ანალიზი (გამომძიებელი / გუნდი)', module: 'quality', who: 'გამომძიებელი, RCA გუნდის წევრი' },
@@ -61,6 +86,42 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   roster_offer: { group: 'ცვლები და მორიგეობა', name: 'დასაფარი ცვლა — მოხალისის მინიჭება', module: 'roster', who: 'განრიგის შემდგენი' },
   roster_peer: { group: 'ცვლები და მორიგეობა', name: 'გაცვლის თხოვნა კოლეგისგან', module: 'roster', who: 'კოლეგა' },
   roster_timesheet: { group: 'ცვლები და მორიგეობა', name: 'თვის ტაბელის დახურვა', module: 'roster', who: 'HR' },
+  // ---- 0082: მარაგი
+  stk_approve: { group: 'მარაგი', name: 'განყოფილების მოთხოვნა (RQ) — დამტკიცება', module: 'stock', who: 'განყოფილების ხელმძღვანელი / მენეჯერი; ლაბ. — lab_manager; განყოფილების გარეშე — stock_manager' },
+  stk_issue: { group: 'მარაგი', name: 'მოთხოვნა — გასაცემი', module: 'stock', who: 'გამცემი ლოკაციის მფლობელი (საწყობი — მესაწყობე, აფთიაქი — ფარმაცევტი)' },
+  stk_receive: { group: 'მარაგი', name: 'გადაცემა / დაბრუნება — მისაღები', module: 'stock', who: 'მიმღები ლოკაციის მფლობელი (განყოფილება — dept_side)' },
+  stk_writeoff: { group: 'მარაგი', name: 'ჩამოწერა — დამტკიცება', module: 'stock', who: 'საწყობის მენეჯერი (ავტორის გარდა)' },
+  stk_count: { group: 'მარაგი', name: 'ინვენტარიზაცია — დასრულება / დამტკიცება', module: 'stock', who: 'დამწყები (ღია); საწყობის მენეჯერი (დათვლილი)' },
+  stk_expiry: { group: 'მარაგი', name: 'ვადაგასული / ვადა იწურება (ლოკაციაზე)', module: 'stock', who: 'როგორც დილის შეტყობინებაში' },
+  stk_min: { group: 'მარაგი', name: 'მინიმუმზე ქვემოთ (ლოკაციაზე)', module: 'stock', who: 'როგორც დილის შეტყობინებაში' },
+  stk_empties: { group: 'მარაგი', name: 'ცარიელი ამპულის დაბრუნება — დადასტურება', module: 'stock', who: 'ფარმაცევტი (არ არის — მესაწყობე / საწყობის მენეჯერი)' },
+  stk_quarantine: { group: 'მარაგი', name: 'ლოტი კარანტინშია — გადაწყვეტილება', module: 'stock', who: 'საწყობის მენეჯერი / ფარმაცევტი' },
+  // ---- 0082: შესყიდვები
+  proc_pr_approve: { group: 'შესყიდვები', name: 'შესყიდვის მოთხოვნა (PR) — ჩემი დამტკიცების ნაბიჯი', module: 'procurement', who: 'L1 — საწყობის მენეჯერი; ფინანსური — procurement_approve; ნარკოტიკული — ფარმაცევტი' },
+  proc_pr_order: { group: 'შესყიდვები', name: 'დამტკიცებული PR — შეკვეთის (PO) გარეშე', module: 'procurement', who: 'შესყიდვები (არ არის — საწყობის მენეჯერი)' },
+  proc_po_approve: { group: 'შესყიდვები', name: 'შეკვეთა (PO) — დამტკიცება', module: 'procurement', who: 'procurement_approve (ავტორის გარდა)' },
+  proc_po_overdue: { group: 'შესყიდვები', name: 'შეკვეთის მიწოდება ვადაგადაცილებულია', module: 'procurement', who: 'ავტორი + შესყიდვები' },
+  // ---- 0082: ფინანსები / ბილინგი / ტარიფები
+  ap_match: { group: 'ფინანსები', name: 'მომწოდებლის ინვოისი — შეჯერება არ ემთხვევა', module: 'procurement', who: 'ბუღალტერი' },
+  ap_due: { group: 'ფინანსები', name: 'მომწოდებლის ინვოისი — გადასახდელი / ვადაგადაცილებული', module: 'procurement', who: 'ბუღალტერი' },
+  fin_claim_due: { group: 'ფინანსები', name: 'ქლეიმის ანაზღაურება ვადაგადაცილებულია', module: 'finance', who: 'ბუღალტერი' },
+  fin_claim_resolve: { group: 'ფინანსები', name: 'ქლეიმი — დანაკლისი / უარი გადასაწყვეტია', module: 'finance', who: 'ბილინგი / ბუღალტერი' },
+  fin_claim_build: { group: 'ფინანსები', name: 'წინა თვის შემთხვევები ქლეიმის გარეშე (გადამხდელზე)', module: 'finance', who: 'ბუღალტერი' },
+  fin_period: { group: 'ფინანსები', name: 'წინა თვის დახურვა', module: 'finance', who: 'ბუღალტერი (period_lock = on)' },
+  bill_finalize: { group: 'ფინანსები', name: 'გაწერილი ჰოსპიტალიზაცია — ფინალიზაცია', module: 'inpatient', who: 'ბილინგი' },
+  tariff_approve: { group: 'ფინანსები', name: 'ტარიფის / გადამხდელის წესის ცვლილება — დამტკიცება', module: 'tariffs', who: 'tariffs_approve (ავტორის გარდა)' },
+  // ---- 0082: CSSD
+  cssd_recall: { group: 'CSSD', name: 'გაწვეული შეფუთვა განყოფილებაში — დასაბრუნებელი', module: 'cssd', who: 'გამცემი განყოფილება (dept_side) + CSSD ერთეული' },
+  cssd_expiry: { group: 'CSSD', name: 'განყოფილებაში შეფუთვის ვადა (გასული / ≤ 7 დღე)', module: 'cssd', who: 'განყოფილება (dept_side)' },
+  cssd_bi: { group: 'CSSD', name: 'BI-ს პასუხი მოლოდინშია (კარანტინი)', module: 'cssd', who: 'CSSD ერთეულის თანამშრომლები' },
+  cssd_bd: { group: 'CSSD', name: 'Bowie-Dick — დღეს არ ჩატარებულა', module: 'cssd', who: 'CSSD ერთეულის თანამშრომლები' },
+  // ---- 0082: ინვენტარი
+  asset_move: { group: 'ინვენტარი', name: 'გადაადგილება — დადასტურება', module: 'asset_register', who: 'მიმღები პასუხისმგებელი → განყოფილების ხელმძღვანელი → საწყობის მენეჯერი' },
+  asset_writeoff: { group: 'ინვენტარი', name: 'ჩამოწერის აქტი — დამტკიცება / ხმა', module: 'asset_register', who: 'საწყობის მენეჯერი (single) / კომისიის წევრი (committee)' },
+  // ---- 0082: რეგისტრატურა / სალარო
+  reg_appt: { group: 'რეგისტრატურა / სალარო', name: 'ჩაწერის დრო გავიდა — „მოვიდა“ / „არ გამოცხადდა“', module: 'core', who: 'რეგისტრატორი' },
+  reg_planned: { group: 'რეგისტრატურა / სალარო', name: 'გეგმიური ჰოსპიტალიზაცია — დღეს / გადაცილებული', module: 'inpatient', who: 'რეგისტრატორი + განყოფილება (dept_side)' },
+  cash_debt: { group: 'რეგისტრატურა / სალარო', name: 'გადახდის ნებართვით გახსნილი ვიზიტი — ვალი', module: 'core', who: 'რეგისტრატორი / ბილინგი' },
 };
 export const SOURCE_CODES = Object.keys(SOURCES);
 
@@ -145,5 +206,5 @@ export async function wlSettings(ex: Ex): Promise<{ enabled: boolean; s: WlSetti
 }
 export async function enabledModules(ex: Ex): Promise<Set<string>> {
   const r = await ex.selectFrom('system_modules').select('code').where('enabled', '=', true).execute();
-  return new Set(r.map((x) => x.code));
+  return new Set(['core', ...r.map((x) => x.code)]);   // core — ბირთვი (რეგისტრატურა / სალარო), ყოველთვის ჩართული
 }

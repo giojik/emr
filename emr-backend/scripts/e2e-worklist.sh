@@ -195,7 +195,7 @@ if [ -n "$SN2" ] && [ -n "$AB" ]; then
 else bad "არყოფნის მოთხოვნა ვერ შეიქმნა (ცვლების მოდული?)" "staff=$SN2 abs=$AB"; fi
 # მორიგე: D1-ის მორიგის როლი, N2 მორიგეა ახლა (გამოქვეყნებული განრიგი, „24“ ცვლა)
 DR=$(api POST /roster/duty-roles "$ADM" -d "{\"code\":\"E2E_WL_$S\",\"name\":\"ტესტ-E2E მორიგე ექთანი\",\"department_id\":\"$D1\",\"categories\":[\"nurse\"],\"required_count\":1,\"has_backup\":false}" | jq -r '.id // empty')
-HR_NOW=$(TZ=Asia/Tbilisi date +%H); DAY=$(TZ=Asia/Tbilisi date +%F); [ "$((10#$HR_NOW))" -lt 9 ] && DAY=$(TZ=Asia/Tbilisi date -d 'yesterday' +%F)
+HR_NOW=$(TZ=Asia/Tbilisi date +%H); DAY=$(TZ=Asia/Tbilisi date +%F); [ "$((10#$HR_NOW))" -lt 8 ] && DAY=$(TZ=Asia/Tbilisi date -d 'yesterday' +%F)   # „24“ = 08:00–08:00
 ROS=$(api POST /roster/rosters "$ADM" -d "{\"department_id\":\"$D1\",\"month\":\"${DAY:0:7}\"}" | jq -r '.id // empty')
 api POST "/roster/rosters/$ROS/entries" "$ADM" -d "{\"items\":[{\"staff_id\":\"$SN2\",\"day\":\"$DAY\",\"shift_template_id\":\"$T24\",\"duty_role_id\":\"$DR\",\"duty_level\":1}]}" >/dev/null
 PUB=$(api POST "/roster/rosters/$ROS/publish" "$ADM" -d '{"confirm_warnings":true,"note":"ტესტ-E2E"}' | jq -r '.ok // empty')

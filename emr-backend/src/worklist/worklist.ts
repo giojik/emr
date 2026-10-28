@@ -38,7 +38,7 @@ export class WorklistService {
     const s = await this.tasks.settings();
     const mods = await enabledModules(this.db);
     const [sys, own] = await Promise.all([
-      q.source === 'task' ? Promise.resolve([] as WlItem[]) : this.sources.items(u, { modules: mods, sources: s.sources }, q.source),
+      q.source === 'task' ? Promise.resolve([] as WlItem[]) : this.sources.items(u, { modules: mods, sources: s.sources, settings: s }, q.source),
       q.source && q.source !== 'task' ? Promise.resolve([] as WlItem[]) : this.tasks.mineItems(u),
     ]);
     let items = [...own, ...sys].sort((a, b) => this.sort(a, b));
@@ -49,7 +49,7 @@ export class WorklistService {
     }
     if (q.overdue === '1') items = items.filter((x) => x.overdue);
     const totals = { total: items.length, overdue: items.filter((x) => x.overdue).length, urgent: items.filter((x) => x.priority === 'urgent').length };
-    countCache.set(u.id, { t: Date.now(), v: totals });
+    if (!q.source && q.overdue !== '1') countCache.set(u.id, { t: Date.now(), v: totals });   // 0082: მთვლელის ქეში — მხოლოდ ფილტრის გარეშე სიიდან
     return { generated_at: new Date().toISOString(), refresh_seconds: s.refresh_seconds, totals, sources: [...summary.values()], items };
   }
 

@@ -7,7 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
-import { SOURCE_CODES } from '../worklist/worklist-common';
+import { SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
 
 /**
  * მოდულები და პარამეტრები (0037): კლინიკა რთავს / თიშავს მოდულს და ცვლის მის პარამეტრებს.
@@ -322,6 +322,11 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       notify_assign: bool, notify_done: bool, patient_tasks: bool,
       sources: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => SOURCE_CODES.includes(k) && typeof x === 'boolean'),
       badge: (v) => oneOf(v, ['all', 'overdue', 'off']), refresh_seconds: (v) => int(v, 30, 600), home_tasks: bool,
+      // 0082: ადმინისტრაცია / ლოჯისტიკის წყაროები
+      dept_side: (v) => oneOf(v, ['heads', 'all']), stk_expiry_days: (v) => int(v, 0, 365),
+      sla_hours: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => (SLA_KEYS as readonly string[]).includes(k) && int(x, 0, 720)),
+      period_close_day: (v) => int(v, 1, 28), claim_build_day: (v) => int(v, 1, 28), ipd_finalize_days: (v) => int(v, 0, 30), appt_open_days: (v) => int(v, 0, 14),
+      debt_days: (v) => int(v, 1, 365), reg_scope: (v) => oneOf(v, ['all', 'department']), bi_due_hours: (v) => int(v, 1, 168),
     },
   },
   asset_register: {

@@ -1,7 +1,10 @@
 import { Field } from '../../components/ui';
 import { useWlRefs } from './types';
 
-/** სამუშაო სიები (0081): მინიჭების წესი, შესრულება / ხელახლა გახსნა, ვადა / შეხსენება / ესკალაცია, შეტყობინებები, პაციენტი, წყაროები, მთვლელი, საწყისი გვერდი */
+/** სამუშაო სიები (0081): მინიჭების წესი, შესრულება / ხელახლა გახსნა, ვადა / შეხსენება / ესკალაცია, შეტყობინებები, პაციენტი, წყაროები, მთვლელი, საწყისი გვერდი;
+ *  0082: ადმინისტრაცია / ლოჯისტიკის წყაროები — განყოფილების მხარე, SLA, ვადები, რეგისტრატურის არე */
+const SLA: [string, string, number][] = [['stk_approve', 'RQ — დამტკიცება', 24], ['stk_issue', 'RQ — გაცემა', 24], ['stk_receive', 'მიღება („გზაში“)', 24],
+  ['stk_urgent', 'სასწრაფო RQ (სამივე ნაბიჯი)', 4], ['proc_approve', 'PR / PO — დამტკიცება', 48], ['asset_move', 'ინვენტარის გადაადგილება', 72]];
 export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void; enabled: boolean }) {
   const v = <T,>(k: string) => s[k] as T;
   const upd = (k: string, val: unknown) => set({ ...s, [k]: val });
@@ -9,6 +12,9 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
   const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 } as const;
   const due = (v<number[]>('due_default_hours') ?? [0, 24, 4]);
   const sources = (v<Record<string, boolean>>('sources') ?? {});
+  const sla = (v<Record<string, number>>('sla_hours') ?? {});
+  const num = (k: string, label: string, def: number, min: number, max: number, hint?: string) => <Field key={k} label={label} htmlFor={`wl-${k}`} hint={hint}>
+    <input id={`wl-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? def} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
   const groups = new Map<string, { code: string; name: string; who: string; module_enabled: boolean }[]>();
   for (const x of refs.data?.sources ?? []) groups.set(x.group, [...(groups.get(x.group) ?? []), x]);
   return (
@@ -37,6 +43,25 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
         <Field label="ავტომატური განახლება (წმ)" htmlFor="wl-rs"><input id="wl-rs" className="input mono" type="number" min={30} max={600} value={v<number>('refresh_seconds') ?? 60} onChange={(e) => upd('refresh_seconds', Number(e.target.value))} /></Field>
         <label className="row" style={{ marginTop: 24 }}><input type="checkbox" checked={!!v<boolean>('home_tasks')} onChange={(e) => upd('home_tasks', e.target.checked)} /> საწყისი გვერდი ყველასთვის — „ჩემი დავალებები“</label>
       </div>
+      <strong className="small">ადმინისტრაცია / ლოჯისტიკის წყაროები</strong>
+      <div style={grid}>
+        <Field label="განყოფილების მხარე" htmlFor="wl-ds" hint="მიღება, CSSD-ის გაწვევა / ვადა, გეგმიური ჰოსპიტალიზაცია"><select id="wl-ds" className="select" value={v<string>('dept_side') ?? 'heads'} onChange={(e) => upd('dept_side', e.target.value)}>
+          <option value="heads">ხელმძღვანელი (უხელმძღვანელო განყოფილებაში — ყველა წევრი)</option><option value="all">განყოფილების ყველა წევრი</option></select></Field>
+        <Field label="რეგისტრატურა / სალარო" htmlFor="wl-rsc"><select id="wl-rsc" className="select" value={v<string>('reg_scope') ?? 'all'} onChange={(e) => upd('reg_scope', e.target.value)}>
+          <option value="all">მთელი კლინიკა</option><option value="department">საკუთარი განყოფილება(ები) + რეპორტინგის არე</option></select></Field>
+        {num('stk_expiry_days', 'მარაგის ვადა — „იწურება“ (დღე)', 30, 0, 365, '0 — მხოლოდ ვადაგასული')}
+        {num('period_close_day', 'წინა თვის დახურვის ვადა (რიცხვი)', 10, 1, 28, 'მხოლოდ period_lock = on')}
+        {num('claim_build_day', '„ქლეიმის გარეშე“ — თვის N რიცხვიდან', 5, 1, 28)}
+        {num('ipd_finalize_days', 'ფინალიზაციის ვადა — გაწერიდან (დღე)', 3, 0, 30)}
+        {num('appt_open_days', 'დაუხურავი ჩაწერა — ბოლო N დღე', 2, 0, 14, '0 — მხოლოდ დღეს')}
+        {num('debt_days', 'გადახდის ნებართვის ვალი — ბოლო N დღე', 30, 1, 365)}
+        {num('bi_due_hours', 'BI-ს პასუხის ვადა (სთ)', 48, 1, 168)}
+      </div>
+      <span className="small muted">ვადა იქ, სადაც წყაროს თავისი არ აქვს — გაგზავნიდან, საათი (0 — ვადის გარეშე)</span>
+      <div style={grid}>
+        {SLA.map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-sla-${k}`}><input id={`wl-sla-${k}`} className="input mono" type="number" min={0} max={720} value={sla[k] ?? d}
+          onChange={(e) => upd('sla_hours', { ...Object.fromEntries(SLA.map(([x, , y]) => [x, sla[x] ?? y])), [k]: Number(e.target.value) })} /></Field>)}
+      </div>
       <strong className="small">სისტემური წყაროები</strong>
       {!enabled ? <span className="hint">წყაროების სია ჩანს ჩართულ მოდულზე.</span> : <div style={grid}>
         {[...groups.entries()].map(([g, list]) => <div key={g} className="stack" style={{ gap: 4 }}><span className="small muted">{g}</span>
@@ -44,7 +69,7 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
             const n = { ...sources }; if (e.target.checked) delete n[x.code]; else n[x.code] = false; upd('sources', n); }} /> {x.name}{!x.module_enabled && <span className="muted"> (მოდული გამორთულია)</span>}</label>)}
         </div>)}
       </div>}
-      <span className="hint">სისტემური ჩანაწერი პირდაპირ წყაროდან ითვლება, მოდულის არსებული წვდომის წესით (admin-ის უფლება პასუხისმგებლობას არ ქმნის). გამორთული წყარო „ჩემს დავალებებში“ არ ჩანს — თავის მოდულში უცვლელად რჩება.</span>
+      <span className="hint">სისტემური ჩანაწერი პირდაპირ წყაროდან ითვლება, მოდულის არსებული წვდომის წესით (admin-ის უფლება პასუხისმგებლობას არ ქმნის). ლოჯისტიკის წყაროები ჩნდება ლოკაციის / ობიექტის მფლობელთან — ზოგადი უფლება (საწყობის მენეჯერი …) მხოლოდ მფლობელის არარსებობისას. გამორთული წყარო „ჩემს დავალებებში“ არ ჩანს — თავის მოდულში უცვლელად რჩება.</span>
     </div>
   );
 }

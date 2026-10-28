@@ -7,15 +7,14 @@ import { LEVEL_KA } from '../quality/quality-common';
 import { CONDITION_KA, type Condition } from '../bme/bme-repair-common';
 import { viewScope } from '../bme/bme-common';
 import { RosterFlowsService } from '../roster/roster-flows';
-import { SOURCES, TZ, dayEnd, iso, zonedMidnight, type Priority, type WlItem } from './worklist-common';
+import { SOURCES, TZ, WL_DEFAULTS, dayEnd, iso, zonedMidnight, type Priority, type WlItem, type WlSettings } from './worklist-common';
+import { AdminCtx, WorklistAdminSources, type Row, type SourceGroup } from './worklist-sources-admin';
 
 /**
  * სისტემური წყაროები (A1 — ვირტუალური): ღია საქმე პირდაპირ წყაროს ცხრილიდან, მოდულის არსებული წვდომის წესით (C1).
  * თითო ჯგუფი ერთი ან რამდენიმე წყაროს აბრუნებს; გამორთული მოდული / წყარო — გამოტოვება. თითო წყაროზე ≤ 200 ჩანაწერი.
  * admin უფლება პასუხისმგებლობას არ ქმნის: სისტემური წყაროები admin-ის გარეშე ფასდება (ხელმძღვანელის ხედი — ცალკე).
  */
-type Row = Omit<WlItem, 'key' | 'kind' | 'group' | 'overdue' | 'due_at' | 'created_at' | 'due_date_only'> & { id: string; due_at: Date | string | null; created_at?: Date | string | null; due_date_only?: boolean };
-interface SourceGroup { module: string; codes: string[]; fetch: (u: AuthUser, codes: Set<string>) => Promise<Row[]> }
 
 const LIMIT = 200;
 const pri = (p: number | null | undefined): Priority => (p === 1 ? 'urgent' : p === 2 ? 'high' : 'normal');
@@ -24,7 +23,7 @@ const pri = (p: number | null | undefined): Priority => (p === 1 ? 'urgent' : p 
 export class WorklistSources {
   private readonly log = new Logger('Worklist');
   private readonly groups: SourceGroup[];
-  constructor(@InjectDb() private readonly db: Database, private readonly rosterFlows: RosterFlowsService) {
+  constructor(@InjectDb() private readonly db: Database, private readonly rosterFlows: RosterFlowsService, admin: WorklistAdminSources) {
     this.groups = [
       { module: 'quality', codes: ['qm_triage', 'qm_review', 'qm_capa_due', 'qm_effect'], fetch: (u, c) => this.qmManager(u, c) },
       { module: 'quality', codes: ['qm_analysis', 'qm_capa'], fetch: (u, c) => this.qmMine(u, c) },
@@ -33,12 +32,14 @@ export class WorklistSources {
       { module: 'bme', codes: ['bme_triage', 'bme_repair', 'bme_confirm', 'bme_work', 'bme_work_free'], fetch: (u, c) => this.bme(u, c) },
       { module: 'roster', codes: ['roster_absence', 'roster_swap', 'roster_offer', 'roster_peer'], fetch: (u) => this.rosterInbox(u) },
       { module: 'roster', codes: ['roster_timesheet'], fetch: (u) => this.rosterTimesheet(u) },
+      ...admin.groups(),   // 0082: ადმინისტრაცია / ლოჯისტიკა
     ];
   }
 
   /** ყველა ჩართული წყარო; თითო ჯგუფის შეცდომა — ლოგი, სხვები გრძელდება */
-  async items(user: AuthUser, enabled: { modules: Set<string>; sources: Record<string, boolean> }, onlySource?: string): Promise<WlItem[]> {
+  async items(user: AuthUser, enabled: { modules: Set<string>; sources: Record<string, boolean>; settings?: WlSettings }, onlySource?: string): Promise<WlItem[]> {
     const u: AuthUser = { ...user, caps: user.caps.filter((c) => c !== 'admin') };
+    const ctx = new AdminCtx(this.db, u, { ...WL_DEFAULTS, ...(enabled.settings ?? {}) });
     const now = Date.now();
     const out: WlItem[] = [];
     await Promise.all(this.groups.map(async (g) => {
@@ -46,7 +47,7 @@ export class WorklistSources {
       const codes = new Set(g.codes.filter((c) => enabled.sources[c] !== false && (!onlySource || onlySource === c)));
       if (!codes.size) return;
       try {
-        const rows = await g.fetch(u, codes);
+        const rows = await g.fetch(u, codes, ctx);
         for (const r of rows) {
           if (!codes.has(r.source)) continue;
           const due = iso(r.due_at);
