@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { time, tsDate } from '../lib/format';
 
-interface Note { id: string; kind: string; title: string; body: string | null; link: string | null; items: string[]; urgent: boolean; updated_at: string; read_at: string | null }
+interface Note { id: string; kind: string; title: string; body: string | null; link: string | null; items: string[]; urgent: boolean; suppressed?: boolean; updated_at: string; read_at: string | null }
 
 /** ზარი: თანამშრომლის შეტყობინებები (მაგ. „ანალიზის პასუხი მზადაა“). ახლდება 30 წმ-ში; სასწრაფო — წითლად */
 export default function NotificationBell() {
@@ -37,6 +37,7 @@ export default function NotificationBell() {
               <span className="small muted">{tsDate(x.updated_at)} {time(x.updated_at)}</span></div>
             {x.body && <div className="small" style={{ whiteSpace: 'pre-line' }}>{x.body}</div>}
             {x.items.length > 0 && <div className="small muted">{x.items.join(', ')}</div>}
+            {x.suppressed && <div className="small muted">ზარი ჩახშობილია — „ჩემს დავალებებშია“</div>}
           </button>))}
       </div>}
     </div>

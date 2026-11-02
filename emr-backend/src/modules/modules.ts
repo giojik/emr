@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
+import { NotificationsService } from '../notifications/notifications';
 import { OBS_KEYS, SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
 
 /**
@@ -21,6 +22,9 @@ const UUID = /^[0-9a-f-]{36}$/i;
 /** 0075: P1–P4 საათები (ზრდადი) / შეხსენების დღეები */
 const hours4 = (v: unknown) => Array.isArray(v) && v.length === 4 && v.every((x) => int(x, 1, 2000)) && v.every((x, i) => i === 0 || x >= v[i - 1]);
 const days4 = (v: unknown) => Array.isArray(v) && v.length <= 4 && v.every((x) => int(x, 1, 365)) && new Set(v).size === v.length;
+/** 0084: { გასაღები: მთელი რიცხვი } — ყველა გასაღები ცნობილია */
+const obj = (v: unknown, keys: string[], a: number, b: number) => !!v && typeof v === 'object' && !Array.isArray(v)
+  && Object.entries(v as Record<string, unknown>).every(([k, x]) => keys.includes(k) && int(x, a, b));
 const hhmm = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
 const ICU_FEATURES = ['sheet', 'ventilation', 'infusions', 'sofa', 'apache', 'abg', 'bundles', 'icu_note', 'board'];
@@ -333,6 +337,15 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       news2_review_min: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v as Record<string, unknown>).every(([k, x]) => ['alert', 'urgent'].includes(k) && int(x, 5, 720)),
       line_review_hours: (v) => int(v, 1, 168), draft_hours: (v) => int(v, 0, 168), amb_open_days: (v) => int(v, 1, 90), or_ahead_hours: (v) => int(v, 1, 168),
       pacu_long_hours: (v) => int(v, 1, 48),
+      // 0084: დიაგნოსტიკა, ზარის ჩახშობა, KPI
+      dx_list_mode: (v) => oneOf(v, ['attention', 'all']),
+      lab_collect_min: (v) => obj(v, ['routine', 'urgent'], 5, 1440), lab_transit_min: (v) => int(v, 10, 1440),
+      lab_tat_hours: (v) => obj(v, ['routine', 'urgent', 'micro'], 1, 720), rad_tat_hours: (v) => obj(v, ['routine', 'urgent'], 1, 720),
+      ack_scope: (v) => oneOf(v, ['all', 'abnormal', 'critical']), ack_hours: (v) => int(v, 1, 720), ack_days: (v) => int(v, 1, 180), critical_ack_min: (v) => int(v, 5, 720),
+      lab_crit_call: (v) => oneOf(v, ['off', 'task', 'required']), rad_scheduler: (v) => oneOf(v, ['radiographer', 'receptionist', 'both']),
+      ref_due_days: (v) => int(v, 1, 90), amb_dx_days: (v) => int(v, 1, 90), path_due_days: (v) => int(v, 1, 60),
+      dx_max_age_days: (v) => int(v, 1, 365), lab_collect_days: (v) => int(v, 1, 90),
+      bell_suppress: (v) => oneOf(v, ['off', 'non_urgent']), kpi_tracker: bool, kpi_interval_min: (v) => [15, 30, 60].includes(v as number),
     },
   },
   asset_register: {
@@ -358,7 +371,7 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
 
 @Injectable()
 export class ModulesService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
 
   list() { return this.db.selectFrom('system_modules').selectAll().orderBy('sort_order').execute(); }
 
@@ -395,6 +408,7 @@ export class ModulesService {
       await this.audit.log(auditCtx(req), { action: 'UPDATE_MODULE', entityName: 'system_modules', entityId: code,
         oldData: { enabled: m.enabled, settings: m.settings }, newData: { enabled: dto.enabled ?? m.enabled, settings, reason: dto.reason } }, trx);
     });
+    if (code === 'worklist') this.notifications.clearSuppressionCache();   // 0084: ზარის ჩახშობა — მაშინვე
     return this.get(code);
   }
 }

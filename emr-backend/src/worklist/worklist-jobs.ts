@@ -2,27 +2,33 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectDb, type Database } from '../database/database.module';
 import { wlSettings } from './worklist-common';
+import { WorklistKpiService } from './worklist-kpi';
+import { WorklistSchedulesService } from './worklist-schedules';
 import { WorklistTasksService, countCache } from './worklist-tasks';
 
-interface Scope { at?: string; task_ids?: string[] }
+interface Scope { at?: string; task_ids?: string[]; schedule_ids?: string[]; kpi?: boolean }
 
 /**
  * worker (ყოველ 5 წთ), 0081:
  *  • ვადის შეხსენება (remind_at_due): ვადა დადგა, დავალება ღიაა → შემსრულებელს (ჯგუფურზე — ჯგუფს, თუ ჯერ არავინ აიღო), ერთხელ;
  *  • ესკალაცია (escalate_hours > 0): ვადიდან N საათი გავიდა → განყოფილების ხელმძღვანელებს (worklist_manage, არით) + შემქმნელს;
  *    ხელმძღვანელი არ არის → worklist_all. ერთხელ (ვადის / სამიზნის შეცვლისას — თავიდან).
- * scope (ხელით გაშვება, admin / e2e): at — „ახლა“-ს ჩანაცვლება, task_ids — მხოლოდ ეს დავალებები.
+ * 0084: განმეორებადი დავალებები (გრაფიკით) + KPI აღრიცხვა (kpi_interval_min).
+ * scope (ხელით გაშვება, admin / e2e): at — „ახლა“-ს ჩანაცვლება, task_ids — მხოლოდ ეს დავალებები, schedule_ids — მხოლოდ ეს გრაფიკები, kpi — აღრიცხვა ახლავე.
  */
 @Injectable()
 export class WorklistJobsService {
-  constructor(@InjectDb() private readonly db: Database, private readonly tasks: WorklistTasksService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly tasks: WorklistTasksService, private readonly schedules: WorklistSchedulesService,
+    private readonly kpi: WorklistKpiService) {}
 
   async tick(scope: Scope = {}) {
-    const out = { reminded: 0, escalated: 0 };
+    const out: { reminded: number; escalated: number; schedules?: { created: number; skipped: number; replaced: number }; kpi?: unknown } = { reminded: 0, escalated: 0 };
     const m = await wlSettings(this.db);
     if (!m.enabled) return out;
     const s = m.s;
     const now = scope.at ? new Date(scope.at) : new Date();
+    // 0084: გრაფიკები — ჯერ (ახალ დავალებას შეხსენება / ესკალაცია იმავე გაშვებაში შეიძლება შეეხოს)
+    if (!scope.task_ids?.length || scope.schedule_ids?.length) out.schedules = await this.schedules.tick(scope.at ? now : undefined, scope.schedule_ids);
     const ids = scope.task_ids?.length ? sql`AND t.id = ANY (${scope.task_ids}::uuid[])` : sql``;
     if (s.remind_at_due) {
       const due = await sql<{ id: string }>`SELECT t.id FROM wl_tasks t WHERE t.status IN ('open', 'in_progress') AND t.due_at IS NOT NULL AND t.due_at <= ${now}
@@ -55,6 +61,8 @@ export class WorklistJobsService {
       }
     }
     if (out.reminded || out.escalated) countCache.clear();
+    // 0084: KPI აღრიცხვა (ინტერვალით; scope.kpi — ახლავე)
+    if (scope.kpi || (!scope.at && !scope.task_ids?.length && !scope.schedule_ids?.length)) out.kpi = await this.kpi.track(!!scope.kpi).catch((e: Error) => ({ error: e.message }));
     return out;
   }
 }

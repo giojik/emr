@@ -10,8 +10,9 @@ export const CATEGORY_KA: Record<string, string> = {
   ipc: 'ინფექციის კონტროლი',   // 0072
   bme: 'ბიომედ-აპარატურა',   // 0076
   roster: 'პერსონალი / ცვლები',   // 0080
+  worklist: 'სამუშაო სიები',   // 0084
 };
-export const CATEGORIES = ['flow', 'beds', 'or', 'dx', 'lab', 'stock', 'finance', 'quality', 'ipc', 'bme', 'roster'];
+export const CATEGORIES = ['flow', 'beds', 'or', 'dx', 'lab', 'stock', 'finance', 'quality', 'ipc', 'bme', 'roster', 'worklist'];
 export const STATUS_TONE: Record<string, string> = { green: 'var(--ok-ink)', yellow: 'var(--warn-ink)', red: 'var(--danger-ink)' };
 export const STATUS_KA: Record<string, string> = { green: 'სამიზნე შესრულებულია', yellow: 'გაფრთხილება', red: 'სამიზნე არ სრულდება' };
 export const DIR_KA: Record<string, string> = { up: 'უკეთესია მეტი ↑', down: 'უკეთესია ნაკლები ↓', none: 'მიმართულების გარეშე' };

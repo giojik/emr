@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsISO8601, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
-import type { Request } from 'express';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsISO8601, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import type { Request, Response } from 'express';
 import { sql, type RawBuilder } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
@@ -9,8 +9,10 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { abxPolicy } from '../ipc/ipc-common';
-import { PRI_RANK, SOURCES, TARGET_KA, enabledModules, isAll, manageDepts, memberDepts, wlSettings, type WlItem } from './worklist-common';
+import { PRI_RANK, SOURCES, WL_DEFAULTS, TARGET_KA, enabledModules, isAll, manageDepts, memberDepts, wlSettings, type WlItem } from './worklist-common';
 import { WorklistJobsService } from './worklist-jobs';
+import { WorklistKpiService } from './worklist-kpi';
+import { WorklistSchedulesService, type ScheduleIn } from './worklist-schedules';
 import { WorklistSources } from './worklist-sources';
 import { WorklistTasksService, countCache, type ListQ, type TargetKind } from './worklist-tasks';
 
@@ -25,7 +27,7 @@ const CACHE_MS = 30_000;
 @Injectable()
 export class WorklistService {
   constructor(@InjectDb() private readonly db: Database, private readonly sources: WorklistSources, private readonly tasks: WorklistTasksService,
-    private readonly audit: AuditService) {}
+    private readonly audit: AuditService, private readonly schedules: WorklistSchedulesService) {}
 
   private sort(a: WlItem, b: WlItem) {
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
@@ -82,7 +84,7 @@ export class WorklistService {
     return {
       settings: { assign_scope: s.assign_scope, done_comment: s.done_comment, reopen_days: s.reopen_days, patient_tasks: s.patient_tasks, refresh_seconds: s.refresh_seconds,
         badge: s.badge, escalate_hours: s.escalate_hours, due_default_hours: s.due_default_hours },
-      can: { team: all || manage.length > 0, all, categories: all, patients: has(u, ...PATIENT_LOOKUP) && s.patient_tasks, run_jobs: has(u, 'admin') },
+      can: { team: all || manage.length > 0, all, categories: all, patients: has(u, ...PATIENT_LOOKUP) && s.patient_tasks, run_jobs: has(u, 'admin'), reports: all || manage.length > 0, ack: has(u, 'doctor') },
       team_departments: all ? depts.map((d) => d.id) : manage, my_departments: member,
       categories: cats, roles, departments: depts, duty_roles: duty, targets: TARGET_KA,
       sources: Object.entries(SOURCES).map(([code, x]) => ({ code, ...x, enabled: s.sources[code] !== false, module_enabled: mods.has(x.module) })),
@@ -198,13 +200,51 @@ export class WorklistService {
       if ((or.or_scheduling ?? 'coordinator') === 'coordinator' && !caps.has('or_schedule'))
         push('error', 'NO_OR_SCHEDULER', 'or_scheduling = coordinator, მაგრამ or_schedule არავის აქვს — გეგმიურ მოთხოვნას მხოლოდ admin გეგმავს (სიაში — ქირურგს / ხელმძღვანელს)', ['or_schedule']);
     }
+    // ---- 0084: დიაგნოსტიკის წყაროების ადრესატები
+    const svc = (await sql<{ section: string; n: number }>`SELECT section, count(*)::int AS n FROM dx_services WHERE is_active AND (${includeTest} OR name NOT LIKE 'ტესტ-E2E%') GROUP BY 1`.execute(this.db)).rows;
+    const has2 = (sec: string) => (svc.find((x) => x.section === sec)?.n ?? 0) > 0;
+    if (has2('lab') && !caps.has('lab_doctor')) push('error', 'NO_LAB_VALIDATOR', 'ლაბ. ანალიზები აქტიურია, lab_doctor არავის აქვს — შედეგის ვალიდაცია / კრიტიკულის შეტყობინება / QC არავის სიაში ჩანს', ['lab_doctor']);
+    if (has2('radiology') && !caps.has('radiologist')) push('error', 'NO_RADIOLOGIST', 'რადიოლოგიური კვლევები აქტიურია, რადიოლოგი არ არის — დასკვნა არავის სიაში ჩანს', ['radiologist']);
+    if (has2('endoscopy') && !caps.has('endoscopist')) push('error', 'NO_ENDOSCOPIST', 'ენდოსკოპიური კვლევები აქტიურია, ენდოსკოპისტი არ არის — დასკვნა / ბიოფსიის გაცნობა არავის სიაში ჩანს', ['endoscopist']);
+    if (mods.has('inpatient')) push('warn', 'CRIT_NO_ESCALATION', 'საწოლიანი განყოფილება ხელმძღვანელი ექიმის გარეშე — კრიტიკული პასუხის ესკალაცია ცვლაში მყოფ / განყოფილების ექიმებზე გადადის; ექიმიც არ არის — მხოლოდ დამნიშნავთან / მკურნალთან რჩება',
+      await q(sql`SELECT d.name || CASE WHEN EXISTS (SELECT 1 FROM users u JOIN user_capabilities c ON c.user_id = u.id WHERE u.is_active AND ${REAL} AND u.department_id = d.id
+          AND 'doctor' = ANY (c.capabilities)) THEN '' ELSE ' (ექიმი არ არის)' END AS n FROM departments d WHERE ${INPD} AND NOT ${headOf('doctor')} ORDER BY d.created_at DESC, 1`));
+    push('warn', 'REF_DEPT_NO_DOCTOR', 'ღია მიმართვის (კონსულტაცია / კვლევა) სამიზნე განყოფილებაში diagnostic-ის უფლების მქონე არ არის — მიმართვა ყველა diagnostic-ს უჩანს',
+      await q(sql`SELECT DISTINCT d.name AS n FROM referrals r JOIN departments d ON d.id = r.target_department_id WHERE r.status IN ('requested', 'in_progress') AND r.type <> 'hospitalization'
+        AND (${includeTest} OR d.name NOT LIKE 'ტესტ-E2E%') AND NOT EXISTS (SELECT 1 FROM users u JOIN user_capabilities c ON c.user_id = u.id WHERE u.is_active AND ${REAL} AND u.department_id = d.id
+          AND 'diagnostic' = ANY (c.capabilities)) ORDER BY 1`));
+    push('warn', 'SCHED_EMPTY_TARGET', 'აქტიური განმეორებადი დავალების გრაფიკი — სამიზნე ცარიელია / გათიშულია (დავალება შეიქმნება, მაგრამ არავის სიაში ჩანს)', await this.schedules.emptyTargets(includeTest));
+    if (has2('lab') && !caps.has('phlebotomist')) push('info', 'NO_PHLEBOTOMIST', 'ფლებოტომისტი არ არის — ამბულატორიული ნიმუშის აღება diagnostic-ის სიაში მიდის', ['phlebotomist']);
     const w = await wlSettings(this.db);
+    {   // 0084a: ზღვარზე ძველი ღია დიაგნოსტიკა — სიებში აღარ ჩანს, აქ ჩანს რაოდენობით
+      const md = w.s.dx_max_age_days ?? WL_DEFAULTS.dx_max_age_days, cd = w.s.lab_collect_days ?? WL_DEFAULTS.lab_collect_days;
+      const st = (await sql<{ n: string; c: number; oldest: Date }>`
+        SELECT k AS n, count(*)::int AS c, min(t) AS oldest FROM (
+          SELECT CASE WHEN i.section = 'lab' THEN CASE i.status WHEN 'ordered' THEN 'ლაბ. — ნიმუში აუღებელია' WHEN 'collected' THEN 'ლაბ. — სინჯარა მიუღებელია'
+                      WHEN 'in_progress' THEN 'ლაბ. — შედეგი არ არის' ELSE 'ლაბ. — ვალიდაცია არ გასულა' END
+                      ELSE CASE i.section WHEN 'radiology' THEN 'რადიოლოგია' ELSE 'ენდოსკოპია' END || CASE i.status WHEN 'ordered' THEN ' — დაუგეგმავი' ELSE ' — შეუსრულებელი' END END AS k,
+                 i.ordered_at AS t
+            FROM dx_order_items i JOIN dx_services sv ON sv.id = i.service_id JOIN encounters e ON e.id = i.encounter_id
+           WHERE (${includeTest} OR sv.name NOT LIKE 'ტესტ-E2E%') AND i.collection_issue IS NULL
+             AND ((i.section = 'lab' AND i.status IN ('collected', 'in_progress', 'resulted') AND i.ordered_at <= now() - make_interval(days => ${md}::int))
+               OR (i.section = 'lab' AND i.status = 'ordered' AND (i.ordered_at <= now() - make_interval(days => ${md}::int)
+                    OR (e.type <> 'inpatient' AND i.ordered_at <= now() - make_interval(days => ${cd}::int))) AND e.status IN ('planned', 'active'))
+               OR (i.section IN ('radiology', 'endoscopy') AND i.status IN ('ordered', 'scheduled', 'arrived') AND e.status IN ('planned', 'active')
+                    AND i.ordered_at <= now() - make_interval(days => ${md}::int)))) z
+         GROUP BY 1 ORDER BY 1`.execute(this.db)).rows;
+      push('info', 'DX_STALE', `ზღვარზე ძველი ღია დიაგნოსტიკა (dx_max_age_days = ${md}, ამბულატორიული აღება — lab_collect_days = ${cd}) — სიებში აღარ ჩანს; დახურეთ / გააუქმეთ მოდულში`,
+        st.map((r) => `${r.n}: ${r.c} (უძველესი ${new Date(r.oldest).toISOString().slice(0, 10)})`));
+    }
+    if (w.s.kpi_tracker === false) push('info', 'KPI_OFF', 'KPI-ის აღრიცხვა (kpi_tracker) გამორთულია — ანგარიშში სისტემური წყაროების ვადაგადაცილება / რეაგირების დრო არ ივსება', ['kpi_tracker']);
     if (w.s.nurse_scope === 'on_shift' && !mods.has('roster'))
       push('info', 'NURSE_SCOPE_NO_ROSTER', 'nurse_scope = on_shift, მაგრამ „ცვლები და მორიგეობა“ გამორთულია — ექთნის ჩანაწერები განყოფილების ყველა ექთანთან მიდის', ['roster']);
     if (!w.enabled) out.unshift({ level: 'error', code: 'MODULE_OFF', message: 'მოდული „სამუშაო სიები“ გამორთულია', total: 1, items: ['ადმინისტრირება → მოდულები'] });
     const off = Object.entries(w.s.sources ?? {}).filter(([, v]) => v === false).map(([k]) => `${k} — ${SOURCES[k]?.name ?? ''}`);
     push('info', 'SOURCES_OFF', 'გამორთული წყაროები', off);
-    return { generated_at: new Date().toISOString(), dept_side: w.s.dept_side, reg_scope: w.s.reg_scope, nurse_scope: w.s.nurse_scope, issues: out };
+    const run = await this.db.selectFrom('wl_kpi_runs').select(['started_at', 'finished_at', 'users', 'items', 'failed', 'error']).orderBy('id', 'desc').limit(1).executeTakeFirst();
+    return { generated_at: new Date().toISOString(), dept_side: w.s.dept_side, reg_scope: w.s.reg_scope, nurse_scope: w.s.nurse_scope,
+      bell_suppress: w.s.bell_suppress, ack_scope: w.s.ack_scope, dx_list_mode: w.s.dx_list_mode, lab_crit_call: w.s.lab_crit_call,
+      kpi: { tracker: w.s.kpi_tracker !== false, interval_min: w.s.kpi_interval_min, last_run: run ?? null }, issues: out };
   }
 
   /** სიისთვის: აქტიური მომხმარებლები (სატესტოს გარდა) */
@@ -294,7 +334,30 @@ class CategoryDto {
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(1) @Max(2160) sla_hours?: number | null;
   @IsOptional() @IsBoolean() allow_patient?: boolean; @IsOptional() @IsBoolean() is_active?: boolean; @IsOptional() @IsInt() @Type(() => Number) sort_order?: number;
 }
-class RunDto { @IsOptional() @IsISO8601() at?: string; @IsOptional() @IsArray() @IsUUID('all', { each: true }) task_ids?: string[] }
+class RunDto {
+  @IsOptional() @IsISO8601() at?: string; @IsOptional() @IsArray() @IsUUID('all', { each: true }) task_ids?: string[];
+  @IsOptional() @IsArray() @IsUUID('all', { each: true }) schedule_ids?: string[]; @IsOptional() @IsBoolean() kpi?: boolean;
+}
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+class ScheduleDto {
+  @IsOptional() @IsString() @Length(3, 200) title?: string; @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @MaxLength(4000) description?: string | null;
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsUUID() category_id?: string | null; @IsOptional() @IsIn(PRI) priority?: 'normal' | 'high' | 'urgent';
+  @IsOptional() @IsInt() @Min(0) @Max(720) due_hours?: number;
+  @IsOptional() @IsIn(TARGETS) target_kind?: TargetKind;
+  @IsOptional() @IsUUID() assignee_id?: string | null; @IsOptional() @IsUUID() target_role_id?: string | null;
+  @IsOptional() @IsUUID() target_department_id?: string | null; @IsOptional() @IsUUID() target_duty_role_id?: string | null;
+  @IsOptional() @IsIn(['daily', 'weekly', 'monthly', 'hourly']) freq?: 'daily' | 'weekly' | 'monthly' | 'hourly';
+  @IsOptional() @IsArray() @ArrayMaxSize(6) @Matches(HHMM, { each: true }) times?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(7) @IsInt({ each: true }) @Min(1, { each: true }) @Max(7, { each: true }) weekdays?: number[];
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(0) @Max(28) month_day?: number | null;
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(1) @Max(24) every_hours?: number | null;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) starts_on?: string; @IsOptional() @ValidateIf((_, v) => v !== null) @Matches(/^\d{4}-\d{2}-\d{2}$/) ends_on?: string | null;
+  @IsOptional() @IsIn(['skip', 'create', 'replace']) prev_open?: 'skip' | 'create' | 'replace'; @IsOptional() @IsBoolean() is_active?: boolean;
+}
+class ReportQ {
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string; @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+  @IsOptional() @IsUUID() department_id?: string; @IsOptional() @IsIn(['0', '1']) include_test?: string;
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const checkQ = (q: ListQ) => {
@@ -307,7 +370,8 @@ const checkQ = (q: ListQ) => {
 /** ყველა შესულ მომხმარებელს (ხილვადობას / ქმედებას სერვისი ამოწმებს) */
 @Controller('worklist')
 export class WorklistController {
-  constructor(private readonly s: WorklistService, private readonly t: WorklistTasksService, private readonly jobs: WorklistJobsService) {}
+  constructor(private readonly s: WorklistService, private readonly t: WorklistTasksService, private readonly jobs: WorklistJobsService,
+    private readonly sched: WorklistSchedulesService, private readonly kpi: WorklistKpiService) {}
   @Get('refs') refs(@CurrentUser() u: AuthUser) { return this.s.refs(u); }
   @Get('mine') mine(@CurrentUser() u: AuthUser, @Query('source') source?: string, @Query('overdue') overdue?: string) {
     if (source && source !== 'task' && !SOURCES[source]) throw new BadRequestException('source');
@@ -337,4 +401,20 @@ export class WorklistController {
   @Get('check/users') @Roles('admin', 'worklist_all') checkUsers(@Query('include_test') t?: string) { return this.s.previewUsers(t === '1'); }
   @Get('check/diagnostics') @Roles('admin', 'worklist_all') diagnostics(@Query('include_test') t?: string) { return this.s.diagnostics(t === '1'); }
   @Get('check/preview/:userId') @Roles('admin', 'worklist_all') preview(@Param('userId', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.preview(id, u, r); }
+  // 0084: განმეორებადი დავალებები (გრაფიკით)
+  @Get('schedules') schedules(@CurrentUser() u: AuthUser, @Query('box') box = 'mine') {
+    if (!['mine', 'team'].includes(box)) throw new BadRequestException('box: mine / team');
+    return this.sched.list(u, box);
+  }
+  @Get('schedules/:id') schedule(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.sched.get(id, u); }
+  @Post('schedules') scheduleCreate(@Body() d: ScheduleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.sched.create(d as ScheduleIn, u, auditCtx(r)); }
+  @Patch('schedules/:id') schedulePatch(@Param('id', ParseUUIDPipe) id: string, @Body() d: ScheduleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.sched.update(id, d as ScheduleIn, u, auditCtx(r)); }
+  // 0084: ანგარიშები / KPI (worklist_manage — თავისი განყოფილებები; worklist_all / admin — ყველა)
+  @Get('reports/summary') report(@CurrentUser() u: AuthUser, @Query() q: ReportQ) { return this.kpi.summary(u, q); }
+  @Get('reports/export')
+  async reportExport(@CurrentUser() u: AuthUser, @Query() q: ReportQ, @Req() r: Request, @Res({ passthrough: true }) res: Response) {
+    const out = await this.kpi.export(u, q, r);
+    res.set({ 'Content-Type': out.type, 'Content-Disposition': `attachment; filename="${encodeURIComponent(out.name)}"` });
+    return new StreamableFile(out.body);
+  }
 }

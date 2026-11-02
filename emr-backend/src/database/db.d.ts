@@ -1257,6 +1257,11 @@ export interface DxOrderItems {
   collection_issue_at: Timestamp | null;
   contrast_agent: string | null;
   contrast_volume_ml: Numeric | null;
+  crit_notified_at: Timestamp | null;
+  crit_notified_by: string | null;
+  crit_notified_to: string | null;
+  crit_notified_via: string | null;
+  crit_readback: boolean | null;
   device_id: string | null;
   dose_text: string | null;
   encounter_id: string;
@@ -1350,6 +1355,17 @@ export interface DxReportVersions {
   signed_by: string;
   technique: string | null;
   version: number;
+}
+
+export interface DxResultAcks {
+  acked_at: Generated<Timestamp>;
+  acked_by: string;
+  action: string | null;
+  id: Generated<string>;
+  kind: string;
+  note: string | null;
+  order_item_id: string;
+  patient_id: string;
 }
 
 export interface DxServices {
@@ -4852,6 +4868,20 @@ export interface RptFactStock {
   receipts: Generated<Numeric>;
 }
 
+export interface RptFactWorklist {
+  closed: Generated<number>;
+  closed_due: Generated<number>;
+  closed_late: Generated<number>;
+  crit_hist: Generated<number[]>;
+  crit_n: Generated<number>;
+  day: string;
+  department_id: string | null;
+  resp_hist: Generated<number[]>;
+  resp_n: Generated<number>;
+  tasks_done: Generated<number>;
+  tasks_on_time: Generated<number>;
+}
+
 export interface RptKpis {
   category: string;
   code: string;
@@ -5671,6 +5701,7 @@ export interface UserNotifications {
   kind: string;
   link: string | null;
   read_at: Timestamp | null;
+  suppressed: Generated<boolean>;
   title: string;
   updated_at: Generated<Timestamp>;
   urgent: Generated<boolean>;
@@ -5740,6 +5771,60 @@ export interface WlCategories {
   updated_at: Generated<Timestamp>;
 }
 
+export interface WlItemLog {
+  close_kind: string | null;
+  closed_at: Timestamp | null;
+  created_at: Timestamp | null;
+  department_id: string | null;
+  due_at: Timestamp | null;
+  first_seen: Timestamp;
+  id: Generated<Int8>;
+  key: string;
+  last_seen: Timestamp;
+  overdue_seen: Generated<boolean>;
+  owners: Generated<number>;
+  priority: string;
+  source: string;
+}
+
+export interface WlKpiOpen {
+  department_id: string | null;
+  open: number;
+  overdue: number;
+  source: string;
+  urgent: number;
+}
+
+export interface WlKpiRuns {
+  closed: number | null;
+  error: string | null;
+  failed: Generated<string[]>;
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  items: number | null;
+  opened: number | null;
+  started_at: Generated<Timestamp>;
+  users: number | null;
+}
+
+export interface WlScheduleRuns {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  occurrence_at: Timestamp;
+  prev_task_id: string | null;
+  result: string;
+  schedule_id: string;
+  task_id: string | null;
+}
+
+export interface WlSnapshotDaily {
+  day: string;
+  department_id: string | null;
+  open_peak: Generated<number>;
+  overdue_peak: Generated<number>;
+  source: string;
+}
+
 export interface WlTaskEvents {
   created_at: Generated<Timestamp>;
   data: Json | null;
@@ -5769,9 +5854,11 @@ export interface WlTasks {
   encounter_id: string | null;
   escalated_at: Timestamp | null;
   id: Generated<string>;
+  occurrence_at: Timestamp | null;
   patient_id: string | null;
   priority: Generated<string>;
   reminded_at: Timestamp | null;
+  schedule_id: string | null;
   started_at: Timestamp | null;
   status: Generated<string>;
   target_department_id: string | null;
@@ -5781,6 +5868,36 @@ export interface WlTasks {
   task_no: string;
   title: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface WlTaskSchedules {
+  assignee_id: string | null;
+  category_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  department_id: string | null;
+  description: string | null;
+  due_hours: Generated<number>;
+  ends_on: string | null;
+  every_hours: number | null;
+  freq: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  last_occurrence_at: Timestamp | null;
+  month_day: number | null;
+  next_at: Timestamp | null;
+  prev_open: Generated<string>;
+  priority: Generated<string>;
+  starts_on: string;
+  target_department_id: string | null;
+  target_duty_role_id: string | null;
+  target_kind: string;
+  target_role_id: string | null;
+  times: Generated<string[]>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  weekdays: Generated<number[]>;
 }
 
 export interface DB {
@@ -5870,6 +5987,7 @@ export interface DB {
   dx_report_templates: DxReportTemplates;
   dx_report_versions: DxReportVersions;
   dx_reports: DxReports;
+  dx_result_acks: DxResultAcks;
   dx_services: DxServices;
   encounter_diagnoses: EncounterDiagnoses;
   encounter_payment_overrides: EncounterPaymentOverrides;
@@ -6092,6 +6210,7 @@ export interface DB {
   rpt_fact_roster: RptFactRoster;
   rpt_fact_roster_month: RptFactRosterMonth;
   rpt_fact_stock: RptFactStock;
+  rpt_fact_worklist: RptFactWorklist;
   rpt_kpi_targets: RptKpiTargets;
   rpt_kpis: RptKpis;
   rpt_quality_snapshot: RptQualitySnapshot;
@@ -6151,6 +6270,12 @@ export interface DB {
   users: Users;
   wards: Wards;
   wl_categories: WlCategories;
+  wl_item_log: WlItemLog;
+  wl_kpi_open: WlKpiOpen;
+  wl_kpi_runs: WlKpiRuns;
+  wl_schedule_runs: WlScheduleRuns;
+  wl_snapshot_daily: WlSnapshotDaily;
   wl_task_events: WlTaskEvents;
+  wl_task_schedules: WlTaskSchedules;
   wl_tasks: WlTasks;
 }

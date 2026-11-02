@@ -50,6 +50,20 @@ export function tubesInOrder<T extends { specimen_type: string | null; container
     .map((g) => ({ ...g, tests: g.items.map((i) => i.name) }));
 }
 
+/** 0084: კრიტიკული მნიშვნელობის შეტყობინება (ლაბ.) */
+export interface CritCall { to?: string; via?: 'phone' | 'in_person' | 'message' | 'other'; readback?: boolean }
+const VIA = ['phone', 'in_person', 'message', 'other'];
+function checkCrit(d: CritCall) {
+  const to = d.to?.trim() ?? '';
+  if (to.length < 2) throw new BadRequestException('მიუთითეთ, ვის ეცნობა (სახელი / თანამდებობა)');
+  if (!d.via || !VIA.includes(d.via)) throw new BadRequestException('მიუთითეთ, როგორ ეცნობა (ტელეფონი / პირადად / შეტყობინება / სხვა)');
+  return { to: to.slice(0, 300), via: d.via, readback: !!d.readback };
+}
+async function critCallMode(ex: Kysely<DB> | Transaction<DB>): Promise<string> {
+  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
+  return m?.enabled ? ((m.settings as { lab_crit_call?: string })?.lab_crit_call ?? 'task') : 'off';
+}
+
 export const ageDays = (birth: string, at: Date) => Math.floor((at.getTime() - new Date(`${birth}T00:00:00Z`).getTime()) / 86_400_000);
 
 @Injectable()
@@ -550,11 +564,16 @@ export class DiagnosticsService {
     return r.rows;
   }
 
-  async validate(itemId: string, user: AuthUser, ctx: AuditContext, qcReason?: string) {
+  async validate(itemId: string, user: AuthUser, ctx: AuditContext, qcReason?: string, crit?: CritCall) {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'encounter_id']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
       if (it.status !== 'resulted') throw new ConflictException('ვალიდაციისთვის ყველა კომპონენტი უნდა იყოს შევსებული');
+      // 0084: კრიტიკული მნიშვნელობა (HH / LL) — ვის ეცნობა (worklist.lab_crit_call: off / task / required)
+      const critical = !!(await trx.selectFrom('lab_results').select('id').where('order_item_id', '=', itemId).where('flag', 'in', ['HH', 'LL']).executeTakeFirst());
+      const call = critical && crit?.to?.trim() ? checkCrit(crit) : null;
+      if (critical && !call && (await critCallMode(trx)) === 'required')
+        throw new ConflictException({ code: 'CRIT_CALL_REQUIRED', message: 'კრიტიკული მნიშვნელობა: ვალიდაციამდე მიუთითეთ, ვის ეცნობა (ექიმი / ექთანი), როგორ და გაიმეორა თუ არა (read-back)' });
       // QC: დაბლოკვა — ვალიდაცია აკრძალულია განხილვამდე; გაფრთხილება — მხოლოდ მიზეზით (აუდიტში)
       const qc = await this.qcOpenFor(itemId, trx);
       const block = qc.filter((v) => v.action === 'block');
@@ -565,10 +584,29 @@ export class DiagnosticsService {
       // ბლანკის ვერსია ფიქსირდება ვალიდაციის მომენტში — ხელახალი ბეჭდვა იმავე სახით; QR-ის ტოკენი — ახალი ყოველ ვალიდაციაზე
       const blank = await sql<{ id: string | null }>`SELECT lab_blank_version_for(${itemId}::uuid) AS id`.execute(trx);
       await trx.updateTable('dx_order_items').set({ status: 'validated', validated_by: user.id, validated_at: sql`now()`,
-        blank_version_id: blank.rows[0]?.id ?? null, verify_token: sql`uuid_generate_v4()` }).where('id', '=', itemId).execute();
-      await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId, ...(qc.length ? { newData: { qc_override: qcReason, qc: qc.map((v) => `${v.method}/${v.analyte}`) } } : {}) }, trx);
+        blank_version_id: blank.rows[0]?.id ?? null, verify_token: sql`uuid_generate_v4()`,
+        ...(call ? { crit_notified_to: call.to, crit_notified_via: call.via, crit_readback: call.readback, crit_notified_at: sql`now()`, crit_notified_by: user.id } : {}) }).where('id', '=', itemId).execute();
+      await this.audit.log(ctx, { action: 'VALIDATE_LAB', entityName: 'dx_order_items', entityId: itemId,
+        ...(qc.length || call ? { newData: { ...(qc.length ? { qc_override: qcReason, qc: qc.map((v) => `${v.method}/${v.analyte}`) } : {}), ...(call ? { crit_call: call } : {}) } } : {}) }, trx);
       await this.maybeCompleteLabVisit(trx, it.encounter_id);
       return { id: itemId, status: 'validated' };
+    });
+  }
+
+  /** 0084: კრიტიკული მნიშვნელობის შეტყობინება ვალიდაციის შემდეგ — ვის / როგორ / read-back (ერთხელ; შესწორება — ხელახალი ვალიდაციით) */
+  async critCall(itemId: string, d: CritCall, user: AuthUser, ctx: AuditContext) {
+    const call = checkCrit(d);
+    return this.db.transaction().execute(async (trx) => {
+      const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section', 'crit_notified_at']).where('id', '=', itemId).forUpdate().executeTakeFirst();
+      if (!it || it.section !== 'lab') throw new NotFoundException('ლაბორატორიული შეკვეთა ვერ მოიძებნა');
+      if (it.status !== 'validated') throw new ConflictException('შეტყობინება იწერება ვალიდირებულ შედეგზე');
+      if (it.crit_notified_at) throw new ConflictException('შეტყობინება უკვე ჩაწერილია');
+      if (!(await trx.selectFrom('lab_results').select('id').where('order_item_id', '=', itemId).where('flag', 'in', ['HH', 'LL']).executeTakeFirst()))
+        throw new BadRequestException('შედეგში კრიტიკული მნიშვნელობა არ არის');
+      await trx.updateTable('dx_order_items').set({ crit_notified_to: call.to, crit_notified_via: call.via, crit_readback: call.readback, crit_notified_at: sql`now()`, crit_notified_by: user.id })
+        .where('id', '=', itemId).execute();
+      await this.audit.log(ctx, { action: 'LAB_CRIT_CALL', entityName: 'dx_order_items', entityId: itemId, newData: call }, trx);
+      return { id: itemId, ...call };
     });
   }
 
@@ -577,7 +615,8 @@ export class DiagnosticsService {
     return this.db.transaction().execute(async (trx) => {
       const it = await trx.selectFrom('dx_order_items').select(['id', 'status', 'section']).where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it || it.section !== 'lab' || it.status !== 'validated') throw new ConflictException('შესწორება შეიძლება მხოლოდ ვალიდირებული შედეგის');
-      await trx.updateTable('dx_order_items').set({ status: 'resulted', validated_by: null, validated_at: null, blank_version_id: null, verify_token: null }).where('id', '=', itemId).execute();
+      await trx.updateTable('dx_order_items').set({ status: 'resulted', validated_by: null, validated_at: null, blank_version_id: null, verify_token: null,
+        crit_notified_to: null, crit_notified_via: null, crit_readback: null, crit_notified_at: null, crit_notified_by: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'REOPEN_LAB_RESULT', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);
       return { id: itemId, status: 'resulted' };
     });
@@ -607,6 +646,7 @@ export class DiagnosticsService {
         'enc.visit_kind', 'enc.external_referral',
         'i.pregnancy_weeks', 'i.lab_method_id', 's.default_method_id', 's.report_comment', 'i.blank_version_id', 'i.verify_token',
         'i.ext_shipment_id', 'i.ext_due_at', 'i.ext_result_at', 'i.ext_result_name', 's.is_micro',
+        'i.crit_notified_to', 'i.crit_notified_via', 'i.crit_readback', 'i.crit_notified_at',
         'pr.id as path_request_id', 'pr.request_no as path_request_no', 'pr.status as path_status', 'pr.result_text as path_result_text', 'pr.reviewed_at as path_reviewed_at',
         sql<boolean>`pr.result_file_path IS NOT NULL`.as('path_has_file'),
         sql<string>`ob.first_name || ' ' || ob.last_name`.as('ordered_by_name'),

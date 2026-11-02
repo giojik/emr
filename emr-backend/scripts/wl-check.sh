@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
-# wl-check.sh — სამუშაო სიები: რეალური ანგარიშების შემოწმება (0082b; 0083 — კლინიკური ხარვეზებიც: ვერიფიკაცია, ანტიბიოტიკის დამტკიცება, ეპიკრიზი, მკურნალი, ექთანი, საოპერაციო). მხოლოდ წაკითხვა — არაფერს ქმნის / ცვლის.
+# wl-check.sh — სამუშაო სიები: რეალური ანგარიშების შემოწმება (0082b; 0083 — კლინიკური ხარვეზებიც: ვერიფიკაცია, ანტიბიოტიკის დამტკიცება, ეპიკრიზი, მკურნალი, ექთანი, საოპერაციო;
+#   0084 — დიაგნოსტიკა: ლაბ. ექიმი, რადიოლოგი, ენდოსკოპისტი, კრიტიკულის ესკალაცია, მიმართვის განყოფილება, გრაფიკის სამიზნე, KPI აღრიცხვა). მხოლოდ წაკითხვა — არაფერს ქმნის / ცვლის.
 #   1) კონფიგურაციის ხარვეზები, რომლებზეც სისტემური ჩანაწერის ადრესატი დგას: განყოფილება ხელმძღვანელის გარეშე, ქვესაწყობი
 #      დამტკიცებით, მაგრამ დამმტკიცებლის გარეშე, ექთანი / ექიმი განყოფილების გარეშე, CSSD თანამშრომლის გარეშე, უფლება ადრესატის გარეშე;
 #   2) თითო აქტიურ მომხმარებელზე (სატესტო @test.local-ის გარდა) — „ჩემი დავალებები“ იმავე წესით, რაც მას თავად უჩანს:
@@ -26,6 +27,8 @@ printf '\n\033[1m1. კონფიგურაცია\033[0m\n'
 D=$(api "/worklist/check/diagnostics$QT")
 echo "$D" | jq -e '.issues' >/dev/null 2>&1 || { echo "  ✗ /worklist/check/diagnostics: $(echo "$D" | head -c 300)"; exit 1; }
 echo "  dept_side = $(echo "$D" | jq -r .dept_side) · reg_scope = $(echo "$D" | jq -r .reg_scope) · nurse_scope = $(echo "$D" | jq -r .nurse_scope)"
+echo "  dx_list_mode = $(echo "$D" | jq -r '.dx_list_mode // "—"') · ack_scope = $(echo "$D" | jq -r '.ack_scope // "—"') · lab_crit_call = $(echo "$D" | jq -r '.lab_crit_call // "—"') · bell_suppress = $(echo "$D" | jq -r '.bell_suppress // "—"')"
+echo "  KPI: $(echo "$D" | jq -r 'if .kpi.tracker then "აღრიცხვა ჩართულია (\(.kpi.interval_min) წთ)" else "აღრიცხვა გამორთულია" end') · ბოლო: $(echo "$D" | jq -r 'if .kpi.last_run then "\(.kpi.last_run.started_at) · მომხმ. \(.kpi.last_run.users // "—") · ჩანაწ. \(.kpi.last_run.items // "—")\(if (.kpi.last_run.failed|length) > 0 then " · შეცდომით: " + (.kpi.last_run.failed|join(",")) else "" end)\(if .kpi.last_run.error then " · ✗ " + .kpi.last_run.error else "" end)" else "ჯერ არ გაშვებულა" end')"
 if [ "$(echo "$D" | jq '.issues|length')" = "0" ]; then printf '  \033[32m✓\033[0m ხარვეზი არ არის\n'; fi
 echo "$D" | jq -r '.issues[] | (if .level=="error" then "\u001b[31m✗\u001b[0m" elif .level=="warn" then "\u001b[33m!\u001b[0m" else "\u001b[36mi\u001b[0m" end) + " " + .message + "\n" + ([.items[] | "      · " + .] | join("\n")) + (if (.total // 0) > (.items|length) then "\n      … და კიდევ \(.total - (.items|length))" else "" end)' | sed 's/^/  /'
 

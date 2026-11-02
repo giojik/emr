@@ -3,10 +3,12 @@ import { useWlRefs } from './types';
 
 /** სამუშაო სიები (0081): მინიჭების წესი, შესრულება / ხელახლა გახსნა, ვადა / შეხსენება / ესკალაცია, შეტყობინებები, პაციენტი, წყაროები, მთვლელი, საწყისი გვერდი;
  *  0082: ადმინისტრაცია / ლოჯისტიკის წყაროები — განყოფილების მხარე, SLA, ვადები, რეგისტრატურის არე;
- *  0083: კლინიკური წყაროები — ექთნის არე (nurse_scope), MAR, NEWS2 (დაკვირვების სიხშირე / შეფასების ვადა), ხაზები, ჩანაწერები, საოპერაციო */
+ *  0083: კლინიკური წყაროები — ექთნის არე (nurse_scope), MAR, NEWS2 (დაკვირვების სიხშირე / შეფასების ვადა), ხაზები, ჩანაწერები, საოპერაციო;
+ *  0084: დიაგნოსტიკა (სიის რეჟიმი, TAT, პასუხის გაცნობა, კრიტიკული, დაგეგმვა, მიმართვები), ზარის ჩახშობა, KPI აღრიცხვა */
 const SLA: [string, string, number][] = [['stk_approve', 'RQ — დამტკიცება', 24], ['stk_issue', 'RQ — გაცემა', 24], ['stk_receive', 'მიღება („გზაში“)', 24],
   ['stk_urgent', 'სასწრაფო RQ (სამივე ნაბიჯი)', 4], ['proc_approve', 'PR / PO — დამტკიცება', 48], ['asset_move', 'ინვენტარის გადაადგილება', 72],
-  ['med_verify', 'დანიშნულების ვერიფიკაცია', 2], ['med_approve', 'ანტიბიოტიკის დამტკიცება', 4], ['doc_cosign', 'ეპიკრიზის თანახელმოწერა', 24], ['or_docs', 'ოქმი / ანესთეზიის რუკა (დასრულებიდან)', 24]];
+  ['med_verify', 'დანიშნულების ვერიფიკაცია', 2], ['med_approve', 'ანტიბიოტიკის დამტკიცება', 4], ['doc_cosign', 'ეპიკრიზის თანახელმოწერა', 24], ['or_docs', 'ოქმი / ანესთეზიის რუკა (დასრულებიდან)', 24],
+  ['lab_validate', 'ლაბ. შედეგის ვალიდაცია (შეყვანიდან)', 4]];
 const OBS: [string, string, number][] = [['zero', 'NEWS2 = 0', 720], ['low', 'NEWS2 1–4', 240], ['low_red', 'ერთ პარამეტრზე 3', 60], ['medium', 'NEWS2 5–6', 60], ['high', 'NEWS2 ≥ 7', 30]];
 export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void; enabled: boolean }) {
   const v = <T,>(k: string) => s[k] as T;
@@ -18,6 +20,9 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
   const sla = (v<Record<string, number>>('sla_hours') ?? {});
   const obs = (v<Record<string, number>>('obs_minutes') ?? {});
   const rev = (v<{ alert?: number; urgent?: number }>('news2_review_min') ?? {});
+  const lc = (v<{ routine?: number; urgent?: number }>('lab_collect_min') ?? {});
+  const lt = (v<{ routine?: number; urgent?: number; micro?: number }>('lab_tat_hours') ?? {});
+  const rt = (v<{ routine?: number; urgent?: number }>('rad_tat_hours') ?? {});
   const num = (k: string, label: string, def: number, min: number, max: number, hint?: string) => <Field key={k} label={label} htmlFor={`wl-${k}`} hint={hint}>
     <input id={`wl-${k}`} className="input mono" type="number" min={min} max={max} value={v<number>(k) ?? def} onChange={(e) => upd(k, Number(e.target.value))} /></Field>;
   const groups = new Map<string, { code: string; name: string; who: string; module_enabled: boolean }[]>();
@@ -74,6 +79,40 @@ export function WorklistSettings({ s, set, enabled }: { s: Record<string, unknow
         {num('pacu_long_hours', 'PACU — დიდხანს (სთ)', 4, 1, 48)}
         {([['alert', 'NEWS2 — ექიმის შეფასება (წთ)', 60], ['urgent', 'NEWS2 ≥ სასწრაფო ზღვარი — შეფასება (წთ)', 30]] as const).map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-nr-${k}`}>
           <input id={`wl-nr-${k}`} className="input mono" type="number" min={5} max={720} value={rev[k] ?? d} onChange={(e) => upd('news2_review_min', { alert: rev.alert ?? 60, urgent: rev.urgent ?? 30, [k]: Number(e.target.value) })} /></Field>)}
+      </div>
+      <strong className="small">დიაგნოსტიკა (ლაბორატორია, რადიოლოგია / ენდოსკოპია, პასუხის გაცნობა, მიმართვები)</strong>
+      <div style={grid}>
+        <Field label="სია „ჩემს დავალებებში“" htmlFor="wl-dlm" hint="აღება, შედეგი, დაგეგმვა, შესრულება, დასკვნა; ვალიდაცია / კრიტიკული — ყოველთვის"><select id="wl-dlm" className="select" value={v<string>('dx_list_mode') ?? 'attention'} onChange={(e) => upd('dx_list_mode', e.target.value)}>
+          <option value="attention">მხოლოდ სასწრაფო / ვადაგადაცილებული</option><option value="all">ყველა ღია (სრული რიგი)</option></select></Field>
+        <Field label="პასუხის გაცნობა (ექიმი)" htmlFor="wl-acs" hint="გამოსახულება / გარე / ბიოფსია / კულტურა — „ნორმის გარეთ“-შიც ყოველთვის"><select id="wl-acs" className="select" value={v<string>('ack_scope') ?? 'abnormal'} onChange={(e) => upd('ack_scope', e.target.value)}>
+          <option value="abnormal">ნორმის გარეთ (ლაბ. L / H / A) + გამოსახულება</option><option value="all">ყველა პასუხი</option><option value="critical">მხოლოდ კრიტიკული</option></select></Field>
+        <Field label="ლაბ. კრიტიკული — „ვის ეცნობა“" htmlFor="wl-lcc" hint="ISO 15189: ვის / როგორ / read-back"><select id="wl-lcc" className="select" value={v<string>('lab_crit_call') ?? 'task'} onChange={(e) => upd('lab_crit_call', e.target.value)}>
+          <option value="task">ჩაუწერელი → დავალება ლაბ. ექიმს</option><option value="required">სავალდებულო ვალიდაციისას</option><option value="off">არ მოწმდება</option></select></Field>
+        <Field label="რადიოლოგიის / ენდოსკოპიის დაგეგმვა" htmlFor="wl-rsch"><select id="wl-rsch" className="select" value={v<string>('rad_scheduler') ?? 'radiographer'} onChange={(e) => upd('rad_scheduler', e.target.value)}>
+          <option value="radiographer">რადიოგრაფერი / ენდოსკოპიის ექთანი</option><option value="receptionist">რეგისტრატორი (reg_scope)</option><option value="both">ორივე</option></select></Field>
+        {num('critical_ack_min', 'კრიტიკული: ესკალაცია ხელმძღვანელზე (წთ)', 30, 5, 720, 'არ არის — ცვლაში მყოფი / განყოფილების ექიმები')}
+        {num('ack_hours', 'გაცნობის ვადა — ვალიდაციიდან (სთ)', 24, 1, 720)}
+        {num('ack_days', 'გაცნობა — ბოლო N დღის პასუხები', 30, 1, 180)}
+        {num('lab_transit_min', 'აღებული — ლაბ.-ში არ მიუღიათ (წთ)', 60, 10, 1440)}
+        {num('ref_due_days', 'მიმართვის ვადა (დღე)', 3, 1, 90)}
+        {num('amb_dx_days', 'ამბ. დანიშნული კვლევა არ ჩატარდა — N დღის შემდეგ', 14, 1, 90)}
+        {num('path_due_days', 'ბიოფსიის პასუხი აგვიანებს — N დღის შემდეგ', 10, 1, 60)}
+        {num('dx_max_age_days', 'ძველი ჩანაწერი სიაში აღარ ჩანს — N დღის შემდეგ', 30, 1, 365, 'აღება / მიღება / შედეგი / ვალიდაცია / დაგეგმვა / შესრულება; დასკვნა — ყოველთვის. ძველი — diagnostics-ში (DX_STALE)')}
+        {num('lab_collect_days', 'ამბ. ნიმუშის აღება — N დღის შემდეგ აღარ ჩანს', 3, 1, 90)}
+        {([['routine', 'ნიმუშის აღება — ჩვეულებრივი (წთ)', 120], ['urgent', 'ნიმუშის აღება — სასწრაფო (წთ)', 30]] as const).map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-lc-${k}`}>
+          <input id={`wl-lc-${k}`} className="input mono" type="number" min={5} max={1440} value={lc[k] ?? d} onChange={(e) => upd('lab_collect_min', { routine: lc.routine ?? 120, urgent: lc.urgent ?? 30, [k]: Number(e.target.value) })} /></Field>)}
+        {([['routine', 'ლაბ. TAT — ჩვეულებრივი (სთ)', 24], ['urgent', 'ლაბ. TAT — სასწრაფო (სთ)', 2], ['micro', 'ლაბ. TAT — მიკრობიოლოგია (სთ)', 72]] as const).map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-lt-${k}`}>
+          <input id={`wl-lt-${k}`} className="input mono" type="number" min={1} max={720} value={lt[k] ?? d} onChange={(e) => upd('lab_tat_hours', { routine: lt.routine ?? 24, urgent: lt.urgent ?? 2, micro: lt.micro ?? 72, [k]: Number(e.target.value) })} /></Field>)}
+        {([['routine', 'დასკვნის TAT — ჩვეულებრივი (სთ)', 24], ['urgent', 'დასკვნის TAT — სასწრაფო (სთ)', 1]] as const).map(([k, l, d]) => <Field key={k} label={l} htmlFor={`wl-rt-${k}`}>
+          <input id={`wl-rt-${k}`} className="input mono" type="number" min={1} max={720} value={rt[k] ?? d} onChange={(e) => upd('rad_tat_hours', { routine: rt.routine ?? 24, urgent: rt.urgent ?? 1, [k]: Number(e.target.value) })} /></Field>)}
+      </div>
+      <strong className="small">ზარის ჩახშობა და KPI</strong>
+      <div style={grid}>
+        <Field label="ზარი — „სიაში უკვე არის“" htmlFor="wl-bs" hint="ჩახშობილი იწერება წაკითხულად (ისტორიაში ჩანს); სასწრაფო (კრიტიკული, NEWS2, გამოტოვებული დოზა…) — არასდროს"><select id="wl-bs" className="select" value={v<string>('bell_suppress') ?? 'off'} onChange={(e) => upd('bell_suppress', e.target.value)}>
+          <option value="off">არ ჩაიხშოს (ზარიც, სიაც)</option><option value="non_urgent">ჩვეულებრივი — მხოლოდ სიაში (ჩართული წყაროსთვის)</option></select></Field>
+        <Field label="KPI აღრიცხვის ინტერვალი" htmlFor="wl-ki" hint="სისტემური ჩანაწერების გამოჩენა / დახურვა — worker"><select id="wl-ki" className="select" value={String(v<number>('kpi_interval_min') ?? 30)} onChange={(e) => upd('kpi_interval_min', Number(e.target.value))}>
+          <option value="15">15 წთ</option><option value="30">30 წთ</option><option value="60">60 წთ</option></select></Field>
+        <label className="row" style={{ marginTop: 24 }}><input type="checkbox" checked={v<boolean>('kpi_tracker') !== false} onChange={(e) => upd('kpi_tracker', e.target.checked)} /> KPI აღრიცხვა (ვადაგადაცილება / რეაგირების დრო)</label>
       </div>
       <span className="small muted">ვიტალური ნიშნების გაზომვის სიხშირე NEWS2-ის დონით, წუთი (RCP 2017; რეანიმაციაში — მონიტორინგის ფურცელი)</span>
       <div style={grid}>

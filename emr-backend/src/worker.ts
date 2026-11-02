@@ -92,9 +92,13 @@ async function bootstrap() {
     log.log(`ბიომედ შეკეთება: SLA ${r.sla_warn}/${r.sla_breach}, დახურვა ${r.auto_closed}, კონტრაქტი ${r.contract_reminders}, გარანტია ${r.warranty_reminders}`); })
     .catch((e) => log.error(`ბიომედ შეკეთება: ${(e as Error).message}`));
   const repTimer = setInterval(repTick, 15 * 60_000); setTimeout(repTick, 210_000);
-  // 0081: სამუშაო სიები — ვადის შეხსენება / ესკალაცია — ყოველ 5 წუთში
+  // 0081: სამუშაო სიები — ვადის შეხსენება / ესკალაცია — ყოველ 5 წუთში; 0084: განმეორებადი დავალებები (გრაფიკით) + KPI აღრიცხვა (kpi_interval_min)
   const wl = app.get(WorklistJobsService);
-  const wlTick = () => void wl.tick().then((r) => { if (r.reminded || r.escalated) log.log(`დავალებები: შეხსენება ${r.reminded}, ესკალაცია ${r.escalated}`); })
+  const wlTick = () => void wl.tick().then((r) => {
+    const sc = r.schedules; const k = r.kpi as { items?: number; closed?: number; error?: string } | null | undefined;
+    if (r.reminded || r.escalated || sc?.created || sc?.skipped || sc?.replaced) log.log(`დავალებები: შეხსენება ${r.reminded}, ესკალაცია ${r.escalated}, გრაფიკით ${sc?.created ?? 0} (გამოტოვდა ${sc?.skipped ?? 0}, ჩანაცვლდა ${sc?.replaced ?? 0})`);
+    if (k?.error) log.error(`დავალებები — KPI აღრიცხვა: ${k.error}`);
+  })
     .catch((e) => log.error(`დავალებები: ${(e as Error).message}`));
   const wlTimer = setInterval(wlTick, 5 * 60_000); setTimeout(wlTick, 220_000);
   process.once('SIGTERM', () => { clearInterval(timer); clearInterval(gwTimer); clearInterval(stockTimer); clearInterval(ipdTimer); clearInterval(tariffTimer); clearInterval(rptTimer); clearInterval(jobsTimer); clearInterval(qmTimer); clearInterval(ipcTimer); clearInterval(sigTimer); clearInterval(ddTimer); clearInterval(ssiTimer); clearInterval(abxTimer); clearInterval(bmeTimer); clearInterval(repTimer); clearInterval(wlTimer); });

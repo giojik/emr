@@ -19,7 +19,7 @@ export interface Category { id: string; code: string; name: string; description:
   default_role_name: string | null; default_department_name: string | null; sla_hours: number | null; allow_patient: boolean; is_active: boolean; sort_order: number }
 export interface Refs {
   settings: { assign_scope: string; done_comment: 'off' | 'urgent' | 'all'; reopen_days: number; patient_tasks: boolean; refresh_seconds: number; badge: string; escalate_hours: number; due_default_hours: number[] };
-  can: { team: boolean; all: boolean; categories: boolean; patients: boolean; run_jobs: boolean };
+  can: { team: boolean; all: boolean; categories: boolean; patients: boolean; run_jobs: boolean; reports?: boolean; ack?: boolean };
   team_departments: string[]; my_departments: string[];
   categories: Category[]; roles: { id: string; code: string; name: string }[]; departments: { id: string; name: string; type: string }[];
   duty_roles: { id: string; name: string; department_name: string | null }[];

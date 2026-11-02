@@ -3,14 +3,18 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
+import { AckDialog } from './AckDialog';
+import { SchedulesPage } from './Schedules';
 import { NewTaskDialog, TaskDialog, dueLabel } from './TaskDialogs';
+import { WlReportsPage } from './WlReports';
 import { PRIORITY_CHIP, PRIORITY_KA, STATUS_CHIP, STATUS_KA, TARGET_KA, useWlRefs, useWorklistEnabled, type Category, type Item, type Mine, type Refs, type Task, type TargetKind } from './types';
 
-type Tab = 'mine' | 'group' | 'created' | 'team' | 'categories';
+type Tab = 'mine' | 'group' | 'created' | 'team' | 'categories' | 'schedules' | 'reports';
 
 /**
  * სამუშაო სიები (0081): „ჩემი დავალებები“ — სისტემური (სხვა მოდულების ღია საქმე, ბმულით) + ხელით შექმნილი;
  * ჯგუფის / ჩემ მიერ შექმნილი, ხელმძღვანელის ხედი, კატეგორიები. ?task=ID — დავალების ფანჯარა.
+ * 0084: განმეორებადი (გრაფიკით), ანგარიშები / KPI; ?ack=ENCOUNTER — პასუხის გაცნობის ფანჯარა (ექიმი).
  */
 export default function Tasks() {
   const wl = useWorklistEnabled();
@@ -19,10 +23,12 @@ export default function Tasks() {
   const [creating, setCreating] = useState(false);
   const c = refs.data?.can;
   const tabs: [Tab, string, boolean][] = [['mine', 'ჩემი დავალებები', true], ['group', 'ჯგუფის', true], ['created', 'ჩემ მიერ შექმნილი', true],
-    ['team', 'ხელმძღვანელის ხედი', !!c?.team], ['categories', 'კატეგორიები', !!c?.categories]];
+    ['schedules', 'განმეორებადი', true], ['team', 'ხელმძღვანელის ხედი', !!c?.team], ['reports', 'ანგარიშები', !!c?.reports], ['categories', 'კატეგორიები', !!c?.categories]];
   const tab = (sp.get('tab') as Tab) ?? 'mine';
   const taskId = sp.get('task');
   const closeTask = () => { const n = new URLSearchParams(sp); n.delete('task'); setSp(n, { replace: true }); };
+  const ackId = sp.get('ack');
+  const closeAck = () => { const n = new URLSearchParams(sp); n.delete('ack'); setSp(n, { replace: true }); };
   const openTask = (id: string) => { const n = new URLSearchParams(sp); n.set('task', id); setSp(n); };
   if (wl.loading || (wl.enabled && refs.isLoading)) return <div className="content"><Loading /></div>;
   return (
@@ -40,13 +46,18 @@ export default function Tasks() {
         : tab === 'created' ? <TaskList box="created" onOpen={openTask} statusFilter />
         : tab === 'team' && c?.team ? <TeamPage refs={refs.data!} onOpen={openTask} />
         : tab === 'categories' && c?.categories ? <CategoriesPage refs={refs.data!} />
+        : tab === 'schedules' ? <SchedulesPage refs={refs.data!} onOpenTask={openTask} />
+        : tab === 'reports' && c?.reports ? <WlReportsPage refs={refs.data!} />
         : <MinePage refs={refs.data!} onOpen={openTask} />}
       {creating && <NewTaskDialog onClose={() => setCreating(false)} onCreated={(t) => openTask(t.id)} />}
       {taskId && <TaskDialog id={taskId} onClose={closeTask} />}
+      {ackId && wl.enabled && <AckDialog encounterId={ackId} onClose={closeAck} />}
     </>
   );
 }
 
+/** 0084: პასუხის გაცნობა — ფანჯარა იმავე გვერდზე (?ack=) */
+const ACK_SOURCES = ['res_ack', 'res_critical'];
 const Pri = ({ p }: { p: Item['priority'] }) => (p === 'normal' ? null : <span className={`chip ${PRIORITY_CHIP[p]}`}>{PRIORITY_KA[p]}</span>);
 
 // ---------------------------------------------------------------- ჩემი დავალებები (ერთიანი)
@@ -93,7 +104,7 @@ function MinePage({ refs, onOpen }: { refs: Refs; onOpen: (id: string) => void }
               {(x.detail || x.task) && <div className="muted">{x.detail}{x.task && <>{x.detail ? ' · ' : ''}{x.task.group ? `${x.task.target_label}${x.task.claimed_by_name ? ` — აიღო ${x.task.claimed_by_name}` : ' — ჯგუფური'}` : `შემქმნელი: ${x.task.created_by_name ?? '—'}`}</>}</div>}</td>
             <td>{x.patient ?? ''}</td><td>{x.department ?? ''}</td>
             <td><span className="chip">{x.kind === 'task' ? 'ხელით' : x.group}</span></td>
-            <td><button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); open(x); }}>{x.kind === 'task' ? 'გახსნა' : 'გადასვლა →'}</button></td>
+            <td><button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); open(x); }}>{x.kind === 'task' ? 'გახსნა' : ACK_SOURCES.includes(x.source) ? 'გაცნობა' : 'გადასვლა →'}</button></td>
           </tr>)}</tbody></table>}
       </div>
       <span className="hint">სისტემური ჩანაწერი ქრება, როცა საქმე თავის მოდულში სრულდება (სამუშაო იქ კეთდება — „გადასვლა“). ხელით შექმნილი დავალება არ არის დანიშნულება.</span>

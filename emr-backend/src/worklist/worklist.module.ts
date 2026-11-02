@@ -5,9 +5,12 @@ import { RosterModule } from '../roster/roster.module';
 import { StockModule } from '../stock/stock.module';
 import { WorklistController, WorklistService } from './worklist';
 import { WorklistJobsService } from './worklist-jobs';
+import { WorklistKpiService } from './worklist-kpi';
+import { WorklistSchedulesService } from './worklist-schedules';
 import { WorklistSources } from './worklist-sources';
 import { WorklistAdminSources } from './worklist-sources-admin';
 import { WorklistClinicalSources } from './worklist-sources-clinical';
+import { WorklistDxSources } from './worklist-sources-dx';
 import { WorklistTasksService } from './worklist-tasks';
 
 /**
@@ -18,7 +21,7 @@ import { WorklistTasksService } from './worklist-tasks';
 @Module({
   imports: [AuditModule, RosterModule, StockModule, OrModule],
   controllers: [WorklistController],
-  providers: [WorklistService, WorklistSources, WorklistAdminSources, WorklistClinicalSources, WorklistTasksService, WorklistJobsService],
+  providers: [WorklistService, WorklistSources, WorklistAdminSources, WorklistClinicalSources, WorklistDxSources, WorklistTasksService, WorklistJobsService, WorklistSchedulesService, WorklistKpiService],
   exports: [WorklistJobsService, WorklistTasksService],
 })
 export class WorklistModule {}

@@ -10,6 +10,7 @@ import { qualityFacts } from './reporting-refresh-quality';
 import { ipcFacts } from '../ipc/ipc-facts';
 import { bmeFacts } from '../bme/bme-reports-core';
 import { rosterFacts } from '../roster/roster-reports-core';
+import { worklistFacts } from '../worklist/worklist-facts';
 import { addDays, daysBetween, InjectReadDb, isReplica, n, r2, rptModule, type RptSettings, TZ } from './reporting-common';
 
 /**
@@ -134,6 +135,7 @@ export class RptRefreshService {
     Object.assign(out, await ipcFacts(this.rdb, trx, from, to));   // 0072: ინფექციის კონტროლი (ფანჯარა)
     Object.assign(out, await bmeFacts(this.rdb, trx, from, to));   // 0076: ბიომედ-აპარატურა (ფანჯარა)
     Object.assign(out, await rosterFacts(this.rdb, trx, from, to));   // 0080: ცვლები / მორიგეობა (ფანჯარა + მისი თვეები)
+    Object.assign(out, await worklistFacts(this.rdb, trx, from, to));   // 0084: სამუშაო სიები (ფანჯარა)
     return out;
   }
 

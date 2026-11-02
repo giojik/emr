@@ -11,6 +11,7 @@ import { qmAttentionCounts } from '../quality/quality-metrics';
 import { ipcAttentionCounts } from '../ipc/ipc-facts';
 import { bmeAttentionCounts } from '../bme/bme-reports-core';
 import { rosterAttentionCounts } from '../roster/roster-reports-core';
+import type { Database } from '../database/database.module';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
@@ -308,6 +309,15 @@ export class ReportingDashService {
       if (R?.absence_soon) items.push({ kind: 'roster_absence_soon', severity: 'yellow', title: 'არყოფნის მოთხოვნა გადაწყვეტილების გარეშე — 3 დღეში იწყება', value: R.absence_soon,
         detail: 'ხელმძღვანელის / HR-ის დადასტურება', ...(ro && { link: '/roster?tab=approvals' }) });
     }
+    // 0084: სამუშაო სიები — დაუდასტურებელი კრიტიკული პასუხი, ვადაგადაცილებული სისტემური ჩანაწერები (ბოლო აღრიცხვა)
+    if (scope.worklist) {
+      const W = await worklistAttentionCounts(this.c.db, scope.all ? null : scope.depts);
+      const wl = has(u, 'admin', 'worklist_all', 'worklist_manage');
+      if (W.crit) items.push({ kind: 'wl_crit_unacked', severity: 'red', title: 'კრიტიკული პასუხი — ექიმს ჯერ არ დაუდასტურებია', value: W.crit,
+        detail: `ვალიდაციიდან ${W.mins} წუთზე მეტი, „გავეცანი“ ქმედებით არ არის`, ...(wl && { link: '/tasks?tab=reports' }) });
+      if (W.overdue) items.push({ kind: 'wl_overdue', severity: 'yellow', title: 'სისტემური დავალებები ვადაგადაცილებულია', value: W.overdue,
+        detail: '„ჩემი დავალებები“ — ბოლო აღრიცხვით (kpi_interval_min)', ...(wl && { link: '/tasks?tab=reports' }) });
+    }
     items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'red' ? -1 : 1));
     return { from, to, stock_computed_at: st.computed_at, items };
   }
@@ -322,4 +332,20 @@ export class ReportingDashController {
   @Get('trend') @Roles(...RPT_READ) trend(@Query() q: Q, @CurrentUser() u: AuthUser) { return this.s.trend(u, q); }
   @Get('live') @Roles(...RPT_READ) live(@Query() q: Q, @CurrentUser() u: AuthUser) { if (q.department_id && !UUID_RE.test(q.department_id)) throw new BadRequestException('department_id'); return this.s.live(u, q); }
   @Get('attention') @Roles(...RPT_READ) attention(@Query() q: Q, @CurrentUser() u: AuthUser) { return this.s.attention(u, q); }
+}
+
+/** 0084: სამუშაო სიების „ყურადღება“ — რაოდენობები; depts = null — მთელი კლინიკა */
+async function worklistAttentionCounts(db: Database, depts: string[] | null) {
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'worklist').executeTakeFirst();
+  const mins = Number((m?.settings as { critical_ack_min?: number } | undefined)?.critical_ack_min ?? 30);
+  const f = (c: string) => (depts ? sql`${sql.ref(c)} = ANY (${depts.length ? depts : ['00000000-0000-0000-0000-000000000000']}::uuid[])` : sql`TRUE`);
+  const r = (await sql<{ crit: number; overdue: number }>`
+    SELECT (SELECT count(*)::int FROM dx_order_items i JOIN encounters e ON e.id = i.encounter_id
+             WHERE i.status = 'validated' AND i.validated_at > now() - interval '7 days' AND i.validated_at < now() - make_interval(mins => ${mins}::int) AND e.visit_kind <> 'lab'
+               AND e.status <> 'cancelled' AND ${f('e.department_id')}
+               AND ((i.section = 'lab' AND EXISTS (SELECT 1 FROM lab_results r WHERE r.order_item_id = i.id AND r.flag IN ('HH', 'LL')))
+                 OR (i.section <> 'lab' AND EXISTS (SELECT 1 FROM dx_reports rr WHERE rr.order_item_id = i.id AND rr.is_critical AND rr.status = 'signed')))
+               AND NOT EXISTS (SELECT 1 FROM dx_result_acks k WHERE k.order_item_id = i.id AND k.kind = 'critical' AND k.acked_at >= i.validated_at)) AS crit,
+           (SELECT coalesce(sum(o.overdue), 0)::int FROM wl_kpi_open o WHERE ${depts ? f('o.department_id') : sql`TRUE`}) AS overdue`.execute(db)).rows[0];
+  return { ...r, mins };
 }

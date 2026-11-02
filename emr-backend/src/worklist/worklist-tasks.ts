@@ -21,7 +21,7 @@ export interface CreateIn extends Target {
 export interface EditIn { title?: string; description?: string | null; category_id?: string | null; priority?: Priority; due_at?: string | null }
 export interface ListQ { box?: string; status?: string; department_id?: string; overdue?: string; patient_id?: string; q?: string; assignee_id?: string; category_id?: string; target_kind?: string }
 
-interface Ctx { roles: string[]; member: string[]; manage: string[]; all: boolean }
+export interface Ctx { roles: string[]; member: string[]; manage: string[]; all: boolean }
 type TaskRow = Awaited<ReturnType<WorklistTasksService['rows']>>[number];
 
 /**
@@ -82,7 +82,7 @@ export class WorklistTasksService {
     return this.base(ex).where(where).orderBy(sql`CASE WHEN t.status IN ('open', 'in_progress') THEN 0 ELSE 1 END`)
       .orderBy(sql`CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END`).orderBy(sql`t.due_at NULLS LAST`).orderBy('t.created_at', 'desc').limit(limit).execute();
   }
-  private label(r: Pick<TaskRow, 'target_kind' | 'assignee_name' | 'role_name' | 'target_department_name' | 'duty_role_name'>) {
+  label(r: Pick<TaskRow, 'target_kind' | 'assignee_name' | 'role_name' | 'target_department_name' | 'duty_role_name'>) {
     switch (r.target_kind) {
       case 'user': return r.assignee_name ?? '—';
       case 'role': return r.role_name ?? '—';
@@ -187,7 +187,7 @@ export class WorklistTasksService {
   }
 
   // ------------------------------------------------------------------ სამიზნე / წესი
-  private async resolveTarget(ex: Ex, t: Target) {
+  async resolveTarget(ex: Ex, t: Target) {
     const k = t.target_kind;
     const need = (v: string | null | undefined, f: string) => { if (!v) throw new BadRequestException(`${f} — სავალდებულოა (${TARGET_KA[k]})`); return v; };
     const clean = { assignee_id: null as string | null, target_role_id: null as string | null, target_department_id: null as string | null, target_duty_role_id: null as string | null };
@@ -218,7 +218,7 @@ export class WorklistTasksService {
   }
 
   /** D2 — ვის შეუძლია სხვისთვის მინიჭება (assign_scope) */
-  private async checkAssign(ex: Ex, u: AuthUser, c: Ctx, s: WlSettings, t: Awaited<ReturnType<WorklistTasksService['resolveTarget']>>) {
+  async checkAssign(ex: Ex, u: AuthUser, c: Ctx, s: WlSettings, t: Awaited<ReturnType<WorklistTasksService['resolveTarget']>>) {
     if (t.target_kind === 'user' && t.assignee_id === u.id) return;
     if (c.all || s.assign_scope === 'any') return;
     if (t.target_kind === 'department' || t.target_kind === 'duty') return;   // სამსახურის / განყოფილების რიგი, მორიგე — ყოველთვის
@@ -247,7 +247,7 @@ export class WorklistTasksService {
     return h > 0 ? new Date(Date.now() + h * 36e5) : null;
   }
 
-  private async nextNo(trx: Trx) {
+  async nextNo(trx: Trx) {
     const yr = Number(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric' }).format(new Date()));
     const { last_value } = await trx.insertInto('document_counters').values({ document_type: 'wl_task', year: yr, last_value: 1 })
       .onConflict((oc) => oc.columns(['document_type', 'year']).doUpdateSet({ last_value: sql`document_counters.last_value + 1` })).returning('last_value').executeTakeFirstOrThrow();
@@ -475,7 +475,7 @@ export class WorklistTasksService {
       } catch (e) { this.log.warn(`შეტყობინება: ${(e as Error).message}`); }
     }
   }
-  private async notifyTarget(id: string, actor: string, what: string) {
+  async notifyTarget(id: string, actor: string, what: string) {
     const t = await this.db.selectFrom('wl_tasks').selectAll().where('id', '=', id).executeTakeFirst();
     if (!t) return;
     const ids = (await this.recipients(this.db, t)).filter((x) => x !== actor);

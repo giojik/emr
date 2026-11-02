@@ -23,9 +23,9 @@ import type { AdminCtx, Row, SourceGroup } from './worklist-sources-admin';
  */
 
 const LIMIT = 200;
-const NIL = '00000000-0000-0000-0000-000000000000';
-const uuids = (xs: Iterable<string>) => { const a = [...xs]; return a.length ? a : [NIL]; };
-const plus = (d: Date | string | null | undefined, min: number) => (d ? new Date(new Date(d).getTime() + min * 60_000) : null);
+export const NIL = '00000000-0000-0000-0000-000000000000';
+export const uuids = (xs: Iterable<string>) => { const a = [...xs]; return a.length ? a : [NIL]; };
+export const plus = (d: Date | string | null | undefined, min: number) => (d ? new Date(new Date(d).getTime() + min * 60_000) : null);
 const fmtDay = (d: string) => d.split('-').reverse().join('.');
 
 /** ჰოსპიტალიზაციის მიმდინარე (ბოლო, გაუქმებულის გარეშე) საწოლის განყოფილება — orders.ts-ის წესი */
@@ -54,11 +54,11 @@ const LINE_KA: Record<string, string> = { pvc: 'პერიფერიულ�
   ng_tube: 'ნაზოგასტრული ზონდი', drain: 'დრენაჟი', trach: 'ტრაქეოსტომა', dialysis: 'დიალიზის კათეტერი', other: 'სხვა' };
 const URG: Record<string, Priority> = { emergency: 'urgent', urgent: 'high', routine: 'normal', elective: 'normal' };
 
-/** ერთი მოთხოვნის კლინიკური კონტექსტი (memo — AdminCtx-ის თავზე) */
-class ClinCtx {
+/** ერთი მოთხოვნის კლინიკური კონტექსტი (memo — AdminCtx-ის თავზე); 0084 — დიაგნოსტიკის წყაროებიც იყენებს */
+export class ClinCtx {
   private memo = new Map<string, Promise<unknown>>();
   constructor(readonly db: Database, readonly u: AuthUser, readonly x: AdminCtx) {}
-  private m<T>(k: string, f: () => Promise<T>): Promise<T> {
+  m<T>(k: string, f: () => Promise<T>): Promise<T> {
     if (!this.memo.has(k)) this.memo.set(k, f());
     return this.memo.get(k) as Promise<T>;
   }

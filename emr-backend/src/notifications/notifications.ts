@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { CurrentUser } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
+import { BELL_ALWAYS, BELL_SOURCE } from '../worklist/worklist-common';
 
 /** თანამშრომლის შეტყობინებები (ზარი). ერთი (მომხმარებელი, ტიპი, ობიექტი) — ერთი წაუკითხავი ჩანაწერი, ელემენტები ერთიანდება */
 @Injectable()
@@ -10,9 +11,38 @@ export class NotificationsService {
   private readonly log = new Logger('Notifications');
   constructor(@InjectDb() private readonly db: Database) {}
 
+  /** 0084 — ზარის ჩახშობის პარამეტრები (30 წმ კეში) */
+  private sup: { t: number; v: { on: boolean; sources: Record<string, boolean>; ackAll: boolean } } | null = null;
+  private async suppression() {
+    if (this.sup && Date.now() - this.sup.t < 30_000) return this.sup.v;
+    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
+    const st = (m?.settings ?? {}) as { bell_suppress?: string; sources?: Record<string, boolean>; ack_scope?: string };
+    const v = { on: !!m?.enabled && st.bell_suppress === 'non_urgent', sources: st.sources ?? {}, ackAll: st.ack_scope === 'all' };
+    this.sup = { t: Date.now(), v };
+    return v;
+  }
+  /** ჩაიხშოს თუ არა: ჩვეულებრივი შეტყობინება, რომლის წყარო „ჩემს დავალებებში“ ჩართულია (BELL_SOURCE); სასწრაფო / BELL_ALWAYS — არასდროს */
+  async suppressed(kind: string, urgent: boolean) {
+    if (urgent || BELL_ALWAYS.has(kind)) return false;
+    const src = BELL_SOURCE[kind];
+    if (!src) return false;
+    const s = await this.suppression();
+    if (!s.on || s.sources[src] === false) return false;
+    // „პასუხი მზადაა“ — res_ack მხოლოდ ack_scope = all-ზე ფარავს ყველა პასუხს
+    if (src === 'res_ack' && !s.ackAll) return false;
+    return true;
+  }
+  clearSuppressionCache() { this.sup = null; }
+
   async notify(userId: string, n: { kind: string; title: string; body?: string | null; link?: string | null; entityId?: string | null; item?: string | null; urgent?: boolean }) {
     try {
       const items = n.item ? [n.item] : [];
+      if (await this.suppressed(n.kind, !!n.urgent)) {
+        // „სიაში უკვე არის“ — იწერება წაკითხულად (ისტორიაში ჩანს, მთვლელს არ ზრდის)
+        await this.db.insertInto('user_notifications').values({ user_id: userId, kind: n.kind, title: n.title, body: n.body ?? null, link: n.link ?? null, entity_id: n.entityId ?? null,
+          items, urgent: false, suppressed: true, read_at: sql`now()` }).execute();
+        return;
+      }
       await this.db.insertInto('user_notifications').values({ user_id: userId, kind: n.kind, title: n.title, body: n.body ?? null, link: n.link ?? null, entity_id: n.entityId ?? null,
         items, urgent: !!n.urgent })
         .onConflict((oc) => oc.expression(sql`user_id, kind, entity_id`).where('read_at', 'is', null).doUpdateSet({
@@ -24,7 +54,7 @@ export class NotificationsService {
     } catch (e) { this.log.error(`შეტყობინება: ${(e as Error).message}`); }
   }
   list(userId: string, unread: boolean) {
-    let q = this.db.selectFrom('user_notifications').select(['id', 'kind', 'title', 'body', 'link', 'items', 'urgent', 'created_at', 'updated_at', 'read_at'])
+    let q = this.db.selectFrom('user_notifications').select(['id', 'kind', 'title', 'body', 'link', 'items', 'urgent', 'suppressed', 'created_at', 'updated_at', 'read_at'])
       .where('user_id', '=', userId).orderBy('read_at', 'desc').orderBy('updated_at', 'desc').limit(50);
     if (unread) q = q.where('read_at', 'is', null);
     else q = q.where((eb) => eb.or([eb('read_at', 'is', null), eb('updated_at', '>', sql<Date>`now() - interval '14 days'`)]));

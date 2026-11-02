@@ -27,6 +27,7 @@ import { LabQcController, LabQcService } from './lab-qc';
 import { LabMicroController, LabMicroService } from './lab-micro';
 import { LabDeliveryController, LabDeliveryService } from './lab-delivery';
 import { LabNotifyService } from './lab-notify';
+import { DxAcksController, DxAcksService } from './dx-acks';
 import { LabGatewayAdminController, LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyModule } from '../notify/notify.service';
@@ -59,7 +60,16 @@ class LabVisitDto {
 }
 class ReceiveDto { @IsString() @Length(3, 30) barcode: string }
 class ResultValueDto { @IsUUID() analyte_id: string; @IsOptional() value: string | number | null }
-class ValidateDto { @IsOptional() @IsString() @MaxLength(500) qc_reason?: string }
+class CritCallDto {
+  @IsString() @Length(2, 300) to: string; @IsIn(['phone', 'in_person', 'message', 'other']) via: 'phone' | 'in_person' | 'message' | 'other';
+  @IsOptional() @IsBoolean() readback?: boolean;
+}
+class ValidateDto {
+  @IsOptional() @IsString() @MaxLength(500) qc_reason?: string;
+  /** 0084: კრიტიკული მნიშვნელობა — ვის / როგორ / read-back */
+  @IsOptional() @IsString() @MaxLength(300) crit_to?: string; @IsOptional() @IsIn(['phone', 'in_person', 'message', 'other']) crit_via?: 'phone' | 'in_person' | 'message' | 'other';
+  @IsOptional() @IsBoolean() crit_readback?: boolean;
+}
 class ResultsDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => ResultValueDto) values: ResultValueDto[];
   /** ნორმის შესარჩევად: ორსულობის კვირა და ანალიზატორი (null — გასუფთავება, გამოტოვება — უცვლელი) */
@@ -191,11 +201,13 @@ export class DiagnosticsController {
   }
   @Post('lab/items/:id/validate') @HttpCode(200) @Roles('admin', 'lab_doctor')
   async validate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValidateDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
-    const r = await this.dx.validate(id, u, auditCtx(req), dto?.qc_reason);
+    const r = await this.dx.validate(id, u, auditCtx(req), dto?.qc_reason, dto?.crit_to ? { to: dto.crit_to, via: dto.crit_via, readback: dto.crit_readback } : undefined);
     void this.delivery.afterValidate(id, auditCtx(req));   // პასუხის მიწოდება პაციენტს (თუ ჩართულია) — ფონურად
     void this.labNotify.ready(id, u.id).catch(() => undefined);   // დამნიშნავ ექიმს — „პასუხი მზადაა“
     return r;
   }
+  @Post('lab/items/:id/crit-call') @HttpCode(200) @Roles('admin', 'lab_doctor', 'diagnostic')
+  critCall(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CritCallDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.critCall(id, dto, u, auditCtx(req)); }
   @Post('lab/items/:id/reopen') @HttpCode(200) @Roles('admin', 'lab_doctor')
   reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.reopen(id, dto.reason, auditCtx(req)); }
 
@@ -208,7 +220,7 @@ export class DiagnosticsController {
 
 @Module({
   imports: [EncountersModule, AllergiesModule, ClinicSettingsModule, NotifyModule, IpcModule],
-  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController, LabDeliveryController],
-  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService, LabDeliveryService, LabNotifyService], exports: [DiagnosticsService, LabIngestService],
+  controllers: [DiagnosticsController, RadiologyController, EndoscopyController, LabConfigController, PublicLabVerifyController, LabInstrumentsController, LabGatewayAdminController, LabExternalController, LabMailController, LabQcController, LabMicroController, LabDeliveryController, DxAcksController],
+  providers: [DiagnosticsService, RadiologyService, EndoscopyService, LabConfigService, LabIngestService, LabInstrumentsService, LabGatewayAdminService, LabAlertsService, LabExternalService, LabStatsService, LabMailService, LabQcService, LabMicroService, LabDeliveryService, LabNotifyService, DxAcksService], exports: [DiagnosticsService, LabIngestService],
 })
 export class DiagnosticsModule {}

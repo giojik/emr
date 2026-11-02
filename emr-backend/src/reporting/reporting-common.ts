@@ -59,7 +59,7 @@ export async function rptModule(db: Database) {
 
 /** ხედვის არე: all — მთელი კლინიკა; depts — დაშვებული განყოფილებები; finance — ფინანსური KPI-ები ჩანს;
  *  quality (0066) — ხარისხის KPI-ები / „ყურადღება“ / თვიური სექცია ჩანს (მოდული ჩართულია და dashboard_visibility-ის წესი) */
-export interface RptScope { all: boolean; depts: string[]; finance: boolean; phi: boolean; quality?: boolean; ipc?: boolean; bme?: boolean; roster?: boolean }
+export interface RptScope { all: boolean; depts: string[]; finance: boolean; phi: boolean; quality?: boolean; ipc?: boolean; bme?: boolean; roster?: boolean; worklist?: boolean }
 /** 0072: ინფექციის კონტროლის KPI / „ყურადღება“ / თვიური სექცია (მოდული ჩართულია და dashboard_visibility-ის წესი) */
 export const IPC_REPORT_CAPS: Role[] = ['infection', 'infection_dept', 'infection_view'];
 export async function ipcVisibility(db: Database, u: AuthUser) {
@@ -119,10 +119,11 @@ export class RptCommon {
     const ipc = await ipcVisibility(this.db, u);
     const bme = await bmeVisibility(this.db, u);
     const roster = await rosterVisibility(this.db, u);
-    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.enabled && has(u, ...FIN_FULL, 'reports_all'), phi, quality, ipc, bme, roster };
+    const worklist = !!(await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'worklist').executeTakeFirst())?.enabled;   // 0084
+    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.enabled && has(u, ...FIN_FULL, 'reports_all'), phi, quality, ipc, bme, roster, worklist };
     const depts = await this.userDepts(u.id);
     if (!depts.length) throw new ForbiddenException({ code: 'NO_SCOPE', message: 'განყოფილება არ გაქვთ მინიჭებული — მენეჯერული დაფა ვერ გამოჩნდება (ადმინისტრირება → რეპორტინგი → ხედვის არე)' });
-    return { all: false, depts, finance: fr.enabled && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality, ipc, bme, roster };
+    return { all: false, depts, finance: fr.enabled && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality, ipc, bme, roster, worklist };
   }
   /** მოთხოვნილი განყოფილება ხედვის არეშია? (null — მთელი არე) */
   narrow(scope: RptScope, dept?: string | null): RptScope {

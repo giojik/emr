@@ -72,19 +72,61 @@ export interface WlSettings {
   or_ahead_hours: number;
   /** PACU — N საათზე მეტი → მაღალი */
   pacu_long_hours: number;
+  // ---- 0084: დიაგნოსტიკა, ზარის ჩახშობა, KPI
+  /** attention — „ჩემს დავალებებში“ მხოლოდ სასწრაფო / ვადაგადაცილებული (აღება, შედეგი, დაგეგმვა, შესრულება, დასკვნა); all — ყველა ღია */
+  dx_list_mode: 'attention' | 'all';
+  /** ნიმუშის აღების ვადა — შეკვეთიდან, წუთი */
+  lab_collect_min: { routine: number; urgent: number };
+  /** აღებული სინჯარა ლაბ.-ში არ მიუღიათ — N წუთის შემდეგ */
+  lab_transit_min: number;
+  /** ლაბ. შედეგის TAT — მიღებიდან, საათი (micro — მიკრობიოლოგია) */
+  lab_tat_hours: { routine: number; urgent: number; micro: number };
+  /** რადიოლოგია / ენდოსკოპია: დასკვნის TAT — შესრულებიდან, საათი */
+  rad_tat_hours: { routine: number; urgent: number };
+  /** რომელ პასუხზე სჭირდება ექიმს „გავეცანი“: all / abnormal (ლაბ. — ნორმის გარეთ; გამოსახულება / გარე / ბიოფსია — ყველა) / critical */
+  ack_scope: 'all' | 'abnormal' | 'critical';
+  /** გაცნობის ვადა — ვალიდაციიდან, საათი */
+  ack_hours: number;
+  /** გაცნობა — ბოლო N დღის პასუხები */
+  ack_days: number;
+  /** კრიტიკული: N წუთის შემდეგ — + განყოფილების ხელმძღვანელი (არ არის — ცვლაში მყოფი / განყოფილების ექიმები) */
+  critical_ack_min: number;
+  /** ლაბ. კრიტიკულის შეტყობინება („ვის ეცნობა“): off / task — დავალება, თუ არ ჩაიწერა / required — ვალიდაცია ბლოკდება */
+  lab_crit_call: 'off' | 'task' | 'required';
+  /** რადიოლოგიის / ენდოსკოპიის დაგეგმვა: radiographer (ტექნიკოსი / ენდოსკოპიის ექთანი) / receptionist / both */
+  rad_scheduler: 'radiographer' | 'receptionist' | 'both';
+  /** მიმართვის (referrals) ვადა — შექმნიდან, დღე */
+  ref_due_days: number;
+  /** ამბულატორიულად დანიშნული კვლევა შეუსრულებელია — N დღის შემდეგ */
+  amb_dx_days: number;
+  /** ბიოფსია: გაგზავნილი, პასუხი არ არის — N დღის შემდეგ */
+  path_due_days: number;
+  /** 0084a: ამაზე ძველი დანიშვნა დიაგნოსტიკის ნაკადის წყაროებში აღარ ჩანს (DX_STALE — diagnostics-ში) */
+  dx_max_age_days: number;
+  /** 0084a: ამბულატორიული ნიმუშის აღება — დანიშვნიდან N დღის შემდეგ აღარ ჩანს */
+  lab_collect_days: number;
+  /** ზარის ჩახშობა („სიაში უკვე არის“): off / non_urgent — ჩვეულებრივი შეტყობინება, რომლის წყარო ჩართულია, ჩაიწერება წაკითხულად */
+  bell_suppress: 'off' | 'non_urgent';
+  /** KPI: სისტემური ჩანაწერების აღრიცხვა (worker) */
+  kpi_tracker: boolean;
+  /** აღრიცხვის ინტერვალი, წუთი */
+  kpi_interval_min: number;
 }
 export const OBS_KEYS = ['zero', 'low', 'low_red', 'medium', 'high'] as const;
 export type ObsKey = (typeof OBS_KEYS)[number];
-export const SLA_KEYS = ['stk_approve', 'stk_issue', 'stk_receive', 'stk_urgent', 'proc_approve', 'asset_move', 'med_verify', 'med_approve', 'doc_cosign', 'or_docs'] as const;
+export const SLA_KEYS = ['stk_approve', 'stk_issue', 'stk_receive', 'stk_urgent', 'proc_approve', 'asset_move', 'med_verify', 'med_approve', 'doc_cosign', 'or_docs', 'lab_validate'] as const;
 export type SlaKey = (typeof SLA_KEYS)[number];
 export const WL_DEFAULTS: WlSettings = {
   assign_scope: 'any', done_comment: 'urgent', reopen_days: 7, remind_at_due: true, escalate_hours: 0, due_default_hours: [0, 24, 4],
   notify_assign: true, notify_done: true, patient_tasks: true, sources: {}, badge: 'all', refresh_seconds: 60, home_tasks: false,
   dept_side: 'heads', stk_expiry_days: 30,
-  sla_hours: { stk_approve: 24, stk_issue: 24, stk_receive: 24, stk_urgent: 4, proc_approve: 48, asset_move: 72, med_verify: 2, med_approve: 4, doc_cosign: 24, or_docs: 24 },
+  sla_hours: { stk_approve: 24, stk_issue: 24, stk_receive: 24, stk_urgent: 4, proc_approve: 48, asset_move: 72, med_verify: 2, med_approve: 4, doc_cosign: 24, or_docs: 24, lab_validate: 4 },
   period_close_day: 10, claim_build_day: 5, ipd_finalize_days: 3, appt_open_days: 2, debt_days: 30, reg_scope: 'all', bi_due_hours: 48,
   nurse_scope: 'department', mar_due_ahead_min: 60, obs_minutes: { zero: 720, low: 240, low_red: 60, medium: 60, high: 30 }, news2_review_min: { alert: 60, urgent: 30 },
   line_review_hours: 24, draft_hours: 12, amb_open_days: 7, or_ahead_hours: 24, pacu_long_hours: 4,
+  dx_list_mode: 'attention', lab_collect_min: { routine: 120, urgent: 30 }, lab_transit_min: 60, lab_tat_hours: { routine: 24, urgent: 2, micro: 72 },
+  rad_tat_hours: { routine: 24, urgent: 1 }, ack_scope: 'abnormal', ack_hours: 24, ack_days: 30, critical_ack_min: 30, lab_crit_call: 'task',
+  rad_scheduler: 'radiographer', ref_due_days: 3, amb_dx_days: 14, path_due_days: 10, dx_max_age_days: 30, lab_collect_days: 3, bell_suppress: 'off', kpi_tracker: true, kpi_interval_min: 30,
 };
 
 /** სისტემური წყაროების კატალოგი (კოდი → ჯგუფი / დასახელება / მოდული). 0082 — ადმინისტრაცია / ლოჯისტიკა; 0083 — კლინიკური; 0084 — დაემატება. module = 'core' — ყოველთვის ჩართული */
@@ -181,8 +223,53 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   or_ready: { group: 'საოპერაციო / PACU', name: 'მზადყოფნის ჩეკლისტი — არასრული', module: 'or', who: 'ქირურგიული განყოფილება (dept_side)' },
   or_docs: { group: 'საოპერაციო / PACU', name: 'ოქმი / ანესთეზიის რუკა — ხელმოსაწერი', module: 'or', who: 'ოქმი — ოპერატორი; რუკა — გუნდის ანესთეზიოლოგი' },
   or_pacu: { group: 'საოპერაციო / PACU', name: 'PACU — პაციენტი (გაწერა / დიდხანს)', module: 'or', who: 'PACU-ს ექთანი + გუნდის ანესთეზიოლოგი' },
+  // ---- 0084: ლაბორატორია
+  lab_collect: { group: 'ლაბორატორია', name: 'ნიმუში ასაღებია (პაციენტზე)', module: 'core', who: 'სტაციონარი — განყოფილების ექთნები (nurse_scope); ამბულატორია — ფლებოტომისტი (არ არის — diagnostic)' },
+  lab_recollect: { group: 'ლაბორატორია', name: 'ნიმუში ვერ აიღეს — თავიდან ასაღებია', module: 'core', who: 'აღების მხარე (როგორც lab_collect)' },
+  lab_receive: { group: 'ლაბორატორია', name: 'აღებული სინჯარა ლაბ.-ში არ მიუღიათ', module: 'core', who: 'ლაბ. (diagnostic / lab_doctor)' },
+  lab_result: { group: 'ლაბორატორია', name: 'შედეგი — სასწრაფო / TAT გადაცილებული', module: 'core', who: 'ლაბ. (diagnostic; არ არის — lab_doctor)' },
+  lab_validate: { group: 'ლაბორატორია', name: 'შედეგის ვალიდაცია', module: 'core', who: 'ლაბ. ექიმი (lab_doctor)' },
+  lab_crit_call: { group: 'ლაბორატორია', name: 'კრიტიკული მნიშვნელობა — „ვის ეცნობა“ ჩასაწერია', module: 'core', who: 'ვალიდატორი (არ არის — lab_doctor)' },
+  lab_qc: { group: 'ლაბორატორია', name: 'QC დარღვევა — განსახილველი', module: 'core', who: 'lab_doctor / lab_manager' },
+  lab_unmatched: { group: 'ლაბორატორია', name: 'მიუბმელი პასუხები (ანალიზატორი / ელფოსტა)', module: 'core', who: 'ლაბ. (diagnostic / lab_doctor)' },
+  lab_ext_send: { group: 'ლაბორატორია', name: 'გარე ლაბ. — გასაგზავნი (აქტის გარეშე)', module: 'core', who: 'ლაბ. (diagnostic)' },
+  lab_ext_due: { group: 'ლაბორატორია', name: 'გარე ლაბ. — პასუხი ვადაგადაცილებულია', module: 'core', who: 'ლაბ. (diagnostic)' },
+  // ---- 0084: პასუხის გაცნობა (ექიმი)
+  res_critical: { group: 'პასუხის გაცნობა', name: 'კრიტიკული პასუხი — დადასტურება', module: 'core', who: 'დამნიშნავი + მკურნალი; critical_ack_min-ის შემდეგ — + ხელმძღვანელი (არ არის — ცვლაში მყოფი / განყოფილების ექიმები)' },
+  res_ack: { group: 'პასუხის გაცნობა', name: 'პასუხი გასაცნობია (პაციენტზე)', module: 'core', who: 'სტაციონარი — მკურნალი; ამბულატორია — დამნიშნავი ექიმი' },
+  // ---- 0084: რადიოლოგია / ენდოსკოპია
+  rad_schedule: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა დასაგეგმია (დრო არ აქვს)', module: 'core', who: 'rad_scheduler: რადიოგრაფერი / ენდოსკოპიის ექთანი / რეგისტრატორი' },
+  rad_perform: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა შესასრულებელია (დრო გავიდა / მოსულია)', module: 'core', who: 'რადიოგრაფერი' },
+  rad_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'რადიოლოგიის დასკვნა — ხელმოსაწერი', module: 'core', who: 'რადიოლოგი (მონახაზი — ავტორი)' },
+  endo_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ენდოსკოპიის დასკვნა — ხელმოსაწერი', module: 'core', who: 'ენდოსკოპისტი (შემსრულებელი; არ არის — ყველა)' },
+  endo_path: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ბიოფსია — გასაგზავნი / პასუხი აგვიანებს / გასაცნობი', module: 'core', who: 'ენდოსკოპიის პერსონალი; გაცნობა — ენდოსკოპისტი' },
+  dx_issue: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა / ნიმუში „ვერ შესრულდა“ — გადასაწყვეტი', module: 'core', who: 'დამნიშნავი ექიმი (არ არის — მკურნალი)' },
+  // ---- 0084: ამბულატორიული მიმართვები
+  ref_todo: { group: 'ამბულატორიული მიმართვები', name: 'მიმართვა — შესასრულებელი', module: 'core', who: 'hospitalization — რეგისტრატორი (reg_scope); სხვა — diagnostic (სამიზნე განყოფილება)' },
+  amb_dx_pending: { group: 'ამბულატორიული მიმართვები', name: 'დანიშნული კვლევა არ ჩატარებულა (პაციენტზე)', module: 'core', who: 'დამნიშნავი ექიმი' },
 };
 export const SOURCE_CODES = Object.keys(SOURCES);
+
+/**
+ * 0084 — ზარის ჩახშობა (bell_suppress = non_urgent): შეტყობინების ტიპი → „ჩემი დავალებების“ წყარო.
+ * ჩაიხშობა მხოლოდ ჩვეულებრივი (არასასწრაფო) შეტყობინება, თუ მოდული „სამუშაო სიები“ და შესაბამისი წყარო ჩართულია.
+ * BELL_ALWAYS — არასდროს (კრიტიკული მნიშვნელობა, გამოტოვებული დოზა, NEWS2, გაწვევა, SLA-ს დარღვევა).
+ */
+export const BELL_SOURCE: Record<string, string> = {
+  stock_approve: 'stk_approve', stock_request: 'stk_approve', stock_issue: 'stk_issue', stock_receive: 'stk_receive', stock_writeoff: 'stk_writeoff',
+  stock_expiry: 'stk_expiry', stock_min: 'stk_min',
+  proc_pr_approve: 'proc_pr_approve', proc_po_approve: 'proc_po_approve', proc_po_overdue: 'proc_po_overdue',
+  ap_due: 'ap_due', claim_due: 'fin_claim_due', fin_period: 'fin_period', tariff_change: 'tariff_approve',
+  cssd_expiry: 'cssd_expiry', asset_move: 'asset_move', asset_writeoff: 'asset_writeoff',
+  bme_repair_new: 'bme_triage', bme_repair: 'bme_repair', bme_work: 'bme_work', bme_pm_due: 'bme_work',
+  qm_capa: 'qm_capa', qm_analysis: 'qm_analysis', qm_capa_due: 'qm_capa_due', ipc_flag: 'ipc_flag',
+  ipd_order_verify: 'med_verify', ipd_order_approve: 'med_approve', ipd_order_rejected: 'med_rejected', ipd_verbal_confirm: 'med_verbal',
+  ipd_abx_ending: 'med_abx_end', ipd_abx_timeout: 'ipc_abx', ipd_note_due: 'doc_progress', ipd_docs_pending: 'doc_discharge',
+  ipd_consult: 'consult_todo', ipd_consult_late: 'consult_todo', ipd_transfer_late: 'transfer_in', ipd_scale_due: 'nur_scale', ipd_line_due: 'nur_line',
+  icu_sheet_gap: 'icu_sheet', icu_bundle_due: 'icu_bundle', icu_sofa_due: 'icu_sofa', or_request: 'or_request',
+  lab_ready: 'res_ack', lab_prelim: 'res_ack',
+};
+export const BELL_ALWAYS = new Set(['lab_critical', 'mar_missed', 'ipd_mar_missed', 'ipd_news2', 'cssd_recall', 'bme_sla_breach', 'wl_task']);
 
 export type Priority = 'normal' | 'high' | 'urgent';
 export const PRIORITY_KA: Record<Priority, string> = { normal: 'ჩვეულებრივი', high: 'მაღალი', urgent: 'სასწრაფო' };

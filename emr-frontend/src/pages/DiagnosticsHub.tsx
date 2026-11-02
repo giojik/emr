@@ -97,14 +97,18 @@ const LAB_TABS = [['collected,in_progress', 'შესასრულებე�
 function LabWorkspace() {
   const qc = useQueryClient(); const toast = useToast(); const { user } = useAuth();
   const canReceive = can(user, 'admin', 'diagnostic', 'lab_doctor');
-  const [status, setStatus] = useState<string>(LAB_TABS[0][0]);
+  // 0084: ბმული „ჩემი დავალებებიდან“ — ?tab=resulted|validated|qc|ext, ?item=ID, ?inbox=1
+  const [sp] = useSearchParams();
+  const tabParam = sp.get('tab');
+  const initTab = tabParam === 'resulted' ? 'resulted' : tabParam === 'validated' ? 'validated' : tabParam === 'qc' || tabParam === 'ext' ? tabParam : LAB_TABS[0][0];
+  const [status, setStatus] = useState<string>(initTab);
   const [search, setSearch] = useState('');
-  const [selId, setSelId] = useState<string | null>(null);
+  const [selId, setSelId] = useState<string | null>(sp.get('item'));
   const [barcode, setBarcode] = useState('');
   const scan = useRef<HTMLInputElement>(null);
   const q = useQuery({ queryKey: ['lab-worklist', status, search], queryFn: () => api<DxItem[]>('/lab/worklist', { query: { status, search } }), refetchInterval: 15_000,
     enabled: !['ext', 'stats', 'qc', 'micro'].includes(status) });
-  const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(false);
+  const inbox = useInboxCount(); const [inboxOpen, setInboxOpen] = useState(sp.get('inbox') === '1');
   const receive = useMutation({
     mutationFn: (bc: string) => api<{ barcode: string; already_received: boolean }>('/lab/receive', { body: { barcode: bc } }),
     onSuccess: (r) => {
@@ -198,8 +202,13 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
       pregnancy_weeks: preg ? Number(preg) : null, lab_method_id: method || null } }),
     onSuccess: (r) => { toast.show(r.status === 'resulted' ? 'შენახულია — ვალიდაციას ელოდება' : 'შენახულია (შეუვსებელი კომპონენტებით)'); refresh(); },
   });
-  const validate = useMutation({ mutationFn: (qcReason?: string) => api(`/lab/items/${id}/validate`, { method: 'POST', body: qcReason ? { qc_reason: qcReason } : {} }),
-    onSuccess: () => { toast.show('დადასტურებულია — შედეგი ექიმს გაეგზავნა'); refresh(); } });
+  // 0084: კრიტიკული მნიშვნელობა — ვის / როგორ / read-back (ვალიდაციისას ან შემდეგ)
+  const [crit, setCrit] = useState({ to: '', via: 'phone', readback: true });
+  const critBody = () => (crit.to.trim().length >= 2 ? { crit_to: crit.to.trim(), crit_via: crit.via, crit_readback: crit.readback } : {});
+  const validate = useMutation({ mutationFn: (qcReason?: string) => api(`/lab/items/${id}/validate`, { method: 'POST', body: { ...(qcReason ? { qc_reason: qcReason } : {}), ...critBody() } }),
+    onSuccess: () => { toast.show('დადასტურებულია — შედეგი ექიმს გაეგზავნა'); setCrit({ to: '', via: 'phone', readback: true }); refresh(); } });
+  const critCall = useMutation({ mutationFn: () => api(`/lab/items/${id}/crit-call`, { body: { to: crit.to.trim(), via: crit.via, readback: crit.readback } }),
+    onSuccess: () => { toast.show('შეტყობინება ჩაიწერა'); setCrit({ to: '', via: 'phone', readback: true }); refresh(); } });
   /** QC: დაბლოკვისას — ღილაკი დაბლოკილია; გაფრთხილებისას — მიზეზი (აუდიტში) */
   const doValidate = () => {
     const qcOpen = (q.data as { qc_open?: { action: string }[] } | undefined)?.qc_open ?? [];
@@ -281,7 +290,25 @@ function ResultEntry({ id, onClose }: { id: string; onClose: () => void }) {
         {cum && <CumulativeModal patientId={it.patient_id} title={`${it.first_name} ${it.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}
       </form>
       <div className="stack" style={{ padding: '12px 20px', borderTop: '1px solid var(--line)' }}>
-        <ErrorBox error={save.error ?? validate.error ?? reopen.error ?? print.error} />
+        {(() => {   // 0084: კრიტიკული მნიშვნელობის შეტყობინება
+          const hasCrit = it.results.some((r) => r.flag === 'HH' || r.flag === 'LL');
+          const cn = it as unknown as { crit_notified_to?: string | null; crit_notified_via?: string | null; crit_readback?: boolean | null; crit_notified_at?: string | null };
+          const VIA: Record<string, string> = { phone: 'ტელეფონით', in_person: 'პირადად', message: 'შეტყობინებით', other: 'სხვა' };
+          if (!hasCrit || (!isLabDoctor && !canEnter)) return null;
+          if (cn.crit_notified_at) return <div className="alert info small">კრიტიკული — ეცნობა: <strong>{cn.crit_notified_to}</strong> · {VIA[cn.crit_notified_via ?? ''] ?? ''} · {tsDate(cn.crit_notified_at)} {hhmm(cn.crit_notified_at)}{cn.crit_readback ? ' · read-back ✓' : ''}</div>;
+          if (it.status !== 'resulted' && it.status !== 'validated') return null;
+          return <div className="alert danger small stack" style={{ gap: 6 }}>
+            <strong>↑↑ / ↓↓ კრიტიკული მნიშვნელობა — ვის ეცნობა{it.status === 'resulted' ? ' (ვალიდაციასთან ერთად ჩაიწერება)' : ''}</strong>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <input className="input" style={{ height: 32, maxWidth: 220 }} aria-label="ვის ეცნობა" placeholder="ექიმი / ექთანი (სახელი)" value={crit.to} onChange={(e) => setCrit({ ...crit, to: e.target.value })} />
+              <select className="select" style={{ height: 32, maxWidth: 140 }} aria-label="როგორ" value={crit.via} onChange={(e) => setCrit({ ...crit, via: e.target.value })}>
+                {Object.entries(VIA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+              <label className="row"><input type="checkbox" checked={crit.readback} onChange={(e) => setCrit({ ...crit, readback: e.target.checked })} /> გაიმეორა (read-back)</label>
+              {it.status === 'validated' && <button className="btn sm" type="button" disabled={crit.to.trim().length < 2 || critCall.isPending} onClick={() => critCall.mutate()}>ჩაწერა</button>}
+            </div>
+          </div>;
+        })()}
+        <ErrorBox error={save.error ?? validate.error ?? reopen.error ?? print.error ?? critCall.error} />
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {!locked && <button className="btn" type="button" disabled={save.isPending || !dirty} onClick={() => save.mutate()}>შენახვა</button>}
           {isLabDoctor && it.status === 'resulted' && !dirty && <button className="btn primary" type="button"
