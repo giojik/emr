@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IpcCommon, ipcRules, type IpcRules } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 export const SIGNAL_KA: Record<string, string> = {
@@ -267,6 +268,7 @@ export class IpcSignalsService {
 }
 
 @Controller('ipc/signals')
+@RequireModule('ipc')
 export class IpcSignalsController {
   constructor(private readonly s: IpcSignalsService) {}
   @Get() @Roles(...IPC_ANY) list(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('kind') kind?: string, @Query('department_id') department_id?: string) {

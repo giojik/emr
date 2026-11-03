@@ -1,10 +1,36 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 
-/** მოდულები და პარამეტრები (0037) — კლინიკის ადმინისტრატორი რთავს / თიშავს */
-export interface SystemModule { code: string; name: string; description: string | null; enabled: boolean; can_disable: boolean; settings: Record<string, unknown>; sort_order: number; updated_at: string }
-export const useModules = () => useQuery({ queryKey: ['modules'], queryFn: () => api<SystemModule[]>('/modules'), staleTime: 5 * 60_000 });
+/**
+ * მოდულები და პარამეტრები (0037; 0085 — ლიცენზია + დამოკიდებულებები).
+ * `enabled` frontend-ში = მოდული გამოსაყენებელია (active ან read_only — ლიცენზიის ვადის შემდეგ ნახვა); ადმინის ჩამრთველი — `admin_enabled`.
+ */
+export type ModuleState = 'active' | 'read_only' | 'disabled' | 'not_licensed' | 'missing_prereq';
+export type ModuleGroup = 'core' | 'clinical' | 'diagnostics' | 'logistics' | 'finance' | 'management';
+export interface SystemModule {
+  code: string; name: string; description: string | null; enabled: boolean; admin_enabled: boolean; can_disable: boolean; is_core: boolean; settings: Record<string, unknown>;
+  sort_order: number; updated_at: string; group: ModuleGroup | null; core: boolean; hard: string[]; soft: string[]; settings_of: string | null; dependents: string[];
+  state: ModuleState; active: boolean; licensed: boolean; missing: string[];
+}
+type RawModule = Omit<SystemModule, 'admin_enabled'>;
+export const fetchModules = () => api<RawModule[]>('/modules').then((rows) => rows.map((r) => ({ ...r, admin_enabled: r.enabled, enabled: r.state === 'active' || r.state === 'read_only' })));
+export const useModules = () => useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 5 * 60_000 });
 export const useModuleEnabled = (code: string) => { const q = useModules(); return q.data?.find((m) => m.code === code)?.enabled ?? false; };
+/** ახალი ჩანაწერის შექმნა დაშვებულია (ლიცენზიის ვადის შემდეგ — მხოლოდ ნახვა) */
+export const useModuleWritable = (code: string) => { const q = useModules(); return q.data?.find((m) => m.code === code)?.active ?? false; };
+export const STATE_KA: Record<ModuleState, string> = {
+  active: 'აქტიურია', read_only: 'მხოლოდ წაკითხვა (ლიცენზიის ვადა)', disabled: 'გამორთულია', not_licensed: 'ლიცენზიაში არ შედის', missing_prereq: 'წინაპირობა აკლია',
+};
+export const GROUP_KA: Record<ModuleGroup, string> = { core: 'ბირთვი', clinical: 'კლინიკა', diagnostics: 'დიაგნოსტიკა', logistics: 'ლოჯისტიკა', finance: 'ფინანსები', management: 'მართვა' };
+
+/** ლიცენზიის სტატუსი (0085) — ბანერი / ადმინის გვერდი */
+export interface LicenseStatus {
+  mode: 'dev' | 'licensed' | 'none'; phase: 'valid' | 'warning' | 'grace' | 'expired' | null; banner: 'none' | 'admins' | 'all';
+  expires: string | null; days_left: number | null; grace_until: string | null;
+  install_id?: string; clinic?: string | null; kid?: string | null; modules?: string[] | 'all'; unknown_modules?: string[]; issued?: string | null; expires_at?: string | null;
+  max_users?: number | null; users_active?: number; users_warn?: boolean; uploaded_at?: string | null; test_key?: boolean; now?: string;
+}
+export const useLicenseStatus = (on = true) => useQuery({ queryKey: ['license-status'], queryFn: () => api<LicenseStatus>('/license/status'), staleTime: 10 * 60_000, enabled: on });
 
 /** საწყობის წესები (0038) — ნაგულისხმევი = 0030–0036-ის ქცევა */
 export interface StockRules {

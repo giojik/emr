@@ -22,6 +22,7 @@ import {
   type AbsScope, type Ex, type Trx,
 } from './roster-common';
 import { RosterService, ddmm, type Change } from './roster';
+import { RequireModule } from '../modules/module-guard';
 
 const PG = {
   absence_types_code_key: 'იგივე კოდის არყოფნის ტიპი უკვე არსებობს',
@@ -642,6 +643,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** ცვლები / მორიგეობა — არყოფნა (0078). უფლებები — სერვისში (თანამშრომელი / ხელმძღვანელის არე / HR) */
 @Controller('roster')
+@RequireModule('roster')
 export class AbsenceController {
   constructor(private readonly s: AbsenceService) {}
   @Get('absence-types') types() { return this.s.types(); }

@@ -5,7 +5,7 @@ import { has, type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, KYSELY, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
-import { finRules, FIN_FULL } from '../finance/finance-rules';
+import { finRules, FIN_FULL } from '../billing/finance-rules';
 
 /**
  * მენეჯერული რეპორტინგი (0060) — საერთო: პარამეტრები, უფლებები, ხედვის არე, წყაროს ბაზა.

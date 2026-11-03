@@ -11,6 +11,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { HARM_KA, harmRank, LEVEL_KA, QM_DEPT, QM_FULL, QmCommon, type Harm, type Trx, userName } from './quality-common';
 import { QmIncidentsService } from './quality-incidents';
 import { renderRcaReport } from './quality-report.pdf';
+import { RequireModule } from '../modules/module-guard';
 
 class TimelineIn { @IsOptional() @IsISO8601() at?: string | null; @IsString() @Length(2, 2000) text: string }
 class FactorIn { @IsUUID() factor_id: string; @IsOptional() @IsString() @MaxLength(2000) comment?: string | null }
@@ -312,6 +313,7 @@ export class QmAnalysisService {
 }
 
 @Controller('quality')
+@RequireModule('quality')
 export class QmAnalysisController {
   constructor(private readonly s: QmAnalysisService) {}
   @Get('my-work') myWork(@CurrentUser() u: AuthUser) { return this.s.myWork(u); }

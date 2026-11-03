@@ -4,7 +4,8 @@ import { sql, type RawBuilder } from 'kysely';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { DATE_RE, type Ex, FinCommon, n, r2, type Scope, toCsv, TZ } from './finance-common';
-import { FIN_READ, type FinRules, PAYER_KIND_KA } from './finance-rules';
+import { FIN_READ, type FinRules, PAYER_KIND_KA } from '../billing/finance-rules';
+import { RequireModule } from '../modules/module-guard';
 
 type Basis = FinRules['revenue_basis'];
 type DeptBasis = FinRules['revenue_dept_basis'];
@@ -380,6 +381,7 @@ export class FinReportsService {
 const q2 = (q: Record<string, string | undefined>) => q;
 
 @Controller('finance')
+@RequireModule('finance')
 export class FinReportsController {
   constructor(private readonly s: FinReportsService) {}
   @Get('revenue') @Roles(...FIN_READ) revenue(@Query() q: Record<string, string | undefined>, @CurrentUser() u: AuthUser) { return this.s.revenue(u, q2(q)); }

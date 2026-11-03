@@ -18,6 +18,7 @@ import { apache2, infusedVolume, labCanonical, mlHToDoseRate, rateAt, sofa, toMc
   type InfusionEvent, type Obs, type SofaOverrides } from './icu-calc';
 import { InpatientModule, InpatientService } from './inpatient';
 import { news2 } from './news2';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -1011,13 +1012,14 @@ export async function syncInfusionVolumes(ex: Database, encounterId: string) {
 
 // ================================================================= controller
 @Controller('inpatient')
+@RequireModule('icu')
 export class IcuController {
   constructor(private readonly s: IcuService) {}
   @Get('icu/departments') @Roles(...READ, 'receptionist', 'viewer') deps() { return this.s.departments(); }
   @Get('icu/board') @Roles(...READ) board(@Query('department_id', ParseUUIDPipe) dep: string, @CurrentUser() u: AuthUser) { return this.s.board(dep, u); }
   @Get('icu/stats') @Roles('admin', 'doctor', 'nurse', 'manager', 'viewer') stats(@Query() q: StatsQuery) { return this.s.stats(q); }
-  @Get('stays/:eid/icu') @Roles(...READ) stay(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.stayIcu(eid, u); }
-  @Get('stays/:eid/icu/sheet') @Roles(...READ) sheet(@Param('eid', ParseUUIDPipe) eid: string, @Query('day') day: string | undefined, @CurrentUser() u: AuthUser) { return this.s.sheet(eid, day, u); }
+  @Get('stays/:eid/icu') @ClinicalHistory() @Roles(...READ) stay(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.stayIcu(eid, u); }
+  @Get('stays/:eid/icu/sheet') @ClinicalHistory() @Roles(...READ) sheet(@Param('eid', ParseUUIDPipe) eid: string, @Query('day') day: string | undefined, @CurrentUser() u: AuthUser) { return this.s.sheet(eid, day, u); }
   @Get('stays/:eid/icu/insert') @Roles('admin', 'doctor') insert(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.insertData(eid); }
   @Get('stays/:eid/icu/scores/:kind/draft') @Roles(...READ)
   draft(@Param('eid', ParseUUIDPipe) eid: string, @Param('kind') kind: string, @Query('window_to') to: string | undefined, @Query('category') category: string | undefined,

@@ -9,6 +9,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { clean, STOCK_READ } from './stock-catalog';
+import { ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 const ATC = /^[A-Z]([0-9]{2}([A-Z]([A-Z]([0-9]{2})?)?)?)?$/;
 /** კლინიკური ველები — ცვლის მხოლოდ ფარმაცევტი / ადმინისტრატორი */
@@ -214,6 +215,7 @@ class DoseDto {
 const bool = (v?: string) => v === 'true' || v === '1';
 
 @Controller('pharmacy')
+@RequireModule('pharmacy')
 export class PharmacyCatalogController {
   constructor(private readonly s: PharmacyCatalogService) {}
   @Get('generics') @Roles(...STOCK_READ) list(@Query('search') search?: string, @Query('all') all?: string, @Query('controlled') controlled?: string) {
@@ -233,6 +235,6 @@ export class PharmacyCatalogController {
     return this.s.saveInteraction(null, d, u, auditCtx(r));
   }
   @Patch('interactions/:id') @Roles('admin', 'pharmacist') updateInteraction(@Param('id', ParseUUIDPipe) id: string, @Body() d: InteractionDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.saveInteraction(id, d, u, auditCtx(r)); }
-  @Post('interactions/check') @HttpCode(200) @Roles(...STOCK_READ) check(@Body() d: CheckDto) { return this.s.check(d.generic_ids); }
-  @Post('dose-check') @HttpCode(200) @Roles(...STOCK_READ) dose(@Body() d: DoseDto) { return this.s.doseCheck(d); }
+  @Post('interactions/check') @ReadOnlySafe() @HttpCode(200) @Roles(...STOCK_READ) check(@Body() d: CheckDto) { return this.s.check(d.generic_ids); }
+  @Post('dose-check') @ReadOnlySafe() @HttpCode(200) @Roles(...STOCK_READ) dose(@Body() d: DoseDto) { return this.s.doseCheck(d); }
 }

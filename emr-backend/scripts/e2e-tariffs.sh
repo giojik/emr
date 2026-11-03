@@ -70,7 +70,7 @@ P1=$(mkpat 71 1); P2=$(mkpat 72 2); P3=$(mkpat 73 3); P4=$(mkpat 74 4); P5=$(mkp
 for p in P1 P2 P3 P4 P5 P6; do [ -n "${!p}" ] || die "პაციენტი $p ვერ შეიქმნა"; done
 
 step "1. მოდული, საბაზო ნუსხა, ძველი API"
-chk "მოდული „ტარიფები“ არ ითიშება → 400" "$(code PUT /modules/tariffs "$ADM" -d '{"enabled":false,"reason":"ტესტ-E2E"}')" "400"
+chk "მოდული „ტარიფები“: DRG ჩართულია → გამორთვა 409 (0085: ოპციურია, ძრავა — ბირთვში)" "$(code PUT /modules/tariffs "$ADM" -d '{"enabled":false,"reason":"ტესტ-E2E"}')" "409"
 chk "უცნობი მნიშვნელობა → 400" "$(code PUT /modules/tariffs "$ADM" -d '{"settings":{"opd_payer_mode":"x"},"reason":"ტესტ-E2E"}')" "400"
 BASE=$(api GET /tariff-lists "$BL" | jq -r '.[]|select(.scope=="base")|.id')
 [ -n "$BASE" ] && ok "საბაზო ნუსხა არსებობს" || die "საბაზო ნუსხა ვერ მოიძებნა"

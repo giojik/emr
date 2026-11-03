@@ -15,6 +15,7 @@ import { WorklistKpiService } from './worklist-kpi';
 import { WorklistSchedulesService, type ScheduleIn } from './worklist-schedules';
 import { WorklistSources } from './worklist-sources';
 import { WorklistTasksService, countCache, type ListQ, type TargetKind } from './worklist-tasks';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const PATIENT_LOOKUP: Role[] = ['admin', 'receptionist', 'doctor', 'nurse', 'billing', 'diagnostic', 'manager', 'radiographer', 'radiologist',
   'endoscopist', 'endoscopy_nurse', 'phlebotomist', 'lab_doctor', 'anesthesiologist', 'or_nurse', 'or_schedule', 'pharmacist', 'quality'];
@@ -369,6 +370,7 @@ const checkQ = (q: ListQ) => {
 
 /** ყველა შესულ მომხმარებელს (ხილვადობას / ქმედებას სერვისი ამოწმებს) */
 @Controller('worklist')
+@RequireModule('worklist')
 export class WorklistController {
   constructor(private readonly s: WorklistService, private readonly t: WorklistTasksService, private readonly jobs: WorklistJobsService,
     private readonly sched: WorklistSchedulesService, private readonly kpi: WorklistKpiService) {}
@@ -377,7 +379,7 @@ export class WorklistController {
     if (source && source !== 'task' && !SOURCES[source]) throw new BadRequestException('source');
     return this.s.mine(u, { source, overdue });
   }
-  @Get('count') count(@CurrentUser() u: AuthUser) { return this.s.count(u); }
+  @Get('count') @ModulePort() count(@CurrentUser() u: AuthUser) { return this.s.count(u); }
   @Get('team') team(@CurrentUser() u: AuthUser, @Query() q: ListQ) { return this.s.team(u, checkQ(q)); }
   @Get('people') people(@Query('search') search?: string) { return this.s.people(search); }
   @Get('patients') @Roles(...PATIENT_LOOKUP) patients(@Query('q') q?: string) { return this.s.patients(q); }

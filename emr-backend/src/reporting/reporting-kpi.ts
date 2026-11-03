@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { modulesRef } from '../modules/modules-ref';
 import { sql } from 'kysely';
 import { addDays, daysBetween, n, r1, r2, RptCommon, type RptScope, type RptSettings } from './reporting-common';
 import { TAT_EDGES } from './reporting-refresh';
@@ -305,11 +306,15 @@ export class RptKpiService {
   }
 
   async kpis(scope: RptScope, onlyActive = true): Promise<KpiRow[]> {
-    let q = this.c.db.selectFrom('rpt_kpis').select(['code', 'category', 'name', 'unit', 'direction', 'definition', 'formula', 'source', 'finance', 'snapshot', 'drill', 'sort_order']);
+    let q = this.c.db.selectFrom('rpt_kpis').select(['code', 'category', 'name', 'unit', 'direction', 'definition', 'formula', 'source', 'finance', 'snapshot', 'drill', 'sort_order', 'module_code']);
     if (onlyActive) q = q.where('is_active', '=', true);
     const rows = await q.orderBy('sort_order').orderBy('code').execute();
-    return rows.filter((k) => (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc)
-      && (k.category !== 'bme' || !!scope.bme) && (k.category !== 'roster' || !!scope.roster) && (k.category !== 'worklist' || scope.worklist !== false));
+    // 0085: არააქტიური მოდულის KPI იმალება (ლიცენზიის ვადის შემდეგ — ჩანს: ისტორიული მონაცემი)
+    const states = modulesRef.svc ? (await modulesRef.svc.snapshot()).states : null;
+    const usable = (c: string | null) => !c || !states || ['active', 'read_only'].includes(states.get(c)?.state ?? 'active');
+    return rows.filter((k) => usable(k.module_code) && (scope.finance || !k.finance) && (k.category !== 'quality' || !!scope.quality) && (k.category !== 'ipc' || !!scope.ipc)
+      && (k.category !== 'bme' || !!scope.bme) && (k.category !== 'roster' || !!scope.roster) && (k.category !== 'worklist' || scope.worklist !== false))
+      .map(({ module_code: _m, ...k }) => k);
   }
 
   /** დროის მწკრივი: grain = day / week / month (KPI ითვლება თითო ინტერვალზე) */

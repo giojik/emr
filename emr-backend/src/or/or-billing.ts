@@ -11,6 +11,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { OR_READ } from './or-admin';
 import { ANESTHESIA, OrService } from './or';
 import { syncCaseBilling } from './or-shared';
+import { RequireModule } from '../modules/module-guard';
 
 export class AnesthesiaTariffItem {
   @IsIn(ANESTHESIA) anesthesia_type: string;
@@ -87,6 +88,7 @@ export class OrBillingService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrBillingController {
   constructor(private readonly s: OrBillingService) {}
   @Get('cases/:id/billing') @Roles(...OR_READ, 'billing', 'receptionist') view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }

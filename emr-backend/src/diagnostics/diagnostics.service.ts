@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { modulesRef } from '../modules/modules-ref';
+import { SECTION_MODULE } from '../modules/registry';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { AllergyCheckService } from '../allergies/allergy-check.service';
@@ -264,6 +266,11 @@ export class DiagnosticsService {
     const services = await trx.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
       .select(['s.id', 's.section', 's.name', 's.contrast', 's.is_active', 's.modality', 's.tariff_id', 't.base_price', 's.performed_by', 's.is_micro']).where('s.id', 'in', ids).execute();
     if (services.length !== ids.length || services.some((s) => !s.is_active)) throw new BadRequestException('ზოგიერთი კვლევა ვერ მოიძებნა ან გათიშულია');
+    // 0085: სექციის მოდული (ლაბორატორია / რადიოლოგია / ენდოსკოპია; მიკრობიოლოგია, გარე ლაბორატორია) აქტიური უნდა იყოს
+    if (modulesRef.svc) {
+      const need = new Set(services.flatMap((s) => [SECTION_MODULE[s.section] ?? s.section, ...(s.is_micro ? ['lab_micro'] : []), ...(s.performed_by === 'external' ? ['lab_external'] : [])]));
+      for (const code of need) await modulesRef.svc.assertActive(code);
+    }
     // გარე ლაბორატორიის ანალიზს კომპონენტები არ სჭირდება (პასუხი — PDF)
     const labIds = services.filter((s) => s.section === 'lab' && s.performed_by !== 'external' && !s.is_micro).map((s) => s.id);   // მიკრობიოლოგია — კულტურა, კომპონენტების გარეშე
     if (labIds.length) {

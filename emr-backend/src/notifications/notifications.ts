@@ -3,7 +3,9 @@ import { sql } from 'kysely';
 import { CurrentUser } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
-import { BELL_ALWAYS, BELL_SOURCE } from '../worklist/worklist-common';
+import { BELL_ALWAYS, BELL_SOURCE, SOURCES, enabledModules } from '../worklist/worklist-common';
+import { modulesRef } from '../modules/modules-ref';
+import { RequireModule } from '../modules/module-guard';
 
 /** თანამშრომლის შეტყობინებები (ზარი). ერთი (მომხმარებელი, ტიპი, ობიექტი) — ერთი წაუკითხავი ჩანაწერი, ელემენტები ერთიანდება */
 @Injectable()
@@ -28,6 +30,9 @@ export class NotificationsService {
     if (!src) return false;
     const s = await this.suppression();
     if (!s.on || s.sources[src] === false) return false;
+    // 0085: წყაროს მოდული არააქტიურია — სიაში არ ჩანს, ზარი არ იჩახშობა (worklist-ის აქტიურობაც)
+    const svc = modulesRef.svc;
+    if (svc && (!(await svc.isActive('worklist')) || (SOURCES[src] && !(await enabledModules(this.db)).has(SOURCES[src].module)))) return false;
     // „პასუხი მზადაა“ — res_ack მხოლოდ ack_scope = all-ზე ფარავს ყველა პასუხს
     if (src === 'res_ack' && !s.ackAll) return false;
     return true;
@@ -75,6 +80,7 @@ export class NotificationsService {
 
 /** ყველა ავტორიზებულისთვის — მხოლოდ საკუთარი შეტყობინებები */
 @Controller('notifications')
+@RequireModule('core')
 export class NotificationsController {
   constructor(private readonly n: NotificationsService) {}
   @Get() list(@CurrentUser() u: AuthUser, @Query('unread') unread?: string) { return this.n.list(u.id, unread === 'true'); }

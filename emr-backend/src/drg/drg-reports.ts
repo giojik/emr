@@ -4,6 +4,7 @@ import { Roles } from '../auth/decorators';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { DRG_READ } from './drg-data';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -94,6 +95,7 @@ export class DrgReportsService {
 }
 
 @Controller('drg/reports')
+@RequireModule('drg')
 export class DrgReportsController {
   constructor(private readonly s: DrgReportsService) {}
   @Get('cmi') @Roles(...DRG_READ)

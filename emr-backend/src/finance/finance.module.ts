@@ -8,10 +8,12 @@ import { FinClaimsController, FinClaimsService } from './finance-claims';
 import { FinCommon } from './finance-common';
 import { FinPeriodsController, FinPeriodsService } from './finance-periods';
 import { FinReportsController, FinReportsService } from './finance-reports';
-import { FIN_FULL, FIN_READ } from './finance-rules';
+import { FIN_FULL, FIN_READ } from '../billing/finance-rules';
+import { RequireModule } from '../modules/module-guard';
 
 /** ჩანართების ბეჯები / სათაური: დებიტორები (ვადაგადაცილებული ქლეიმი), period_lock, ბოლო დახურული თვე */
 @Controller('finance')
+@RequireModule('finance')
 export class FinSummaryController {
   constructor(private readonly c: FinCommon, private readonly claims: FinClaimsService) {}
   @Get('summary') @Roles(...FIN_READ, 'billing')

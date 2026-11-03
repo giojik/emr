@@ -11,6 +11,7 @@ import { ClinicSettingsService } from '../settings/clinic-settings';
 import { EndoscopyService, INTERVENTIONS, SCOPE_TYPES } from './endoscopy.service';
 import { renderJarLabels, renderRequisition } from './radiology.pdf';
 import { RadiologyService } from './radiology.service';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const MAX_IMG = 8 * 1024 * 1024;
 const MAX_SCAN = 15 * 1024 * 1024;
@@ -91,6 +92,7 @@ const stream = (res: Response, f: { stream: NodeJS.ReadableStream; mime: string 
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
 
 @Controller()
+@RequireModule('endoscopy')
 export class EndoscopyController {
   constructor(private readonly endo: EndoscopyService, private readonly rad: RadiologyService, private readonly settings: ClinicSettingsService) {}
 
@@ -107,7 +109,7 @@ export class EndoscopyController {
   history(@Param('id', ParseUUIDPipe) id: string) { return this.endo.scopeHistory(id); }
 
   // ---- პროცედურა
-  @Get('dx-orders/:id/endo') @Roles(...STAFF)
+  @Get('dx-orders/:id/endo') @ClinicalHistory() @Roles(...STAFF)
   procedure(@Param('id', ParseUUIDPipe) id: string) { return this.endo.procedure(id); }
   @Put('dx-orders/:id/endo') @Roles(...STAFF)
   saveProcedure(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcedureDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.endo.saveProcedure(id, dto, u, auditCtx(req)); }
@@ -123,7 +125,7 @@ export class EndoscopyController {
   }
   @Patch('dx-images/:id') @Roles(...IMG_WRITE)
   updateImage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ImageUpdateDto, @Req() req: Request) { return this.endo.updateImage(id, dto, auditCtx(req)); }
-  @Get('dx-images/:id/file') @Roles(...IMG_READ)
+  @Get('dx-images/:id/file') @ClinicalHistory() @Roles(...IMG_READ)
   async image(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) { return stream(res, await this.endo.imageStream(id)); }
 
   // ---- პათოლოგია
@@ -132,7 +134,7 @@ export class EndoscopyController {
     const t = (['draft', 'sent', 'resulted'] as const).find((x) => x === tab) ?? 'sent';
     return this.endo.pathList({ tab: t, overdueDays: od ? Number(od) || undefined : undefined, unreviewed: unrev === 'true', search });
   }
-  @Get('pathology/:id') @Roles(...STAFF, 'receptionist', 'doctor')
+  @Get('pathology/:id') @ClinicalHistory() @Roles(...STAFF, 'receptionist', 'doctor')
   pathGet(@Param('id', ParseUUIDPipe) id: string) { return this.endo.pathRequest(id); }
   @Put('dx-orders/:id/pathology') @Roles(...STAFF)
   pathSave(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PathDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.endo.savePathology(id, dto, u, auditCtx(req)); }
@@ -147,7 +149,7 @@ export class EndoscopyController {
   }
   @Post('pathology/:id/review') @HttpCode(200) @Roles('admin', 'endoscopist', 'doctor')
   pathReview(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.endo.reviewPathology(id, u, auditCtx(req)); }
-  @Get('pathology/:id/file') @Roles(...STAFF, 'receptionist', 'doctor')
+  @Get('pathology/:id/file') @ClinicalHistory() @Roles(...STAFF, 'receptionist', 'doctor')
   async pathFile(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) { return stream(res, await this.endo.pathResultFile(id)); }
 
   @Get('pathology/:id/labels') @Roles(...STAFF)

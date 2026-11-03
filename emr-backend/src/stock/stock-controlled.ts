@@ -13,6 +13,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { STOCK_READ } from './stock-catalog';
 import { stockRules } from './stock-rules';
 import { StockTransfersService } from './stock-transfers';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 /** მოწმე / ცვლის ჩაბარება: სამედიცინო ან საწყობის თანამშრომელი */
@@ -206,6 +207,7 @@ class EmptiesDto { @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @IsUUID('all',
 const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 @Controller('stock/controlled')
+@RequireModule('pharmacy')
 export class StockControlledController {
   constructor(private readonly s: StockControlledService) {}
   @Get('summary') @Roles(...STOCK_READ) summary(@CurrentUser() u: AuthUser) { return this.s.summary(u); }

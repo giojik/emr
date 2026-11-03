@@ -16,6 +16,7 @@ import { TemplateContextService } from '../templates/template-context';
 import { plainText, type Body as TplBody } from '../templates/template-blocks';
 import { TemplatesModule, TemplatesService } from '../templates/templates';
 import { renderConsent } from './consent.pdf';
+import { RequireModule } from '../modules/module-guard';
 
 export class CreateConsentDto {
   @IsString() @Length(2, 40) type_code: string;
@@ -215,6 +216,7 @@ export class ConsentsService {
 const FRONT = ['admin', 'receptionist', 'doctor', 'nurse'] as const;
 
 @Controller()
+@RequireModule('mpi')
 export class ConsentsController {
   constructor(private readonly consents: ConsentsService) {}
 

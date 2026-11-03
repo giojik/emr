@@ -6,6 +6,7 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { Roles } from '../auth/decorators';
 import { QM_FULL, QmCommon } from './quality-common';
+import { RequireModule } from '../modules/module-guard';
 
 class ClassifierDto {
   @IsIn(['category', 'factor']) kind: 'category' | 'factor';
@@ -76,6 +77,7 @@ export class QmCatalogService {
 }
 
 @Controller('quality/classifiers')
+@RequireModule('quality')
 export class QmCatalogController {
   constructor(private readonly s: QmCatalogService) {}
   @Get() list(@Query('kind') kind?: string, @Query('all') all?: string) { return this.s.list(kind, all === 'true'); }

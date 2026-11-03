@@ -20,6 +20,7 @@ import { InpatientModule, InpatientService, type InpatientSettings } from './inp
 import { ensureMarSlots } from './mar-schedule';
 import { abxPolicy } from '../ipc/ipc-common';
 import { doseRateToMlH, mlHToDoseRate, type ConcUnit, type DoseRateUnit } from './icu-calc';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -434,13 +435,14 @@ export class MarService {
 const READ = ['admin', 'doctor', 'nurse', 'manager', 'pharmacist'] as const;
 
 @Controller('inpatient')
+@RequireModule('mar')
 export class MarController {
   constructor(private readonly s: MarService) {}
   @Get('departments/:id/mar') @Roles(...READ)
   dep(@Param('id', ParseUUIDPipe) id: string, @Query('hours') hours: string | undefined, @CurrentUser() u: AuthUser) {
     const h = Math.min(24, Math.max(1, Number(hours) || 4)); return this.s.department(id, h, u);
   }
-  @Get('stays/:eid/mar') @Roles(...READ) stay(@Param('eid', ParseUUIDPipe) eid: string, @Query('day') day: string | undefined, @CurrentUser() u: AuthUser) { return this.s.stay(eid, day, u); }
+  @Get('stays/:eid/mar') @ClinicalHistory() @Roles(...READ) stay(@Param('eid', ParseUUIDPipe) eid: string, @Query('day') day: string | undefined, @CurrentUser() u: AuthUser) { return this.s.stay(eid, day, u); }
   @Get('orders/:id/stock') @Roles(...READ) stock(@Param('id', ParseUUIDPipe) id: string) { return this.s.orderStock(id); }
   @Post('mar/:id/document') @HttpCode(200) @Roles('admin', 'nurse', 'doctor')
   doc(@Param('id', ParseUUIDPipe) id: string, @Body() d: MarDocumentDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.document(id, d, u, auditCtx(r)); }

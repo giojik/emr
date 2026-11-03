@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
-import { finRules } from '../finance/finance-rules';
+import { finRules } from '../billing/finance-rules';
 import { revenueCte } from '../finance/finance-reports';
 import { balanceSnapshot, finExtraFacts } from './reporting-refresh-fin';
 import { opsFacts } from './reporting-refresh-ops';

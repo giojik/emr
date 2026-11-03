@@ -10,6 +10,7 @@ import { DiagnosticsService } from './diagnostics.service';
 import { renderAppointmentSlip, renderImagingReport } from './radiology.pdf';
 import { RadiologyService, type ImagingSection } from './radiology.service';
 import { EndoscopyService } from './endoscopy.service';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const SEDATION_KA: Record<string, string> = { none: 'არ ჩატარებულა', topical: 'ადგილობრივი (სპრეი)', moderate: 'ზომიერი', deep: 'ღრმა', general: 'ზოგადი ანესთეზია' };
 const PREP_KA: Record<string, string> = { excellent: 'შესანიშნავი', good: 'კარგი', fair: 'დამაკმაყოფილებელი', poor: 'ცუდი' };
@@ -84,6 +85,7 @@ const section = (s: string): ImagingSection => { if (s !== 'radiology' && s !== 
 const date = (s?: string) => { if (!s || !DATE.test(s)) throw new BadRequestException('date: YYYY-MM-DD'); return s; };
 
 @Controller()
+@RequireModule('radiology')
 export class RadiologyController {
   constructor(private readonly rad: RadiologyService, private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService, private readonly endo: EndoscopyService) {}
 
@@ -132,7 +134,7 @@ export class RadiologyController {
   worklist(@Query('section') s: string, @Query('tab') tab = 'todo', @Query('date') d?: string, @Query('search') search?: string) {
     return this.rad.reportWorklist(section(s), tab === 'done' ? 'done' : 'todo', { date: d && DATE.test(d) ? d : undefined, search });
   }
-  @Get('dx-orders/:id/report') @Roles(...IMAGING_READ)
+  @Get('dx-orders/:id/report') @ClinicalHistory() @Roles(...IMAGING_READ)
   report(@Param('id', ParseUUIDPipe) id: string) { return this.rad.reportDetail(id); }
   @Put('dx-orders/:id/report') @Roles(...REPORTERS)
   draft(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReportDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.saveDraft(id, dto, u, auditCtx(req)); }
@@ -142,7 +144,7 @@ export class RadiologyController {
   reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.rad.reopen(id, dto.reason, u, auditCtx(req)); }
 
   /** ხელმოწერილი დასკვნის ბლანკი (?version= — არქივიდან) */
-  @Get('dx-orders/:id/report.pdf') @Roles(...IMAGING_READ, 'doctor', 'nurse', 'receptionist')
+  @Get('dx-orders/:id/report.pdf') @ClinicalHistory() @Roles(...IMAGING_READ, 'doctor', 'nurse', 'receptionist')
   async reportPdf(@Param('id', ParseUUIDPipe) id: string, @Query('version') version: string | undefined, @Res({ passthrough: true }) res: Response) {
     const { item: it, version: v, latest, referrer } = await this.rad.printData(id, version ? Number(version) : undefined);
     const e = it.endo;

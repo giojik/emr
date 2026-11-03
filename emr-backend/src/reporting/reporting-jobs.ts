@@ -8,10 +8,11 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import { NotificationsService } from '../notifications/notifications';
 import { NotifyService } from '../notify/notify.service';
-import { FIN_FULL } from '../finance/finance-rules';
+import { FIN_FULL } from '../billing/finance-rules';
 import { addDays, DATE_RE, RPT_ALL, RPT_CONFIG, RPT_READ, RptCommon, TZ } from './reporting-common';
 import { ReportingDashService } from './reporting-dash';
 import { periodLabel, RptReportService } from './reporting-report';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * 0063: განრიგით გაგზავნა და „ყურადღების“ შეტყობინებები (worker — tick ყოველ 5 წუთში; ხელით — ადმინისტრირებიდან).
@@ -323,6 +324,7 @@ export class RptJobsService {
 }
 
 @Controller('reporting')
+@RequireModule('reporting')
 export class RptJobsController {
   constructor(private readonly s: RptJobsService) {}
   @Get('schedules') @Roles(...RPT_CONFIG) list() { return this.s.list(); }

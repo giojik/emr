@@ -7,12 +7,13 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { loadEnv } from '../config/env';
 import { toCsv } from '../finance/finance-common';
 import { IpcAuditsService } from './ipc-audits';
 import { IPC_AGG, IPC_FULL, IpcCommon } from './ipc-common';
 import { ipcFactRows, type IpcFactRow } from './ipc-facts';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -265,6 +266,7 @@ export class IpcReportsService {
 }
 
 @Controller('ipc/reports')
+@RequireModule('ipc')
 export class IpcReportsController {
   constructor(private readonly s: IpcReportsService) {}
   @Get('summary') @Roles(...IPC_AGG) summary(@CurrentUser() u: AuthUser, @Query() q: Q) { return this.s.summary(u, q); }

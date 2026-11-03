@@ -13,6 +13,7 @@ import { STOCK_READ } from './stock-catalog';
 import { cls, StockWitnessService, WitnessDto, type WitnessIn } from './stock-controlled';
 import { stockRules } from './stock-rules';
 import { StockTransfersService } from './stock-transfers';
+import { RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -499,6 +500,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const dateOk = (v?: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 @Controller('stock')
+@RequireModule('stock')
 export class StockOpsController {
   constructor(private readonly s: StockOpsService) {}
   @Get('writeoffs') @Roles(...STOCK_READ) writeoffs(@CurrentUser() u: AuthUser, @Query() q: { location_id?: string; pending?: string; from?: string; to?: string }) {

@@ -15,7 +15,8 @@ import type { DB } from '../database/db';
 import { newDoc } from '../diagnostics/diagnostics.pdf';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
-import { readCsv, readXlsx, writeXlsx } from '../stock/xlsx';
+import { readCsv, readXlsx, writeXlsx } from '../common/xlsx-read';
+import { RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 export interface AssetSettings {
@@ -509,6 +510,7 @@ class ConditionDto { @IsOptional() @IsString() @Matches(/^[a-z][a-z0-9_]{1,29}$/
 const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 @Controller('assets')
+@RequireModule('asset_register')
 export class AssetsController {
   constructor(private readonly s: AssetsService) {}
   @Get('refs') refs() { return this.s.refs(); }

@@ -17,6 +17,7 @@ import { ClinicSettingsService } from '../settings/clinic-settings';
 import { StorageService } from '../storage/storage.service';
 import { d, dt, newDoc } from './diagnostics.pdf';
 import { addItemFile } from './lab-item-files';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const MAX_FILE = 15 * 1024 * 1024;
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
@@ -319,6 +320,7 @@ class RemoveDto { @IsString() @Length(3, 300) reason: string }
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/; const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller()
+@RequireModule('lab_external')
 export class LabExternalController {
   constructor(private readonly ext: LabExternalService, private readonly stats: LabStatsService) {}
 
@@ -344,15 +346,15 @@ export class LabExternalController {
   attach(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.ext.attachResult(id, file?.buffer, file?.originalname ? Buffer.from(file.originalname, 'latin1').toString('utf8') : undefined, u, auditCtx(req));
   }
-  @Get('lab/items/:id/external-result') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  @Get('lab/items/:id/external-result') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
   async file(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Res({ passthrough: true }) res: Response) {
     const f = await this.ext.resultFile(id, u);
     res.set({ 'Content-Type': f.mime, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
     return new StreamableFile(f.stream);
   }
-  @Get('lab/items/:id/external-files') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  @Get('lab/items/:id/external-files') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
   files(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.ext.files(id, u); }
-  @Get('lab/items/:id/external-files/:fileId') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  @Get('lab/items/:id/external-files/:fileId') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
   async fileOne(@Param('id', ParseUUIDPipe) id: string, @Param('fileId', ParseUUIDPipe) fileId: string, @CurrentUser() u: AuthUser, @Res({ passthrough: true }) res: Response) {
     const f = await this.ext.fileStream(id, fileId, u);
     res.set({ 'Content-Type': f.mime, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
@@ -375,7 +377,7 @@ export class LabExternalController {
     if (!DAY.test(from ?? '') || !DAY.test(to ?? '') || from > to) throw new BadRequestException('from/to: YYYY-MM-DD');
     return this.stats.stats(from, to);
   }
-  @Get('patients/:id/lab-cumulative') @Roles(...LAB_STAFF, 'doctor', 'nurse')
+  @Get('patients/:id/lab-cumulative') @RequireModule('lab') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse')
   cumulative(@Param('id', ParseUUIDPipe) id: string, @Query('service_id') serviceId?: string, @Query('group') group?: string, @Query('analyte_id') analyteId?: string) {
     return this.stats.cumulative(id, { service_id: serviceId || undefined, group: group || undefined, analyte_id: analyteId || undefined });
   }

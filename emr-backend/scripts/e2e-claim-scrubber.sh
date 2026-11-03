@@ -161,6 +161,8 @@ chk "აუდიტი: SCRUB_OVERRIDE / SCRUB_OVERRIDE_REVOKE" "$(api GET "/au
 step "6. აღდგენა"
 api DELETE "/scrub/rules/$XR" "$DA1" >/dev/null || true
 api PATCH "/scrub/rules/$XR" "$DA1" -d '{"is_active":false}' >/dev/null
+# 0085: გამორთული მოდულის API (მ.შ. წესები) — 403; წესები აღდგება ჩართულზე, შემდეგ — საწყისი enabled / პარამეტრები
+api PUT /modules/scrubber "$ADM" -d '{"enabled":true,"reason":"ტესტ-E2E აღდგენა"}' >/dev/null
 echo "$ORIG_RULES" | jq -c '.[]' | while read -r r; do c=$(echo "$r" | jq -r .code); api PATCH "/scrub/rules/$c" "$ADM" -d "$(echo "$r" | jq -c 'del(.code)')" >/dev/null; done
 api PUT /modules/scrubber "$ADM" -d "{\"enabled\":$ORIG_EN,\"settings\":$ORIG,\"reason\":\"ტესტ-E2E აღდგენა\"}" >/dev/null
 api PUT /modules/inpatient "$ADM" -d "{\"settings\":$ORIG_IPD,\"reason\":\"ტესტ-E2E აღდგენა\"}" >/dev/null

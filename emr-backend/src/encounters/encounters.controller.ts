@@ -7,10 +7,12 @@ import { ClinicalService } from './clinical.service';
 import { DiagnosisDto, OverrideDto, PayInitialDto, PrescriptionDto, ReferralDto, UpdateClinicalDto, UpdateReferralDto,
   VitalsDto, WalkInDto } from './dto/encounters.dto';
 import { EncountersService } from './encounters.service';
+import { RequireModule } from '../modules/module-guard';
 
 const CLINICAL_READ = ['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'diagnostic', 'manager', 'viewer'] as const;
 
 @Controller('encounters')
+@RequireModule('encounters')
 export class EncountersController {
   constructor(private readonly encounters: EncountersService, private readonly clinical: ClinicalService) {}
 
@@ -45,13 +47,13 @@ export class EncountersController {
     return this.encounters.cancel(id, dto.reason, auditCtx(req));
   }
 
-  @Post(':id/discharge') @HttpCode(200) @Roles('admin', 'doctor')
+  @Post(':id/discharge') @RequireModule('outpatient') @HttpCode(200) @Roles('admin', 'doctor')
   discharge(@Param('id', ParseUUIDPipe) id: string, @Query('force') force: string | undefined, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.encounters.discharge(id, force === 'true', u, auditCtx(req));
   }
 
   // --- კლინიკური ქვე-რესურსები
-  @Post(':id/vitals') @Roles('admin', 'doctor', 'nurse')
+  @Post(':id/vitals') @RequireModule('outpatient') @Roles('admin', 'doctor', 'nurse')
   vitals(@Param('id', ParseUUIDPipe) id: string, @Body() dto: VitalsDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.addVitals(id, dto, u, auditCtx(req));
   }
@@ -66,23 +68,24 @@ export class EncountersController {
     return this.clinical.removeDiagnosis(id, dxId, u, auditCtx(req));
   }
 
-  @Post(':id/prescriptions') @Roles('admin', 'doctor')
+  @Post(':id/prescriptions') @RequireModule('outpatient') @Roles('admin', 'doctor')
   addRx(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PrescriptionDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.addPrescription(id, dto, u, auditCtx(req));
   }
 
-  @Delete(':id/prescriptions/:rxId') @HttpCode(204) @Roles('admin', 'doctor')
+  @Delete(':id/prescriptions/:rxId') @RequireModule('outpatient') @HttpCode(204) @Roles('admin', 'doctor')
   removeRx(@Param('id', ParseUUIDPipe) id: string, @Param('rxId', ParseUUIDPipe) rxId: string, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.removePrescription(id, rxId, u, auditCtx(req));
   }
 
-  @Post(':id/referrals') @Roles('admin', 'doctor')
+  @Post(':id/referrals') @RequireModule('outpatient') @Roles('admin', 'doctor')
   addReferral(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReferralDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.addReferral(id, dto, u, auditCtx(req));
   }
 }
 
 @Controller('referrals')
+@RequireModule('outpatient')
 export class ReferralsController {
   constructor(private readonly clinical: ClinicalService) {}
 

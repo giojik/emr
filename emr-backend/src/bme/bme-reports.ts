@@ -5,7 +5,7 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { InjectDb, type Database } from '../database/database.module';
 import { CRIT_KA, CRITICALITY, GROUPS, STATUS_KA, viewScope, type BmeStatus, type Criticality } from './bme-common';
 import { TZ } from './bme-pm-common';
@@ -14,6 +14,7 @@ import {
   type Acc, type Filt, type PmRow, type Raw, type RepRow, type RptRules, type Win,
 } from './bme-reports-core';
 import { CONDITION_KA, CONTRACT_KA, OUTCOME_KA, REJECT_KA, REP_STATUS_KA, type ContractKind, type RepStatus } from './bme-repair-common';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ბიომედ-აპარატურა, ეტაპი 4 (0076) — ანგარიშები / KPI:
@@ -526,6 +527,7 @@ function pickRel<T extends Row>(x: T) {
 }
 
 @Controller('bme')
+@RequireModule('bme')
 export class BmeReportController {
   constructor(private readonly s: BmeReportService) {}
   @Get('reports/meta') @Roles(...BME_RPT) meta(@CurrentUser() u: AuthUser) { return this.s.meta(u); }

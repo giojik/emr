@@ -11,6 +11,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { LabConfigService } from './lab-config.service';
 import { ALL_RULES, evaluate, RULE_KA } from './qc-rules';
 import { loadEnv } from '../config/env';
+import { RequireModule } from '../modules/module-guard';
 const TZ = loadEnv().CLINIC_TZ;   // კლინიკის დღის საზღვრები
 
 const LAB_ALL = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic'] as const;
@@ -207,6 +208,7 @@ class ResolveDto { @IsString() @Length(3, 1000) cause: string; @IsString() @Leng
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller('lab/qc')
+@RequireModule('lab_qc')
 export class LabQcController {
   constructor(private readonly qc: LabQcService) {}
   @Get('materials') @Roles(...LAB_ALL) materials(@Query('all') all?: string) { return this.qc.materials(all === 'true'); }

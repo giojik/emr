@@ -1,4 +1,5 @@
 import { sql } from 'kysely';
+import { modulesRef } from '../modules/modules-ref';
 import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
@@ -9,6 +10,7 @@ import { Roles } from '../auth/decorators';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { TariffListsController, TariffListsService } from './tariff-lists';
+import { RequireModule } from '../modules/module-guard';
 
 const REFERRAL_TYPES = ['lab', 'imaging', 'hospitalization', 'specialist_consult'] as const;
 const money = ({ value }: { value: unknown }) => (typeof value === 'string' ? Number(value) : value);
@@ -55,6 +57,8 @@ export class TariffsService {
   update(id: string, dto: UpdateTariffDto, ctx: AuditContext) {
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
       if (ctx.userId) await sql`SELECT set_config('emr.user_id', ${ctx.userId}, true)`.execute(trx);
+      // 0085: მოდული „ტარიფები“ არააქტიურია — ფასის პირდაპირი რედაქტირება (ბირთვი), დამტკიცების გარეშე (tariff_legacy_guard)
+      if (modulesRef.svc && !(await modulesRef.svc.isActive('tariffs'))) await sql`SELECT set_config('emr.tariffs_inactive', '1', true)`.execute(trx);
       const old = await trx.selectFrom('service_tariffs').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!old) throw new NotFoundException('ტარიფი ვერ მოიძებნა');
       const t = await trx.updateTable('service_tariffs')
@@ -81,6 +85,7 @@ export class TariffsService {
 }
 
 @Controller('tariffs')
+@RequireModule('billing')
 export class TariffsController {
   constructor(private readonly tariffs: TariffsService) {}
 

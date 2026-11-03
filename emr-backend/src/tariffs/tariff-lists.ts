@@ -13,8 +13,9 @@ import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { NotificationsService } from '../notifications/notifications';
-import { clauseMatches, type RuleClause } from './payer-engine';
-import { KIND_KA, SCOPE_KA, TARIFF_APPROVE, TARIFF_EDIT, TARIFF_READ, tariffRules } from './tariff-rules';
+import { clauseMatches, type RuleClause } from '../billing/payer-engine';
+import { KIND_KA, SCOPE_KA, TARIFF_APPROVE, TARIFF_EDIT, TARIFF_READ, tariffRules } from '../billing/tariff-rules';
+import { RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -511,6 +512,7 @@ export async function syncPayerDefaults(trx: Trx, payerId: string) {
 
 // ================================================================= კონტროლერი
 @Controller()
+@RequireModule('tariffs')
 export class TariffListsController {
   constructor(private readonly s: TariffListsService) {}
 
@@ -540,12 +542,12 @@ export class TariffListsController {
   @Post('tariff-changes/:id/cancel') @HttpCode(200) @Roles(...TARIFF_EDIT)
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() d: RejectDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.reject(id, d, u, auditCtx(r), true); }
 
-  @Get('tariff-quote') @Roles(...TARIFF_READ, 'receptionist')
+  @Get('tariff-quote') @RequireModule('billing') @Roles(...TARIFF_READ, 'receptionist')
   quote(@Query() q: { tariff_id?: string; stock_item_id?: string; date?: string; department_id?: string; payer_id?: string; age?: string; sex?: string; dx?: string; unit_cost?: string }) {
     return this.s.quote(q);
   }
 
-  @Get('payer-rules/:payerId') @Roles(...TARIFF_READ) payerRules(@Param('payerId', ParseUUIDPipe) id: string) { return this.s.payerRules(id); }
-  @Post('payer-rules/:payerId/versions') @Roles(...TARIFF_EDIT)
+  @Get('payer-rules/:payerId') @RequireModule('billing') @Roles(...TARIFF_READ) payerRules(@Param('payerId', ParseUUIDPipe) id: string) { return this.s.payerRules(id); }
+  @Post('payer-rules/:payerId/versions') @RequireModule('billing') @Roles(...TARIFF_EDIT)
   createVersion(@Param('payerId', ParseUUIDPipe) id: string, @Body() d: RuleVersionDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.createVersion(id, d, u, auditCtx(r)); }
 }

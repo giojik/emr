@@ -5,7 +5,7 @@ import type { Request, Response } from 'express';
 import { sql } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { CurrentUser } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
@@ -17,6 +17,7 @@ import {
 import { RosterService, ddmm, monthLabel, type Roster } from './roster';
 
 import { NO_SHOW, ATT_KA, factOf, gatherHours, hoursRow, nightOverlap, dayOverlap, r2, half, fmtH, splitOt, type G, type Row, type AbsSum } from './roster-hours-core';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 export { NO_SHOW, type Row, type AbsSum } from './roster-hours-core';
 
 /**
@@ -450,6 +451,7 @@ class ReasonDto { @IsString() @Length(3, 1000) reason: string }
 
 /** ცვლები / მორიგეობა — საათები / ტაბელი / დახურვა / ექსპორტი / კავშირები (0079). უფლებები — სერვისში */
 @Controller('roster')
+@RequireModule('roster')
 export class TimesheetController {
   constructor(private readonly s: TimesheetService) {}
   @Get('rosters/:id/timesheet') timesheet(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.timesheet(id, u); }
@@ -473,7 +475,7 @@ export class TimesheetController {
     if (month && !MONTH.test(month)) throw new BadRequestException('month — YYYY-MM');
     return this.s.myHours(u, month);
   }
-  @Get('lookup/now') now(@Query('purpose') purpose: string, @Query('department_id') dept?: string) {
+  @Get('lookup/now') @ModulePort() now(@Query('purpose') purpose: string, @Query('department_id') dept?: string) {
     if (purpose !== 'consult' && purpose !== 'bme') throw new BadRequestException('purpose — consult / bme');
     if (dept && !/^[0-9a-f-]{36}$/i.test(dept)) throw new BadRequestException('არასწორი id');
     return this.s.now(purpose, dept);

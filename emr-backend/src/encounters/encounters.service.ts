@@ -9,7 +9,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { PayInitialDto, PaymentDto, UpdateClinicalDto, WalkInDto } from './dto/encounters.dto';
 import { EncounterCoreService, type Trx } from './encounter-core.service';
-import { applyOpdRules } from '../tariffs/payer-shares';
+import { applyOpdRules } from '../billing/payer-shares';
 
 export const PAYMENT_ERRORS = { chk_invoice_overpaid: 'გადახდის თანხა აღემატება დარჩენილ დავალიანებას' };
 

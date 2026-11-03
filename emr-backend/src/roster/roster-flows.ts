@@ -13,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { AbsenceService } from './roster-absence';
 import { addDays, canEdit, canView, monthDays, needEdit, rosterEditors, rosterScope, shiftTimes, staffName, today, tz, type Ex, type Trx } from './roster-common';
 import { PG, RosterService, ddmm, monthLabel, type Change, type Ctx, type EntryIn, type Roster } from './roster';
+import { RequireModule } from '../modules/module-guard';
 
 type Ent = { id: string; roster_id: string; staff_id: string; day: string; shift_template_id: string; duty_role_id: string | null; duty_level: number | null; note: string | null; status: string;
   code: string; start_local: string; end_local: string; start_time: string; end_time: string; starts_at: Date | string; roster_status: string; department_id: string };
@@ -548,6 +549,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** ცვლები / მორიგეობა — დასაფარი, გაცვლა, სურვილები, „დასადასტურებელი“ (0078). უფლებები — სერვისში */
 @Controller('roster')
+@RequireModule('roster')
 export class RosterFlowsController {
   constructor(private readonly s: RosterFlowsService) {}
   @Get('open-shifts') open(@CurrentUser() u: AuthUser, @Query('roster_id') rosterId?: string, @Query('mine') mine?: string) {

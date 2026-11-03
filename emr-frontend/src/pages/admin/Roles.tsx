@@ -12,8 +12,9 @@ const toCode = (name: string) => {
   return c.length >= 2 ? c : '';
 };
 
-interface CapInfo { code: Role; group: string; name: string; grants: string }
-const useCaps = () => useQuery({ queryKey: ['capabilities'], queryFn: () => api<CapInfo[]>('/roles/capabilities'), staleTime: Infinity });
+/** 0085: module_active = false — მოდული არააქტიურია: უფლება იმალება რედაქტორში (თუ როლს უკვე აქვს — ჩანს ნიშნით, არ იშლება) */
+interface CapInfo { code: Role; group: string; name: string; grants: string; module: string | string[] | null; module_active: boolean }
+const useCaps = () => useQuery({ queryKey: ['capabilities'], queryFn: () => api<CapInfo[]>('/roles/capabilities'), staleTime: 5 * 60_000 });
 
 /** როლები = უფლებების ნაკრები. სისტემური როლების უფლებები ფიქსირებულია; კლინიკის როლები — თავისუფლად */
 export default function RolesPage() {
@@ -63,7 +64,7 @@ function RoleDialog({ r, caps, onClose }: { r: RoleRow | null; caps: CapInfo[]; 
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['roles'] }); void qc.invalidateQueries({ queryKey: ['admin-users'] }); onClose(); },
   });
   const del = useMutation({ mutationFn: () => api(`/roles/${r!.id}`, { method: 'DELETE' }), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['roles'] }); onClose(); } });
-  const groups = [...new Set(caps.map((c) => c.group))];
+  const groups = [...new Set(caps.filter((c) => c.module_active !== false || sel.includes(c.code)).map((c) => c.group))];
   const capsChanged = !!r && !locked && (sel.length !== r.capabilities.length || sel.some((c) => !r.capabilities.includes(c)));
   const deactivating = !!r && r.is_active && !f.is_active;
   const valid = f.name.trim().length >= 2 && (r || /^[a-z][a-z0-9_]{1,39}$/.test(f.code));
@@ -85,11 +86,11 @@ function RoleDialog({ r, caps, onClose }: { r: RoleRow | null; caps: CapInfo[]; 
         {groups.map((g) => (
           <div key={g} className="stack" style={{ gap: 2 }}>
             <span className="small muted" style={{ fontWeight: 600 }}>{g}</span>
-            {caps.filter((c) => c.group === g).map((c) => (
+            {caps.filter((c) => c.group === g && (c.module_active !== false || sel.includes(c.code))).map((c) => (
               <label key={c.code} className="row" style={{ alignItems: 'flex-start', gap: 8, padding: '3px 0', opacity: locked && !sel.includes(c.code) ? 0.5 : 1 }}>
                 <input type="checkbox" disabled={locked} checked={sel.includes(c.code)} style={{ marginTop: 3 }}
                   onChange={(e) => setSel(e.target.checked ? [...sel, c.code] : sel.filter((x) => x !== c.code))} />
-                <span><strong style={{ color: c.code === 'admin' ? 'var(--danger)' : undefined }}>{c.name}</strong> <span className="small muted">— {c.grants}</span></span>
+                <span><strong style={{ color: c.code === 'admin' ? 'var(--danger)' : undefined }}>{c.name}</strong> <span className="small muted">— {c.grants}</span>{c.module_active === false && <span className="chip warn" style={{ height: 20, fontSize: 11, marginLeft: 6 }}>მოდული არააქტიურია</span>}</span>
               </label>))}
           </div>))}
       </div>

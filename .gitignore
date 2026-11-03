@@ -12,3 +12,9 @@ capture-*.log
 patches/
 .env.*
 !.env.example
+
+# 0085: ლიცენზიის პირადი გასაღებები — repo-ში არასდროს (სატესტო — scripts/test-license/TEST_ONLY_private.pem, გამონაკლისი)
+*.key
+*private*.pem
+!emr-backend/scripts/test-license/TEST_ONLY_private.pem
+license*.json

@@ -16,6 +16,7 @@ import { ClinicSettingsService } from '../settings/clinic-settings';
 import { StorageService } from '../storage/storage.service';
 import { LabConfigService } from './lab-config.service';
 import { LabMicroService } from './lab-micro';
+import { RequireModule } from '../modules/module-guard';
 
 /** PDF-ის დაშიფვრა (qpdf, AES-256). qpdf-ის გარეშე — შეცდომა (დაუშიფრავს არ ვაგზავნით) */
 async function encryptPdf(buf: Buffer, password: string): Promise<Buffer> {
@@ -155,6 +156,7 @@ class SendDto {
 }
 
 @Controller()
+@RequireModule('lab')
 export class LabDeliveryController {
   constructor(private readonly d: LabDeliveryService, private readonly notify: NotifyService) {}
   @Get('lab/delivery/settings') @Roles('admin', 'lab_doctor', 'lab_manager', 'receptionist', 'doctor')

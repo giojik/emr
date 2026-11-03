@@ -64,7 +64,7 @@ cc() { curl -s -o /dev/null -w '%{http_code}' -X POST "$B/stock/consumptions" -H
 
 step "1. მოდული „საწყობი და აფთიაქი“"
 chk "ნაგულისხმევი = მიმდინარე ქცევა (ორმხრივი, ნარკ. + ფსიქ., ბლოკი, აფთიაქი)" "$(echo "$ORIG" | jq -r '"\(.issue_mode):\(.witness_classes|sort|join("+")):\(.count_lock):\(.pharmacist_scope)"')" "two_step:narcotic+psychotropic:true:pharmacy"
-chk "გამორთვა — 400 (ძირითადი); უცნობი კლასი — 400; მენეჯერი — 403" "$(code PUT /modules/stock "$ADM" -d '{"enabled":false,"reason":"ტესტ"}'):$(code PUT /modules/stock "$ADM" -d '{"settings":{"witness_classes":["opioid"]},"reason":"ტესტ"}'):$(code PUT /modules/stock "$SM" -d '{"settings":{"count_lock":false},"reason":"ტესტ"}')" "400:400:403"
+chk "გამორთვა — 409 (0085: ოპციურია, მაგრამ აფთიაქი / ლაბ. მარაგი / შესყიდვები ჩართულია); უცნობი კლასი — 400; მენეჯერი — 403" "$(code PUT /modules/stock "$ADM" -d '{"enabled":false,"reason":"ტესტ"}'):$(code PUT /modules/stock "$ADM" -d '{"settings":{"witness_classes":["opioid"]},"reason":"ტესტ"}'):$(code PUT /modules/stock "$SM" -d '{"settings":{"count_lock":false},"reason":"ტესტ"}')" "409:400:403"
 
 step "2. გაცემა: ცალმხრივი / ორმხრივი"
 rules '{"issue_mode":"one_step"}' >/dev/null

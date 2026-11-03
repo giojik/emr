@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
-import { useModules, type SystemModule } from '../../lib/modules';
+import { GROUP_KA, STATE_KA, useModules, type ModuleGroup, type ModuleState, type SystemModule } from '../../lib/modules';
 import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 import { RosterSettings } from '../roster/RosterSettings';
@@ -13,22 +13,33 @@ import { WorklistSettings } from '../worklist/WorklistSettings';
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
 export default function Modules() {
   const q = useModules();
+  const [group, setGroup] = useState<ModuleGroup | ''>('');
   if (q.isLoading) return <div className="content"><Loading /></div>;
+  const names = Object.fromEntries((q.data ?? []).map((m) => [m.code, m.name]));
+  const groups = (Object.keys(GROUP_KA) as ModuleGroup[]).filter((g) => q.data?.some((m) => m.group === g));
   return (
     <div className="content">
-      <span className="hint">ჩართეთ / გამორთეთ მოდულები და შეცვალეთ მათი პარამეტრები კლინიკის წესების მიხედვით. გამორთული მოდული ქრება მენიუდან. ყოველი ცვლილება აუდიტშია (მიზეზით).</span>
+      <span className="hint">ჩართეთ / გამორთეთ მოდულები და შეცვალეთ მათი პარამეტრები კლინიკის წესების მიხედვით. მოდული აქტიურია, თუ ლიცენზიაშია, ჩართულია და მისი წინაპირობები აქტიურია.
+        გამორთული მოდული ქრება მენიუდან, მონაცემი არ იშლება. ყოველი ცვლილება აუდიტშია (მიზეზით). ლიცენზია — <Link to="/admin/license">ადმინისტრირება → ლიცენზია</Link>.</span>
       <ErrorBox error={q.error} />
-      {q.data?.map((m) => <ModuleCard key={m.code} m={m} />)}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }} role="group" aria-label="ჯგუფი">
+        <button type="button" className={`btn${group === '' ? ' primary' : ''}`} onClick={() => setGroup('')}>ყველა ({q.data?.length ?? 0})</button>
+        {groups.map((g) => <button key={g} type="button" className={`btn${group === g ? ' primary' : ''}`} onClick={() => setGroup(g)}>{GROUP_KA[g]} ({q.data?.filter((m) => m.group === g).length})</button>)}
+      </div>
+      {q.data?.filter((m) => !group || m.group === group).map((m) => <ModuleCard key={m.code} m={m} names={names} />)}
     </div>
   );
 }
 
-function ModuleCard({ m }: { m: SystemModule }) {
+const STATE_CHIP: Record<ModuleState, string> = { active: 'ok', read_only: 'warn', disabled: '', not_licensed: 'danger', missing_prereq: 'warn' };
+
+function ModuleCard({ m, names }: { m: SystemModule; names: Record<string, string> }) {
   const qc = useQueryClient(); const toast = useToast();
   const [s, setS] = useState<Record<string, unknown>>(m.settings);
-  const [enabled, setEnabled] = useState(m.enabled);
+  const [enabled, setEnabled] = useState(m.admin_enabled);
   const [reason, setReason] = useState('');
-  const dirty = enabled !== m.enabled || JSON.stringify(s) !== JSON.stringify(m.settings);
+  const dirty = enabled !== m.admin_enabled || JSON.stringify(s) !== JSON.stringify(m.settings);
+  const nm = (codes: string[]) => codes.map((c) => names[c] ?? c).join(', ');
   const save = useMutation({
     mutationFn: () => api<SystemModule>(`/modules/${m.code}`, { method: 'PUT', body: { enabled, settings: s, reason: reason.trim() } }),
     onSuccess: () => { setReason(''); toast.show('შენახულია'); void qc.invalidateQueries({ queryKey: ['modules'] }); },
@@ -36,14 +47,22 @@ function ModuleCard({ m }: { m: SystemModule }) {
   return (
     <section className="card card-pad stack">
       {toast.node}
-      <div className="row"><h2 className="grow" style={{ margin: 0 }}>{m.name}</h2>
-        {m.can_disable === false ? <span className="chip ok">ძირითადი მოდული — არ ითიშება</span>
-          : <label className="row"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> <strong>{enabled ? 'ჩართულია' : 'გამორთულია'}</strong></label>}</div>
+      <div className="row" style={{ flexWrap: 'wrap' }}><h2 className="grow" style={{ margin: 0 }}>{m.name} <span className="small muted mono" style={{ fontWeight: 400 }}>{m.code}</span></h2>
+        {!m.core && <span className={`chip ${STATE_CHIP[m.state]}`} title="ეფექტური მდგომარეობა">{STATE_KA[m.state]}</span>}
+        {m.core || m.can_disable === false ? <span className="chip ok">ბირთვი — არ ითიშება</span>
+          : <label className="row"><input type="checkbox" checked={enabled} disabled={!m.licensed && !m.admin_enabled} onChange={(e) => setEnabled(e.target.checked)} /> <strong>{enabled ? 'ჩართულია' : 'გამორთულია'}</strong></label>}</div>
       {m.description && <span className="small muted">{m.description}</span>}
+      {!m.core && (m.hard.length > 0 || m.dependents.length > 0 || m.settings_of) && <div className="small muted stack" style={{ gap: 2 }}>
+        {m.hard.length > 0 && <span>საჭიროებს: {nm(m.hard)}</span>}
+        {m.dependents.length > 0 && <span>მასზეა დამოკიდებული: {nm(m.dependents)}</span>}
+        {m.settings_of && <span>პარამეტრები — მოდულში „{names[m.settings_of] ?? m.settings_of}“</span>}
+      </div>}
+      {m.state === 'missing_prereq' && <span className="hint">არააქტიურია — ჩართეთ: {nm(m.missing)}</span>}
+      {m.state === 'not_licensed' && <span className="hint">მოდული ლიცენზიაში არ შედის — მონაცემი ინახება, პაციენტის ისტორია ჩანს.</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
       {m.code === 'roster' && <RosterSettings s={s} set={setS} />}
-      {m.code === 'worklist' && <WorklistSettings s={s} set={setS} enabled={m.enabled} />}
+      {m.code === 'worklist' && <WorklistSettings s={s} set={setS} enabled={m.admin_enabled} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}
       {m.code === 'inpatient' && <InpatientSettings s={s} set={setS} />}
@@ -60,7 +79,7 @@ function ModuleCard({ m }: { m: SystemModule }) {
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <span className="small muted grow">ბოლო ცვლილება: {tsDate(m.updated_at)}</span>
         {dirty && <><input className="input" style={{ maxWidth: 360, height: 38 }} aria-label="ცვლილების მიზეზი" placeholder="ცვლილების მიზეზი (სავალდებულო)" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <button className="btn" type="button" onClick={() => { setS(m.settings); setEnabled(m.enabled); }}>გაუქმება</button>
+          <button className="btn" type="button" onClick={() => { setS(m.settings); setEnabled(m.admin_enabled); }}>გაუქმება</button>
           <button className="btn primary" type="button" disabled={save.isPending || reason.trim().length < 3} onClick={() => save.mutate()}>შენახვა</button></>}
       </div>
       <ErrorBox error={save.error} />

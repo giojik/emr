@@ -10,6 +10,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { RECEIPT_EDIT, StockDocsService, type LineIn } from '../stock/stock-docs';
 import { addDays, ProcCommon, r2, r3, r4, r6, type Ex, userName } from './procurement-common';
 import { PO_EDIT, PROC_READ } from './procurement-rules';
+import { RequireModule } from '../modules/module-guard';
 
 export interface PoLineIn { item_id: string; pack_id?: string | null; qty: number; price: number; vat_rate?: number; requisition_line_id?: string | null; notes?: string | null }
 export interface PoIn {
@@ -316,6 +317,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const PO_STATUSES = ['draft', 'pending', 'sent', 'partial', 'received', 'closed', 'cancelled'];
 
 @Controller('procurement')
+@RequireModule('procurement')
 export class ProcOrdersController {
   constructor(private readonly s: ProcOrdersService, private readonly prices: ProcPricesService, private readonly c: ProcCommon) {}
   @Get('summary') @Roles(...PROC_READ, 'storekeeper') summary(@CurrentUser() u: AuthUser) { return this.s.summary(u); }

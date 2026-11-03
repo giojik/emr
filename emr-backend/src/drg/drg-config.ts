@@ -20,6 +20,7 @@ import { DRG_ADMIN, DRG_READ, drgRules, listKinds, loadVersion, versionMeta } fr
 import { type Component, KINDS as PRICE_KINDS, price, validateComponent } from './drg-pricing';
 import { ccLevel, type Cond, condsText, FIELDS, group, type GroupInputs, type ListKind, norm, normPattern, OP_KA, parseConds, PATTERN_RE, validateCond, validateVersionSettings,
   VERSION_SETTINGS_DEFAULT, versionSettings } from './drg-engine';
+import { ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -993,6 +994,7 @@ export class DrgConfigService {
 
 // ================================================================= controller
 @Controller('drg')
+@RequireModule('drg')
 export class DrgConfigController {
   constructor(private readonly s: DrgConfigService) {}
   @Get('meta') @Roles(...DRG_READ) meta() { return this.s.meta(); }
@@ -1019,7 +1021,7 @@ export class DrgConfigController {
   activate(@Param('id', ParseUUIDPipe) id: string, @Body() _d: ActivateDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.activate(id, u, auditCtx(r)); }
   @Post('versions/:id/retire') @HttpCode(200) @Roles(...DRG_ADMIN)
   retire(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.retire(id, d, u, auditCtx(r)); }
-  @Post('versions/:id/test') @HttpCode(200) @Roles(...DRG_READ) test(@Param('id', ParseUUIDPipe) id: string, @Body() d: TestDto) { return this.s.test(id, d); }
+  @Post('versions/:id/test') @ReadOnlySafe() @HttpCode(200) @Roles(...DRG_READ) test(@Param('id', ParseUUIDPipe) id: string, @Body() d: TestDto) { return this.s.test(id, d); }
   @Get('versions/:id/export') @Roles(...DRG_READ)
   async export(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
     const p = await this.s.exportPackage(id);

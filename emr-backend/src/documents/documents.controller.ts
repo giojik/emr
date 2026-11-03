@@ -5,8 +5,10 @@ import { CurrentUser, Public, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { IssueForm100Dto, RevokeDocumentDto } from './documents.dto';
 import { DocumentsService } from './documents.service';
+import { RequireModule } from '../modules/module-guard';
 
 @Controller()
+@RequireModule('core')
 export class DocumentsController {
   constructor(private readonly docs: DocumentsService) {}
 
@@ -46,6 +48,7 @@ export class DocumentsController {
 /** QR-კოდის სამიზნე — საჯარო, ავტორიზაციის გარეშე. ბრაუზერს HTML-ს უბრუნებს, პროგრამას — JSON-ს. */
 @Public()
 @Controller('public/verify')
+@RequireModule('core')
 export class PublicVerifyController {
   constructor(private readonly docs: DocumentsService) {}
 

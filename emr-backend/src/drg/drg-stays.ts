@@ -12,6 +12,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { drgPayers, drgPrices, evaluateStay, mirrorGroup, type StayEval, type StayPrice } from './drg-calc';
 import { DRG_ADMIN, DRG_CONFIRM, DRG_STAY_READ, defaultSchemeId, drgRules, stayInfo } from './drg-data';
 import { DISCHARGE_KA, SOURCE_KA } from './drg-engine';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 
@@ -171,6 +172,7 @@ export class DrgStaysService {
 
 
 @Controller('drg')
+@RequireModule('drg')
 export class DrgStaysController {
   constructor(private readonly s: DrgStaysService) {}
   @Get('stays/:eid') @Roles(...DRG_STAY_READ)

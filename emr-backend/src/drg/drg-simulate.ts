@@ -7,6 +7,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { group } from './drg-engine';
 import { DRG_READ, gatherInputs, loadVersion, stayInfo, versionMeta } from './drg-data';
 import { price } from './drg-pricing';
+import { ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -143,8 +144,9 @@ export class SimulateDto {
 }
 
 @Controller('drg')
+@RequireModule('drg')
 export class DrgSimulateController {
   constructor(private readonly s: DrgSimulateService) {}
   /** სიმულაცია — მხოლოდ გამოთვლა (POST — პარამეტრები სხეულში) */
-  @Post('simulate') @HttpCode(200) @Roles(...DRG_READ) run(@Body() d: SimulateDto) { return this.s.run(d); }
+  @Post('simulate') @ReadOnlySafe() @HttpCode(200) @Roles(...DRG_READ) run(@Body() d: SimulateDto) { return this.s.run(d); }
 }

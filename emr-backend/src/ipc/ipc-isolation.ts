@@ -10,6 +10,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { canEndIsolation, INFECTIOUS, IPC_ANY, IPC_DEPT, IPC_FULL, IPC_STATUS_READ, IpcCommon, ISO_REASONS, ISO_TYPES, isoEnd, isoStart, REASON_KA, type Ex } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
@@ -194,14 +195,15 @@ export class IpcIsolationService {
 }
 
 @Controller('ipc')
+@RequireModule('ipc')
 export class IpcIsolationController {
   constructor(private readonly s: IpcIsolationService) {}
-  @Get('stays/:id/isolations') @Roles(...IPC_STATUS_READ) forStay(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.forStay(id, u); }
-  @Post('stays/:id/isolations') @Roles('admin', 'doctor', 'nurse', 'manager', ...IPC_ANY)
+  @Get('stays/:id/isolations') @RequireModule('inpatient') @Roles(...IPC_STATUS_READ) forStay(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.forStay(id, u); }
+  @Post('stays/:id/isolations') @RequireModule('inpatient') @Roles('admin', 'doctor', 'nurse', 'manager', ...IPC_ANY)
   start(@Param('id', ParseUUIDPipe) id: string, @Body() d: IsolationStartDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.start(id, d, u, r); }
-  @Post('isolations/:id/end') @HttpCode(200) @Roles('admin', 'doctor', 'nurse', 'manager', ...IPC_ANY)
+  @Post('isolations/:id/end') @RequireModule('inpatient') @HttpCode(200) @Roles('admin', 'doctor', 'nurse', 'manager', ...IPC_ANY)
   end(@Param('id', ParseUUIDPipe) id: string, @Body() d: IsolationEndDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.end(id, d, u, r); }
-  @Get('stays/:id/door-sign') @Roles(...IPC_STATUS_READ)
+  @Get('stays/:id/door-sign') @RequireModule('inpatient') @Roles(...IPC_STATUS_READ)
   async door(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
     const buf = await this.s.doorSign(id);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="isolation-sign.pdf"' });

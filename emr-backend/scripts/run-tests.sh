@@ -53,7 +53,7 @@ TOK=$(curl -s -X POST "$CHECK/auth/login" -H 'content-type: application/json' \
 [ -n "$TOK" ] || { printf '\033[31mშესვლა ვერ მოხერხდა (%s) — შეამოწმეთ ელ-ფოსტა / პაროლი ან -u\033[0m\n' "$CHECK"; exit 2; }
 unset TOK
 export ADMIN_EMAIL ADMIN_PW
-[ -n "$URL" ] && export API="$URL"
+export API="$CHECK"   # 0085a: ყველა სკრიპტს (smoke-form100-ის ჩათვლით) — ერთი მისამართი; ნაგულისხმევი http://localhost/api
 
 LOG_DIR="${LOG_DIR:-/tmp/emr-tests-$(date +%Y%m%d-%H%M%S)}"; mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR"
 TO=""; command -v timeout >/dev/null && TO="timeout ${TEST_TIMEOUT:-1200}"

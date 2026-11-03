@@ -16,11 +16,12 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { CATEGORY_KA, loadBilling, MODE_KA, PAYER_KIND_KA } from './ipd-billing-calc';
-import { writeLineShares } from '../tariffs/payer-shares';
-import { repriceOnPayerChange } from '../tariffs/reprice';
-import { tariffRules } from '../tariffs/tariff-rules';
+import { writeLineShares } from '../billing/payer-shares';
+import { repriceOnPayerChange } from '../billing/reprice';
+import { tariffRules } from '../billing/tariff-rules';
 import { drgFinalizeCheck, drgForPayer } from '../drg/drg-calc';
 import { errorText, scrubInvoice, scrubSettings } from '../scrub/scrub-engine';
+import { RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -695,6 +696,7 @@ export class IpdBillingService {
 
 // ================================================================= controller
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class IpdBillingController {
   constructor(private readonly s: IpdBillingService) {}
   @Get('stays/:eid/billing') @Roles(...READ) view(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.view(eid, u); }

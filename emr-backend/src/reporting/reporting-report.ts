@@ -7,7 +7,7 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { ReportingService } from './reporting';
 import { DATE_RE, daysBetween, RPT_READ, RptCommon } from './reporting-common';
 import { ReportingFinService } from './reporting-fin';
@@ -17,6 +17,7 @@ import { QmReportsService } from '../quality/quality-reports';
 import { ipcRules } from '../ipc/ipc-common';
 import { bmeRptRules } from '../bme/bme-reports-core';
 import { rosterRptRules } from '../roster/roster-reports-core';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * მენეჯერული ანგარიში (0063): პერიოდი (ჩვეულებრივ — თვე) → xlsx (რამდენიმე ფურცელი) და PDF (1–2 გვერდი: KPI-ები + 13 თვე).
@@ -298,6 +299,7 @@ export class RptReportService {
 }
 
 @Controller('reporting')
+@RequireModule('reporting')
 export class RptReportController {
   constructor(private readonly s: RptReportService) {}
   /** მენეჯერული ანგარიში: GET /reporting/report?from&to&format=xlsx|pdf&department_id&doctors=1 */

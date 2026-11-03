@@ -5,10 +5,11 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
-import { writeXlsx, type Cell } from '../claims-export/xlsx';
+import { writeXlsx, type Cell } from '../common/xlsx';
 import { toCsv } from '../finance/finance-common';
 import { DATE_RE, daysBetween, n, r1, r2, RPT_READ, RptCommon, type RptScope, type RptSettings, UUID_RE } from './reporting-common';
 import { histPercentile } from './reporting-kpi';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ოპერაციული დაფები (0062) — მხოლოდ rpt_* ფაქტებიდან:
@@ -268,6 +269,7 @@ export class ReportingOpsService {
 }
 
 @Controller('reporting/ops')
+@RequireModule('reporting')
 export class ReportingOpsController {
   constructor(private readonly s: ReportingOpsService) {}
   @Get('flow') @Roles(...RPT_READ) flow(@Query() q: Q, @CurrentUser() u: AuthUser) { return this.s.flow(u, q); }

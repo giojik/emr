@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IpcCommon, ipcRules, type IpcRules } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -137,6 +138,7 @@ export class IpcDeviceDaysService {
 }
 
 @Controller('ipc/device-days')
+@RequireModule('ipc')
 export class IpcDeviceDaysController {
   constructor(private readonly s: IpcDeviceDaysService) {}
   @Get() @Roles(...IPC_ANY) rates(@CurrentUser() u: AuthUser, @Query('from') from?: string, @Query('to') to?: string, @Query('department_id') department_id?: string) {

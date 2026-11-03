@@ -17,6 +17,7 @@ import { fmtDate, fmtDateTime, TemplateContextService } from '../templates/templ
 import { renderTemplatePdf, type DxItem, type DxResultRow, type LabRow, type TemplatePdfInput } from '../templates/template.pdf';
 import { TemplatesModule } from '../templates/templates';
 import { InpatientModule, InpatientService } from './inpatient';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -354,9 +355,10 @@ export class EpicrisisService {
 const IPD_READ = ['admin', 'doctor', 'nurse', 'manager'] as const;
 
 @Controller('inpatient/stays/:eid/epicrisis')
+@RequireModule('inpatient')
 export class EpicrisisController {
   constructor(private readonly s: EpicrisisService) {}
-  @Get() @Roles(...IPD_READ) get(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.get(eid, u); }
+  @Get() @ClinicalHistory() @Roles(...IPD_READ) get(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.get(eid, u); }
   @Post() @Roles('admin', 'doctor') create(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(eid, u, auditCtx(r)); }
   @Put() @Roles('admin', 'doctor') save(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: EpicrisisSaveDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.save(eid, d, u, auditCtx(r)); }
   @Post('sign') @HttpCode(200) @Roles('doctor') sign(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.sign(eid, u, auditCtx(r)); }
@@ -369,7 +371,7 @@ export class EpicrisisController {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
     return new StreamableFile(pdf);
   }
-  @Get('pdf') @Roles(...IPD_READ)
+  @Get('pdf') @ClinicalHistory() @Roles(...IPD_READ)
   async pdf(@Param('eid', ParseUUIDPipe) eid: string, @Req() r: Request, @Res({ passthrough: true }) res: Response) {
     const d = await this.s.documentPdf(eid, auditCtx(r));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${(d.number ?? 'epicrisis').replace(/[^\w.-]+/g, '_')}.pdf"`, 'Cache-Control': 'no-store' });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { EXPORT_FIELDS, FIELD_MAP, LIST_SEP, type RowData } from './export-fields';
-import { type Cell, readCsv, readXlsx, writeXlsx, xmlEsc, colIndex } from './xlsx';
+import { type Cell, readCsv, readXlsx, writeXlsx, xmlEsc, colIndex } from '../common/xlsx';
 
 /**
  * 0058: შაბლონის კონფიგურაცია (claim_templates.config) — ვალიდაცია და გამოყენება.

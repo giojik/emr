@@ -18,7 +18,9 @@
     "db:codegen": "kysely-codegen --dialect postgres --url \"env(MIGRATION_DATABASE_URL)\" --out-file src/database/db.d.ts --date-parser string --numeric-parser string --exclude-pattern schema_migrations",
     "typecheck": "tsc --noEmit",
     "user": "node dist/cli/users.js",
-    "user:dev": "tsx src/cli/users.ts"
+    "user:dev": "tsx src/cli/users.ts",
+    "license": "node dist/cli/license.js",
+    "license:dev": "tsx src/cli/license.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.5",

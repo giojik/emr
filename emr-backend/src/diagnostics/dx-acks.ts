@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { countCache } from '../worklist/worklist-tasks';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * 0084 — პასუხის გაცნობა (ექიმი): „გავეცანი“ ვალიდირებულ / ხელმოწერილ პასუხზე (ლაბ., რადიოლოგია, ენდოსკოპია).
@@ -119,6 +120,7 @@ class AckDto {
 }
 
 @Controller('dx')
+@RequireModule('lab', 'radiology', 'endoscopy')
 export class DxAcksController {
   constructor(private readonly s: DxAcksService) {}
   @Get('acks/pending') @Roles('admin', 'doctor')

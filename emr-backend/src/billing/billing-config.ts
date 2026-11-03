@@ -9,6 +9,7 @@ import { Roles } from '../auth/decorators';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ბილინგის ცნობარები (0046, ადმინისტრირება → „სტაციონარის ბილინგი“):
@@ -293,6 +294,7 @@ export class BillingConfigService {
 }
 
 @Controller('billing')
+@RequireModule('billing')
 export class BillingConfigController {
   constructor(private readonly s: BillingConfigService) {}
 

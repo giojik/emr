@@ -13,6 +13,7 @@ import {
   CATEGORIES, CATEGORY_KA, EMPLOYMENT, REST, ROSTER_HR, ROSTER_SETUP, SHIFT_KINDS, STAFF_ALL, absenceScope, canEdit, canView, rosterScope, shiftTimes, staffName,
   type RosterSettings,
 } from './roster-common';
+import { RequireModule } from '../modules/module-guard';
 
 const PG = {
   staff_positions_code_key: 'იგივე კოდის პოზიცია უკვე არსებობს', shift_templates_code_key: 'იგივე კოდის ცვლა უკვე არსებობს', duty_roles_code_key: 'იგივე კოდის მორიგის როლი უკვე არსებობს',
@@ -345,6 +346,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** ცვლები / მორიგეობა — ცნობარები და თანამშრომლები */
 @Controller('roster')
+@RequireModule('roster')
 export class RosterSetupController {
   constructor(private readonly s: RosterSetupService) {}
   @Get('refs') refs(@CurrentUser() u: AuthUser) { return this.s.refs(u); }

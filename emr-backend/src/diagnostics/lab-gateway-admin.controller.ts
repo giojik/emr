@@ -10,6 +10,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { LabAlertsService } from '../lab-gateway/lab-alerts.service';
 import { NotifyService } from '../notify/notify.service';
+import { RequireModule } from '../modules/module-guard';
 
 class CommandDto {
   @IsIn(['tcp_test', 'link_test', 'reconnect']) kind: 'tcp_test' | 'link_test' | 'reconnect';
@@ -137,6 +138,7 @@ export class LabGatewayAdminService {
 }
 
 @Controller('lab/gateway')
+@RequireModule('lab_gateway')
 @Roles('admin')
 export class LabGatewayAdminController {
   constructor(private readonly svc: LabGatewayAdminService) {}

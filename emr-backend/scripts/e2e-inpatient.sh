@@ -180,12 +180,19 @@ chk "ძებნა IP-ნომრით (სკანერი)" "$(api GET "
 chk "ისტორია უცვლელია (DB ტრიგერი) — შემოწმებულია migration-ში" "ok" "ok"
 
 step "11. მოდულის გამორთვა"
+# 0085: სტაციონარზე მკაცრად დამოკიდებულები (drg / scrubber, ipd_orders / mar, icu, or, ipc) ჯერ ითიშება; ბოლოს — აღდგება
+DEPS="scrubber drg mar ipd_orders icu or ipc"
+DEP_ON=$(api GET /modules "$ADM" | jq -r --arg d "$DEPS" '[.[]|select(.enabled and (.code as $c|($d|split(" "))|index($c)))|.code]|join(" ")')
+chk "დამოკიდებულები ჩართულია — გამორთვა 409 (MODULE_HAS_DEPENDENTS)" "$(api PUT /modules/inpatient "$ADM" -d '{"enabled":false,"reason":"ტესტ-E2E"}' | jq -r '.code // "200"')" "$([ -n "$DEP_ON" ] && echo MODULE_HAS_DEPENDENTS || echo inpatient)"
+for d in $DEPS; do case " $DEP_ON " in *" $d "*) api PUT "/modules/$d" "$ADM" -d '{"enabled":false,"reason":"ტესტ-E2E"}' >/dev/null ;; esac; done
 api PUT /modules/inpatient "$ADM" -d '{"enabled":false,"reason":"ტესტ-E2E"}' >/dev/null
 chk "გამორთულზე — 403" "$(code GET /inpatient/census "$RC"):$(code POST /inpatient/admissions "$RC" -d "{\"patient_id\":\"$PF\",\"department_id\":\"$DA\",\"attending_doctor_id\":\"$DRID\",\"source\":\"direct\",\"icd10_code\":\"I21.9\"}")" "403:403"
 
 step "12. აღდგენა"
 api PUT /modules/inpatient "$ADM" -d "{\"enabled\":$(echo "$ORIG" | jq '.enabled'),\"settings\":$(echo "$ORIG" | jq -c '.settings'),\"reason\":\"ტესტ-E2E: აღდგენა\"}" >/dev/null
 chk "პარამეტრები აღდგენილია" "$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="inpatient")|{enabled, settings}')" "$ORIG"
+for d in ipc or icu ipd_orders mar drg scrubber; do case " $DEP_ON " in *" $d "*) api PUT "/modules/$d" "$ADM" -d '{"enabled":true,"reason":"ტესტ-E2E: აღდგენა"}' >/dev/null ;; esac; done
+chk "დამოკიდებული მოდულები აღდგენილია" "$(api GET /modules "$ADM" | jq -r --arg d "$DEP_ON" '[.[]|select(.enabled and (.code as $c|($d|split(" "))|index($c)))|.code]|length')" "$(echo $DEP_ON | wc -w)"
 for f in "$TMP"/u*; do api PATCH "/users/$(cat "$f")" "$ADM" -d '{"is_active":false}' >/dev/null; done
 
 printf '\n\033[1mშედეგი: %s ✓  %s ✗\033[0m\n' "$PASS" "$FAIL"

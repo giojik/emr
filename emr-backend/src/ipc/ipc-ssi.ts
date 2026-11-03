@@ -11,6 +11,7 @@ import { loadEnv } from '../config/env';
 import { NotifyService } from '../notify/notify.service';
 import { IPC_ANY, IPC_FULL, IpcCommon, ipcRules, type Ex, type IpcRules } from './ipc-common';
 import { IpcHaiService } from './ipc-hai';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -457,6 +458,7 @@ export class IpcSsiService {
 }
 
 @Controller('ipc/ssi')
+@RequireModule('ipc')
 export class IpcSsiController {
   constructor(private readonly s: IpcSsiService) {}
   @Get('ops') @Roles(...IPC_ANY) ops(@CurrentUser() u: AuthUser, @Query('from') from?: string, @Query('to') to?: string, @Query('category') category?: string,

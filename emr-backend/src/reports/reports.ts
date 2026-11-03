@@ -2,6 +2,7 @@ import { BadRequestException, Controller, Get, Injectable, Module, Query } from 
 import { sql } from 'kysely';
 import { Roles } from '../auth/decorators';
 import { InjectDb, type Database } from '../database/database.module';
+import { RequireModule } from '../modules/module-guard';
 
 const range = (from?: string, to?: string) => {
   const f = from ? new Date(from) : new Date(Date.now() - 30 * 86_400_000);
@@ -46,6 +47,7 @@ export class ReportsService {
 }
 
 @Controller()
+@RequireModule('core')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 

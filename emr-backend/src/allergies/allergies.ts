@@ -10,6 +10,7 @@ import type { AuthUser } from '../auth/roles';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { AllergyCheckService } from './allergy-check.service';
+import { RequireModule } from '../modules/module-guard';
 
 export class CreateAllergyDto {
   @IsString() @Length(2, 150) substance: string;
@@ -93,6 +94,7 @@ export class AllergiesService {
 }
 
 @Controller()
+@RequireModule('mpi')
 export class AllergiesController {
   constructor(private readonly allergies: AllergiesService, private readonly checker: AllergyCheckService) {}
 

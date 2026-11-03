@@ -8,6 +8,7 @@ import type { AuthUser } from '../auth/roles';
 import { LabIngestService } from '../lab-gateway/lab-ingest.service';
 import { LabGatewayAdminService } from './lab-gateway-admin.controller';
 import { LabInstrumentsService } from './lab-instruments.service';
+import { ClinicalHistory, ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 class InstrumentDto {
   @IsIn(['astm', 'hl7', 'text']) protocol: 'astm' | 'hl7' | 'text';
@@ -32,6 +33,7 @@ class TextTestDto { @IsString() @Length(1, 100_000) text: string; @IsOptional() 
 const LAB_ALL = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic'] as const;
 
 @Controller('lab')
+@RequireModule('lab_gateway')
 export class LabInstrumentsController {
   constructor(private readonly svc: LabInstrumentsService, private readonly ingest: LabIngestService, private readonly admin: LabGatewayAdminService) {}
 
@@ -48,11 +50,11 @@ export class LabInstrumentsController {
   codes(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: CodesDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.svc.setCodes(id, dto.codes, u, auditCtx(req)); }
   @Get('instruments-text-presets') @Roles(...LAB_ALL)
   presets() { return this.svc.presets(); }
-  @Post('instruments/:methodId/text-test') @HttpCode(200) @Roles('admin', 'lab_doctor', 'lab_manager')
+  @Post('instruments/:methodId/text-test') @ReadOnlySafe() @HttpCode(200) @Roles('admin', 'lab_doctor', 'lab_manager')
   textTest(@Param('methodId', ParseUUIDPipe) id: string, @Body() dto: TextTestDto) { return this.svc.textTest(id, dto.text, dto.settings); }
-  @Get('items/:id/graphics') @Roles(...LAB_ALL, 'doctor', 'nurse')
+  @Get('items/:id/graphics') @RequireModule('lab') @ClinicalHistory() @Roles(...LAB_ALL, 'doctor', 'nurse')
   graphics(@Param('id', ParseUUIDPipe) id: string) { return this.svc.graphics(id); }
-  @Get('items/:id/graphics/:gid') @Roles(...LAB_ALL, 'doctor', 'nurse')
+  @Get('items/:id/graphics/:gid') @RequireModule('lab') @ClinicalHistory() @Roles(...LAB_ALL, 'doctor', 'nurse')
   async graphic(@Param('id', ParseUUIDPipe) id: string, @Param('gid', ParseUUIDPipe) gid: string, @Res({ passthrough: true }) res: Response) {
     const g = await this.svc.graphicStream(id, gid);
     res.set({ 'Content-Type': g.mime, 'Cache-Control': 'private, max-age=3600' });

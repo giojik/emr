@@ -9,9 +9,10 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IPC_STATUS_READ, IpcCommon } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -344,6 +345,7 @@ export class IpcAbgService {
 }
 
 @Controller('ipc/abg')
+@RequireModule('ipc')
 export class IpcAbgController {
   constructor(private readonly s: IpcAbgService) {}
   @Get('meta') @Roles(...IPC_ANY, 'admin') meta() { return this.s.meta(); }

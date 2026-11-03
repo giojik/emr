@@ -5,11 +5,12 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
-import { writeXlsx, type Cell } from '../claims-export/xlsx';
+import { writeXlsx, type Cell } from '../common/xlsx';
 import { toCsv } from '../finance/finance-common';
-import { PAYER_KIND_KA } from '../finance/finance-rules';
+import { PAYER_KIND_KA } from '../billing/finance-rules';
 import { DATE_RE, daysBetween, n, r1, r2, RPT_READ, RptCommon, type RptScope } from './reporting-common';
 import { doctorAccess } from './reporting-ops';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ფინანსური დაფა (0063) — მხოლოდ rpt_* ფაქტებიდან:
@@ -211,6 +212,7 @@ export class ReportingFinService {
   }
 }
 @Controller('reporting/fin')
+@RequireModule('reporting')
 export class ReportingFinController {
   constructor(private readonly s: ReportingFinService) {}
   @Get('summary') @Roles(...RPT_READ) summary(@Query() q: Q, @CurrentUser() u: AuthUser) { return this.s.summary(u, q); }

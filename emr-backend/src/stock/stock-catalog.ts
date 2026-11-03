@@ -13,7 +13,8 @@ import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { normalizeBarcode, parseBarcode } from './gs1';
-import { readCsv, readXlsx, writeXlsx } from './xlsx';
+import { readCsv, readXlsx, writeXlsx } from '../common/xlsx-read';
+import { RequireModule } from '../modules/module-guard';
 
 /** კატალოგის ნახვა — ყველა, ვინც საწყობთან / მოთხოვნებთან / ხარჯთან მუშაობს */
 export const STOCK_READ: Role[] = ['admin', 'storekeeper', 'stock_manager', 'pharmacist', 'nurse', 'doctor', 'lab_doctor', 'lab_manager', 'diagnostic', 'manager', 'viewer', 'accountant'];
@@ -486,6 +487,7 @@ class SettingsDto { @IsOptional() @IsIn(['fifo', 'average']) costing_method?: 'f
 const bool = (v?: string) => v === 'true' || v === '1';
 
 @Controller('stock')
+@RequireModule('stock')
 export class StockCatalogController {
   constructor(private readonly s: StockCatalogService) {}
   @Get('refs') @Roles(...STOCK_READ) refs() { return this.s.refs(); }

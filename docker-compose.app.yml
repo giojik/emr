@@ -17,6 +17,8 @@ x-backend-env: &backend-env
   S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
   S3_BUCKET: ${MINIO_BUCKET}
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET არ არის /opt/emr/.env-ში}
+  # 0085: ლიცენზიის სატესტო გასაღები (e2e-license) — მხოლოდ NODE_ENV ≠ production; dev-ზე /opt/emr/.env-ში LICENSE_TEST_KEY=1
+  LICENSE_TEST_KEY: ${LICENSE_TEST_KEY:-false}
   COOKIE_SECURE: "false"
   AUTH_LOCAL_ENABLED: "true"
   AUTH_LDAP_ENABLED: "false"

@@ -16,6 +16,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { InpatientModule, InpatientService } from './inpatient';
 import { RosterLookup } from '../roster/roster-common';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -541,12 +542,13 @@ export function addDay(d: string, n: number) {
 // ================================================================= controller
 const READ = ['admin', 'doctor', 'nurse', 'manager'] as const;
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class NotesController {
   constructor(private readonly s: NotesService) {}
-  @Get('stays/:eid/notes') @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u); }
+  @Get('stays/:eid/notes') @ClinicalHistory() @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u); }
   @Get('stays/:eid/notes/insert') @Roles('admin', 'doctor') insert(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.insertData(eid); }
   @Get('stays/:eid/notes/course') @Roles('admin', 'doctor') course(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.course(eid); }
-  @Get('stays/:eid/notes/pdf') @Roles(...READ)
+  @Get('stays/:eid/notes/pdf') @ClinicalHistory() @Roles(...READ)
   async pdf(@Param('eid', ParseUUIDPipe) eid: string, @Req() r: Request, @Res({ passthrough: true }) res: Response) {
     const out = await this.s.pdf(eid, auditCtx(r));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${out.name}"` });
@@ -554,8 +556,8 @@ export class NotesController {
   }
   @Post('stays/:eid/notes') @Roles('admin', 'doctor')
   create(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: NoteCreateDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(eid, d, u, auditCtx(r)); }
-  @Get('notes/:id/history') @Roles(...READ) history(@Param('id', ParseUUIDPipe) id: string) { return this.s.history(id); }
-  @Get('notes/:id') @Roles(...READ)
+  @Get('notes/:id/history') @ClinicalHistory() @Roles(...READ) history(@Param('id', ParseUUIDPipe) id: string) { return this.s.history(id); }
+  @Get('notes/:id') @ClinicalHistory() @Roles(...READ)
   async one(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const n = await this.s.get(id);
     if (!n || (n.status === 'draft' && n.author_id !== u.id)) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');

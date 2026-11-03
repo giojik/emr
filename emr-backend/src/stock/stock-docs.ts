@@ -13,6 +13,7 @@ import { stockRules } from './stock-rules';
 import { procRules } from '../procurement/procurement-rules';
 import type { DB } from '../database/db';
 import { STOCK_READ } from './stock-catalog';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;   // კლინიკის დღის საზღვრები
 /** მიღების დოკუმენტი: შექმნა / გატარება */
@@ -456,6 +457,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const dateOk = (v?: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 @Controller('stock')
+@RequireModule('stock')
 export class StockDocsController {
   constructor(private readonly s: StockDocsService) {}
   @Get('docs') @Roles(...STOCK_READ) list(@Query() q: { type?: string; status?: string; location_id?: string; supplier_id?: string; from?: string; to?: string; search?: string }) {

@@ -5,7 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { stockRules } from './stock-rules';
 import { procRules } from '../procurement/procurement-rules';
-import { finRules } from '../finance/finance-rules';
+import { finRules } from '../billing/finance-rules';
 
 const TZ = loadEnv().CLINIC_TZ;
 

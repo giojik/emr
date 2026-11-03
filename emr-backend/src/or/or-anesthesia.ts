@@ -14,6 +14,7 @@ import { StockOpsService } from '../stock/stock-ops';
 import { OR_READ } from './or-admin';
 import { ANESTHESIA, OrService } from './or';
 import { orEvent, stockAt, syncCaseBilling, type Ex } from './or-shared';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : Number(value));
 const nul = ({ value }: { value: unknown }) => (value === '' ? null : value);
@@ -293,9 +294,10 @@ export class OrAnesthesiaService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrAnesthesiaController {
   constructor(private readonly s: OrAnesthesiaService) {}
-  @Get('cases/:id/anesthesia') @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
+  @Get('cases/:id/anesthesia') @ClinicalHistory() @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
   @Get('cases/:id/anesthesia/stock') @Roles('admin', 'anesthesiologist', 'or_nurse') stock(@Param('id', ParseUUIDPipe) id: string, @Query('q') q?: string) { return this.s.stock_(id, q); }
   @Put('cases/:id/anesthesia') @Roles('admin', 'anesthesiologist', 'or_nurse')
   save(@Param('id', ParseUUIDPipe) id: string, @Body() d: AnesthesiaDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.save(id, d, u, auditCtx(r)); }

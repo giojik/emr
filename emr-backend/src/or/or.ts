@@ -19,6 +19,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { OR_READ } from './or-admin';
 import { OrRosterService } from './or-roster';
 import { countGate, noteGate, OR_SETTINGS_0049, OR_SETTINGS_0050, orEvent, packsUsed, assembleCard, pacuDischarge, syncCaseBilling, type OrSettings } from './or-shared';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -1002,6 +1003,7 @@ export class OrService {
 // ================================================================= controller
 const DOC = ['admin', 'doctor'] as const;
 @Controller('or')
+@RequireModule('or')
 export class OrController {
   constructor(private readonly s: OrService) {}
   @Get('board') @Roles(...OR_READ) board(@Query() q: BoardQuery) { return this.s.board(q); }
@@ -1013,7 +1015,7 @@ export class OrController {
   @Get('staff') @Roles(...OR_READ) staff(@Query('cap') cap: string, @Query('q') q?: string) { return this.s.staff(cap, q); }
   @Get('sources') @Roles(...DOC) sources(@Query('patient_id', ParseUUIDPipe) pid: string) { return this.s.sources(pid); }
   @Get('cases') @Roles(...OR_READ, 'receptionist', 'billing') list(@Query() q: ListQuery, @CurrentUser() u: AuthUser) { return this.s.list(q, u); }
-  @Get('cases/:id') @Roles(...OR_READ) one(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.detail(id, u); }
+  @Get('cases/:id') @ClinicalHistory() @Roles(...OR_READ) one(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.detail(id, u); }
   @Post('cases') @Roles(...DOC) create(@Body() d: CaseDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(d, u, auditCtx(r)); }
   @Patch('cases/:id') @Roles(...DOC) update(@Param('id', ParseUUIDPipe) id: string, @Body() d: CaseDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.update(id, d, u, auditCtx(r)); }
   @Post('cases/:id/schedule') @HttpCode(200) @Roles('admin', 'doctor', 'or_schedule')

@@ -14,6 +14,7 @@ import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
 import { CAPA_STATUS_KA, QM_FULL, QmCommon, type Ex, type Trx, userName } from './quality-common';
 import { QmIncidentsService } from './quality-incidents';
+import { RequireModule } from '../modules/module-guard';
 
 const LINKABLE = ['investigation', 'analysis', 'capa'];
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -353,6 +354,7 @@ export class QmCapaService {
 const upload = FilesInterceptor('files', 5, { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 5 } });
 
 @Controller('quality/capas')
+@RequireModule('quality')
 export class QmCapaController {
   constructor(private readonly s: QmCapaService) {}
   @Get() list(@CurrentUser() u: AuthUser, @Query() q: ListQ) { return this.s.list(u, q); }

@@ -13,6 +13,7 @@ import { stockRules } from './stock-rules';
 import type { DB } from '../database/db';
 import { NotificationsService } from '../notifications/notifications';
 import { STOCK_READ } from './stock-catalog';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 type Trx = Transaction<DB>;
@@ -527,6 +528,7 @@ class OptReasonDto { @IsOptional() @IsString() @MaxLength(500) reason?: string }
 class ReceiveDto { @IsIn(['receive', 'return']) action: 'receive' | 'return'; @IsOptional() @IsString() @MaxLength(500) note?: string }
 
 @Controller('stock')
+@RequireModule('stock')
 export class StockTransfersController {
   constructor(private readonly s: StockTransfersService) {}
   @Get('my-locations') @Roles(...STOCK_READ) my(@CurrentUser() u: AuthUser) { return this.s.myLocations(u); }

@@ -11,6 +11,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { OR_READ } from './or-admin';
 import { OrService } from './or';
 import { NOTE_FIELDS, noteMissing, orEvent, syncCaseBilling, type Ex, type Trx } from './or-shared';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? value === '' ? null : value : Number(value));
 const WOUND_LABEL = 'ჭრილობის კლასი';
@@ -294,9 +295,10 @@ export class OrNoteService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrNoteController {
   constructor(private readonly s: OrNoteService) {}
-  @Get('cases/:id/note') @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
+  @Get('cases/:id/note') @ClinicalHistory() @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
   @Put('cases/:id/note') @Roles('admin', 'doctor')
   save(@Param('id', ParseUUIDPipe) id: string, @Body() d: NoteDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.save(id, d, u, auditCtx(r)); }
   @Post('cases/:id/note/sign') @HttpCode(200) @Roles('admin', 'doctor')

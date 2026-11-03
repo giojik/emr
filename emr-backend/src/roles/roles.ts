@@ -7,8 +7,11 @@ import { AuditService, type AuditContext } from '../audit/audit.service';
 import { invalidateAllUserStatus } from '../auth/auth.guard';
 import { Roles } from '../auth/decorators';
 import { CAPABILITIES, type Capability } from '../auth/roles';
+import { modulesRef } from '../modules/modules-ref';
+import { CAP_MODULE } from '../modules/registry';
 import { InjectDb, type Database } from '../database/database.module';
 import { UsersModule, UsersService } from '../users/users.module';
+import { RequireModule } from '../modules/module-guard';
 
 /** უფლებების კატალოგი: ჯგუფი, დასახელება, რას აძლევს (ადმინისტრირების ეკრანისთვის) */
 export const CAPABILITY_INFO: Record<Capability, { group: string; name: string; grants: string }> = {
@@ -93,8 +96,15 @@ export class RolesService {
     return q.execute();
   }
 
-  capabilities() {
-    return CAPABILITIES.map((c) => ({ code: c, ...CAPABILITY_INFO[c] }));
+  /** 0085: module — რომელ მოდულს ეკუთვნის (null — ბირთვი), module_active — როლის რედაქტორი მალავს არააქტიურს (როლიდან არ იშლება) */
+  async capabilities() {
+    const states = modulesRef.svc ? (await modulesRef.svc.snapshot()).states : null;
+    return CAPABILITIES.map((c) => {
+      const mod = CAP_MODULE[c] ?? null;
+      const list = mod === null ? [] : Array.isArray(mod) ? mod : [mod];
+      const active = !list.length || !states || list.some((x) => states.get(x)?.active);
+      return { code: c, ...CAPABILITY_INFO[c], module: mod, module_active: active };
+    });
   }
 
   async create(dto: CreateRoleDto, ctx: AuditContext) {
@@ -157,6 +167,7 @@ export class RolesService {
 }
 
 @Controller('roles')
+@RequireModule('core')
 export class RolesController {
   constructor(private readonly roles: RolesService) {}
   /** როლების სია (აქტიურები — ყველა ადმინისტრირების ეკრანისთვის; გათიშულებიც — admin) */

@@ -9,6 +9,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { addDays, ProcCommon, r2, type Ex, type Trx, userName } from './procurement-common';
 import { AP_EDIT, AP_READ } from './procurement-rules';
+import { RequireModule } from '../modules/module-guard';
 
 export interface ApLineIn { description: string; category: string; department_id?: string | null; amount: number; vat_rate?: number }
 export interface ApIn {
@@ -388,6 +389,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const dateOk = (v?: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 @Controller('payables')
+@RequireModule('procurement')
 export class PayablesController {
   constructor(private readonly s: PayablesService) {}
   @Get('summary') @Roles(...AP_READ) summary() { return this.s.summary(); }

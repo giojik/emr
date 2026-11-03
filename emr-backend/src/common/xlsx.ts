@@ -3,7 +3,7 @@ import { crc32, deflateRawSync } from 'node:zlib';
 /**
  * მინიმალური XLSX (Office Open XML) — დამოკიდებულების გარეშე (0058).
  *  • ჩაწერა: ერთი ან რამდენიმე ფურცელი (writeXlsxBook, 0063), ტექსტი (inline) / რიცხვი (რიცხვის ფორმატით), სათაურის ხაზი (მუქი), სვეტის სიგანე.
- *  • წაკითხვა: stock/xlsx (readXlsx); CSV — მითითებული გამყოფით.
+ *  • წაკითხვა: common/xlsx-read (readXlsx); CSV — მითითებული გამყოფით.
  * ZIP — deflate, ფიქსირებული თარიღით (ერთი და იგივე შიგთავსი → ერთი და იგივე ფაილი / sha256).
  */
 
@@ -110,7 +110,7 @@ export function writeXlsxBook(sheets: SheetSpec[]): Buffer {
 
 // ---------------------------------------------------------------- წაკითხვა
 /** XLSX — მარაგის მოდულის წამკითხველი (თარიღის უჯრები → YYYY-MM-DD) */
-export { readXlsx } from '../stock/xlsx';
+export { readXlsx } from './xlsx-read';
 
 /** CSV → ხაზები (ბრჭყალები, გამყოფი, BOM) */
 export function readCsv(text: string, sep: string): string[][] {

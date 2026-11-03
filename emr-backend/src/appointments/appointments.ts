@@ -13,6 +13,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { EncounterCoreService } from '../encounters/encounter-core.service';
 import { EncountersModule } from '../encounters/encounters.module';
+import { RequireModule } from '../modules/module-guard';
 
 const OVERLAP = { excl_appointments_doctor_overlap: 'ექიმს ამ დროს უკვე აქვს ჩაწერა' };
 
@@ -107,6 +108,7 @@ export class AppointmentsService {
 }
 
 @Controller('appointments')
+@RequireModule('encounters')
 export class AppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 

@@ -10,6 +10,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { mapPgError } from '../common/pg-errors';
 import { InpatientModule, InpatientService } from './inpatient';
+import { RequireModule } from '../modules/module-guard';
 
 export class TransferRequestDto {
   @IsUUID() to_department_id: string;
@@ -158,6 +159,7 @@ export class TransfersService {
 }
 
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class TransfersController {
   constructor(private readonly s: TransfersService) {}
   @Get('transfers') @Roles('admin', 'doctor', 'nurse', 'manager')

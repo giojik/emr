@@ -5,6 +5,7 @@ import { Roles } from '../auth/decorators';
 import { InjectDb, type Database } from '../database/database.module';
 import { OrService } from './or';
 import { TZ } from './or-shared';
+import { RequireModule } from '../modules/module-guard';
 
 export class StatsQuery {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
@@ -169,6 +170,7 @@ export class OrStatsService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrStatsController {
   constructor(private readonly s: OrStatsService) {}
   @Get('stats') @Roles('admin', 'manager', 'or_schedule', 'viewer') stats(@Query() q: StatsQuery) { return this.s.stats(q); }

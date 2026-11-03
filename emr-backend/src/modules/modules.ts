@@ -1,4 +1,6 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Global, Injectable, Module, NotFoundException, Param, Put, Req } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Global, Injectable, Logger, Module, NotFoundException, Param, Put, Req, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
+import { APP_GUARD, DiscoveryModule, DiscoveryService } from '@nestjs/core';
+import { Client } from 'pg';
 import { IsBoolean, IsObject, IsOptional, IsString, Length } from 'class-validator';
 import type { Request } from 'express';
 import { sql } from 'kysely';
@@ -9,6 +11,12 @@ import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { OBS_KEYS, SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
+import { loadEnv } from '../config/env';
+import { LicenseService, type LicenseStatus } from '../license/license.service';
+import { LicenseController } from '../license/license.controller';
+import { MODULE_MAP, MODULES, dependentsOf, type ModuleDef } from './registry';
+import { modulesRef } from './modules-ref';
+import { ModuleGuard, MODULE_KEY, RequireModule } from './module-guard';
 
 /**
  * მოდულები და პარამეტრები (0037): კლინიკა რთავს / თიშავს მოდულს და ცვლის მის პარამეტრებს.
@@ -369,27 +377,165 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
   },
 };
 
-@Injectable()
-export class ModulesService {
-  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+/** მოდულის ეფექტური მდგომარეობა (0085) */
+export type ModuleStateCode = 'active' | 'read_only' | 'disabled' | 'not_licensed' | 'missing_prereq';
+export interface ModuleState { code: string; state: ModuleStateCode; active: boolean; licensed: boolean; enabled: boolean; missing: string[] }
+interface Snapshot { rows: Map<string, { name: string; enabled: boolean; settings: unknown }>; states: Map<string, ModuleState>; license: LicenseStatus }
 
-  list() { return this.db.selectFrom('system_modules').selectAll().orderBy('sort_order').execute(); }
+const SNAP_TTL_MS = 30_000;
+const USABLE: ModuleStateCode[] = ['active', 'read_only'];
+
+@Injectable()
+export class ModulesService implements OnApplicationBootstrap, OnModuleDestroy {
+  private readonly log = new Logger('Modules');
+  private snap?: Promise<Snapshot>;
+  private snapAt = 0;
+  private listener?: Client;
+  private closing = false;
+  constructor(@InjectDb() private readonly db: Database, private readonly audit: AuditService, private readonly notifications: NotificationsService,
+    readonly license: LicenseService, private readonly discovery: DiscoveryService) { license.onChange = () => this.invalidate(); modulesRef.svc = this; }
+
+  // ------------------------------------------------------------------ მდგომარეობა (ქეში + LISTEN emr_modules)
+  invalidate() { this.snap = undefined; }
+
+  private async build(): Promise<Snapshot> {
+    const [rows, license] = await Promise.all([this.db.selectFrom('system_modules').select(['code', 'name', 'enabled', 'settings']).execute(), this.license.status()]);
+    const rowMap = new Map(rows.map((r) => [r.code, { name: r.name, enabled: r.enabled, settings: r.settings }]));
+    const states = new Map<string, ModuleState>();
+    const expired = license.mode === 'licensed' && license.phase === 'expired';
+    const calc = (d: ModuleDef): ModuleState => {
+      const done = states.get(d.code); if (done) return done;
+      const enabled = !!d.core || !!rowMap.get(d.code)?.enabled;
+      const licensed = !!d.core || license.modules === 'all' || license.modules.includes(d.code);
+      const missing = d.hard.filter((h) => !USABLE.includes(calc(MODULE_MAP[h]).state));
+      const state: ModuleStateCode = !licensed ? 'not_licensed' : !enabled ? 'disabled' : missing.length ? 'missing_prereq'
+        : (expired && !d.core) || d.hard.some((h) => states.get(h)?.state === 'read_only') ? 'read_only' : 'active';
+      const st = { code: d.code, state, active: state === 'active', licensed, enabled, missing };
+      states.set(d.code, st);
+      return st;
+    };
+    for (const d of MODULES) calc(d);
+    return { rows: rowMap, states, license };
+  }
+
+  snapshot(): Promise<Snapshot> {
+    if (!this.snap || Date.now() - this.snapAt > SNAP_TTL_MS) {
+      this.snapAt = Date.now();
+      this.snap = this.build().catch((e) => { this.snap = undefined; throw e; });
+    }
+    return this.snap;
+  }
+
+  async state(code: string): Promise<ModuleState> {
+    const st = (await this.snapshot()).states.get(code);
+    if (!st) throw new NotFoundException(`მოდული ვერ მოიძებნა: ${code}`);
+    return st;
+  }
+  /** რბილი კავშირის „პორტი“: true — მოდული სრულად მუშაობს */
+  async isActive(code: string) { return (await this.state(code)).active; }
+  /** მონაცემი იკითხება (active ან read_only) — worker-ის ETL, ანგარიშები */
+  async isUsable(code: string) { return USABLE.includes((await this.state(code)).state); }
+
+  /** 403 შეცდომა მდგომარეობის მიხედვით (guard / assertActive) */
+  async denial(code: string, write: boolean): Promise<ForbiddenException | null> {
+    const snap = await this.snapshot();
+    const st = snap.states.get(code);
+    if (!st) return new ForbiddenException({ code: 'MODULE_DISABLED', message: `მოდული ვერ მოიძებნა: ${code}`, module: code });
+    if (st.state === 'active' || (st.state === 'read_only' && !write)) return null;
+    const name = snap.rows.get(code)?.name ?? code;
+    if (st.state === 'read_only') return new ForbiddenException({ code: 'LICENSE_EXPIRED', message: `ლიცენზიის ვადა გავიდა — „${name}“ მხოლოდ წაკითხვის რეჟიმშია`, module: code });
+    if (st.state === 'not_licensed') return new ForbiddenException({ code: 'MODULE_NOT_LICENSED', message: `მოდული „${name}“ ლიცენზიაში არ შედის`, module: code });
+    if (st.state === 'missing_prereq') {
+      const names = st.missing.map((x) => snap.rows.get(x)?.name ?? x);
+      return new ForbiddenException({ code: 'MODULE_DISABLED', message: `მოდული „${name}“ არააქტიურია — საჭიროა: ${names.join(', ')}`, module: code, missing: st.missing });
+    }
+    return new ForbiddenException({ code: 'MODULE_DISABLED', message: `მოდული „${name}“ გამორთულია (ადმინისტრირება → მოდულები)`, module: code });
+  }
+  /** დინამიკური შემოწმება service-ში (მაგ. დიაგნოსტიკის სექცია); write = false — წაკითხვა read_only-ზეც დაშვებულია */
+  async assertActive(code: string, write = true) { const e = await this.denial(code, write); if (e) throw e; }
+
+  async onApplicationBootstrap() {
+    // რეესტრი ⇄ ბაზა: ყველა კოდს ჩანაწერი უნდა ჰქონდეს (მიგრაცია / რეესტრი ერთად იცვლება)
+    const codes = new Set((await this.db.selectFrom('system_modules').select('code').execute()).map((r) => r.code));
+    const missing = MODULES.filter((d) => !codes.has(d.code)).map((d) => d.code);
+    if (missing.length) throw new Error(`system_modules: რეესტრის კოდებს ჩანაწერი არ აქვთ: ${missing.join(', ')}`);
+    // ყოველ controller-ს — @RequireModule (კლასზე ან ყველა მეთოდზე); სხვაგვარად გაშვება ჩერდება
+    const bad: string[] = [];
+    for (const w of this.discovery.getControllers()) {
+      const cls = w.metatype as (new (...a: unknown[]) => unknown) | undefined;
+      if (!cls) continue;
+      const own = Reflect.getMetadata(MODULE_KEY, cls) as string[] | undefined;
+      for (const c of own ?? []) if (!MODULE_MAP[c]) bad.push(`${cls.name}: უცნობი მოდული ${c}`);
+      const proto = cls.prototype as Record<string, unknown>;
+      for (const k of Object.getOwnPropertyNames(proto)) {
+        if (k === 'constructor' || typeof proto[k] !== 'function' || !Reflect.getMetadata('path', proto[k] as object)) continue;
+        const mm = Reflect.getMetadata(MODULE_KEY, proto[k] as object) as string[] | undefined;
+        if (!own && !mm) bad.push(`${cls.name}.${k}: @RequireModule არ არის`);
+        for (const c of mm ?? []) if (!MODULE_MAP[c]) bad.push(`${cls.name}.${k}: უცნობი მოდული ${c}`);
+      }
+    }
+    if (bad.length) throw new Error(`მოდულების რეესტრი:\n  ${bad.join('\n  ')}`);
+    await this.listen();
+  }
+
+  private async listen() {
+    if (this.closing) return;
+    try {
+      const c = new Client({ connectionString: loadEnv().DATABASE_URL, application_name: 'emr-modules-listen' });
+      c.on('notification', () => this.invalidate());
+      c.on('error', (e) => { this.log.warn(`LISTEN emr_modules: ${e.message} — ხელახლა 10 წმ-ში`); this.listener = undefined; void c.end().catch(() => undefined); setTimeout(() => void this.listen(), 10_000); });
+      await c.connect();
+      await c.query('LISTEN emr_modules');
+      this.listener = c;
+    } catch (e) {
+      this.log.warn(`LISTEN emr_modules: ${(e as Error).message} — ხელახლა 10 წმ-ში (ქეში ${SNAP_TTL_MS / 1000} წმ)`);
+      setTimeout(() => void this.listen(), 10_000);
+    }
+  }
+  async onModuleDestroy() { this.closing = true; await this.listener?.end().catch(() => undefined); }
+
+  // ------------------------------------------------------------------ API
+  async list() {
+    const [rows, snap] = await Promise.all([this.db.selectFrom('system_modules').selectAll().orderBy('sort_order').execute(), this.snapshot()]);
+    return rows.map((r) => {
+      const d = MODULE_MAP[r.code]; const st = snap.states.get(r.code);
+      return { ...r, group: d?.group ?? null, core: !!d?.core, hard: d?.hard ?? [], soft: d?.soft ?? [], settings_of: d?.settingsOf ?? null,
+        dependents: d ? dependentsOf(r.code) : [], state: st?.state ?? 'disabled', active: st?.active ?? false, licensed: st?.licensed ?? false, missing: st?.missing ?? [] };
+    });
+  }
 
   async get(code: string) {
     const m = await this.db.selectFrom('system_modules').selectAll().where('code', '=', code).executeTakeFirst();
     if (!m) throw new NotFoundException('მოდული ვერ მოიძებნა');
     return m;
   }
-  /** მოდულის პარამეტრები; გამორთულზე — 403 */
+  /**
+   * მოდულის პარამეტრები (settingsOf — სხვა მოდულის ჩანაწერიდან). 0085: წვდომას guard წყვეტს (@RequireModule / @ClinicalHistory),
+   * ამიტომ აქ აღარ ისვრის 403-ს — გამორთულ მოდულზე კლინიკური ისტორიის წაკითხვასაც პარამეტრები სჭირდება. ჩაწერის დინამიკური შემოწმება — assertActive.
+   */
   async require<T = Record<string, unknown>>(code: string): Promise<T> {
-    const m = await this.get(code);
-    if (!m.enabled) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: `მოდული „${m.name}“ გამორთულია (ადმინისტრირება → მოდულები)` });
-    return m.settings as T;
+    if (!MODULE_MAP[code]) throw new NotFoundException(`მოდული ვერ მოიძებნა: ${code}`);
+    const snap = await this.snapshot();
+    return (snap.rows.get(MODULE_MAP[code]?.settingsOf ?? code)?.settings ?? {}) as T;
   }
 
   async put(code: string, dto: { enabled?: boolean; settings?: Record<string, unknown>; reason: string }, u: AuthUser, req: Request) {
     const m = await this.get(code);
-    if (dto.enabled === false && !m.can_disable) throw new BadRequestException(`მოდული „${m.name}“ არ ითიშება`);
+    const d = MODULE_MAP[code];
+    if (dto.enabled === false && (!m.can_disable || d?.core)) throw new BadRequestException(`მოდული „${m.name}“ არ ითიშება`);
+    if (dto.enabled !== undefined && dto.enabled !== m.enabled && d) {
+      const rows = await this.db.selectFrom('system_modules').select(['code', 'name', 'enabled']).execute();
+      const byCode = new Map(rows.map((r) => [r.code, r]));
+      if (dto.enabled === false) {
+        const deps = dependentsOf(code).filter((x) => byCode.get(x)?.enabled);
+        if (deps.length) throw new ConflictException({ code: 'MODULE_HAS_DEPENDENTS', message: `ჯერ გამორთეთ დამოკიდებული მოდულები: ${deps.map((x) => byCode.get(x)?.name ?? x).join(', ')}`, dependents: deps });
+      } else {
+        const st = await this.state(code);
+        if (!st.licensed) throw new ConflictException({ code: 'MODULE_NOT_LICENSED', message: `მოდული „${m.name}“ ლიცენზიაში არ შედის` });
+        const miss = d.hard.filter((x) => !MODULE_MAP[x]?.core && !byCode.get(x)?.enabled);
+        if (miss.length) throw new ConflictException({ code: 'MODULE_PREREQ_MISSING', message: `ჯერ ჩართეთ: ${miss.map((x) => byCode.get(x)?.name ?? x).join(', ')}`, missing: miss });
+      }
+    }
     const v = VALIDATORS[code];
     let settings = m.settings as Record<string, unknown>;
     if (dto.settings) {
@@ -407,22 +553,31 @@ export class ModulesService {
         .where('code', '=', code).execute();
       await this.audit.log(auditCtx(req), { action: 'UPDATE_MODULE', entityName: 'system_modules', entityId: code,
         oldData: { enabled: m.enabled, settings: m.settings }, newData: { enabled: dto.enabled ?? m.enabled, settings, reason: dto.reason } }, trx);
+      await sql`SELECT pg_notify('emr_modules', ${code})`.execute(trx);
     });
+    this.invalidate();
     if (code === 'worklist') this.notifications.clearSuppressionCache();   // 0084: ზარის ჩახშობა — მაშინვე
-    return this.get(code);
+    return (await this.list()).find((x) => x.code === code);
   }
 }
 
 class ModuleDto { @IsOptional() @IsBoolean() enabled?: boolean; @IsOptional() @IsObject() settings?: Record<string, unknown>; @IsString() @Length(3, 500) reason: string }
 
 @Controller('modules')
+@RequireModule('core')
 export class ModulesController {
   constructor(private readonly s: ModulesService) {}
-  /** ყველა შესულ მომხმარებელს — მენიუ / ჩანართები მოდულის მიხედვით */
+  /** ყველა შესულ მომხმარებელს — მენიუ / ჩანართები მოდულის მიხედვით (state / active) */
   @Get() list() { return this.s.list(); }
   @Put(':code') @Roles('admin') put(@Param('code') code: string, @Body() d: ModuleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.put(code, d, u, r); }
 }
 
 @Global()
-@Module({ providers: [ModulesService], controllers: [ModulesController], exports: [ModulesService] })
+@Module({ imports: [DiscoveryModule], providers: [ModulesService, LicenseService, { provide: APP_GUARD, useClass: ModuleGuard }],
+  controllers: [ModulesController, LicenseController], exports: [ModulesService, LicenseService] })
 export class ModulesModule {}
+
+/** worker: იგივე სერვისები, controller-ებისა და guard-ის გარეშე */
+@Global()
+@Module({ imports: [DiscoveryModule], providers: [ModulesService, LicenseService], exports: [ModulesService, LicenseService] })
+export class ModulesCoreModule {}

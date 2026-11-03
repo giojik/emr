@@ -1,7 +1,7 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { DB } from '../database/db';
-import { split } from '../tariffs/payer-engine';
-import { calcLines, patientCtx, versionRules } from '../tariffs/payer-shares';
+import { split } from '../billing/payer-engine';
+import { calcLines, patientCtx, versionRules } from '../billing/payer-shares';
 import { drgPrices, type StayPrice } from '../drg/drg-calc';
 
 /**
@@ -26,8 +26,8 @@ export const PAYER_KIND_KA: Record<string, string> = { insurance: 'დაზღ�
 export const MODE_KA: Record<string, string> = { percent: 'პროცენტი', fixed: 'ფიქსირებული თანხა', drg: 'DRG' };
 
 // 0054: ძრავა — საერთო ფენაში (tariffs/payer-engine.ts); აქ — ხელახალი ექსპორტი (თავსებადობა)
-export { split } from '../tariffs/payer-engine';
-export type { CalcLine, CalcPayer, PayerResult, SplitResult } from '../tariffs/payer-engine';
+export { split } from '../billing/payer-engine';
+export type { CalcLine, CalcPayer, PayerResult, SplitResult } from '../billing/payer-engine';
 
 /** ჰოსპიტალიზაციის ფინანსური მდგომარეობა: ხაზები, გადამხდელები (აქტიური), გაანგარიშება, ავანსი, გადახდები */
 export async function loadBilling(ex: Ex, encounterId: string) {

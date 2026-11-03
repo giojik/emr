@@ -1,8 +1,10 @@
 import { Controller, DefaultValuePipe, Get, Param, ParseBoolPipe, ParseIntPipe, Query } from '@nestjs/common';
 import { Icd10Service } from './icd10.service';
+import { RequireModule } from '../modules/module-guard';
 
 /** კლასიფიკატორი — ხელმისაწვდომია ყველა ავტორიზებული მომხმარებლისთვის, მხოლოდ წაკითხვა */
 @Controller('icd10')
+@RequireModule('mpi')
 export class Icd10Controller {
   constructor(private readonly icd: Icd10Service) {}
 

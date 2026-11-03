@@ -70,6 +70,9 @@ const EnvSchema = z.object({
   LDAP_TLS_CA_FILE: z.string().optional(),             // შიდა CA სერტიფიკატი (PEM)
   LDAP_TLS_REJECT_UNAUTHORIZED: bool(true),
   LDAP_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
+  // --- ლიცენზია (0085): სატესტო გასაღები (e2e) — მხოლოდ NODE_ENV ≠ production ---
+  LICENSE_TEST_KEY: bool(false),
 }).superRefine((e, ctx) => {
   if (!e.AUTH_LOCAL_ENABLED && !e.AUTH_LDAP_ENABLED) {
     ctx.addIssue({ code: 'custom', message: 'მინიმუმ ერთი პროვაიდერი უნდა იყოს ჩართული (AUTH_LOCAL_ENABLED / AUTH_LDAP_ENABLED)' });

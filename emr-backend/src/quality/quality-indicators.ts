@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { EVENT_KA, EVENT_TYPES, HARM_KA, type Ex, QM_FULL, QmCommon } from './quality-common';
 import { DENOM_KA, SERVICE_KA, SERVICE_TYPES } from './quality-metrics';
+import { RequireModule } from '../modules/module-guard';
 
 class IndicatorDto {
   @Matches(/^[a-z][a-z0-9_]{1,29}$/, { message: 'კოდი: ლათინური პატარა ასოები / ციფრები / _, 2–30' }) code: string;
@@ -124,6 +125,7 @@ export class QmIndicatorsService {
 }
 
 @Controller('quality/indicators')
+@RequireModule('quality')
 export class QmIndicatorsController {
   constructor(private readonly s: QmIndicatorsService) {}
   @Get() @Roles('quality', 'quality_dept', 'quality_view') list(@Query('all') all?: string) { return this.s.list(all === 'true'); }

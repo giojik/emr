@@ -15,6 +15,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { news2, NEWS2_KA, NEWS2_RANK, type News2Level } from './news2';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -563,13 +564,14 @@ export class NursingService {
 
 // ================================================================= controller
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class NursingController {
   constructor(private readonly s: NursingService) {}
-  @Get('stays/:eid/nursing') @Roles(...READ)
+  @Get('stays/:eid/nursing') @ClinicalHistory() @Roles(...READ)
   get(@Param('eid', ParseUUIDPipe) eid: string, @Query('days') days: string | undefined, @CurrentUser() u: AuthUser) {
     return this.s.stayData(eid, Math.min(30, Math.max(1, Number(days) || 3)), u);
   }
-  @Get('stays/:eid/nursing/summary') @Roles(...READ) summary(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.summary(eid); }
+  @Get('stays/:eid/nursing/summary') @ClinicalHistory() @Roles(...READ) summary(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.summary(eid); }
   @Get('departments/:id/handover') @Roles(...READ) handover(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.departmentHandover(id, u); }
   @Get('nursing/scales') @Roles(...READ) scales(@Query('all') all?: string) { return this.s.scaleDefs(all === 'true'); }
 

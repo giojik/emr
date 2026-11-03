@@ -11,6 +11,7 @@ import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { type Cond, condsText, FIELDS, normPattern, parseConds, PATTERN_RE, validateCond } from '../drg/drg-engine';
 import { BUILTIN_PARAMS, CUSTOM_FORBIDDEN, GROUP_KA, PAYER_RULES, scrubInvoice, scrubSettings } from './scrub-engine';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const READ: Role[] = ['admin', 'billing', 'drg', 'drg_admin', 'accountant', 'viewer', 'tariffs'];
 const ADMIN: Role[] = ['admin', 'drg_admin'];
@@ -182,6 +183,7 @@ export class ScrubService {
 }
 
 @Controller('scrub')
+@RequireModule('scrubber')
 export class ScrubController {
   constructor(private readonly s: ScrubService) {}
   @Get('meta') @Roles(...READ) meta() { return this.s.meta(); }
@@ -190,7 +192,7 @@ export class ScrubController {
   @Patch('rules/:code') @Roles(...ADMIN) update(@Param('code') c: string, @Body() d: RuleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.update(c.toUpperCase(), d, u, auditCtx(r)); }
   @Delete('rules/:code') @Roles(...ADMIN) remove(@Param('code') c: string, @Req() r: Request) { return this.s.remove(c.toUpperCase(), auditCtx(r)); }
   @Get('invoices/:id') @Roles(...CASE_READ) inv(@Param('id', ParseUUIDPipe) id: string) { return this.s.forInvoice(id); }
-  @Get('stays/:eid') @Roles(...CASE_READ) stay(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.forStay(eid); }
+  @Get('stays/:eid') @ModulePort() @Roles(...CASE_READ) stay(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.forStay(eid); }
   @Post('overrides') @Roles(...OVERRIDE) override(@Body() d: OverrideDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.override(d, u, auditCtx(r)); }
   @Post('overrides/:id/revoke') @HttpCode(200) @Roles(...OVERRIDE)
   revoke(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.revoke(id, d, u, auditCtx(r)); }

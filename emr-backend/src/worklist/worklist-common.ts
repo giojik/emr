@@ -3,6 +3,7 @@ import { loadEnv } from '../config/env';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
+import { modulesRef } from '../modules/modules-ref';
 
 export type Trx = Transaction<DB>;
 export type Ex = Database | Trx;
@@ -160,7 +161,7 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   stk_count: { group: 'მარაგი', name: 'ინვენტარიზაცია — დასრულება / დამტკიცება', module: 'stock', who: 'დამწყები (ღია); საწყობის მენეჯერი (დათვლილი)' },
   stk_expiry: { group: 'მარაგი', name: 'ვადაგასული / ვადა იწურება (ლოკაციაზე)', module: 'stock', who: 'როგორც დილის შეტყობინებაში' },
   stk_min: { group: 'მარაგი', name: 'მინიმუმზე ქვემოთ (ლოკაციაზე)', module: 'stock', who: 'როგორც დილის შეტყობინებაში' },
-  stk_empties: { group: 'მარაგი', name: 'ცარიელი ამპულის დაბრუნება — დადასტურება', module: 'stock', who: 'ფარმაცევტი (არ არის — მესაწყობე / საწყობის მენეჯერი)' },
+  stk_empties: { group: 'მარაგი', name: 'ცარიელი ამპულის დაბრუნება — დადასტურება', module: 'pharmacy', who: 'ფარმაცევტი (არ არის — მესაწყობე / საწყობის მენეჯერი)' },
   stk_quarantine: { group: 'მარაგი', name: 'ლოტი კარანტინშია — გადაწყვეტილება', module: 'stock', who: 'საწყობის მენეჯერი / ფარმაცევტი' },
   // ---- 0082: შესყიდვები
   proc_pr_approve: { group: 'შესყიდვები', name: 'შესყიდვის მოთხოვნა (PR) — ჩემი დამტკიცების ნაბიჯი', module: 'procurement', who: 'L1 — საწყობის მენეჯერი; ფინანსური — procurement_approve; ნარკოტიკული — ფარმაცევტი' },
@@ -195,15 +196,15 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   doc_discharge: { group: 'კლინიკური დოკუმენტაცია', name: 'გაწერილი — დოკუმენტაცია დაუხურავია (ეპიკრიზი)', module: 'inpatient', who: 'მკურნალი ექიმი' },
   doc_cosign: { group: 'კლინიკური დოკუმენტაცია', name: 'ეპიკრიზი — თანახელმოწერა', module: 'inpatient', who: 'განყოფილების ხელმძღვანელი (ხელმომწერის გარდა)' },
   doc_consent: { group: 'კლინიკური დოკუმენტაცია', name: 'სავალდებულო თანხმობა აკლია', module: 'inpatient', who: 'მკურნალი ექიმი' },
-  amb_open: { group: 'კლინიკური დოკუმენტაცია', name: 'ამბულატორიული ვიზიტი დაუხურავია', module: 'core', who: 'ვიზიტის ექიმი' },
+  amb_open: { group: 'კლინიკური დოკუმენტაცია', name: 'ამბულატორიული ვიზიტი დაუხურავია', module: 'outpatient', who: 'ვიზიტის ექიმი' },
   // ---- 0083: დანიშნულებები / MAR
-  med_verify: { group: 'დანიშნულებები / MAR', name: 'დანიშნულების ვერიფიკაცია', module: 'inpatient', who: 'med_verifier: ფარმაცევტი / განყოფილების მთავარი ექთანი / ორივე' },
-  med_rejected: { group: 'დანიშნულებები / MAR', name: 'ვერიფიკაციაზე უარი — დანიშნულება გადასახედია', module: 'inpatient', who: 'დამნიშნავი' },
-  med_approve: { group: 'დანიშნულებები / MAR', name: 'შეზღუდული ანტიბიოტიკი — დამტკიცება', module: 'inpatient', who: 'abx_approver: განყოფილების ხელმძღვანელი / ფარმაცევტი / ინფექციის კონტროლი' },
-  med_verbal: { group: 'დანიშნულებები / MAR', name: 'ზეპირი დანიშნულება — დადასტურება', module: 'inpatient', who: 'დამნიშნავი ექიმი' },
-  med_abx_end: { group: 'დანიშნულებები / MAR', name: 'ანტიბიოტიკი სრულდება 24 სთ-ში', module: 'inpatient', who: 'დამნიშნავი + მკურნალი ექიმი' },
-  mar_due: { group: 'დანიშნულებები / MAR', name: 'MAR — ახლა შესასრულებელი დოზები (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
-  mar_missed: { group: 'დანიშნულებები / MAR', name: 'MAR — ვადაგადაცილებული / გამოტოვებული (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
+  med_verify: { group: 'დანიშნულებები / MAR', name: 'დანიშნულების ვერიფიკაცია', module: 'ipd_orders', who: 'med_verifier: ფარმაცევტი / განყოფილების მთავარი ექთანი / ორივე' },
+  med_rejected: { group: 'დანიშნულებები / MAR', name: 'ვერიფიკაციაზე უარი — დანიშნულება გადასახედია', module: 'ipd_orders', who: 'დამნიშნავი' },
+  med_approve: { group: 'დანიშნულებები / MAR', name: 'შეზღუდული ანტიბიოტიკი — დამტკიცება', module: 'ipd_orders', who: 'abx_approver: განყოფილების ხელმძღვანელი / ფარმაცევტი / ინფექციის კონტროლი' },
+  med_verbal: { group: 'დანიშნულებები / MAR', name: 'ზეპირი დანიშნულება — დადასტურება', module: 'ipd_orders', who: 'დამნიშნავი ექიმი' },
+  med_abx_end: { group: 'დანიშნულებები / MAR', name: 'ანტიბიოტიკი სრულდება 24 სთ-ში', module: 'ipd_orders', who: 'დამნიშნავი + მკურნალი ექიმი' },
+  mar_due: { group: 'დანიშნულებები / MAR', name: 'MAR — ახლა შესასრულებელი დოზები (პაციენტზე)', module: 'mar', who: 'განყოფილების ექთნები (nurse_scope)' },
+  mar_missed: { group: 'დანიშნულებები / MAR', name: 'MAR — ვადაგადაცილებული / გამოტოვებული (პაციენტზე)', module: 'mar', who: 'განყოფილების ექთნები (nurse_scope)' },
   // ---- 0083: კონსულტაცია / გადაყვანა
   consult_todo: { group: 'კონსულტაცია / გადაყვანა', name: 'კონსულტაცია — მოთხოვნილი', module: 'inpatient', who: 'სამიზნე ექიმი / განყოფილების ექიმები (სასწრაფო + duty — მორიგე)' },
   transfer_in: { group: 'კონსულტაცია / გადაყვანა', name: 'გადმოყვანის მოთხოვნა', module: 'inpatient', who: 'მიმღები განყოფილება (dept_side)' },
@@ -224,29 +225,29 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   or_docs: { group: 'საოპერაციო / PACU', name: 'ოქმი / ანესთეზიის რუკა — ხელმოსაწერი', module: 'or', who: 'ოქმი — ოპერატორი; რუკა — გუნდის ანესთეზიოლოგი' },
   or_pacu: { group: 'საოპერაციო / PACU', name: 'PACU — პაციენტი (გაწერა / დიდხანს)', module: 'or', who: 'PACU-ს ექთანი + გუნდის ანესთეზიოლოგი' },
   // ---- 0084: ლაბორატორია
-  lab_collect: { group: 'ლაბორატორია', name: 'ნიმუში ასაღებია (პაციენტზე)', module: 'core', who: 'სტაციონარი — განყოფილების ექთნები (nurse_scope); ამბულატორია — ფლებოტომისტი (არ არის — diagnostic)' },
-  lab_recollect: { group: 'ლაბორატორია', name: 'ნიმუში ვერ აიღეს — თავიდან ასაღებია', module: 'core', who: 'აღების მხარე (როგორც lab_collect)' },
-  lab_receive: { group: 'ლაბორატორია', name: 'აღებული სინჯარა ლაბ.-ში არ მიუღიათ', module: 'core', who: 'ლაბ. (diagnostic / lab_doctor)' },
-  lab_result: { group: 'ლაბორატორია', name: 'შედეგი — სასწრაფო / TAT გადაცილებული', module: 'core', who: 'ლაბ. (diagnostic; არ არის — lab_doctor)' },
-  lab_validate: { group: 'ლაბორატორია', name: 'შედეგის ვალიდაცია', module: 'core', who: 'ლაბ. ექიმი (lab_doctor)' },
-  lab_crit_call: { group: 'ლაბორატორია', name: 'კრიტიკული მნიშვნელობა — „ვის ეცნობა“ ჩასაწერია', module: 'core', who: 'ვალიდატორი (არ არის — lab_doctor)' },
-  lab_qc: { group: 'ლაბორატორია', name: 'QC დარღვევა — განსახილველი', module: 'core', who: 'lab_doctor / lab_manager' },
-  lab_unmatched: { group: 'ლაბორატორია', name: 'მიუბმელი პასუხები (ანალიზატორი / ელფოსტა)', module: 'core', who: 'ლაბ. (diagnostic / lab_doctor)' },
-  lab_ext_send: { group: 'ლაბორატორია', name: 'გარე ლაბ. — გასაგზავნი (აქტის გარეშე)', module: 'core', who: 'ლაბ. (diagnostic)' },
-  lab_ext_due: { group: 'ლაბორატორია', name: 'გარე ლაბ. — პასუხი ვადაგადაცილებულია', module: 'core', who: 'ლაბ. (diagnostic)' },
+  lab_collect: { group: 'ლაბორატორია', name: 'ნიმუში ასაღებია (პაციენტზე)', module: 'lab', who: 'სტაციონარი — განყოფილების ექთნები (nurse_scope); ამბულატორია — ფლებოტომისტი (არ არის — diagnostic)' },
+  lab_recollect: { group: 'ლაბორატორია', name: 'ნიმუში ვერ აიღეს — თავიდან ასაღებია', module: 'lab', who: 'აღების მხარე (როგორც lab_collect)' },
+  lab_receive: { group: 'ლაბორატორია', name: 'აღებული სინჯარა ლაბ.-ში არ მიუღიათ', module: 'lab', who: 'ლაბ. (diagnostic / lab_doctor)' },
+  lab_result: { group: 'ლაბორატორია', name: 'შედეგი — სასწრაფო / TAT გადაცილებული', module: 'lab', who: 'ლაბ. (diagnostic; არ არის — lab_doctor)' },
+  lab_validate: { group: 'ლაბორატორია', name: 'შედეგის ვალიდაცია', module: 'lab', who: 'ლაბ. ექიმი (lab_doctor)' },
+  lab_crit_call: { group: 'ლაბორატორია', name: 'კრიტიკული მნიშვნელობა — „ვის ეცნობა“ ჩასაწერია', module: 'lab', who: 'ვალიდატორი (არ არის — lab_doctor)' },
+  lab_qc: { group: 'ლაბორატორია', name: 'QC დარღვევა — განსახილველი', module: 'lab_qc', who: 'lab_doctor / lab_manager' },
+  lab_unmatched: { group: 'ლაბორატორია', name: 'მიუბმელი პასუხები (ანალიზატორი / ელფოსტა)', module: 'lab', who: 'ლაბ. (diagnostic / lab_doctor)' },
+  lab_ext_send: { group: 'ლაბორატორია', name: 'გარე ლაბ. — გასაგზავნი (აქტის გარეშე)', module: 'lab_external', who: 'ლაბ. (diagnostic)' },
+  lab_ext_due: { group: 'ლაბორატორია', name: 'გარე ლაბ. — პასუხი ვადაგადაცილებულია', module: 'lab_external', who: 'ლაბ. (diagnostic)' },
   // ---- 0084: პასუხის გაცნობა (ექიმი)
   res_critical: { group: 'პასუხის გაცნობა', name: 'კრიტიკული პასუხი — დადასტურება', module: 'core', who: 'დამნიშნავი + მკურნალი; critical_ack_min-ის შემდეგ — + ხელმძღვანელი (არ არის — ცვლაში მყოფი / განყოფილების ექიმები)' },
   res_ack: { group: 'პასუხის გაცნობა', name: 'პასუხი გასაცნობია (პაციენტზე)', module: 'core', who: 'სტაციონარი — მკურნალი; ამბულატორია — დამნიშნავი ექიმი' },
   // ---- 0084: რადიოლოგია / ენდოსკოპია
   rad_schedule: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა დასაგეგმია (დრო არ აქვს)', module: 'core', who: 'rad_scheduler: რადიოგრაფერი / ენდოსკოპიის ექთანი / რეგისტრატორი' },
   rad_perform: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა შესასრულებელია (დრო გავიდა / მოსულია)', module: 'core', who: 'რადიოგრაფერი' },
-  rad_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'რადიოლოგიის დასკვნა — ხელმოსაწერი', module: 'core', who: 'რადიოლოგი (მონახაზი — ავტორი)' },
-  endo_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ენდოსკოპიის დასკვნა — ხელმოსაწერი', module: 'core', who: 'ენდოსკოპისტი (შემსრულებელი; არ არის — ყველა)' },
-  endo_path: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ბიოფსია — გასაგზავნი / პასუხი აგვიანებს / გასაცნობი', module: 'core', who: 'ენდოსკოპიის პერსონალი; გაცნობა — ენდოსკოპისტი' },
+  rad_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'რადიოლოგიის დასკვნა — ხელმოსაწერი', module: 'radiology', who: 'რადიოლოგი (მონახაზი — ავტორი)' },
+  endo_report: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ენდოსკოპიის დასკვნა — ხელმოსაწერი', module: 'endoscopy', who: 'ენდოსკოპისტი (შემსრულებელი; არ არის — ყველა)' },
+  endo_path: { group: 'რადიოლოგია / ენდოსკოპია', name: 'ბიოფსია — გასაგზავნი / პასუხი აგვიანებს / გასაცნობი', module: 'endoscopy', who: 'ენდოსკოპიის პერსონალი; გაცნობა — ენდოსკოპისტი' },
   dx_issue: { group: 'რადიოლოგია / ენდოსკოპია', name: 'კვლევა / ნიმუში „ვერ შესრულდა“ — გადასაწყვეტი', module: 'core', who: 'დამნიშნავი ექიმი (არ არის — მკურნალი)' },
   // ---- 0084: ამბულატორიული მიმართვები
-  ref_todo: { group: 'ამბულატორიული მიმართვები', name: 'მიმართვა — შესასრულებელი', module: 'core', who: 'hospitalization — რეგისტრატორი (reg_scope); სხვა — diagnostic (სამიზნე განყოფილება)' },
-  amb_dx_pending: { group: 'ამბულატორიული მიმართვები', name: 'დანიშნული კვლევა არ ჩატარებულა (პაციენტზე)', module: 'core', who: 'დამნიშნავი ექიმი' },
+  ref_todo: { group: 'ამბულატორიული მიმართვები', name: 'მიმართვა — შესასრულებელი', module: 'outpatient', who: 'hospitalization — რეგისტრატორი (reg_scope); სხვა — diagnostic (სამიზნე განყოფილება)' },
+  amb_dx_pending: { group: 'ამბულატორიული მიმართვები', name: 'დანიშნული კვლევა არ ჩატარებულა (პაციენტზე)', module: 'outpatient', who: 'დამნიშნავი ექიმი' },
 };
 export const SOURCE_CODES = Object.keys(SOURCES);
 
@@ -350,7 +351,10 @@ export async function wlSettings(ex: Ex): Promise<{ enabled: boolean; s: WlSetti
   const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
   return { enabled: !!m?.enabled, s: { ...WL_DEFAULTS, ...((m?.settings ?? {}) as Partial<WlSettings>) } };
 }
+/** აქტიური მოდულები (0085: ლიცენზია + ჩართვა + წინაპირობები — ModulesService); core — ბირთვი, ყოველთვის. სერვისის გარეშე — enabled-ის მიხედვით */
 export async function enabledModules(ex: Ex): Promise<Set<string>> {
+  const svc = modulesRef.svc;
+  if (svc) return new Set(['core', ...[...(await svc.snapshot()).states.values()].filter((x) => x.active).map((x) => x.code)]);
   const r = await ex.selectFrom('system_modules').select('code').where('enabled', '=', true).execute();
-  return new Set(['core', ...r.map((x) => x.code)]);   // core — ბირთვი (რეგისტრატურა / სალარო), ყოველთვის ჩართული
+  return new Set(['core', ...r.map((x) => x.code)]);
 }

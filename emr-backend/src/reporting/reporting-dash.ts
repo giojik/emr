@@ -15,6 +15,7 @@ import type { Database } from '../database/database.module';
 import { n, r2, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { RptKpiService, type Totals } from './reporting-kpi';
 import { ReportingService } from './reporting';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * თემატური დაფები (0061): ხელმძღვანელობა / განყოფილება.
@@ -324,6 +325,7 @@ export class ReportingDashService {
 }
 
 @Controller('reporting')
+@RequireModule('reporting')
 export class ReportingDashController {
   constructor(private readonly s: ReportingDashService) {}
   @Get('dashboards') @Roles(...RPT_READ) dashboards() { return this.s.dashboards(); }

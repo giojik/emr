@@ -17,6 +17,7 @@ import { loadEnv } from '../config/env';
 import { LINE_KA } from './nursing';
 import { OrdersModule, OrdersService } from './orders';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 type Trx = Transaction<DB>;
@@ -434,6 +435,7 @@ export class DischargeService {
 const IPD = ['admin', 'doctor', 'nurse', 'manager'] as const;
 
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class DischargeController {
   constructor(private readonly s: DischargeService) {}
   @Get('stays/:eid/discharge/check') @Roles(...IPD) check(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.check(eid, u); }

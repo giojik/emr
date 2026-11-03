@@ -15,6 +15,7 @@ import { StockOpsService } from '../stock/stock-ops';
 import { OR_READ } from './or-admin';
 import { OrService } from './or';
 import { assembleCard, cardItems, COUNT_KINDS, countState, lotsAt, orEvent, stockAt, TZ, type Ex } from './or-shared';
+import { RequireModule } from '../modules/module-guard';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : Number(value));
 const q3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -406,6 +407,7 @@ export class OrMaterialsService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrMaterialsController {
   constructor(private readonly s: OrMaterialsService) {}
   @Get('cases/:id/materials') @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }

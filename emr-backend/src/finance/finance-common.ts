@@ -5,7 +5,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { NotificationsService } from '../notifications/notifications';
-import { FIN_FULL, finRules, type FinRules } from './finance-rules';
+import { FIN_FULL, finRules, type FinRules } from '../billing/finance-rules';
 
 export const TZ = loadEnv().CLINIC_TZ;
 export type Trx = Transaction<DB>;

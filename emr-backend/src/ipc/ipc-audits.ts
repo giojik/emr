@@ -11,6 +11,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_AGG, IPC_FULL, IpcCommon, ipcRules } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -317,6 +318,7 @@ export class IpcAuditsService {
 }
 
 @Controller('ipc')
+@RequireModule('ipc')
 export class IpcAuditsController {
   constructor(private readonly s: IpcAuditsService) {}
   @Get('audit-templates') @Roles(...AUDIT_ROLES, 'infection_view') templates(@Query('all') all?: string) { return this.s.templates(all === '1'); }

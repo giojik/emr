@@ -2,7 +2,7 @@ import { sql, type RawBuilder, type Transaction } from 'kysely';
 import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { revenueCte } from '../finance/finance-reports';
-import type { FinRules } from '../finance/finance-rules';
+import type { FinRules } from '../billing/finance-rules';
 import { n, r2 } from './reporting-common';
 
 /**

@@ -4,7 +4,7 @@ import { sql, type RawBuilder } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser, Role } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { InjectDb, type Database } from '../database/database.module';
 import { SOURCES, TZ, WL_DEFAULTS, enabledModules, isAll, manageDepts, wlSettings, type Priority, type WlItem } from './worklist-common';
 import { WorklistSources } from './worklist-sources';

@@ -13,12 +13,13 @@ import type { AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { FinClaimsService } from '../finance/finance-claims';
 import { FinCommon, n, r2, type Trx } from '../finance/finance-common';
-import { CLAIM_RESOLVE, FIN_EDIT, FIN_FULL } from '../finance/finance-rules';
+import { CLAIM_RESOLVE, FIN_EDIT, FIN_FULL } from '../billing/finance-rules';
 import { stableJson } from '../drg/drg-engine';
 import { errorText, loadRules, scrubInvoice, scrubSettings } from '../scrub/scrub-engine';
 import { DATE_FORMAT_LIST, type ExportConfig, FILE_TOKENS, FIELDS_FOR_UI, parseResponseFile, type ParsedResp, renderExport, RESP_KEYS, RESP_STATUSES, type RespStatus,
   validateExport, validateResponse } from './claim-template';
 import { claimRows } from './export-fields';
+import { RequireModule } from '../modules/module-guard';
 
 const ERR = {
   claim_templates_code_key: 'შაბლონი ამ კოდით უკვე არსებობს',
@@ -559,6 +560,7 @@ class IdsDto { @IsOptional() @IsArray() @ArrayMaxSize(5000) @IsUUID('all', { eac
 const uuidOk = (x?: string) => !x || /^[0-9a-f-]{36}$/i.test(x);
 
 @Controller()
+@RequireModule('finance')
 export class ClaimExportController {
   constructor(private readonly s: ClaimExportService) {}
   // შაბლონები

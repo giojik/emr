@@ -5,7 +5,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { initials, ROLE_KA } from '../lib/format';
-import { useModules } from '../lib/modules';
+import { useLicenseStatus, useModules, type LicenseStatus } from '../lib/modules';
+import { dateGe, tsDate } from '../lib/format';
 
 /** roles — ვის ჩანს (ცარიელი — ყველა უფლებიანს); module — მხოლოდ ჩართული მოდულისას (0037) */
 const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting?: [string, string]; not?: Role[] }[] = [
@@ -102,7 +103,25 @@ export default function Shell() {
           </div>
         </div>
       </aside>
-      <div className="main"><Outlet /></div>
+      <div className="main"><LicenseBanner admin={can(user, 'admin', 'manager')} /><Outlet /></div>
     </div>
   );
+}
+
+/** 0085: ლიცენზიის ბანერი — admin / manager: გაფრთხილების მთელი პერიოდი (+ dev / ლიცენზიის გარეშე); ყველა: ბოლო 7 დღე, შეღავათი, ვადაგასული */
+function licenseText(st: LicenseStatus): [string, string] | null {
+  if (st.mode === 'dev') return ['სატესტო რეჟიმი: ლიცენზია არ არის — ყველა მოდული ჩართულია.', 'info'];
+  if (st.mode === 'none') return ['ლიცენზია არ არის — მუშაობს მხოლოდ ბირთვი (ადმინისტრირება → ლიცენზია).', 'danger'];
+  if (st.phase === 'warning') return [`ლიცენზიის ვადა იწურება ${st.expires ? dateGe(st.expires) : ''}${st.days_left !== null ? ` (დარჩა ${st.days_left} დღე)` : ''} — განახლებისთვის დაუკავშირდით მომწოდებელს.`, 'warn'];
+  if (st.phase === 'grace') return [`ლიცენზიის ვადა გავიდა ${st.expires ? dateGe(st.expires) : ''}. სისტემა სრულად მუშაობს ${st.grace_until ? tsDate(st.grace_until) : ''}-მდე, შემდეგ ოპციური მოდულები მხოლოდ წაკითხვაზე გადავა.`, 'warn'];
+  if (st.phase === 'expired') return ['ლიცენზიის ვადა გავიდა — ოპციური მოდულები მხოლოდ წაკითხვის რეჟიმშია (ნახვა / ბეჭდვა — კი, ახალი ჩანაწერი — არა). ბირთვი მუშაობს.', 'danger'];
+  return null;
+}
+function LicenseBanner({ admin }: { admin: boolean }) {
+  const q = useLicenseStatus();
+  const st = q.data;
+  if (!st || st.banner === 'none' || (st.banner === 'admins' && !admin)) return null;
+  const t = licenseText(st);
+  if (!t) return null;
+  return <div role="status" className={`license-banner ${t[1]}`}>{t[0]}{admin && <> <NavLink to="/admin/license">ლიცენზია →</NavLink></>}</div>;
 }

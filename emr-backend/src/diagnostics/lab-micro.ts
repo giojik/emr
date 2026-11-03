@@ -15,6 +15,7 @@ import { DiagnosticsService } from './diagnostics.service';
 import { LabDeliveryService } from './lab-delivery';
 import { LabNotifyService } from './lab-notify';
 import { IpcMdroService } from '../ipc/ipc-mdro';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
 const EDITABLE = ['collected', 'in_progress', 'resulted'];
@@ -284,6 +285,7 @@ class AstDto { @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Ty
 void IsInt;
 
 @Controller('lab/micro')
+@RequireModule('lab_micro')
 export class LabMicroController {
   constructor(private readonly m: LabMicroService, @Inject(forwardRef(() => LabDeliveryService)) private readonly delivery: LabDeliveryService,
     private readonly labNotify: LabNotifyService, private readonly ipc: IpcMdroService) {}
@@ -310,8 +312,8 @@ export class LabMicroController {
       await this.ipc.afterMicroFinal(id);                                   // 0067: MDRO ფლაგი (შეცდომა ვალიდაციას არ აჩერებს)
       void this.delivery.afterValidate(id, auditCtx(r)); void this.labNotify.ready(id, u.id).catch(() => undefined); return x; });
   }
-  @Get('items/:id/view') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist') view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.m.view(id, u); }
-  @Get('items/:id/report.pdf') @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
+  @Get('items/:id/view') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist') view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.m.view(id, u); }
+  @Get('items/:id/report.pdf') @ClinicalHistory() @Roles(...LAB_STAFF, 'doctor', 'nurse', 'receptionist')
   async report(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Res({ passthrough: true }) res: Response) {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
     return new StreamableFile(await this.m.pdf(id, u));

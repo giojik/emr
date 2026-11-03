@@ -8,15 +8,16 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
-import { applyOpdRules, computeOpd } from '../tariffs/payer-shares';
-import { repriceLines, repriceOnPayerChange } from '../tariffs/reprice';
-import { REPRICE, tariffRules } from '../tariffs/tariff-rules';
-import { finRules, OPD_PAYER_EDIT } from '../finance/finance-rules';
+import { applyOpdRules, computeOpd } from './payer-shares';
+import { repriceLines, repriceOnPayerChange } from './reprice';
+import { REPRICE, tariffRules } from './tariff-rules';
+import { finRules, OPD_PAYER_EDIT } from './finance-rules';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import { AdjustLineDto, PaymentDto } from '../encounters/dto/encounters.dto';
 import { EncountersModule } from '../encounters/encounters.module';
 import { EncountersService, PAYMENT_ERRORS } from '../encounters/encounters.service';
+import { RequireModule } from '../modules/module-guard';
 
 @Injectable()
 export class BillingService {
@@ -204,6 +205,7 @@ export class RepriceDto {
 }
 
 @Controller('invoices')
+@RequireModule('billing')
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
 

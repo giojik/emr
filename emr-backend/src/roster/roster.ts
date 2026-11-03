@@ -15,6 +15,7 @@ import {
   REST, ROSTER_VIEW_ALL, absenceScope, addDays, canEdit, canHead, canView, evaluate, isoDow, monthDays, needEdit, rosterScope, shiftTimes, staffName, today, tz,
   type Ex, type RosterSettings, type RuleEntry, type Trx, type Violation,
 } from './roster-common';
+import { RequireModule } from '../modules/module-guard';
 
 const MONTH_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
 export const monthLabel = (m: string) => `${MONTH_KA[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
@@ -648,6 +649,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** ცვლები / მორიგეობა — განრიგი (0077). უფლებები სერვისში (განყოფილების არე) */
 @Controller('roster')
+@RequireModule('roster')
 export class RosterController {
   constructor(private readonly s: RosterService) {}
   @Get('rosters') list(@Query('month') month: string, @CurrentUser() u: AuthUser) {

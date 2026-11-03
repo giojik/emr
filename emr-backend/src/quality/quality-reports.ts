@@ -7,12 +7,13 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import type { Database } from '../database/database.module';
 import { toCsv } from '../finance/finance-common';
 import { DATE_RE, daysBetween, InjectReadDb, RPT_ALL, rptModule, TZ, UUID_RE } from '../reporting/reporting-common';
 import { EVENT_KA, EVENT_TYPES, HARM_KA, HARMS, QmCommon, STATUS_KA } from './quality-common';
 import { bedDays, categoryExpander, DENOM_KA, HARM_ORDER, type Indicator, indicatorMatch, loadIndicators, rate, SERVICE_KA, SERVICE_TYPES } from './quality-metrics';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ხარისხის ანგარიშები (0066): შეჯამება + 13 თვე, განაწილება (pivot), ინდიკატორები, ვადები / შესრულება, CAPA, ხელშემწყობი ფაქტორები; ექსპორტი xlsx / PDF / CSV;
@@ -647,6 +648,7 @@ async function bedDaysOf(rdb: Database, depts: string[] | null, from: string, to
 }
 
 @Controller('quality/reports')
+@RequireModule('quality')
 export class QmReportsController {
   constructor(private readonly s: QmReportsService) {}
   @Get('meta') @Roles('quality', 'quality_dept', 'quality_view') meta(@CurrentUser() u: AuthUser) { return this.s.meta(u); }

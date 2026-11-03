@@ -7,6 +7,7 @@ import { CurrentUser, Public, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { AGE_MAX_DAYS } from './lab-norms';
 import { LabConfigService } from './lab-config.service';
+import { ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 class MethodDto {
   @IsOptional() @IsString() @Length(2, 120) name?: string;
@@ -49,6 +50,7 @@ const LAB_ALL = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic'] as const;
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
 
 @Controller('lab')
+@RequireModule('lab')
 export class LabConfigController {
   constructor(private readonly lab: LabConfigService) {}
 
@@ -84,7 +86,7 @@ export class LabConfigController {
     res.set({ 'Content-Type': r.mime, 'Cache-Control': 'private, max-age=86400' });
     return new StreamableFile(r.data);
   }
-  @Post('blanks/preview') @HttpCode(200) @Roles(...LAB_ALL)
+  @Post('blanks/preview') @ReadOnlySafe() @HttpCode(200) @Roles(...LAB_ALL)
   async preview(@Body() dto: PreviewDto, @Res({ passthrough: true }) res: Response) { return pdf(res, await this.lab.previewPdf(dto.settings)); }
   @Get('blanks/:id') @Roles(...LAB_ALL)
   blank(@Param('id', ParseUUIDPipe) id: string) { return this.lab.blankDetail(id); }
@@ -101,6 +103,7 @@ export class LabConfigController {
 /** QR-ის სამიზნე ლაბორატორიული პასუხისთვის — საჯარო. ბრაუზერს HTML-ს უბრუნებს, პროგრამას — JSON-ს. */
 @Public()
 @Controller('public/lab-verify')
+@RequireModule('lab')
 export class PublicLabVerifyController {
   constructor(private readonly lab: LabConfigService) {}
 

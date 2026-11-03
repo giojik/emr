@@ -4891,6 +4891,7 @@ export interface RptKpis {
   finance: Generated<boolean>;
   formula: string;
   is_active: Generated<boolean>;
+  module_code: string | null;
   name: string;
   snapshot: Generated<boolean>;
   sort_order: Generated<number>;
@@ -5613,11 +5614,35 @@ export interface StockUnits {
   sort_order: Generated<number>;
 }
 
+export interface SystemInstall {
+  clock_max_seen: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+  install_id: Generated<string>;
+  singleton: Generated<boolean>;
+}
+
+export interface SystemLicenses {
+  clinic: string;
+  expires: string | null;
+  id: Generated<string>;
+  issued: string;
+  kid: string;
+  max_users: number | null;
+  modules: string[];
+  raw: Json;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  sha256: string;
+  uploaded_at: Generated<Timestamp>;
+  uploaded_by: string | null;
+}
+
 export interface SystemModules {
   can_disable: Generated<boolean>;
   code: string;
   description: string | null;
   enabled: Generated<boolean>;
+  is_core: Generated<boolean>;
   name: string;
   settings: Generated<Json>;
   sort_order: Generated<number>;
@@ -6259,6 +6284,8 @@ export interface DB {
   stock_shift_counts: StockShiftCounts;
   stock_suppliers: StockSuppliers;
   stock_units: StockUnits;
+  system_install: SystemInstall;
+  system_licenses: SystemLicenses;
   system_modules: SystemModules;
   tariff_change_items: TariffChangeItems;
   tariff_changes: TariffChanges;

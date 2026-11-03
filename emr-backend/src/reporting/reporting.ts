@@ -8,11 +8,12 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
-import { writeXlsx, type Cell } from '../claims-export/xlsx';
+import { writeXlsx, type Cell } from '../common/xlsx';
 import { toCsv } from '../finance/finance-common';
 import { DATE_RE, daysBetween, n, RPT_CONFIG, RPT_READ, RptCommon, type RptScope, TZ, UUID_RE } from './reporting-common';
 import { type KpiRow, RptKpiService } from './reporting-kpi';
 import { RptRefreshService } from './reporting-refresh';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * მენეჯერული რეპორტინგი (0060): KPI მიმოხილვა, მწკრივი, განყოფილებებით, მარაგის დღეები, ჩაღრმავება, ექსპორტი;
@@ -406,6 +407,7 @@ export class ReportingAdminService {
 
 // ============================================================================================== კონტროლერი
 @Controller('reporting')
+@RequireModule('reporting')
 export class ReportingController {
   constructor(private readonly s: ReportingService, private readonly a: ReportingAdminService) {}
 

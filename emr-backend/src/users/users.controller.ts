@@ -5,12 +5,14 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { CreateUserDto, ListUsersQuery, UpdateUserDto } from './dto/users.dto';
 import { UsersService } from './users.service';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * მომხმარებლები: admin — ყველაფერი; hr — ყველა, ადმინისტრატორის უფლების მქონეების გარდა;
  * manager — მხოლოდ საკუთარი განყოფილება (ნახვა, განბლოკვა, პაროლი, გათიშვა/ჩართვა, სესიები). შემოწმება — UsersService.scope()
  */
 @Controller('users')
+@RequireModule('core')
 @Roles('admin', 'hr', 'manager')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
@@ -66,6 +68,7 @@ export class UsersController {
 
 /** ექიმების ცნობარი — განრიგისა და ჩაწერისთვის (ყველა ავტორიზებული მომხმარებელი) */
 @Controller('doctors')
+@RequireModule('core')
 export class DoctorsController {
   constructor(private readonly users: UsersService) {}
   @Get() list() { return this.users.doctors(); }

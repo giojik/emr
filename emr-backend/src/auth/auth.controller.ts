@@ -6,10 +6,12 @@ import { AuthService, type SessionTokens } from './auth.service';
 import { AllowPendingPasswordChange, CurrentUser, Public } from './decorators';
 import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
 import type { AuthUser } from './roles';
+import { RequireModule } from '../modules/module-guard';
 
 const COOKIE = 'emr_rt';
 
 @Controller('auth')
+@RequireModule('core')
 export class AuthController {
   private readonly env = loadEnv();
   constructor(private readonly auth: AuthService) {}

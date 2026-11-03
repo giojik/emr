@@ -20,6 +20,7 @@ import {
 } from './quality-common';
 import { SERVICE_TYPES } from './quality-metrics';
 import { QmSources } from './quality-sources';
+import { RequireModule } from '../modules/module-guard';
 
 const MAX_FILE = 10 * 1024 * 1024;
 const MAX_FILES_PER_INCIDENT = 20;
@@ -658,6 +659,7 @@ const upload = FilesInterceptor('files', 5, { storage: memoryStorage(), limits: 
 
 /** ყველა ავტორიზებულს: შეტყობინება, საკუთარი, მეტა, შეთავაზებები, კოდით სტატუსი. რეესტრი / ტრიაჟი — quality / quality_dept (სერვისში) */
 @Controller('quality')
+@RequireModule('quality')
 export class QmIncidentsController {
   constructor(private readonly s: QmIncidentsService) {}
   @Get('meta') meta(@CurrentUser() u: AuthUser) { return this.s.meta(u); }

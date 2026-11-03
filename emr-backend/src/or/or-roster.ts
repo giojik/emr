@@ -12,6 +12,7 @@ import { ModulesService } from '../modules/modules';
 import { OR_READ } from './or-admin';
 import { OR_SETTINGS_0049, orEvent, TZ, type Ex, type OrSettings, type Trx } from './or-shared';
 import { RosterLookup, localDay } from '../roster/roster-common';
+import { RequireModule } from '../modules/module-guard';
 
 const NO_ANESTHESIOLOGIST = ['local', 'none'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -269,6 +270,7 @@ export class OrRosterService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrRosterController {
   constructor(private readonly s: OrRosterService) {}
   @Get('roster') @Roles(...OR_READ) view(@Query('date') date: string | undefined, @CurrentUser() u: AuthUser) {

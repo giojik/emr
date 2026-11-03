@@ -5,6 +5,7 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { Roles } from '../auth/decorators';
 import { InjectDb, type Database } from '../database/database.module';
+import { RequireModule } from '../modules/module-guard';
 
 export class ClinicSettingsDto {
   @IsString() @Length(2, 300) name: string;
@@ -38,6 +39,7 @@ export class ClinicSettingsService {
 }
 
 @Controller('settings/clinic')
+@RequireModule('core')
 export class ClinicSettingsController {
   constructor(private readonly settings: ClinicSettingsService) {}
   @Get() get() { return this.settings.get(); }

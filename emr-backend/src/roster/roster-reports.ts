@@ -4,13 +4,14 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
-import { writeXlsxBook, type Cell, type SheetSpec } from '../claims-export/xlsx';
+import { writeXlsxBook, type Cell, type SheetSpec } from '../common/xlsx';
 import { InjectDb, type Database } from '../database/database.module';
 import { CATEGORIES, CATEGORY_KA, EMPLOYMENT, absenceScope, addDays, rosterScope, today, type Category } from './roster-common';
 import {
   ACC_KEYS, KPI_CODES, addAcc, chronicOvertime, loadDaily, monthAcc, monthEnd, monthList, personMonths, rosterKpis, rosterRptRules, zeroAcc,
   type Acc, type DayRaw, type Filt, type PM, type Rules,
 } from './roster-reports-core';
+import { RequireModule } from '../modules/module-guard';
 
 /**
  * ცვლები / მორიგეობა, ეტაპი 4 (0080) — ანგარიშები / KPI:
@@ -407,6 +408,7 @@ function rounded(a: Acc) {
 }
 
 @Controller('roster')
+@RequireModule('roster')
 export class RosterReportController {
   constructor(private readonly s: RosterReportService) {}
   @Get('reports/meta') meta(@CurrentUser() u: AuthUser) { return this.s.meta(u); }

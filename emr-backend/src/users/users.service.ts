@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { modulesRef } from '../modules/modules-ref';
 import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditContext } from '../audit/audit.service';
 import { invalidateUserStatus } from '../auth/auth.guard';
@@ -78,6 +79,7 @@ export class UsersService {
     const provider = dto.auth_provider ?? 'local';
     this.assertProviderEnabled(provider);
     if (provider === 'ldap' && !dto.ldap_username) throw new BadRequestException('LDAP მომხმარებელს სჭირდება ldap_username');
+    await modulesRef.svc?.license.assertUserSlot();   // 0085: ლიცენზიის მომხმარებლების ლიმიტი (თუ მითითებულია)
     const temp = provider === 'local' ? PasswordService.generateTemporary() : null;
     const { roles: roleCodes, role: _p, ...all } = dto;
     const rest = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as typeof all;
@@ -145,6 +147,7 @@ export class UsersService {
         if (id === actor.id) throw new ForbiddenException('საკუთარი ანგარიშის გათიშვა შეუძლებელია');
       }
       if (old.is_active === active) return old;
+      if (active) await modulesRef.svc?.license.assertUserSlot(trx);
       await trx.updateTable('users').set({ is_active: active, ...(active ? { failed_login_count: 0, locked_until: null } : {}) })
         .where('id', '=', id).execute();
       if (!active) await this.assertAdminRemains(trx);

@@ -29,6 +29,7 @@ import {
 import { BmeService } from './bme';
 import { PmService } from './bme-pm';
 import { BmeRepairJobsService } from './bme-repair-jobs';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const VIEWS = ['open', 'requested', 'mine', 'waiting', 'sla', 'done', 'closed', 'all'] as const;
 const QUALITY = ['quality'] as const;
@@ -826,10 +827,11 @@ class RunDto {
 }
 
 @Controller('bme')
+@RequireModule('bme')
 export class RepairController {
   constructor(private readonly s: RepairService, private readonly jobs: BmeRepairJobsService) {}
   /** SLA / ავტომატური დახურვა / ვადის შეხსენებები — ხელით (admin; worker-ი ყოველ 15 წუთში); at — „ახლა“-ს ჩანაცვლება (ტესტი) */
-  @Post('repairs/run-jobs') @HttpCode(200) @Roles('admin') run(@Body() d: RunDto) { return this.jobs.tick(d ?? {}); }
+  @Post('repairs/run-jobs') @ModulePort() @HttpCode(200) @Roles('admin') run(@Body() d: RunDto) { return this.jobs.tick(d ?? {}); }
   @Get('repairs/refs') refs() { return this.s.refs(); }
   @Get('repairs/counts') counts(@CurrentUser() u: AuthUser) { return this.s.counts(u); }
   @Get('repairs/stock-items') @Roles(...BME_FULL) stockItems(@Query('location_id') loc?: string, @Query('search') search?: string) {

@@ -9,6 +9,7 @@ import type { AuthUser } from '../auth/roles';
 import { dayRange } from '../common/day-range';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
+import { RequireModule } from '../modules/module-guard';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const n = (v: unknown) => Number(v ?? 0);
@@ -195,6 +196,7 @@ const q2 = (from?: string, to?: string) => {
 };
 
 @Controller()
+@RequireModule('core')
 export class ManagementReportsController {
   constructor(private readonly svc: ManagementReportsService, @InjectDb() private readonly db: Database) {}
 

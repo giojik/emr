@@ -4,8 +4,10 @@ import { auditCtx } from '../audit/audit-context';
 import { Roles } from '../auth/decorators';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './departments.dto';
 import { DepartmentsService } from './departments.service';
+import { RequireModule } from '../modules/module-guard';
 
 @Controller('departments')
+@RequireModule('core')
 export class DepartmentsController {
   constructor(private readonly departments: DepartmentsService) {}
 

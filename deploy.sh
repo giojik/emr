@@ -12,6 +12,9 @@ die() { printf '\033[31m✗ %s\033[0m\n' "$1"; exit 1; }
 # უსაფრთხოება: საიდუმლოებების ფაილი git-ში არ უნდა იყოს (.env, .env.bak, ...; .env.example — დასაშვებია)
 TRACKED=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -vE '\.env\.example$' || true)
 [ -z "$TRACKED" ] || die "git აკონტროლებს საიდუმლოებების ფაილ(ებ)ს: $TRACKED — git rm --cached <ფაილი> და .gitignore"
+# 0085: ლიცენზიის პირადი გასაღები git-ში არ უნდა იყოს (გამონაკლისი — სატესტო, scripts/test-license/TEST_ONLY_private.pem)
+KEYS=$(git grep -l -e '-----BEGIN ''PRIVATE KEY-----' -e '-----BEGIN ''OPENSSH PRIVATE KEY-----' 2>/dev/null | grep -v 'scripts/test-license/TEST_ONLY_private.pem$' || true)
+[ -z "$KEYS" ] || die "git-ში პირადი გასაღებია: $KEYS — git rm --cached <ფაილი>"
 
 if [ -n "${1:-}" ]; then
   say "patch: $1"

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectDb, type Database } from '../database/database.module';
-import { applyOpdRules } from './payer-shares';
+import { applyOpdRules } from '../billing/payer-shares';
 import { syncPayerDefaults } from './tariff-lists';
 
 /**

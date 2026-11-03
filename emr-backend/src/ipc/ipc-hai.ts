@@ -9,6 +9,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IPC_STATUS_READ, IpcCommon, ipcRules, type Ex, type IpcRules, type Trx } from './ipc-common';
 import { ssiSyncOp } from './ipc-ssi';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -443,6 +444,7 @@ export class IpcHaiService {
 }
 
 @Controller('ipc')
+@RequireModule('ipc')
 export class IpcHaiController {
   constructor(private readonly s: IpcHaiService) {}
   @Get('hai') @Roles(...IPC_ANY) list(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('hai_type') hai_type?: string, @Query('department_id') department_id?: string,
@@ -459,6 +461,6 @@ export class IpcHaiController {
   @Post('hai/:id/confirm') @HttpCode(200) @Roles(...IPC_FULL) confirm(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.transition(id, 'confirm', null, u, r); }
   @Post('hai/:id/reject') @HttpCode(200) @Roles(...IPC_FULL) reject(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.transition(id, 'reject', d.reason, u, r); }
   @Post('hai/:id/reopen') @HttpCode(200) @Roles(...IPC_FULL) reopen(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.transition(id, 'reopen', d.reason, u, r); }
-  @Get('stays/:id/hai') @Roles(...IPC_STATUS_READ) stay(@Param('id', ParseUUIDPipe) id: string) { return this.s.forStay(id); }
+  @Get('stays/:id/hai') @ModulePort() @Roles(...IPC_STATUS_READ) stay(@Param('id', ParseUUIDPipe) id: string) { return this.s.forStay(id); }
 }
 

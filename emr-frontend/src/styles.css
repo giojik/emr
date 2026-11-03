@@ -164,3 +164,10 @@ pre.json { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pr
 /* 0066: ბმულის სახის ღილაკი (ცხრილში ჩაღრმავება) */
 .linklike { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
 .linklike:hover { color: var(--accent); }
+
+/* 0085: ლიცენზიის ბანერი */
+.license-banner { padding: 8px 16px; font-size: 13px; border-bottom: 1px solid var(--line, #e5e5e5); }
+.license-banner.info { background: var(--info-weak); color: var(--info-ink); }
+.license-banner.warn { background: var(--warn-weak); color: var(--warn-ink); }
+.license-banner.danger { background: var(--danger-weak); color: var(--danger-ink); }
+.license-banner a { color: inherit; font-weight: 600; }

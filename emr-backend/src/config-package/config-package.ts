@@ -16,6 +16,7 @@ import { DrgModule } from '../drg/drg.module';
 import { type Cond, condsText, normPattern, parseConds, PATTERN_RE, stableJson, validateCond } from '../drg/drg-engine';
 import { VALIDATORS } from '../modules/modules';
 import { BUILTIN_PARAMS, CUSTOM_FORBIDDEN } from '../scrub/scrub-engine';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 export const PARTS = ['modules', 'drg', 'scrub_rules', 'claim_templates', 'denial_reasons', 'payers'] as const;
@@ -373,6 +374,7 @@ const partsOf = (q?: string): Part[] => {
 };
 
 @Controller('config-package')
+@RequireModule('core')
 export class ConfigPackageController {
   constructor(private readonly s: ConfigPackageService) {}
   @Get('meta') @Roles(...EXPORT_ROLES) meta() { return { parts: PARTS.map((k) => ({ code: k, title: PART_KA[k] })) }; }

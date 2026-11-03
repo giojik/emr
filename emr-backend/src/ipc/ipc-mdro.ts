@@ -8,6 +8,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { has, type AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IPC_STATUS_READ, IpcCommon, ipcRules, isoEnd, type IpcRules, type Trx } from './ipc-common';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const ONSET_KA: Record<string, string> = { community: 'საზოგადოებრივი / შემოტანილი', hospital: 'ჰოსპიტალური', unknown: 'უცნობი' };
@@ -298,9 +299,10 @@ export class IpcMdroService {
 }
 
 @Controller('ipc')
+@RequireModule('ipc')
 export class IpcFlagsController {
   constructor(private readonly s: IpcMdroService) {}
-  @Get('patients/:id/status') @Roles(...IPC_STATUS_READ) status(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.patientStatus(id, u); }
+  @Get('patients/:id/status') @ModulePort() @Roles(...IPC_STATUS_READ) status(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.patientStatus(id, u); }
   @Get('flags') @Roles(...IPC_ANY) list(@CurrentUser() u: AuthUser, @Query('status') status?: string, @Query('mdro_code') mdro_code?: string, @Query('review') review?: string,
     @Query('department_id') department_id?: string, @Query('q') q?: string) { return this.s.list(u, { status, mdro_code, review, department_id, q }); }
   @Get('flags/:id') @Roles(...IPC_ANY) detail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.detail(id, u); }

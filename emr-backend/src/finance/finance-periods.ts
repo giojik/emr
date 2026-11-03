@@ -9,7 +9,8 @@ import type { AuthUser } from '../auth/roles';
 import { FinClaimsService } from './finance-claims';
 import { FinCommon, n, r2, userName } from './finance-common';
 import { FinReportsService } from './finance-reports';
-import { FIN_EDIT, FIN_FULL } from './finance-rules';
+import { FIN_EDIT, FIN_FULL } from '../billing/finance-rules';
+import { RequireModule } from '../modules/module-guard';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthEnd = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10); };
@@ -135,6 +136,7 @@ class CloseDto { @IsOptional() @IsString() @MaxLength(500) note?: string }
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
 
 @Controller('finance/periods')
+@RequireModule('finance')
 export class FinPeriodsController {
   constructor(private readonly s: FinPeriodsService) {}
   @Get() @Roles(...FIN_FULL) list() { return this.s.list(); }

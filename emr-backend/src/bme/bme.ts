@@ -18,12 +18,13 @@ import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
-import { readCsv, readXlsx, writeXlsx } from '../stock/xlsx';
+import { readCsv, readXlsx, writeXlsx } from '../common/xlsx-read';
 import {
   AREAS, BME_DEPT, BME_FULL, BME_VIEW_ALL, BmeGuard, CRITICALITY, DOC_KINDS, GROUPS, LINKS, LINK_KA, REASON_REQUIRED, RISK_CLASSES, STATUS_KA, STATUSES, userName, viewScope,
   type Area, type BmeSettings, type BmeStatus, type Ex, type LinkKind, type Trx,
 } from './bme-common';
 import { ensurePlans } from './bme-pm-common';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const mm = (v: number) => (v * 72) / 25.4;
 const tz = 'Asia/Tbilisi';
@@ -774,11 +775,12 @@ const upload = FilesInterceptor('files', 5, { storage: memoryStorage(), limits: 
 
 /** ბიომედ-აპარატურა (0073). ნახვა — ყველა შესულს (ხედვის არე სერვისში), მართვა — med_engineer */
 @Controller('bme')
+@RequireModule('bme')
 export class BmeController {
   constructor(private readonly s: BmeService) {}
   @Get('refs') refs() { return this.s.refs(); }
   @Get('people') people(@Query('search') search?: string) { return this.s.people(search); }
-  @Get('alerts') alerts(@Query('area') area: string) {
+  @Get('alerts') @ModulePort() alerts(@Query('area') area: string) {
     if (!(AREAS as readonly string[]).includes(area)) throw new BadRequestException(`area: ${AREAS.join(' / ')}`);
     return this.s.alerts(area as Area);
   }

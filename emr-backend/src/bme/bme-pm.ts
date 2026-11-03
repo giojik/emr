@@ -25,6 +25,7 @@ import {
 import { BmeService } from './bme';
 import { BmePmJobsService } from './bme-pm-jobs';
 import { createRepair, repEvent, devEvent } from './bme-repair-common';
+import { ModulePort, RequireModule } from '../modules/module-guard';
 
 const OPEN = ['planned', 'in_progress'] as const;
 const VIEWS = ['overdue', 'week', 'month', 'open', 'undated', 'all', 'done'] as const;
@@ -785,10 +786,11 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** გეგმიური სამუშაოები (0074) */
 @Controller('bme')
+@RequireModule('bme')
 export class PmController {
   constructor(private readonly s: PmService, private readonly jobs: BmePmJobsService) {}
   /** შეხსენებების / ვადაგადაცილების ხელით გაშვება (ადმინი; worker-ი ამას დღეში ერთხელ აკეთებს) */
-  @Post('pm/run-reminders') @HttpCode(200) @Roles('admin') run(@Body() d: RunDto) { return this.jobs.tick(true, d?.device_ids); }
+  @Post('pm/run-reminders') @ModulePort() @HttpCode(200) @Roles('admin') run(@Body() d: RunDto) { return this.jobs.tick(true, d?.device_ids); }
   @Get('pm/refs') refs() { return this.s.refs(); }
   @Get('pm/counts') counts(@CurrentUser() u: AuthUser) { return this.s.counts(u); }
   @Post('kinds') @Roles(...BME_FULL) kind(@Body() d: KindDto, @Req() r: Request) {

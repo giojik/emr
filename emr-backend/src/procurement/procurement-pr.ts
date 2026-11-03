@@ -10,6 +10,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { StockAlertsService } from '../stock/stock-alerts';
 import { addDays, ProcCommon, r2, r3, r4, type Ex, type Trx, userName } from './procurement-common';
 import { PO_EDIT, PR_APPROVE, PR_EDIT, PROC_CONTROLLED, PROC_READ } from './procurement-rules';
+import { RequireModule } from '../modules/module-guard';
 
 export interface PrLineIn { item_id?: string | null; free_name?: string | null; pack_id?: string | null; qty: number; est_price?: number | null; supplier_id?: string | null; notes?: string | null; request_line_id?: string | null }
 export interface PrIn { location_id: string; urgent?: boolean; needed_by?: string | null; notes?: string | null; lines: PrLineIn[] }
@@ -387,6 +388,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const PR_STATUSES = ['draft', 'submitted', 'approved', 'rejected', 'closed', 'cancelled'];
 
 @Controller('procurement/requisitions')
+@RequireModule('procurement')
 export class ProcRequisitionsController {
   constructor(private readonly s: ProcRequisitionsService) {}
   @Get() @Roles(...PROC_READ) list(@Query() q: { status?: string; location_id?: string; search?: string; mine?: string; to_approve?: string }, @CurrentUser() u: AuthUser) {

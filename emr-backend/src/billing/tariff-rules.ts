@@ -1,8 +1,12 @@
 import type { Kysely } from 'kysely';
 import type { Role } from '../auth/roles';
 import type { DB } from '../database/db';
+import { modulesRef } from '../modules/modules-ref';
 
-/** სატარიფო ფენის პარამეტრები (0054) — system_modules.tariffs (მოდული არ ითიშება) */
+/**
+ * სატარიფო ფენის პარამეტრები (0054) — system_modules.tariffs. 0085: ფასისა და გადამხდელის ძრავა — ბირთვი (billing);
+ * მოდული `tariffs` (ნუსხები / ვერსიები / დამტკიცება) ოპციურია — არააქტიურზე ფასი პირდაპირ რედაქტირდება (დამტკიცების გარეშე).
+ */
 export interface TariffRules {
   /** ფასის / წესის ცვლილება: off — მაშინვე; required — მეორე პირის დამტკიცებით (tariffs_approve / admin, არა ავტორი) */
   tariff_change_approval: 'off' | 'required';
@@ -18,7 +22,9 @@ export const TARIFF_RULES_DEFAULT: TariffRules = {
 };
 export async function tariffRules(db: Kysely<DB>): Promise<TariffRules> {
   const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'tariffs').executeTakeFirst();
-  return { ...TARIFF_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<TariffRules>) };
+  const r = { ...TARIFF_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<TariffRules>) };
+  if (modulesRef.svc && !(await modulesRef.svc.isActive('tariffs'))) r.tariff_change_approval = 'off';
+  return r;
 }
 
 /** ნუსხების / წესების ნახვა */

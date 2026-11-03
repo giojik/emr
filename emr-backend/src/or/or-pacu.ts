@@ -14,6 +14,7 @@ import { OR_READ } from './or-admin';
 import { VoidDto } from './or-anesthesia';
 import { OrService } from './or';
 import { orEvent, PACU_GRID_MIN, type Ex } from './or-shared';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 const num = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : Number(value));
 export const PACU_FLUID_IN = ['iv', 'blood', 'po', 'other_in'] as const;
@@ -338,13 +339,14 @@ export class OrPacuService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrPacuController {
   constructor(private readonly s: OrPacuService) {}
   @Get('pacu') @Roles(...OR_READ) board(@Query('block_id') b?: string) {
     if (b && !/^[0-9a-f-]{36}$/i.test(b)) throw new BadRequestException('block_id');
     return this.s.board(b || undefined);
   }
-  @Get('cases/:id/pacu') @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
+  @Get('cases/:id/pacu') @ClinicalHistory() @Roles(...OR_READ) view(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.view(id, u); }
   @Post('cases/:id/pacu/admit') @HttpCode(200) @Roles(...PACU_WRITE)
   admit(@Param('id', ParseUUIDPipe) id: string, @Body() d: PacuAdmitDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.admit(id, d, u, auditCtx(r)); }
   @Put('cases/:id/pacu') @Roles(...PACU_WRITE)

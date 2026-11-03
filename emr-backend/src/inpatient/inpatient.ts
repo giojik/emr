@@ -16,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { probe, sendRaw, wristbandPdf, wristbandZpl, type WristbandData } from './wristband';
 import { ipcBedCheck, ipcRules, isoReplaceLegacy, isoStart } from '../ipc/ipc-common';
 import { RosterLookup } from '../roster/roster-common';
+import { ClinicalHistory, ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -879,6 +880,7 @@ export class InpatientService {
 
 // ================================================================= კონტროლერი
 @Controller('inpatient')
+@RequireModule('inpatient')
 export class InpatientController {
   constructor(private readonly s: InpatientService) {}
 
@@ -895,7 +897,7 @@ export class InpatientController {
   @Get('printers') @Roles(...READ) printers(@Query('kind') kind?: string) { return this.s.printers(kind); }
   @Post('printers') @Roles('admin') addPrinter(@Body() d: PrinterDto, @Req() r: Request) { return this.s.savePrinter(null, d, auditCtx(r)); }
   @Patch('printers/:id') @Roles('admin') updPrinter(@Param('id', ParseUUIDPipe) id: string, @Body() d: PrinterDto, @Req() r: Request) { return this.s.savePrinter(id, d, auditCtx(r)); }
-  @Post('printers/:id/test') @HttpCode(200) @Roles('admin') testPrinter(@Param('id', ParseUUIDPipe) id: string, @Body() d: PrinterTestDto) { return this.s.testPrinter(id, !!d.print); }
+  @Post('printers/:id/test') @ReadOnlySafe() @HttpCode(200) @Roles('admin') testPrinter(@Param('id', ParseUUIDPipe) id: string, @Body() d: PrinterTestDto) { return this.s.testPrinter(id, !!d.print); }
 
   // დაფა
   @Get('census') @Roles(...READ) census(@CurrentUser() u: AuthUser) { return this.s.census(u); }
@@ -910,7 +912,7 @@ export class InpatientController {
   @Get('stays') @Roles(...READ) stays(@Query('status') status?: string, @Query('department_id') dep?: string, @Query('search') search?: string, @Query('patient_id') pid?: string) {
     return this.s.stays({ status, department_id: dep, search, patient_id: pid });
   }
-  @Get('stays/:id') @Roles(...READ) stay(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.stay(id, u, auditCtx(r)); }
+  @Get('stays/:id') @ClinicalHistory() @Roles(...READ) stay(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.stay(id, u, auditCtx(r)); }
   @Patch('stays/:id') @Roles('admin', 'doctor', 'nurse', 'manager') patch(@Param('id', ParseUUIDPipe) id: string, @Body() d: StayPatchDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.patchStay(id, d, u, auditCtx(r)); }
   @Post('stays/:id/bed') @HttpCode(200) @Roles('admin', 'doctor', 'nurse', 'manager', 'receptionist') bed(@Param('id', ParseUUIDPipe) id: string, @Body() d: BedAssignDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.assignBed(id, d, u, auditCtx(r)); }
   @Post('stays/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor', 'receptionist') cancel(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.cancel(id, d.reason, u, auditCtx(r)); }
@@ -919,7 +921,7 @@ export class InpatientController {
     const { pdf, adm_no } = await this.s.wristbandPdf(id, u);
     res.setHeader('content-type', 'application/pdf'); res.setHeader('content-disposition', `inline; filename="wristband-${adm_no}.pdf"`); res.send(pdf);
   }
-  @Post('stays/:id/wristband') @HttpCode(200) @Roles('admin', 'doctor', 'nurse', 'receptionist', 'manager') wbPrint(@Param('id', ParseUUIDPipe) id: string, @Body() d: PrintDto, @CurrentUser() u: AuthUser) { return this.s.wristbandPrint(id, d.printer_id, u); }
+  @Post('stays/:id/wristband') @ReadOnlySafe() @HttpCode(200) @Roles('admin', 'doctor', 'nurse', 'receptionist', 'manager') wbPrint(@Param('id', ParseUUIDPipe) id: string, @Body() d: PrintDto, @CurrentUser() u: AuthUser) { return this.s.wristbandPrint(id, d.printer_id, u); }
 
   // გეგმიური რიგი
   @Get('planned') @Roles(...READ) planned(@Query('status') status?: string, @Query('department_id') dep?: string, @Query('from') from?: string, @Query('to') to?: string, @Query('patient_id') pid?: string) {

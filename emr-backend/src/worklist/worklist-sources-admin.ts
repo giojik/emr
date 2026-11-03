@@ -5,7 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { StockAlertsService } from '../stock/stock-alerts';
 import { stockRules } from '../stock/stock-rules';
 import { procRules } from '../procurement/procurement-rules';
-import { finRules } from '../finance/finance-rules';
+import { finRules } from '../billing/finance-rules';
 import { TZ, WL_DEFAULTS, dayEnd, memberDepts, type Priority, type SlaKey, type WlItem, type WlSettings } from './worklist-common';
 
 /**

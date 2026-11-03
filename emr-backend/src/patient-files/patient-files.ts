@@ -13,6 +13,7 @@ import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { StorageService } from '../storage/storage.service';
+import { RequireModule } from '../modules/module-guard';
 
 export const DOC_TYPES = ['id_card', 'passport', 'birth_certificate', 'residence_permit', 'consent_scan', 'consent_signed', 'guarantee_letter', 'other'] as const;
 export type DocType = (typeof DOC_TYPES)[number];
@@ -86,6 +87,7 @@ const FRONT = ['admin', 'receptionist'] as const;
 const READ = ['admin', 'receptionist', 'doctor', 'nurse', 'billing'] as const;
 
 @Controller()
+@RequireModule('mpi')
 export class PatientFilesController {
   constructor(private readonly files: PatientFilesService) {}
 

@@ -4,8 +4,10 @@ import { auditCtx } from '../audit/audit-context';
 import { Roles } from '../auth/decorators';
 import { CreatePatientDto, UpdatePatientDto } from './dto/create-patient.dto';
 import { PatientsService } from './patients.service';
+import { RequireModule } from '../modules/module-guard';
 
 @Controller('patients')
+@RequireModule('mpi')
 export class PatientsController {
   constructor(private readonly patients: PatientsService) {}
 

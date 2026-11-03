@@ -1,5 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Injectable, Logger, NotFoundException, OnApplicationShutdown, Param, ParseUUIDPipe,
   Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { modulesRef } from '../modules/modules-ref';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsString, IsUUID, Length } from 'class-validator';
 import type { Request, Response } from 'express';
@@ -21,6 +22,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { sniffMime } from '../patient-files/patient-files';
 import { StorageService } from '../storage/storage.service';
 import { addItemFile } from './lab-item-files';
+import { ReadOnlySafe, RequireModule } from '../modules/module-guard';
 
 const MAX_FILE = 15 * 1024 * 1024;
 const LAB_STAFF = ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'] as const;
@@ -332,7 +334,10 @@ export class LabMailPoller implements OnApplicationShutdown {
     this.timer = setInterval(() => void this.poll(), this.env.LAB_MAIL_POLL_SECONDS * 1000);
   }
   async poll() {
-    if (this.busy) return; this.busy = true;
+    if (this.busy) return;
+    // 0085: გარე ლაბორატორია არააქტიურია — ყუთი არ მოწმდება (წერილები ყუთში რჩება)
+    if (modulesRef.svc && !(await modulesRef.svc.isActive('lab_external').catch(() => true))) return;
+    this.busy = true;
     const client = new ImapFlow({ host: this.env.IMAP_HOST!, port: this.env.IMAP_PORT, secure: this.env.IMAP_SECURE, logger: false,
       auth: { user: this.env.IMAP_USER!, pass: this.env.IMAP_PASS ?? '' }, tls: { rejectUnauthorized: this.env.IMAP_TLS_VERIFY } });
     let n = 0;
@@ -370,6 +375,7 @@ class AssignDto { @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @IsUUID('4', { e
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
 
 @Controller('lab/external/mail')
+@RequireModule('lab_external')
 export class LabMailController {
   constructor(private readonly svc: LabMailService) {}
   @Get() @Roles(...LAB_STAFF) list(@Query('open') open?: string) { return this.svc.list(open === 'true'); }
@@ -382,7 +388,7 @@ export class LabMailController {
     return this.svc.ingest(file.buffer, 'upload', u);
   }
   /** შემოწმება ცვლილების გარეშე: რას ამოიცნობდა (ლაბორატორიის პარამეტრების მოსარგებად) */
-  @Post('test') @HttpCode(200) @Roles(...LAB_STAFF)
+  @Post('test') @ReadOnlySafe() @HttpCode(200) @Roles(...LAB_STAFF)
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 1 } }))
   test(@UploadedFile() file: Express.Multer.File | undefined, @Query('lab_id') labId?: string) {
     if (!file?.buffer?.length) throw new BadRequestException('ატვირთეთ .eml ფაილი');

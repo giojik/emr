@@ -19,6 +19,7 @@ import { BmeGuard } from '../bme/bme-common';
 import { ModulesService } from '../modules/modules';
 import { NotificationsService } from '../notifications/notifications';
 import { StorageService } from '../storage/storage.service';
+import { RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -680,6 +681,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 const dateOk = (v?: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 @Controller('cssd')
+@RequireModule('cssd')
 export class CssdController {
   constructor(private readonly s: CssdService) {}
   @Get('refs') refs(@CurrentUser() u: AuthUser) { return this.s.refs(u); }

@@ -9,6 +9,7 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { IPC_ANY, IPC_FULL, IpcCommon } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -151,6 +152,7 @@ export class IpcMaterialsService {
 }
 
 @Controller('ipc/materials')
+@RequireModule('ipc')
 export class IpcMaterialsController {
   constructor(private readonly s: IpcMaterialsService) {}
   @Get('groups') @Roles(...IPC_ANY) groups() { return this.s.groups(); }

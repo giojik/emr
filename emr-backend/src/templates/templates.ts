@@ -13,6 +13,7 @@ import { renderConsent } from '../consents/consent.pdf';
 import { KINDS, SAMPLE_VARS, VARIABLES, plainText, validateBody, type Body as TplBody, type Kind } from './template-blocks';
 import { TemplateContextService } from './template-context';
 import { renderTemplatePdf } from './template.pdf';
+import { RequireModule } from '../modules/module-guard';
 
 export class CreateTemplateDto {
   @Matches(/^[A-Z][A-Z0-9_]{1,39}$/, { message: 'კოდი: ლათინური დიდი ასოები, ციფრები, _' }) code: string;
@@ -235,6 +236,7 @@ export class TemplatesService {
 const READ = ['admin', 'doctor', 'nurse', 'receptionist', 'manager'] as const;
 
 @Controller('document-templates')
+@RequireModule('core')
 export class TemplatesController {
   constructor(private readonly s: TemplatesService) {}
   @Get() @Roles(...READ) list(@Query('kind') kind?: string, @Query('all') all?: string) {

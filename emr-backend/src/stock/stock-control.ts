@@ -11,6 +11,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { StockAlertsService } from './stock-alerts';
 import { STOCK_READ } from './stock-catalog';
 import { StockTransfersService } from './stock-transfers';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 /** ლოტის ქარანტინი / გაწვევა */
@@ -209,6 +210,7 @@ class MinmaxReqDto { @IsUUID() location_id: string; @IsOptional() @IsUUID() from
 const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 @Controller('stock')
+@RequireModule('stock')
 export class StockControlController {
   constructor(private readonly s: StockControlService, private readonly alerts: StockAlertsService) {}
   @Get('lots') @Roles(...STOCK_READ) lots(@Query('search') search?: string, @Query('status') status?: string) { return this.s.lots({ search, status }); }

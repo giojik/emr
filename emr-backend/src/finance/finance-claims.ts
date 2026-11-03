@@ -2,7 +2,7 @@ import { BadRequestException, Body, ConflictException, Controller, Delete, Get, 
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { Request, Response } from 'express';
-import { applyOpdRules } from '../tariffs/payer-shares';
+import { applyOpdRules } from '../billing/payer-shares';
 import { sql } from 'kysely';
 import { auditCtx } from '../audit/audit-context';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -10,8 +10,9 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import type { AuthUser } from '../auth/roles';
 import { mapPgError } from '../common/pg-errors';
 import { addDays, DATE_RE, type Ex, FinCommon, n, r2, toCsv, type Trx, userName } from './finance-common';
-import { CLAIM_RESOLVE, FIN_EDIT, FIN_FULL, PAYER_KIND_KA } from './finance-rules';
+import { CLAIM_RESOLVE, FIN_EDIT, FIN_FULL, PAYER_KIND_KA } from '../billing/finance-rules';
 import { errorText, loadRules, scrubInvoice, scrubSettings, type ScrubResult } from '../scrub/scrub-engine';
+import { RequireModule } from '../modules/module-guard';
 
 const ERR = {
   fin_claim_item_amounts: 'ანაზღაურებული + გადაწყვეტილი თანხა აღემატება მოთხოვნილს',
@@ -435,6 +436,7 @@ class ResolveDto { @IsIn(['patient', 'writeoff']) action: 'patient' | 'writeoff'
 class ReasonDto { @IsString() @Length(3, 500) reason: string }
 
 @Controller('finance')
+@RequireModule('finance')
 export class FinClaimsController {
   constructor(private readonly s: FinClaimsService, private readonly c: FinCommon) {}
   @Get('claims/summary') @Roles(...FIN_FULL, 'billing') summary() { return this.s.summary(); }

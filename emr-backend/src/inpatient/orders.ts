@@ -21,6 +21,7 @@ import { StockModule } from '../stock/stock.module';
 import { StockTransfersService } from '../stock/stock-transfers';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { abxPolicy, isAbx, isRestricted, type AbxPolicy } from '../ipc/ipc-common';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -707,9 +708,10 @@ export class OrdersService {
 const READ = ['admin', 'doctor', 'nurse', 'manager', 'pharmacist'] as const;
 
 @Controller()
+@RequireModule('ipd_orders')
 export class OrdersController {
   constructor(private readonly s: OrdersService) {}
-  @Get('inpatient/stays/:eid/orders') @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u); }
+  @Get('inpatient/stays/:eid/orders') @ClinicalHistory() @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u); }
   @Post('inpatient/stays/:eid/orders') @Roles('doctor', 'nurse')
   create(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: OrderDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(eid, d, u, auditCtx(r)); }
   @Get('inpatient/orders/units') @Roles(...READ) units() { return ORDER_UNITS; }
@@ -721,7 +723,7 @@ export class OrdersController {
   @Patch('inpatient/orders/sets/:id') @Roles('doctor', 'admin')
   editSet(@Param('id', ParseUUIDPipe) id: string, @Body() d: SetDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.saveSet(id, d, u, auditCtx(r)); }
   @Get('inpatient/departments/:id/orders') @Roles(...READ) dep(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.department(id, u); }
-  @Get('inpatient/orders/:id') @Roles(...READ) get(@Param('id', ParseUUIDPipe) id: string) { return this.s.get(id); }
+  @Get('inpatient/orders/:id') @ClinicalHistory() @Roles(...READ) get(@Param('id', ParseUUIDPipe) id: string) { return this.s.get(id); }
   @Post('inpatient/orders/:id/modify') @Roles('doctor')
   modify(@Param('id', ParseUUIDPipe) id: string, @Body() d: ModifyDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.modify(id, d, u, auditCtx(r)); }
   @Post('inpatient/orders/:id/hold') @HttpCode(200) @Roles('doctor')

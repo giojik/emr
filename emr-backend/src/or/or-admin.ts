@@ -8,6 +8,7 @@ import { AuditService, type AuditContext } from '../audit/audit.service';
 import { Roles } from '../auth/decorators';
 import { mapPgError } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
+import { RequireModule } from '../modules/module-guard';
 
 /** საოპერაციოს ნახვა (დაფა, ცნობარები) — 0048 */
 export const OR_READ = ['admin', 'doctor', 'nurse', 'or_schedule', 'anesthesiologist', 'or_nurse', 'manager', 'viewer'] as const;
@@ -305,6 +306,7 @@ export class OrAdminService {
 }
 
 @Controller('or')
+@RequireModule('or')
 export class OrAdminController {
   constructor(private readonly s: OrAdminService) {}
   @Get('setup') @Roles(...OR_READ, 'receptionist') setup(@Query('all') all?: string) { return this.s.setup(all === 'true'); }

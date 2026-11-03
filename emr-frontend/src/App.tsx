@@ -5,8 +5,7 @@ import { useAuth } from './auth/AuthContext';
 import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
 import { useQuery } from '@tanstack/react-query';
-import { api } from './api/client';
-import type { SystemModule } from './lib/modules';
+import { fetchModules } from './lib/modules';
 import Tasks from './pages/worklist/Tasks';
 import Cashier from './pages/Cashier';
 import ChangePassword from './pages/ChangePassword';
@@ -30,6 +29,7 @@ import Audit from './pages/admin/Audit';
 import Catalog from './pages/admin/Catalog';
 import Clinic from './pages/admin/Clinic';
 import Modules from './pages/admin/Modules';
+import License from './pages/admin/License';
 import Assets from './pages/assets/Assets';
 import Bme from './pages/bme/Bme';
 import Roster from './pages/roster/Roster';
@@ -74,7 +74,7 @@ const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager',
 /** 0081: „ჩემი დავალებები“ — საწყისი გვერდი (მოდულის პარამეტრი home_tasks) */
 function useHomeOverride() {
   const { user } = useAuth();
-  const mods = useQuery({ queryKey: ['modules'], queryFn: () => api<SystemModule[]>('/modules'), staleTime: 5 * 60_000, enabled: !!user && !user.mustChangePassword });
+  const mods = useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 5 * 60_000, enabled: !!user && !user.mustChangePassword });
   const m = user ? mods.data?.find((x) => x.code === 'worklist') : undefined;
   return m?.enabled && (m.settings as { home_tasks?: boolean }).home_tasks ? '/tasks' : null;
 }
@@ -163,6 +163,7 @@ export default function App() {
           <Route path="billing" element={<Guard roles={['admin', 'billing']}><BillingSetup /></Guard>} />
           <Route path="clinic" element={<Guard roles={['admin']}><Clinic /></Guard>} />
           <Route path="modules" element={<Guard roles={['admin']}><Modules /></Guard>} />
+          <Route path="license" element={<Guard roles={['admin']}><License /></Guard>} />
           <Route path="reporting" element={<Guard roles={['admin', 'reports_all']}><ReportingAdmin /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
           <Route path="icu" element={<Guard roles={['admin']}><IcuSetup /></Guard>} />

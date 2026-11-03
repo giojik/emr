@@ -6,6 +6,7 @@ import { auditCtx } from '../audit/audit-context';
 import { AuditService } from '../audit/audit.service';
 import { Roles } from '../auth/decorators';
 import { IPC_FULL, IPC_STATUS_READ, IpcCommon, ISO_TYPES, MARKERS } from './ipc-common';
+import { RequireModule } from '../modules/module-guard';
 
 class IsoTypeDto {
   @IsOptional() @IsString() @Length(2, 80) name?: string;
@@ -131,6 +132,7 @@ export class IpcCatalogService {
 }
 
 @Controller('ipc')
+@RequireModule('ipc')
 export class IpcCatalogController {
   constructor(private readonly s: IpcCatalogService) {}
   @Get('catalog') @Roles(...IPC_STATUS_READ, 'infection_view') all() { return this.s.all(); }

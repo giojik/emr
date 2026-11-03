@@ -34,6 +34,7 @@ import { NotifyModule } from '../notify/notify.service';
 import { LabInstrumentsService } from './lab-instruments.service';
 import { RadiologyController } from './radiology.controller';
 import { RadiologyService } from './radiology.service';
+import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 
 class OrderItemDto {
   @IsUUID() service_id: string;
@@ -136,6 +137,7 @@ const COLLECT = ['admin', 'nurse', 'phlebotomist', 'diagnostic', 'lab_doctor'] a
 const pdf = (res: Response, buf: Buffer) => { res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' }); return new StreamableFile(buf); };
 
 @Controller()
+@RequireModule('lab', 'radiology', 'endoscopy')
 export class DiagnosticsController {
   private readonly tz = loadEnv().CLINIC_TZ;
   constructor(private readonly dx: DiagnosticsService, private readonly settings: ClinicSettingsService, @InjectDb() private readonly db: Database,
@@ -159,7 +161,7 @@ export class DiagnosticsController {
   order(@Param('id', ParseUUIDPipe) id: string, @Body() dto: OrderDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.order(id, dto, u, auditCtx(req)); }
 
   /** მკურნალი ექიმი ლაბორატორიულ შედეგს ხედავს მხოლოდ ვალიდაციის შემდეგ */
-  @Get('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
+  @Get('encounters/:id/dx-orders') @ClinicalHistory() @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
   async items(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const rows = await this.dx.encounterItems(id);
     const labStaff = has(u, 'admin', 'diagnostic', 'lab_doctor');
@@ -169,19 +171,19 @@ export class DiagnosticsController {
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.cancel(id, dto.reason, u, auditCtx(req)); }
 
   // ---- ლაბორატორიული ვიზიტი (რეგისტრატურა, ექიმის გარეშე)
-  @Post('lab-visits') @Roles('admin', 'receptionist')
+  @Post('lab-visits') @RequireModule('lab') @Roles('admin', 'receptionist')
   labVisit(@Body() dto: LabVisitDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.labVisit(dto, u, auditCtx(req)); }
 
   // ---- ნიმუშის აღება (ფლებოტომისტი / ექთანი)
-  @Get('dx/collection') @Roles(...COLLECT)
+  @Get('dx/collection') @RequireModule('lab') @Roles(...COLLECT)
   pending(@Query('search') search?: string) { return this.dx.pendingCollection({ search }); }
-  @Get('dx/collection/:encounterId') @Roles(...COLLECT)
+  @Get('dx/collection/:encounterId') @RequireModule('lab') @Roles(...COLLECT)
   collectionDetail(@Param('encounterId', ParseUUIDPipe) id: string) { return this.dx.collectionDetail(id); }
-  @Post('encounters/:id/dx-collect') @Roles(...COLLECT)
+  @Post('encounters/:id/dx-collect') @RequireModule('lab') @Roles(...COLLECT)
   collect(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CollectDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.collect(id, dto, u, auditCtx(req)); }
-  @Post('dx/collection/:encounterId/issue') @HttpCode(200) @Roles(...COLLECT)
+  @Post('dx/collection/:encounterId/issue') @RequireModule('lab') @HttpCode(200) @Roles(...COLLECT)
   issue(@Param('encounterId', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.collectionIssue(id, dto.reason, auditCtx(req)); }
-  @Get('dx/labels') @Roles(...COLLECT)
+  @Get('dx/labels') @RequireModule('lab') @Roles(...COLLECT)
   async labels(@Query('ids') ids = '', @Res({ passthrough: true }) res: Response) {
     const list = ids.split(',').filter((x) => /^[0-9a-f-]{36}$/i.test(x));
     if (!list.length) throw new BadRequestException('ids');
@@ -189,30 +191,30 @@ export class DiagnosticsController {
   }
 
   // ---- ლაბორატორია
-  @Post('lab/receive') @HttpCode(200) @Roles(...LAB)
+  @Post('lab/receive') @RequireModule('lab') @HttpCode(200) @Roles(...LAB)
   receive(@Body() dto: ReceiveDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.receive(dto.barcode, u, auditCtx(req)); }
-  @Get('lab/worklist') @Roles(...LAB_READ)
+  @Get('lab/worklist') @RequireModule('lab') @Roles(...LAB_READ)
   worklist(@Query('status') status = 'collected,in_progress,resulted', @Query('search') search?: string) { return this.dx.labWorklist(status.split(',').filter(Boolean), search); }
-  @Get('lab/items/:id') @Roles(...LAB_READ)
+  @Get('lab/items/:id') @RequireModule('lab') @ClinicalHistory() @Roles(...LAB_READ)
   labItem(@Param('id', ParseUUIDPipe) id: string) { return this.dx.labItem(id); }
-  @Put('lab/items/:id/results') @Roles(...LAB)
+  @Put('lab/items/:id/results') @RequireModule('lab') @Roles(...LAB)
   results(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResultsDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.dx.saveResults(id, dto.values, u, auditCtx(req), { pregnancy_weeks: dto.pregnancy_weeks, lab_method_id: dto.lab_method_id });
   }
-  @Post('lab/items/:id/validate') @HttpCode(200) @Roles('admin', 'lab_doctor')
+  @Post('lab/items/:id/validate') @RequireModule('lab') @HttpCode(200) @Roles('admin', 'lab_doctor')
   async validate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValidateDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     const r = await this.dx.validate(id, u, auditCtx(req), dto?.qc_reason, dto?.crit_to ? { to: dto.crit_to, via: dto.crit_via, readback: dto.crit_readback } : undefined);
     void this.delivery.afterValidate(id, auditCtx(req));   // პასუხის მიწოდება პაციენტს (თუ ჩართულია) — ფონურად
     void this.labNotify.ready(id, u.id).catch(() => undefined);   // დამნიშნავ ექიმს — „პასუხი მზადაა“
     return r;
   }
-  @Post('lab/items/:id/crit-call') @HttpCode(200) @Roles('admin', 'lab_doctor', 'diagnostic')
+  @Post('lab/items/:id/crit-call') @RequireModule('lab') @HttpCode(200) @Roles('admin', 'lab_doctor', 'diagnostic')
   critCall(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CritCallDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.critCall(id, dto, u, auditCtx(req)); }
-  @Post('lab/items/:id/reopen') @HttpCode(200) @Roles('admin', 'lab_doctor')
+  @Post('lab/items/:id/reopen') @RequireModule('lab') @HttpCode(200) @Roles('admin', 'lab_doctor')
   reopen(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @Req() req: Request) { return this.dx.reopen(id, dto.reason, auditCtx(req)); }
 
   /** ბლანკი: ვიზიტის ყველა ვალიდირებული ლაბორატორიული შედეგი (ან ერთი შეკვეთა ?item=) — ბლანკის შაბლონით (lab-config) */
-  @Get('encounters/:id/lab-report') @Roles('admin', 'doctor', 'nurse', 'receptionist', 'diagnostic', 'lab_doctor', 'lab_manager')
+  @Get('encounters/:id/lab-report') @RequireModule('lab') @ClinicalHistory() @Roles('admin', 'doctor', 'nurse', 'receptionist', 'diagnostic', 'lab_doctor', 'lab_manager')
   async report(@Param('id', ParseUUIDPipe) id: string, @Query('item') item: string | undefined, @Res({ passthrough: true }) res: Response) {
     return pdf(res, await this.lab.encounterReport(id, item));
   }

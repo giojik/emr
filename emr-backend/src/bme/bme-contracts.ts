@@ -17,6 +17,7 @@ import { StorageService } from '../storage/storage.service';
 import { BME_FULL, BME_VIEW_ALL, userName, type BmeSettings, type Ex } from './bme-common';
 import { today } from './bme-pm-common';
 import { CONTRACT_KA, CONTRACT_KINDS, coverage, devEvent, type ContractKind } from './bme-repair-common';
+import { RequireModule } from '../modules/module-guard';
 
 /** კონტრაქტების ნახვა: რეესტრის სრული ხედვა + შესყიდვები / ბუღალტერია */
 const CT_VIEW: Role[] = [...BME_VIEW_ALL, 'procurement', 'procurement_approve', 'accountant'];
@@ -247,6 +248,7 @@ const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 /** სერვისის კონტრაქტები (0075) */
 @Controller('bme')
+@RequireModule('bme')
 export class ContractController {
   constructor(private readonly s: ContractService) {}
   @Get('contracts/kinds') kinds() { return CONTRACT_KA; }

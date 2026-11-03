@@ -9,6 +9,7 @@ import { type AuthUser, type Role } from '../auth/roles';
 import { loadEnv } from '../config/env';
 import { InjectDb, type Database } from '../database/database.module';
 import { StockTransfersService } from './stock-transfers';
+import { RequireModule } from '../modules/module-guard';
 
 const TZ = loadEnv().CLINIC_TZ;
 const LAB: Role[] = ['admin', 'lab_doctor', 'lab_manager', 'diagnostic', 'stock_manager', 'storekeeper'];
@@ -171,6 +172,7 @@ class CloseDto { @IsOptional() @IsBoolean() discarded?: boolean; @IsOptional() @
 const uuidOk = (v?: string) => !v || /^[0-9a-f-]{36}$/i.test(v);
 
 @Controller('stock/lab')
+@RequireModule('lab_stock')
 export class StockLabController {
   constructor(private readonly s: StockLabService) {}
   @Get('stock') @Roles(...LAB) stock(@CurrentUser() u: AuthUser, @Query('location_id') loc: string) { if (!loc || !uuidOk(loc)) throw new BadRequestException('location_id სავალდებულოა'); return this.s.stock(u, loc); }
