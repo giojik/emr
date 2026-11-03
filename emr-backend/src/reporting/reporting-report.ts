@@ -112,7 +112,7 @@ export class RptReportService {
     const quality = scope.quality ? await this.qm.monthlySection(u, o.from, o.to, scope.all, scope.depts) : null;
     if (!quality) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'quality');
     // 0072: ინფექციის კონტროლი — KPI-ების სექცია (dashboard_visibility / monthly_section)
-    if (!scope.ipc || (await ipcRules(this.c.db))?.monthly_section === false) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'ipc');
+    if (!scope.ipc || (await ipcRules(this.c.db, 'usable'))?.monthly_section === false) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'ipc');
     // 0076: ბიომედ-აპარატურა — KPI-ების სექცია (dashboard_visibility / monthly_section)
     if (!scope.bme || (await bmeRptRules(this.c.db))?.monthly_section === false) for (const r of [prev, yoy]) r.kpis = r.kpis.filter((k) => k.category !== 'bme');
     // 0080: ცვლები / მორიგეობა — KPI-ების სექცია (dashboard_visibility / monthly_section)

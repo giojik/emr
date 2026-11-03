@@ -1,3 +1,4 @@
+import { modActive } from '../modules/modules-ref';
 import { sql } from 'kysely';
 import { loadEnv } from '../config/env';
 import type { BmeSettings, Ex } from './bme-common';
@@ -32,8 +33,9 @@ export const baseInterval = sql<number | null>`coalesce(CASE k.type_field WHEN '
 export const effInterval = sql<number | null>`coalesce(p.interval_months, ${baseInterval})`;
 
 export async function pmSettings(ex: Ex): Promise<BmeSettings | null> {
-  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'bme').executeTakeFirst();
-  return m?.enabled ? (m.settings as unknown as BmeSettings) : null;
+  if (!(await modActive(ex, 'bme'))) return null;   // 0086: ჯობები — მხოლოდ აქტიურზე
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'bme').executeTakeFirst();
+  return (m?.settings ?? {}) as unknown as BmeSettings;
 }
 
 /**

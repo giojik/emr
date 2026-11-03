@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
+COPY scripts/check-module-reads.mjs ./scripts/
 RUN npm run build && npm prune --omit=dev
 
 # ---- runtime ----

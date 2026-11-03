@@ -16,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { InpatientModule, InpatientService, type InpatientSettings } from './inpatient';
 import { news2, NEWS2_KA, NEWS2_RANK, type News2Level } from './news2';
 import { ClinicalHistory, RequireModule } from '../modules/module-guard';
+import { modActive } from '../modules/modules-ref';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -187,8 +188,8 @@ export class NursingService {
       const alert = n && (n.score >= s.news2_alert || n.level === 'low_red' || n.level === 'medium' || n.level === 'high');
       // 0047: რეანიმაციაში / ინტენსიურში NEWS2-ის შეტყობინება — icu.news2_alerts (ნაგულისხმევად გამორთული; მუდმივი მონიტორინგი)
       const icuDep = st.department_id ? await trx.selectFrom('departments').select('care_level').where('id', '=', st.department_id).executeTakeFirst() : null;
-      const icuMod = icuDep && icuDep.care_level !== 'ward' ? await trx.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst() : null;
-      const muted = !!icuMod?.enabled && (icuMod.settings as Record<string, unknown>)?.news2_alerts !== true;
+      const icuMod = icuDep && icuDep.care_level !== 'ward' && (await modActive(trx, 'icu')) ? await trx.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst() : null;
+      const muted = !!icuMod && (icuMod.settings as Record<string, unknown>)?.news2_alerts !== true;
       const escalated = !muted && alert && (!prev || NEWS2_RANK[n!.level] > NEWS2_RANK[prev.news2_level as News2Level] || Date.now() - new Date(prev.recorded_at).getTime() > 4 * 3_600_000);
       if (escalated) await this.ipd.event(trx, { encounter_id: encounterId, kind: 'news2_alert', data: { score: n!.score, level: n!.level, vitals_id: v.id } }, u);
       return { v, st, n: escalated ? n : null };

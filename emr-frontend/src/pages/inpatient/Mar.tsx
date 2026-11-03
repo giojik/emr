@@ -96,10 +96,10 @@ export default function MarPanel({ encounterId, admNo }: { encounterId: string; 
       <div className="card-head" style={{ flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0 }}>მედიკამენტების მიღების ფურცელი (MAR)</h2>
         <span className="grow" />
-        <button className="btn sm" type="button" onClick={() => setDay(shiftDay(day, -1))} aria-label="წინა დღე">‹</button>
+        <button className="btn sm ro-ok" type="button" onClick={() => setDay(shiftDay(day, -1))} aria-label="წინა დღე">‹</button>
         <span className="small" style={{ minWidth: 150, textAlign: 'center' }}>{dayTitle(day)}</span>
-        <button className="btn sm" type="button" onClick={() => setDay(shiftDay(day, 1))} aria-label="შემდეგი დღე">›</button>
-        {!isToday && <button className="btn sm" type="button" onClick={() => setDay(todayISO())}>დღეს</button>}
+        <button className="btn sm ro-ok" type="button" onClick={() => setDay(shiftDay(day, 1))} aria-label="შემდეგი დღე">›</button>
+        {!isToday && <button className="btn sm ro-ok" type="button" onClick={() => setDay(todayISO())}>დღეს</button>}
       </div>
       {q.isLoading ? <div className="card-pad"><Loading /></div> : !d ? <div className="card-pad"><ErrorBox error={q.error} /></div> : (
         <div style={{ overflowX: 'auto' }}>

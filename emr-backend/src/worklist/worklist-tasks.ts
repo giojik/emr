@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { has, type AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
+import { modActive, modUsable } from '../modules/modules-ref';
 import {
   ACTIVE, PRIORITY_KA, PRI_RANK, STATUS_KA, TARGET_KA, TZ, iso, isAll, manageDepts, memberDepts, myRoleIds, onDutyCond, userName, wlSettings,
   type Ex, type Priority, type Trx, type WlItem, type WlSettings,
@@ -21,7 +22,7 @@ export interface CreateIn extends Target {
 export interface EditIn { title?: string; description?: string | null; category_id?: string | null; priority?: Priority; due_at?: string | null }
 export interface ListQ { box?: string; status?: string; department_id?: string; overdue?: string; patient_id?: string; q?: string; assignee_id?: string; category_id?: string; target_kind?: string }
 
-export interface Ctx { roles: string[]; member: string[]; manage: string[]; all: boolean }
+export interface Ctx { roles: string[]; member: string[]; manage: string[]; all: boolean; /** 0086: roster აქტიურია (მორიგეზე მინიჭებული დავალება) */ roster: boolean }
 type TaskRow = Awaited<ReturnType<WorklistTasksService['rows']>>[number];
 
 /**
@@ -36,12 +37,12 @@ export class WorklistTasksService {
 
   async settings(): Promise<WlSettings> {
     const m = await wlSettings(this.db);
-    if (!m.enabled) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „სამუშაო სიები“ გამორთულია (ადმინისტრირება → მოდულები)' });
+    if (!m.usable) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „სამუშაო სიები“ გამორთულია (ადმინისტრირება → მოდულები)' });
     return m.s;
   }
   async ctx(u: AuthUser, ex: Ex = this.db): Promise<Ctx> {
     const [roles, member, manage] = await Promise.all([myRoleIds(ex, u.id), memberDepts(ex, u.id), manageDepts(ex, u)]);
-    return { roles, member, manage, all: isAll(u) };
+    return { roles, member, manage, all: isAll(u), roster: await modUsable(ex, 'roster') };
   }
 
   // ------------------------------------------------------------------ SQL ნაწილები
@@ -52,7 +53,7 @@ export class WorklistTasksService {
          (t.target_kind = 'role' AND t.target_role_id = ANY (${roles}::uuid[]))
       OR (t.target_kind = 'role_department' AND t.target_role_id = ANY (${roles}::uuid[]) AND t.target_department_id = ANY (${depts}::uuid[]))
       OR (t.target_kind = 'department' AND t.target_department_id = ANY (${depts}::uuid[]))
-      OR (t.target_kind = 'duty' AND ${onDutyCond(u.id)}))`;
+      OR (t.target_kind = 'duty' AND ${onDutyCond(u.id, null, c.roster)}))`;
   }
   private doerCond(u: AuthUser, c: Ctx): RawBuilder<boolean> {
     return sql<boolean>`(t.assignee_id = ${u.id} OR t.claimed_by = ${u.id} OR (t.target_kind <> 'user' AND t.claimed_by IS NULL AND ${this.memberCond(u, c)}))`;
@@ -208,8 +209,7 @@ export class WorklistTasksService {
       clean.target_department_id = x.id; dept = x.id;
     }
     if (k === 'duty') {
-      const m = await ex.selectFrom('system_modules').select('enabled').where('code', '=', 'roster').executeTakeFirst();
-      if (!m?.enabled) throw new BadRequestException('მორიგეზე მინიჭება — საჭიროა მოდული „ცვლები და მორიგეობა“');
+      if (!(await modActive(ex, 'roster'))) throw new BadRequestException('მორიგეზე მინიჭება — საჭიროა მოდული „ცვლები და მორიგეობა“');
       const x = await ex.selectFrom('duty_roles').select(['id', 'is_active', 'department_id']).where('id', '=', need(t.target_duty_role_id, 'target_duty_role_id')).executeTakeFirst();
       if (!x?.is_active) throw new BadRequestException('მორიგის როლი ვერ მოიძებნა ან გათიშულია');
       clean.target_duty_role_id = x.id; dept = x.department_id;

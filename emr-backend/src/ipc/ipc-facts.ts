@@ -24,7 +24,7 @@ const ZERO = { hai: 0, clabsi: 0, cauti: 0, vap: 0, ssi_ops: 0, ssi: 0, mdro_hos
  * მოდული გამორთულია → null.
  */
 export async function ipcFactRows(db: Database, from: string, to: string): Promise<IpcFactRow[] | null> {
-  const r = await ipcRules(db);
+  const r = await ipcRules(db, 'usable');   // 0086: ETL read_only-ზეც
   if (!r) return null;
   const pre = sql.val(r.abx_atc_prefixes.map((p) => `${p}%`));
   const types = r.material_source === 'issue' ? ['transfer', 'issue', 'return'] : ['consumption', 'writeoff'];
@@ -111,7 +111,7 @@ export async function ipcFacts(rdb: Database, trx: Transaction<DB>, from: string
 
 /** 0072: „ყურადღება“ (მენეჯერული დაფა) — მხოლოდ რაოდენობები; depts = null — მთელი კლინიკა */
 export async function ipcAttentionCounts(db: Database, depts: string[] | null) {
-  const r = await ipcRules(db);
+  const r = await ipcRules(db, 'usable');
   if (!r) return null;
   const cur = (enc: string) => sql`(SELECT a.department_id FROM bed_assignments a WHERE a.encounter_id = ${sql.ref(enc)} AND a.end_kind IS DISTINCT FROM 'cancel'
       ORDER BY (a.ended_at IS NULL) DESC, a.started_at DESC LIMIT 1)`;

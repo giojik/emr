@@ -30,6 +30,7 @@ import { BmeService } from './bme';
 import { PmService } from './bme-pm';
 import { BmeRepairJobsService } from './bme-repair-jobs';
 import { ModulePort, RequireModule } from '../modules/module-guard';
+import { modActive } from '../modules/modules-ref';
 
 const VIEWS = ['open', 'requested', 'mine', 'waiting', 'sla', 'done', 'closed', 'all'] as const;
 const QUALITY = ['quality'] as const;
@@ -522,8 +523,7 @@ export class RepairService {
   async purchase(id: string, dto: PurchaseDto, u: AuthUser, ctx: AuditContext) {
     this.full(u);
     const s = await this.settings();
-    const pm = await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'procurement').executeTakeFirst();
-    if (!pm?.enabled) throw new ConflictException({ code: 'MODULE_DISABLED', message: 'მოდული „შესყიდვები“ გამორთულია' });
+    if (!(await modActive(this.db, 'procurement'))) throw new ConflictException({ code: 'MODULE_DISABLED', message: 'მოდული „შესყიდვები“ გამორთულია' });
     const locId = dto.location_id ?? s.rep_parts_location_id;
     if (!locId) throw new BadRequestException('მიწოდების ლოკაცია სავალდებულოა');
     let prId = ''; let label = '';

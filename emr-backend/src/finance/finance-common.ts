@@ -37,7 +37,7 @@ export class FinCommon {
   /** მოდული ჩართულია → პარამეტრები; გამორთულზე — 403 */
   async rules(ex: Ex = this.db): Promise<FinRules> {
     const r = await finRules(ex as Database);
-    if (!r.enabled) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „ფინანსები“ გამორთულია (ადმინისტრირება → მოდულები)' });
+    if (!r.usable) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „ფინანსები“ გამორთულია (ადმინისტრირება → მოდულები)' });
     return r;
   }
   /** მენეჯერი (მხოლოდ) — თავისი განყოფილება; dept_finance_visible = off → 403 */

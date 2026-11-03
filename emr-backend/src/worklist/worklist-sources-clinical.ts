@@ -7,6 +7,7 @@ import { OrService } from '../or/or';
 import { OR_SETTINGS_0049, OR_SETTINGS_0050 } from '../or/or-shared';
 import { TZ, WL_DEFAULTS, type ObsKey, type Priority } from './worklist-common';
 import type { AdminCtx, Row, SourceGroup } from './worklist-sources-admin';
+import { modActive, modUsable } from '../modules/modules-ref';
 
 /**
  * სამუშაო სიები (D5), 0083 — კლინიკური წყაროები (ექიმი / ექთანი). ვირტუალური, როგორც 0081 / 0082: ჩანაწერი ყოველ ჯერზე წყაროს ცხრილიდან ითვლება,
@@ -98,8 +99,7 @@ export class ClinCtx {
       const me = await this.x.me();
       const own = me.department_id ? [me.department_id] : [];
       if (this.x.s.nurse_scope !== 'on_shift') return own;
-      const roster = await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'roster').executeTakeFirst();
-      if (!roster?.enabled) return own;
+      if (!(await modUsable(this.db, 'roster'))) return own;   // 0086
       const SHIFT = sql`FROM roster_entries e JOIN rosters r ON r.id = e.roster_id JOIN staff_members sm ON sm.id = e.staff_id
         WHERE e.status = 'active' AND r.status IN ('published', 'closed') AND e.starts_at <= now() AND e.ends_at > now()`;
       const mine = (await sql<{ id: string }>`SELECT DISTINCT r.department_id AS id ${SHIFT} AND sm.user_id = ${this.u.id}`.execute(this.db)).rows.map((r) => r.id);
@@ -306,8 +306,8 @@ export class WorklistClinicalSources {
     const me = await x.x.me();
     if (c.has('consult_todo') && x.isDoctor()) {
       // სამიზნე ექიმი; განყოფილებაზე — მისი ექიმები (users.department_id); სასწრაფო + roster.link_consult = duty — მხოლოდ ცვლაში მყოფი ექიმები (თუ ვინმეა)
-      const ro = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'roster').executeTakeFirst();
-      const duty = !!ro?.enabled && (ro.settings as Record<string, unknown>)?.link_consult === 'duty';
+      const ro = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'roster').executeTakeFirst();
+      const duty = (await modUsable(this.db, 'roster')) && (ro?.settings as Record<string, unknown>)?.link_consult === 'duty';
       const ONSHIFT = (dep: RawBuilder<unknown>, user: RawBuilder<unknown>) => sql`EXISTS (SELECT 1 FROM roster_entries re JOIN rosters r ON r.id = re.roster_id
         JOIN staff_members sm ON sm.id = re.staff_id LEFT JOIN staff_positions sp ON sp.id = sm.position_id
         WHERE re.status = 'active' AND r.status IN ('published', 'closed') AND re.starts_at <= now() AND re.ends_at > now() AND r.department_id = ${dep}
@@ -389,8 +389,8 @@ export class WorklistClinicalSources {
     }
     // NEWS2: რეანიმაცია / ინტენსიური — ჩახშობილია, თუ icu ჩართულია და icu.news2_alerts ≠ true (ზარის წესი)
     if ((c.has('nur_obs') || c.has('news2_review')) && s.news2_enabled !== false) {
-      const icuMod = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
-      const muteIcu = !!icuMod?.enabled && (icuMod.settings as Record<string, unknown>)?.news2_alerts !== true;
+      const icuMod = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst();
+      const muteIcu = (await modActive(this.db, 'icu')) && (icuMod?.settings as Record<string, unknown>)?.news2_alerts !== true;
       const ward = muteIcu ? sql`s.care_level = 'ward'` : sql`TRUE`;
       const LAST = sql`(SELECT v.id, v.news2, v.news2_level, v.recorded_at FROM encounter_vitals v WHERE v.encounter_id = s.encounter_id AND v.voided_at IS NULL AND v.news2 IS NOT NULL
         ORDER BY v.recorded_at DESC LIMIT 1)`;

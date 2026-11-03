@@ -5,6 +5,7 @@ import { loadEnv } from '../config/env';
 import type { DB } from '../database/db';
 import { type Cond, type GroupInputs, type ListKind, norm, stableJson, type VersionData, versionSettings, type VersionSettings } from './drg-engine';
 import type { Component } from './drg-pricing';
+import { modActive } from '../modules/modules-ref';
 
 type Ex = Kysely<DB> | Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -24,8 +25,9 @@ export interface DrgRules {
 }
 export const DRG_RULES_DEFAULT: DrgRules = { version_date_basis: 'discharge', confirm_required: true, recheck_on_finalize: 'block', manual_payer_drg: 'allowed', version_approval: 'off' };
 export async function drgRules(db: Ex): Promise<DrgRules & { enabled: boolean }> {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'drg').executeTakeFirst();
-  return { ...DRG_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<DrgRules>), enabled: m?.enabled ?? false };
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'drg').executeTakeFirst();
+  // 0086: enabled = აქტიური (რეესტრი: ლიცენზია ∧ ჩართვა ∧ inpatient / tariffs); გამორთულზე დაჯგუფება / ფორმულა / ფინალიზაციის შემოწმება გამოიტოვება
+  return { ...DRG_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<DrgRules>), enabled: await modActive(db, 'drg') };
 }
 
 /** კონფიგურაციის ნახვა */

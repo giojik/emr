@@ -5,7 +5,7 @@
  *   npm run license -- keygen --kid 2026-1 --out ~/emr-license/2026-1.key
  *       → პირადი გასაღები (0600) + ხაზი src/license/keys.ts-ის PROD_KEYS-ისთვის
  *   npm run license -- sign --key ~/emr-license/2026-1.key --kid 2026-1 --clinic "კლინიკა" --install-id <UUID> \
- *                           --modules all|outpatient,lab,... --expires 2027-12-31|never [--max-users 50] [--note "..."] --out license.json
+ *                           --modules all|outpatient,lab,...|profile:outpatient_lab[,radiology] --expires 2027-12-31|never [--max-users 50] [--note "..."] --out license.json
  *
  * კლინიკის სერვერზე (DATABASE_URL):
  *   npm run license -- id                      ინსტალაციის ID (ლიცენზიის მოთხოვნისთვის)
@@ -22,6 +22,7 @@ import type { DB } from '../database/db';
 import { PROD_KEYS, TEST_KEYS } from '../license/keys';
 import { canonical, formatError, privateKeyFromPem, sha256, signLicense, timing, verifySignature, type LicenseFile, type LicensePayload } from '../license/license-core';
 import { OPTIONAL_CODES } from '../modules/registry';
+import { expandModules, missingPrereqs } from '../modules/profiles';
 
 const die = (m: string): never => { console.error(`✘ ${m}`); process.exit(1); };
 const testKeysAllowed = () => process.env.NODE_ENV !== 'production' && ['1', 'true'].includes(process.env.LICENSE_TEST_KEY ?? '');
@@ -78,7 +79,10 @@ async function main() {
     }
     case 'sign': {
       const key = privateKeyFromPem(readFileSync(need('key'), 'utf8'));
-      const mods = need('modules') === 'all' ? [...OPTIONAL_CODES] : need('modules').split(',').map((x) => x.trim()).filter(Boolean);
+      // 0086: all | a,b | profile:outpatient_lab[,radiology]
+      let mods: string[] = [];
+      try { mods = expandModules(need('modules')); } catch (e) { die((e as Error).message); }
+      for (const [c, h] of missingPrereqs(mods)) console.warn(`! ${c} საჭიროებს ${h} — ლიცენზიაში არ არის (მოდული იქნება „წინაპირობა აკლია“)`);
       const unknown = mods.filter((m) => !OPTIONAL_CODES.includes(m));
       if (unknown.length) console.warn(`! ამ ვერსიისთვის უცნობი მოდული(ები): ${unknown.join(', ')} — ძველი ვერსია მათ იგნორირებას გაუკეთებს`);
       const exp = need('expires');

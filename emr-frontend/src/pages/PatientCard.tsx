@@ -1,3 +1,5 @@
+import { IfModule } from '../components/ModuleGate';
+import { DX_ANY } from '../lib/moduleRoutes';
 import Form100History from '../components/Form100History';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -46,10 +48,10 @@ export default function PatientCard() {
         </div>
         {front && <>
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
-          <button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button>
-          {can(user, 'admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'lab_manager') && <button className="btn" type="button" onClick={() => setCum(true)}>ლაბ. დინამიკა</button>}
+          <IfModule code={DX_ANY} write><button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button></IfModule>
+          {can(user, 'admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'lab_manager') && <IfModule code="lab"><button className="btn" type="button" onClick={() => setCum(true)}>ლაბ. დინამიკა</button></IfModule>}
           {can(user, 'admin', 'doctor', 'receptionist') && <button className="btn" type="button" onClick={() => setF100(true)}>ფ.№100 — ისტორია</button>}
-          <button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button>
+          <IfModule code="outpatient" write><button className="btn" type="button" onClick={() => setDlg('walkin')}>Walk-in ვიზიტი</button></IfModule>
           <button className="btn primary" type="button" onClick={() => setDlg('appt')}>+ ჩაწერა</button>
         </>}
       </header>

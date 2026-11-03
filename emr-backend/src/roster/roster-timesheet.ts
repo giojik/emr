@@ -422,12 +422,12 @@ export class TimesheetService {
   // ================================================================ კავშირები (lookup) — სხვა მოდულების ეკრანებისთვის
   async now(purpose: 'consult' | 'bme', departmentId?: string) {
     const s = await this.lookup.settings();
-    if (!s) return { mode: 'off', people: [] };
+    if (!s) return { enabled: false, mode: 'off', people: [] };   // 0086: პორტის ნეიტრალური პასუხი
     const mode = purpose === 'consult' ? s.link_consult : s.link_bme;
-    if (mode === 'off') return { mode, people: [] };
+    if (mode === 'off') return { enabled: true, mode, people: [] };
     const people = purpose === 'consult' ? (departmentId ? await this.lookup.now({ departmentId, category: 'doctor' }) : []) : await this.lookup.now({ capability: 'med_engineer' });
     const phone = s.duty_phone !== 'off';
-    return { mode, people: people.filter((p) => p.user_id).map((p) => ({ ...p, phone: phone ? p.phone : null })) };
+    return { enabled: true, mode, people: people.filter((p) => p.user_id).map((p) => ({ ...p, phone: phone ? p.phone : null })) };
   }
   async load() { return { departments: (await this.lookup.load()) ?? [], at: new Date().toISOString() }; }
 }

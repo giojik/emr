@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, HttpCode, Injectable, Module, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, Get, HttpCode, Injectable, Module, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { sql } from 'kysely';
@@ -14,7 +14,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { DrgConfigService, type Pkg } from '../drg/drg-config';
 import { DrgModule } from '../drg/drg.module';
 import { type Cond, condsText, normPattern, parseConds, PATTERN_RE, stableJson, validateCond } from '../drg/drg-engine';
-import { VALIDATORS } from '../modules/modules';
+import { ModulesService, VALIDATORS } from '../modules/modules';
 import { BUILTIN_PARAMS, CUSTOM_FORBIDDEN } from '../scrub/scrub-engine';
 import { RequireModule } from '../modules/module-guard';
 
@@ -40,7 +40,7 @@ interface ConfigPackage {
     payers?: { code: string; name: string; drg_scheme_code: string | null; export_template_code: string | null; response_template_code: string | null }[];
   };
 }
-export interface PlanLine { part: Part; key: string; action: 'create' | 'update' | 'unchanged' | 'skip' | 'error'; detail?: string }
+export interface PlanLine { part: Part; key: string; action: 'create' | 'update' | 'unchanged' | 'skip' | 'error'; detail?: string; /** 0086: MODULE_PREREQ_MISSING / MODULE_HAS_DEPENDENTS */ code?: string; note?: string }
 
 /** DRG ვერსიის შიგთავსი შედარებისთვის (მეტამონაცემების გარეშე) */
 const drgBody = (p: Pkg) => stableJson({ settings: p.settings ?? {}, groups: p.groups, lists: p.lists, cc: p.cc,
@@ -54,7 +54,7 @@ const drgBody = (p: Pkg) => stableJson({ settings: p.settings ?? {}, groups: p.g
  */
 @Injectable()
 export class ConfigPackageService {
-  constructor(@InjectDb() private readonly db: Database, private readonly drg: DrgConfigService, private readonly audit: AuditService) {}
+  constructor(@InjectDb() private readonly db: Database, private readonly drg: DrgConfigService, private readonly audit: AuditService, private readonly modules: ModulesService) {}
 
   // ---------------------------------------------------------------- ექსპორტი
   async export(parts: Part[], versionIds: string[] | null, ctx: AuditContext): Promise<ConfigPackage> {
@@ -126,6 +126,7 @@ export class ConfigPackageService {
     const arr = <T>(k: Part, x: unknown): T[] => { if (!Array.isArray(x)) { add({ part: k, key: '—', action: 'error', detail: 'სია არ არის' }); return []; } return x as T[]; };
 
     // მოდულები
+    const modLines: PlanLine[] = [];
     if (has('modules')) for (const m of arr<{ code: string; enabled: boolean; settings: Record<string, unknown> }>('modules', p.parts.modules)) {
       if (!(MODULES as readonly string[]).includes(m.code)) { add({ part: 'modules', key: String(m.code), action: 'skip', detail: 'მოდული პაკეტში არ განიხილება' }); continue; }
       const cur = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', m.code).executeTakeFirst();
@@ -134,7 +135,18 @@ export class ConfigPackageService {
       if (bad) { add({ part: 'modules', key: m.code, action: 'error', detail: `პარამეტრი ${bad[0]}` }); continue; }
       const next = { ...((cur?.settings ?? {}) as object), ...(m.settings ?? {}) };
       const same = cur && cur.enabled === !!m.enabled && stableJson(cur.settings) === stableJson(next);
-      add({ part: 'modules', key: m.code, action: same ? 'unchanged' : 'update', detail: same ? undefined : `${m.enabled ? 'ჩართული' : 'გამორთული'}; ${Object.entries(m.settings ?? {}).map(([k, x]) => `${k}=${String(x)}`).join(', ')}` });
+      const line: PlanLine = { part: 'modules', key: m.code, action: same ? 'unchanged' : 'update', detail: same ? undefined : `${m.enabled ? 'ჩართული' : 'გამორთული'}; ${Object.entries(m.settings ?? {}).map(([k, x]) => `${k}=${String(x)}`).join(', ')}` };
+      add(line); modLines.push(line);
+    }
+    // 0086 (E): მოდულების საბოლოო მდგომარეობა — მთელი პაკეტი ერთად (წინაპირობა / დამოკიდებული / ლიცენზია)
+    if (modLines.length) {
+      const next = Object.fromEntries((p.parts.modules ?? []).filter((m) => modLines.some((l) => l.key === m.code)).map((m) => [m.code, !!m.enabled]));
+      const t = await this.modules.checkTransition(next);
+      for (const x of t.prereq) Object.assign(modLines.find((l) => l.key === x.code)!, { action: 'error', code: 'MODULE_PREREQ_MISSING',
+        detail: `ჩართვას სჭირდება: ${x.missing.map(t.name).join(', ')} (ჯერ ჩართეთ ადმინისტრირება → მოდულები)` });
+      for (const x of t.dependents) Object.assign(modLines.find((l) => l.key === x.code)!, { action: 'error', code: 'MODULE_HAS_DEPENDENTS',
+        detail: `გამორთვა: ჩართულია დამოკიდებული — ${x.dependents.map(t.name).join(', ')}` });
+      for (const c of t.notLicensed) { const l = modLines.find((x) => x.key === c)!; if (l.action !== 'error') l.note = 'ლიცენზიაში არ არის — ჩაირთვება, მაგრამ არააქტიური იქნება ლიცენზიამდე'; }
     }
 
     // DRG
@@ -282,11 +294,14 @@ export class ConfigPackageService {
     const p = this.parse(buf);
     const lines = await this.plan(p, only, u, ctx);
     const errs = lines.filter((l) => l.action === 'error');
+    const dep = errs.find((l) => l.code === 'MODULE_PREREQ_MISSING' || l.code === 'MODULE_HAS_DEPENDENTS');   // 0086: 409 — იგივე კოდები, რაც PUT /modules-ზე
+    if (dep) throw new ConflictException({ code: dep.code, message: `პაკეტი: ${dep.key} — ${dep.detail}`, lines: errs });
     if (errs.length) throw new BadRequestException({ code: 'CONFIG_PACKAGE_INVALID', message: `პაკეტი: ${errs.length} შეცდომა — ${errs.slice(0, 3).map((e) => `${e.key}: ${e.detail}`).join('; ')}`, lines: errs });
     const todo = (part: Part, key: string) => lines.some((l) => l.part === part && l.key === key && (l.action === 'create' || l.action === 'update'));
     const sha = createHash('sha256').update(buf).digest('hex');
 
     // 1) ერთ ტრანზაქციაში: მოდულები, სქემები, წესები, შაბლონები, მიზეზები, გადამხდელები
+    let modChanged = false;
     await this.db.transaction().execute(async (trx) => {
       for (const m of p.parts.modules ?? []) {
         if (!only.includes('modules') || !todo('modules', m.code)) continue;
@@ -297,7 +312,10 @@ export class ConfigPackageService {
         if (err) throw new BadRequestException(`მოდული ${m.code}: ${err}`);
         await trx.updateTable('system_modules').set({ enabled: !!m.enabled, settings: JSON.stringify(next), updated_by: u.id, updated_at: sql`now()` }).where('code', '=', m.code).execute();
         await this.audit.log(ctx, { action: 'UPDATE_MODULE', entityName: 'system_modules', entityId: m.code, oldData: cur, newData: { enabled: m.enabled, settings: next, reason: `კონფიგურაციის პაკეტი ${sha.slice(0, 12)}` } }, trx);
+        modChanged = true;
       }
+      // 0086: სხვა პროცესები (worker, lab-gateway) — მაშინვე; იმავე პროცესში — invalidate ტრანზაქციის შემდეგ
+      if (modChanged) await sql`SELECT pg_notify('emr_modules', 'config-package')`.execute(trx);
       if (only.includes('drg')) for (const s of p.parts.drg?.schemes ?? []) {
         if (!todo('drg', `სქემა ${s.code}`)) continue;
         await trx.insertInto('drg_schemes').values({ code: s.code, name: s.name.trim(), notes: s.notes ?? null, is_default: false }).execute();
@@ -348,6 +366,7 @@ export class ConfigPackageService {
         await this.audit.log(ctx, { action: 'PAYER_CLAIM_TEMPLATES', entityName: 'payers', entityId: x.code, newData: { ...x, source: `პაკეტი ${sha.slice(0, 12)}` } }, trx);
       }
     });
+    if (modChanged) this.modules.invalidate();
 
     // 2) DRG ვერსიები — მონახაზად (თითო — საკუთარი ტრანზაქცია; შიგთავსი უკვე შემოწმებულია)
     const created: { key: string; id: string; version_no: number }[] = [];

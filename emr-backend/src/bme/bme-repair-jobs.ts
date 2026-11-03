@@ -22,7 +22,7 @@ export class BmeRepairJobsService {
   async tick(scope: Scope = {}) {
     const out = { sla_warn: 0, sla_breach: 0, auto_closed: 0, contract_reminders: 0, warranty_reminders: 0 };
     const s = await pmSettings(this.db);
-    if (!s) return out;
+    if (!s) return { enabled: false, ...out };   // 0086: პორტი — მოდული არააქტიურია
     const now = scope.at ? sql<Date>`${scope.at}::timestamptz` : sql<Date>`now()`;
     const day = scope.at ? sql<string>`(${scope.at}::timestamptz AT TIME ZONE ${TZ})::date` : sql<string>`(now() AT TIME ZONE ${TZ})::date`;
     const rIds = scope.repair_ids?.length ? sql`AND r.id = ANY (${sql.val(scope.repair_ids)}::uuid[])` : sql``;
@@ -118,6 +118,6 @@ export class BmeRepairJobsService {
       out.warranty_reminders = list.length;
     }
     if (out.sla_breach || out.auto_closed) this.log.log(`ბიომედ შეკეთება: SLA დარღვევა ${out.sla_breach}, ავტ. დახურვა ${out.auto_closed}`);
-    return out;
+    return { enabled: true, ...out };
   }
 }

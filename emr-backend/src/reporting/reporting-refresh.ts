@@ -130,7 +130,7 @@ export class RptRefreshService {
     const ops = await opsFacts(this.rdb, trx, from, to, s);   // 0062
     Object.assign(out, ops);
     if (to >= today) out.stock_snapshot = await this.snapshot(trx, today, s);
-    if (to >= today && (await finRules(this.rdb)).enabled) out.balance_snapshot = await balanceSnapshot(this.rdb, trx, today);   // 0063
+    if (to >= today && (await finRules(this.rdb)).usable) out.balance_snapshot = await balanceSnapshot(this.rdb, trx, today);   // 0063
     Object.assign(out, await qualityFacts(this.rdb, trx));   // 0066: მთელი ისტორია (მცირე მოცულობა), ყოველ გადათვლაზე
     Object.assign(out, await ipcFacts(this.rdb, trx, from, to));   // 0072: ინფექციის კონტროლი (ფანჯარა)
     Object.assign(out, await bmeFacts(this.rdb, trx, from, to));   // 0076: ბიომედ-აპარატურა (ფანჯარა)
@@ -393,7 +393,7 @@ export class RptRefreshService {
   // ---------------------------------------------------------------------------------- ფინანსები
   private async finance(trx: Trx, from: string, to: string, s: RptSettings) {
     const rules = await finRules(this.rdb);
-    if (!rules.enabled) return { rows: 0, frozen: 0, extra: null };
+    if (!rules.usable) return { rows: 0, frozen: 0, extra: null };   // 0086: ETL read_only-ზეც
     const closed = s.freeze_closed_periods
       ? (await this.rdb.selectFrom('fin_periods').select('month').where('status', '=', 'closed').execute()).map((r) => String(r.month).slice(0, 7))
       : [];

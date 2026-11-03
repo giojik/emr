@@ -3,6 +3,7 @@ import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { TZ } from './reporting-common';
 import { TAT_EDGES } from './reporting-refresh';
+import { modUsable } from '../modules/modules-ref';
 
 /**
  * ხარისხის ფაქტები (0066) — იმავე გადათვლაში, იმავე lock-ით.
@@ -14,9 +15,9 @@ import { TAT_EDGES } from './reporting-refresh';
 type Trx = Transaction<DB>;
 
 export async function qualityFacts(rdb: Database, trx: Trx): Promise<Record<string, number>> {
-  const m = await rdb.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'quality').executeTakeFirst();
-  if (!m?.enabled) return {};
-  const basis = (m.settings as { report_date_basis?: string } | null)?.report_date_basis === 'reported' ? sql`i.reported_at` : sql`i.occurred_at`;
+  if (!(await modUsable(rdb, 'quality'))) return {};   // 0086: ETL read_only-ზეც
+  const m = await rdb.selectFrom('system_modules').select('settings').where('code', '=', 'quality').executeTakeFirst();
+  const basis = (m?.settings as { report_date_basis?: string } | null)?.report_date_basis === 'reported' ? sql`i.reported_at` : sql`i.occurred_at`;
   // ჰისტოგრამის გასაღები (იგივე, რაც JS-ში ქვემოთ; boolean — 'true' / 'false', რადგან concat_ws ბულს 't' / 'f'-ად წერს)
   const keys = sql`to_char((${basis} AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD'), i.department_id, i.category_id, i.event_type, i.harm, i.service_type, i.affected,
     CASE WHEN i.is_sentinel THEN 'true' ELSE 'false' END`;

@@ -1,3 +1,4 @@
+import { modActive } from '../modules/modules-ref';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -49,7 +50,8 @@ export class LabIngestService {
     // QC: ანალიზატორის QC ნიშანი ან QC მასალის შტრიხკოდი → ხარისხის კონტროლი (პაციენტს არ ებმება)
     const qcRows: IncomingResult[] = []; const results: IncomingResult[] = [];
     for (const r of all) (r.qc || (r.barcode && await this.qc.isQcBarcode(r.barcode)) ? qcRows : results).push(r);
-    if (qcRows.length) await this.ingestQc(instrumentId, messageId, qcRows);
+    // 0086: რბილი კავშირი lab_gateway → lab_qc — QC მოდული არააქტიურია → QC შედეგი არ გადაეცემა (პაციენტის შედეგებში არ ერევა)
+    if (qcRows.length && (await modActive(this.db, 'lab_qc'))) await this.ingestQc(instrumentId, messageId, qcRows);
     if (!results.length) return { applied: 0, unmatched: 0, items: [] as { barcode: string; item_id: string }[] };
     const rows = await this.db.insertInto('lab_instrument_results').values(results.map((r) => ({
       instrument_id: instrumentId, message_id: messageId === null ? null : String(messageId), barcode: r.barcode || null, code: r.code || '?', value: r.value, unit: r.unit || null,

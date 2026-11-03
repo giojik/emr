@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 
 /**
  * მოდულები და პარამეტრები (0037; 0085 — ლიცენზია + დამოკიდებულებები).
@@ -14,7 +15,11 @@ export interface SystemModule {
 }
 type RawModule = Omit<SystemModule, 'admin_enabled'>;
 export const fetchModules = () => api<RawModule[]>('/modules').then((rows) => rows.map((r) => ({ ...r, admin_enabled: r.enabled, enabled: r.state === 'active' || r.state === 'read_only' })));
-export const useModules = () => useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 5 * 60_000 });
+/** 0086: მხოლოდ შესულ მომხმარებელზე (შესვლის / პაროლის შეცვლის გვერდზე მოთხოვნა არ იგზავნება) */
+export const useModules = () => {
+  const { user } = useAuth();
+  return useQuery({ queryKey: ['modules'], queryFn: fetchModules, staleTime: 5 * 60_000, enabled: !!user && !user.mustChangePassword });
+};
 export const useModuleEnabled = (code: string) => { const q = useModules(); return q.data?.find((m) => m.code === code)?.enabled ?? false; };
 /** ახალი ჩანაწერის შექმნა დაშვებულია (ლიცენზიის ვადის შემდეგ — მხოლოდ ნახვა) */
 export const useModuleWritable = (code: string) => { const q = useModules(); return q.data?.find((m) => m.code === code)?.active ?? false; };

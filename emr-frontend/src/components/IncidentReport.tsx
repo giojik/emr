@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, apiUpload } from '../api/client';
 import { copyText } from '../lib/clipboard';
 import { dateGe, todayISO, tsDate, hhmm } from '../lib/format';
-import { useModuleEnabled } from '../lib/modules';
+import { useModuleWritable } from '../lib/modules';
 import {
   AFFECTED_KA, EVENT_KA, HARM_KA, IDENTITY_KA, MERP_KA, PERSON_ROLE_KA,
   type Affected, type Classifier, type EventType, type Harm, type IdentityMode, type Person, type Prompt, type QmMeta, type Source, type SourceType,
@@ -25,14 +25,14 @@ export const useQmMeta = (enabled = true) => useQuery({ queryKey: ['qm-meta'], q
 
 /** კონტექსტური ღილაკი — მხოლოდ ჩართული მოდულისას */
 export function ReportIncidentButton({ className = 'btn sm', ...p }: ReportPrefill & { className?: string }) {
-  const on = useModuleEnabled('quality');
+  const on = useModuleWritable('quality');   // 0086: ახალი შეტყობინება — მხოლოდ აქტიურზე (read_only — არა)
   if (!on) return null;
   return <button type="button" className={className} title="ინციდენტის / near-miss-ის შეტყობინება" onClick={() => openIncidentReport(p)}>⚠ ინციდენტი</button>;
 }
 
 /** Shell: ღილაკი (შეთავაზებების რაოდენობით) + ფანჯარა */
 export function IncidentReportHost() {
-  const on = useModuleEnabled('quality');
+  const on = useModuleWritable('quality');   // 0086
   const [open, setOpen] = useState<ReportPrefill | null>(null);
   const prompts = useQuery({ queryKey: ['qm-prompts'], queryFn: () => api<Prompt[]>('/quality/prompts').catch(() => [] as Prompt[]), enabled: on, refetchInterval: 5 * 60_000 });
   useEffect(() => {

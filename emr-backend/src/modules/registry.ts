@@ -34,9 +34,9 @@ export const MODULES: ModuleDef[] = [
   m('ipd_orders', 'clinical', ['inpatient', 'pharmacy'], ['lab', 'radiology'], { settingsOf: 'inpatient' }),
   m('mar', 'clinical', ['ipd_orders'], ['stock'], { settingsOf: 'inpatient' }),
   m('icu', 'clinical', ['inpatient'], ['mar']),
-  m('or', 'clinical', ['inpatient'], ['stock', 'cssd', 'roster', 'bme']),
+  m('or', 'clinical', ['inpatient'], ['stock', 'cssd', 'roster', 'bme', 'ipc']),   // 0086: + ipc (SSI / პროფილაქტიკის ფანჯარა)
   // დიაგნოსტიკა
-  m('lab', 'diagnostics', [], ['outpatient', 'inpatient']),
+  m('lab', 'diagnostics', [], ['outpatient', 'inpatient', 'worklist']),   // 0086: + worklist (კრიტიკული ზარი / პასუხის გაცნობა)
   m('lab_gateway', 'diagnostics', ['lab'], ['lab_qc']),
   m('lab_external', 'diagnostics', ['lab'], ['finance']),
   m('lab_qc', 'diagnostics', ['lab'], ['lab_gateway']),
@@ -44,13 +44,13 @@ export const MODULES: ModuleDef[] = [
   m('radiology', 'diagnostics', [], ['bme']),
   m('endoscopy', 'diagnostics', [], ['bme', 'cssd']),
   // ლოჯისტიკა
-  m('stock', 'logistics', [], ['procurement', 'finance']),
+  m('stock', 'logistics', [], ['procurement', 'finance', 'cssd']),   // 0086: + cssd (შეფუთვის ვადის ჯობი)
   m('pharmacy', 'logistics', ['stock'], ['ipd_orders']),
   m('lab_stock', 'logistics', ['stock', 'lab'], ['lab_qc']),
   m('procurement', 'logistics', ['stock'], ['finance']),
   m('cssd', 'logistics', [], ['or', 'endoscopy', 'stock']),
   m('asset_register', 'logistics', [], []),
-  m('bme', 'logistics', [], ['or', 'radiology', 'endoscopy', 'roster']),
+  m('bme', 'logistics', [], ['or', 'radiology', 'endoscopy', 'roster', 'procurement']),   // 0086: + procurement (შეკეთების ნაწილები → PR)
   // ფინანსები
   m('tariffs', 'finance', [], []),
   m('finance', 'finance', [], ['procurement', 'stock']),

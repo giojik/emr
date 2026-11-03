@@ -21,6 +21,7 @@ import { ensureMarSlots } from './mar-schedule';
 import { abxPolicy } from '../ipc/ipc-common';
 import { doseRateToMlH, mlHToDoseRate, type ConcUnit, type DoseRateUnit } from './icu-calc';
 import { ClinicalHistory, RequireModule } from '../modules/module-guard';
+import { modActive } from '../modules/modules-ref';
 
 type Trx = Transaction<DB>;
 const TZ = loadEnv().CLINIC_TZ;
@@ -90,7 +91,7 @@ export class MarService {
   }
   /** განყოფილების ქვესაწყობში ჯენერიკის SKU-ები ნაშთით (ვადაგაუსვლელი, აქტიური ლოტები) */
   async stockFor(o: OrderCtx) {
-    if (!o.generic_id || !o.department_id) return { location: null, items: [], qty_suggest: null };
+    if (!o.generic_id || !o.department_id || !(await modActive(this.db, 'stock'))) return { location: null, items: [], qty_suggest: null };
     const loc = await this.location(o.department_id);
     if (!loc) return { location: null, items: [], qty_suggest: null };
     const items = await this.db.selectFrom('stock_items as i').innerJoin('stock_units as un', 'un.code', 'i.base_unit')
@@ -165,8 +166,8 @@ export class MarService {
       if (dto.infusion_action === 'rate' && doseRate === 0) throw new BadRequestException('დოზა 0 — გამოიყენეთ „შეჩერება“');
     }
     if (titr && dto.infusion_action === 'rate') {
-      const icu = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
-      const need = !icu?.enabled || (icu.settings as Record<string, unknown>)?.titration_reason !== false;
+      const icu = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst();
+      const need = !(await modActive(this.db, 'icu')) || (icu?.settings as Record<string, unknown>)?.titration_reason !== false;
       if (need && (dto.reason?.trim().length ?? 0) < 2) throw new BadRequestException({ code: 'MAR_TITRATION_REASON', message: 'ტიტრაცია: მიუთითეთ ცვლილების მიზეზი (მაგ. MAP 58)' });
     }
     if (o.nursing_task && given) throw new BadRequestException({ code: 'MAR_TASK_FORM', message: 'შეავსეთ შესაბამისი ფორმა (ვიტალები / ბალანსი / შკალა) — დავალება ავტომატურად შესრულდება' });
@@ -238,7 +239,8 @@ export class MarService {
     }
 
     // --- მარაგი
-    const deduct = given && med && !!o.generic_id && s.mar_stock_deduct && (!infusion || dto.infusion_action === 'start' || dto.infusion_action === 'bag');
+    // 0086: რბილი კავშირი mar → stock — საწყობი არააქტიურია → ჩამოწერა არ ხდება, MAR იწერება
+    const deduct = given && med && !!o.generic_id && s.mar_stock_deduct && (await modActive(this.db, 'stock')) && (!infusion || dto.infusion_action === 'start' || dto.infusion_action === 'bag');
     let qty: number | null = null; let noStock = false; let locId: string | null = null;
     if (deduct) {
       const st = await this.stockFor(o);

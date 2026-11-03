@@ -7,7 +7,7 @@ import { tsDate } from '../../lib/format';
 import { downloadFile } from '../finance/claimExport';
 import type { Scheme, VersionRow } from './drg/types';
 
-interface Line { part: string; key: string; action: 'create' | 'update' | 'unchanged' | 'skip' | 'error'; detail?: string }
+interface Line { part: string; key: string; action: 'create' | 'update' | 'unchanged' | 'skip' | 'error'; detail?: string; /** 0086 */ code?: string; note?: string }
 interface Plan { source: string | null; exported_at: string; sha256: string; parts: string[]; totals: Record<Line['action'], number>; lines: Line[]; applied?: boolean;
   drg_versions?: { key: string; id: string; version_no: number }[] }
 const ACT: Record<Line['action'], [string, string]> = { create: ['ok', 'შეიქმნება'], update: ['warn', 'შეიცვლება'], unchanged: ['', 'უცვლელი'], skip: ['', 'გამოტოვდება'], error: ['danger', 'შეცდომა'] };
@@ -78,7 +78,7 @@ export default function ConfigPackage() {
                   <tbody>{[...plan.lines].sort((a, b) => Number(a.action === 'unchanged') - Number(b.action === 'unchanged')).map((l, i) => (
                     <tr key={i} style={l.action === 'unchanged' ? { opacity: 0.55 } : undefined}>
                       <td className="small">{meta.data?.parts.find((p) => p.code === l.part)?.title ?? l.part}</td><td className="mono small">{l.key}</td>
-                      <td><span className={`chip ${ACT[l.action][0]}`}>{plan.applied ? ACT_DONE[l.action] ?? ACT[l.action][1] : ACT[l.action][1]}</span></td><td className="small">{l.detail ?? ''}</td></tr>))}</tbody>
+                      <td><span className={`chip ${ACT[l.action][0]}`}>{plan.applied ? ACT_DONE[l.action] ?? ACT[l.action][1] : ACT[l.action][1]}</span></td><td className="small">{l.detail ?? ''}{l.note && <div style={{ color: 'var(--warn-ink)' }}>{l.note}</div>}</td></tr>))}</tbody>
                 </table>
               </div>
             </div>)}

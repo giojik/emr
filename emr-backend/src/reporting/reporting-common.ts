@@ -6,6 +6,7 @@ import { loadEnv } from '../config/env';
 import { InjectDb, KYSELY, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { finRules, FIN_FULL } from '../billing/finance-rules';
+import { modUsable } from '../modules/modules-ref';
 
 /**
  * მენეჯერული რეპორტინგი (0060) — საერთო: პარამეტრები, უფლებები, ხედვის არე, წყაროს ბაზა.
@@ -53,8 +54,8 @@ export const RPT_DEFAULTS: RptSettings = {
   doctor_revenue: 'on', attention_notify: 'in_app', attention_notify_hour: 8, attention_notify_level: 'red',
 };
 export async function rptModule(db: Database) {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'reporting').executeTakeFirst();
-  return { enabled: m?.enabled ?? false, settings: { ...RPT_DEFAULTS, ...((m?.settings ?? {}) as Partial<RptSettings>) } };
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'reporting').executeTakeFirst();
+  return { enabled: await modUsable(db, 'reporting'), settings: { ...RPT_DEFAULTS, ...((m?.settings ?? {}) as Partial<RptSettings>) } };
 }
 
 /** ხედვის არე: all — მთელი კლინიკა; depts — დაშვებული განყოფილებები; finance — ფინანსური KPI-ები ჩანს;
@@ -63,33 +64,33 @@ export interface RptScope { all: boolean; depts: string[]; finance: boolean; phi
 /** 0072: ინფექციის კონტროლის KPI / „ყურადღება“ / თვიური სექცია (მოდული ჩართულია და dashboard_visibility-ის წესი) */
 export const IPC_REPORT_CAPS: Role[] = ['infection', 'infection_dept', 'infection_view'];
 export async function ipcVisibility(db: Database, u: AuthUser) {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'ipc').executeTakeFirst();
-  if (!m?.enabled) return false;
-  const st = (m.settings ?? {}) as { dashboard_visibility?: string };
+  if (!(await modUsable(db, 'ipc'))) return false;   // 0086: KPI ჩანს read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'ipc').executeTakeFirst();
+  const st = (m?.settings ?? {}) as { dashboard_visibility?: string };
   return st.dashboard_visibility === 'ipc_only' ? has(u, ...IPC_REPORT_CAPS) : true;
 }
 /** 0076: ბიომედ-აპარატურის KPI / „ყურადღება“ / თვიური სექცია (მოდული ჩართულია და dashboard_visibility-ის წესი) */
 export const BME_REPORT_CAPS: Role[] = ['med_engineer', 'bme_view', 'bme_dept'];
 export async function bmeVisibility(db: Database, u: AuthUser) {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'bme').executeTakeFirst();
-  if (!m?.enabled) return false;
-  const st = (m.settings ?? {}) as { dashboard_visibility?: string };
+  if (!(await modUsable(db, 'bme'))) return false;   // 0086: KPI ჩანს read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'bme').executeTakeFirst();
+  const st = (m?.settings ?? {}) as { dashboard_visibility?: string };
   return st.dashboard_visibility === 'bme_only' ? has(u, ...BME_REPORT_CAPS) : true;
 }
 /** 0080: ცვლების / მორიგეობის KPI / „ყურადღება“ / თვიური სექცია (მოდული ჩართულია და dashboard_visibility-ის წესი) */
 export const ROSTER_REPORT_CAPS: Role[] = ['hr', 'roster', 'roster_all', 'roster_view', 'absence_approve'];
 export async function rosterVisibility(db: Database, u: AuthUser) {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'roster').executeTakeFirst();
-  if (!m?.enabled) return false;
-  const st = (m.settings ?? {}) as { dashboard_visibility?: string };
+  if (!(await modUsable(db, 'roster'))) return false;   // 0086: KPI ჩანს read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'roster').executeTakeFirst();
+  const st = (m?.settings ?? {}) as { dashboard_visibility?: string };
   return st.dashboard_visibility === 'roster_only' ? has(u, ...ROSTER_REPORT_CAPS) : true;
 }
 /** 0066: ხარისხის უფლებები (dashboard_visibility = quality_only) */
 export const QM_REPORT_CAPS: Role[] = ['quality', 'quality_dept', 'quality_view'];
 export async function qmVisibility(db: Database, u: AuthUser) {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'quality').executeTakeFirst();
-  if (!m?.enabled) return false;
-  const st = (m.settings ?? {}) as { dashboard_visibility?: string };
+  if (!(await modUsable(db, 'quality'))) return false;   // 0086: KPI ჩანს read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'quality').executeTakeFirst();
+  const st = (m?.settings ?? {}) as { dashboard_visibility?: string };
   return st.dashboard_visibility === 'quality_only' ? has(u, ...QM_REPORT_CAPS) : true;
 }
 
@@ -119,11 +120,11 @@ export class RptCommon {
     const ipc = await ipcVisibility(this.db, u);
     const bme = await bmeVisibility(this.db, u);
     const roster = await rosterVisibility(this.db, u);
-    const worklist = !!(await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'worklist').executeTakeFirst())?.enabled;   // 0084
-    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.enabled && has(u, ...FIN_FULL, 'reports_all'), phi, quality, ipc, bme, roster, worklist };
+    const worklist = await modUsable(this.db, 'worklist');   // 0084; 0086 — რეესტრიდან
+    if (has(u, ...RPT_ALL)) return { all: true, depts: [], finance: fr.usable && has(u, ...FIN_FULL, 'reports_all'), phi, quality, ipc, bme, roster, worklist };
     const depts = await this.userDepts(u.id);
     if (!depts.length) throw new ForbiddenException({ code: 'NO_SCOPE', message: 'განყოფილება არ გაქვთ მინიჭებული — მენეჯერული დაფა ვერ გამოჩნდება (ადმინისტრირება → რეპორტინგი → ხედვის არე)' });
-    return { all: false, depts, finance: fr.enabled && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality, ipc, bme, roster, worklist };
+    return { all: false, depts, finance: fr.usable && (has(u, ...FIN_FULL) || fr.dept_finance_visible === 'heads'), phi, quality, ipc, bme, roster, worklist };
   }
   /** მოთხოვნილი განყოფილება ხედვის არეშია? (null — მთელი არე) */
   narrow(scope: RptScope, dept?: string | null): RptScope {

@@ -171,3 +171,7 @@ pre.json { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pr
 .license-banner.warn { background: var(--warn-weak); color: var(--warn-ink); }
 .license-banner.danger { background: var(--danger-weak); color: var(--danger-ink); }
 .license-banner a { color: inherit; font-weight: 600; }
+
+/* 0086 (F): WriteGuard — ლიცენზიის ვადის შემდეგ („მხოლოდ ნახვა“): ჩაწერის ღილაკები (ნავიგაცია / ფილტრი / დახურვა — არა; იხ. ModuleGate NAV_SEL) */
+.ro-zone button:not(.ro-ok):not([aria-pressed]):not([data-ro-ok]):not([aria-label="დახურვა"]) { opacity: .5; cursor: not-allowed; }
+.ro-zone :is(nav, [role="tablist"], .seg, .modal-head) button { opacity: 1; cursor: pointer; }

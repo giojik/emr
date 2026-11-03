@@ -1,10 +1,14 @@
 import type { Kysely } from 'kysely';
 import type { Role } from '../auth/roles';
 import type { DB } from '../database/db';
+import { modActive, modUsable } from '../modules/modules-ref';
 
 /** ფინანსების პარამეტრები (0053) — system_modules.finance */
 export interface FinRules {
+  /** 0086: მოდული სრულად მუშაობს (რბილი კავშირის მოქმედება — გატარება, შეხსენება) */
   enabled: boolean;
+  /** 0086: active ∨ read_only — ანგარიშები / KPI (ვადაგასულ ლიცენზიაზეც ჩანს) */
+  usable: boolean;
   /** მარაგის ხარჯი განყოფილებაზე: ფაქტობრივი მოხმარება ქვესაწყობიდან / გაცემა განყოფილების ლოკაციაზე */
   dept_consumption_basis: 'consumption' | 'issue';
   /** შემოსავლის თარიღი: მომსახურების დღე / ინვოისის (ამბ.) ან ფინალიზაციის (სტაც.) თარიღი */
@@ -23,14 +27,14 @@ export interface FinRules {
   /** განყოფილების ხელმძღვანელი (მენეჯერი) ხედავს თავისი განყოფილების ფინანსებს */
   dept_finance_visible: 'heads' | 'off';
 }
-export const FIN_RULES_DEFAULT: Omit<FinRules, 'enabled'> = {
+export const FIN_RULES_DEFAULT: Omit<FinRules, 'enabled' | 'usable'> = {
   dept_consumption_basis: 'consumption', revenue_basis: 'service_date', revenue_dept_basis: 'performing',
   dx_performing_dept: { lab: null, radiology: null, endoscopy: null }, opd_payer_required: false, claim_overdue_alert: true,
   overhead_allocation: 'none', overhead_manual: {}, period_lock: 'off', dept_finance_visible: 'heads',
 };
 export async function finRules(db: Kysely<DB>): Promise<FinRules> {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'finance').executeTakeFirst();
-  return { ...FIN_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<FinRules>), enabled: !!m?.enabled };
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'finance').executeTakeFirst();
+  return { ...FIN_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<FinRules>), enabled: await modActive(db, 'finance'), usable: await modUsable(db, 'finance') };
 }
 
 /** ფინანსების რეპორტები (შემოსავალი, მარაგი, განყოფილების შედეგი); manager — თავისი განყოფილება (dept_finance_visible = heads) */

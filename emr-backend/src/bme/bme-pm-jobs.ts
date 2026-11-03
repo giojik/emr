@@ -23,9 +23,9 @@ export class BmePmJobsService {
   async tick(force = false, deviceIds?: string[]) {
     const only = deviceIds?.length ? sql`AND b.id = ANY (${sql.val(deviceIds)}::uuid[])` : sql``;
     const s = await pmSettings(this.db);
-    if (!s) return { reminders: 0, notified: 0, restricted: 0 };
+    if (!s) return { enabled: false, reminders: 0, notified: 0, restricted: 0 };   // 0086: პორტი — მოდული არააქტიურია
     const h = (await sql<{ h: number }>`SELECT extract(hour FROM now() AT TIME ZONE ${TZ})::int AS h`.execute(this.db)).rows[0].h;
-    if (!force && h < (s.pm_remind_hour ?? 9)) return { reminders: 0, notified: 0, restricted: 0 };
+    if (!force && h < (s.pm_remind_hour ?? 9)) return { enabled: true, reminders: 0, notified: 0, restricted: 0 };
     const stages = [...new Set((s.pm_remind_days ?? [30, 7]).filter((x) => Number.isInteger(x) && x > 0))].sort((a, b) => b - a);
 
     // ეტაპი: ვადაგადაცილება → 0; ვადამდე ≤ d დღე → უმცირესი d, რომელიც ≥ დარჩენილს (30 → 7 → …)
@@ -110,6 +110,6 @@ export class BmePmJobsService {
         for (const id of ids) await this.notifications.notify(id, { kind: 'bme_status', title: `${d.inv_no} ${d.name}: ${STATUS_KA.restricted}`, body: reason, link: `/bme?device=${d.id}`, entityId: d.id, urgent: true });
       }
     }
-    return { reminders: rows.length, notified, restricted };
+    return { enabled: true, reminders: rows.length, notified, restricted };
   }
 }

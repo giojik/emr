@@ -4,7 +4,8 @@
 #
 #   bash scripts/run-tests.sh ipc ipc-hai inpatient          # სახელები (e2e- / .sh — არასავალდებულო)
 #   bash scripts/run-tests.sh 'ipd-*' 'quality*'             # შაბლონები
-#   bash scripts/run-tests.sh --all                          # ყველა e2e-*.sh + smoke-form100
+#   bash scripts/run-tests.sh --all                          # ყველა e2e-*.sh + smoke-form100 (0086: matrix-* — არა, მხოლოდ სახელით)
+#   bash scripts/run-tests.sh 'matrix-*'                     # 0086: მოდულების მატრიცა / რბილი კავშირები / პროფილი (ცალკე, მოდულებს რთავს / თიშავს)
 #   bash scripts/run-tests.sh --all -x lab-mail-imap -x 'lab-gateway*'   # გამოკლებით
 #   bash scripts/run-tests.sh -u http://localhost/api ipc    # API მისამართი (ნაგულისხმევი — სკრიპტების)
 #
@@ -21,14 +22,14 @@ while [ $# -gt 0 ]; do
     -u|--url) URL="$2"; shift 2 ;;
     -x|--exclude) EXCL+=("$2"); shift 2 ;;
     --all) ALL=1; shift ;;
-    -h|--help) sed -n '3,13p' "$SELF"; exit 0 ;;
+    -h|--help) sed -n '3,14p' "$SELF"; exit 0 ;;
     *) PATS+=("$1"); shift ;;
   esac
 done
-[ $ALL = 1 ] || [ ${#PATS[@]} -gt 0 ] || { sed -n '3,13p' "$SELF"; exit 2; }
+[ $ALL = 1 ] || [ ${#PATS[@]} -gt 0 ] || { sed -n '3,14p' "$SELF"; exit 2; }
 command -v jq >/dev/null || { echo "jq არ არის დაყენებული"; exit 2; }
 
-norm() { local n="${1%.sh}"; n="${n#e2e-}"; [ "$n" = "smoke-form100" ] && echo "$n" || echo "e2e-$n"; }
+norm() { local n="${1%.sh}"; n="${n#e2e-}"; case "$n" in smoke-form100|matrix-*) echo "$n" ;; *) echo "e2e-$n" ;; esac; }
 LIST=()
 if [ $ALL = 1 ]; then for f in e2e-*.sh smoke-form100.sh; do [ -f "$f" ] && LIST+=("${f%.sh}"); done; fi
 for p in "${PATS[@]}"; do

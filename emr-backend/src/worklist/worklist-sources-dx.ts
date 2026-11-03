@@ -5,6 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { WL_DEFAULTS } from './worklist-common';
 import type { AdminCtx, Row, SourceGroup } from './worklist-sources-admin';
 import { ClinCtx, NIL, plus, uuids } from './worklist-sources-clinical';
+import { modUsable } from '../modules/modules-ref';
 
 /**
  * სამუშაო სიები (D5), 0084 — დიაგნოსტიკის წყაროები (ვირტუალური, როგორც 0081–0083): ჩანაწერი ყოველ ჯერზე წყაროს ცხრილიდან ითვლება,
@@ -189,7 +190,7 @@ export class WorklistDxSources {
     const me = await x.x.me();
     const head = await x.headDoctor();
     const hdd = [...(await x.headDoctorDepts())];
-    const ro = await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'roster').executeTakeFirst();
+    const ro = { enabled: await modUsable(this.db, 'roster') };   // 0086: მორიგეობა — ჩვენება (read_only-ზეც)
     const ONSHIFT = (user: RawBuilder<unknown>) => sql<boolean>`EXISTS (SELECT 1 FROM roster_entries re JOIN rosters r ON r.id = re.roster_id
       JOIN staff_members sm ON sm.id = re.staff_id LEFT JOIN staff_positions sp ON sp.id = sm.position_id
       WHERE re.status = 'active' AND r.status IN ('published', 'closed') AND re.starts_at <= now() AND re.ends_at > now() AND r.department_id = x.dep

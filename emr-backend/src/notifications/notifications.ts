@@ -6,6 +6,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import { BELL_ALWAYS, BELL_SOURCE, SOURCES, enabledModules } from '../worklist/worklist-common';
 import { modulesRef } from '../modules/modules-ref';
 import { RequireModule } from '../modules/module-guard';
+import { modActive } from '../modules/modules-ref';
 
 /** თანამშრომლის შეტყობინებები (ზარი). ერთი (მომხმარებელი, ტიპი, ობიექტი) — ერთი წაუკითხავი ჩანაწერი, ელემენტები ერთიანდება */
 @Injectable()
@@ -17,9 +18,9 @@ export class NotificationsService {
   private sup: { t: number; v: { on: boolean; sources: Record<string, boolean>; ackAll: boolean } } | null = null;
   private async suppression() {
     if (this.sup && Date.now() - this.sup.t < 30_000) return this.sup.v;
-    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
+    const m = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'worklist').executeTakeFirst();
     const st = (m?.settings ?? {}) as { bell_suppress?: string; sources?: Record<string, boolean>; ack_scope?: string };
-    const v = { on: !!m?.enabled && st.bell_suppress === 'non_urgent', sources: st.sources ?? {}, ackAll: st.ack_scope === 'all' };
+    const v = { on: (await modActive(this.db, 'worklist')) && st.bell_suppress === 'non_urgent', sources: st.sources ?? {}, ackAll: st.ack_scope === 'all' };
     this.sup = { t: Date.now(), v };
     return v;
   }

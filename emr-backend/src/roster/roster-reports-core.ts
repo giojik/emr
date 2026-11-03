@@ -1,3 +1,4 @@
+import { modUsable } from '../modules/modules-ref';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
@@ -22,9 +23,9 @@ export type Rules = RosterSettings & RptRules;
 
 /** მოდული ჩართულია → პარამეტრები (ანგარიშების ნაგულისხმევებით); გამორთული → null */
 export async function rosterRptRules(db: Ex): Promise<Rules | null> {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'roster').executeTakeFirst();
-  if (!m?.enabled) return null;
-  return { ...RPT_DEFAULTS, ...((m.settings ?? {}) as Partial<Rules>) } as Rules;
+  if (!(await modUsable(db, 'roster'))) return null;   // 0086: ანგარიშები read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'roster').executeTakeFirst();
+  return { ...RPT_DEFAULTS, ...((m?.settings ?? {}) as Partial<Rules>) } as Rules;
 }
 
 export interface Filt { depts?: string[] | null; category?: string | null; position_id?: string | null; employment?: string | null }

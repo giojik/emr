@@ -425,7 +425,7 @@ export class IpcHaiService {
 
   /** ჰოსპიტალიზაციის გვერდზე (მკურნალი ექიმი, პერსონალი) — მოკლე, მხოლოდ დადასტურებული / განხილვაში */
   async forStay(encounterId: string) {
-    if (!(await ipcRules(this.db))) return [];
+    if (!(await ipcRules(this.db, 'usable'))) return [];   // 0086: @ModulePort — ძველი შემთხვევები ჩანს read_only-ზე
     return this.db.selectFrom('ipc_hai_cases as h').innerJoin('ipc_hai_types as t', 't.code', 'h.hai_type')
       .select(['h.id', 'h.case_no', 'h.status', 'h.onset_date', 'h.device_assoc', 't.short_name', 't.device_name', 'h.ssi_depth'])
       .where('h.encounter_id', '=', encounterId).where('h.status', 'in', ['review', 'confirmed']).orderBy('h.onset_date').execute()

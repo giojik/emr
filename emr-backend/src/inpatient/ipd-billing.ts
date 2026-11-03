@@ -22,6 +22,7 @@ import { tariffRules } from '../billing/tariff-rules';
 import { drgFinalizeCheck, drgForPayer } from '../drg/drg-calc';
 import { errorText, scrubInvoice, scrubSettings } from '../scrub/scrub-engine';
 import { RequireModule } from '../modules/module-guard';
+import { modUsable } from '../modules/modules-ref';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -168,8 +169,8 @@ export class IpdBillingService {
     const vent = await this.db.selectFrom('stay_vent_days as d').leftJoin('service_tariffs as t', 't.id', 'd.tariff_id')
       .select([sql<string>`to_char(d.day, 'YYYY-MM-DD')`.as('day'), 'd.minimum', 'd.package_included', 't.title as tariff_title', sql<string>`coalesce(d.unit_price, t.base_price)`.as('price')])
       .where('d.encounter_id', '=', encounterId).orderBy('d.day').execute();
-    const icuMod = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
-    const ventBilling = !!icuMod?.enabled && (icuMod.settings as Record<string, unknown>)?.vent_billing !== false;
+    const icuMod = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst();
+    const ventBilling = (await modUsable(this.db, 'icu')) && (icuMod?.settings as Record<string, unknown>)?.vent_billing !== false;
     return {
       stay: { encounter_id: st.encounter_id, patient_id: st.patient_id, adm_no: st.adm_no, status: st.status, admitted_at: st.admitted_at, ended_at: st.ended_at, first_name: st.first_name, last_name: st.last_name,
         personal_number: st.personal_number },
@@ -456,8 +457,8 @@ export class IpdBillingService {
           .where('package_included', '=', false).executeTakeFirstOrThrow();
         if (miss.n) throw new ConflictException({ code: 'BED_TARIFF_MISSING', message: `საწოლდღე (${miss.n}) ტარიფის გარეშეა — ადმინისტრირება → სტაციონარის ბილინგი → საწოლდღის ტარიფები` });
         // 0047: ვენტილაციის დღე ტარიფის გარეშე (თუ ვენტილაციის ბილინგი ჩართულია)
-        const icu = await trx.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
-        if (icu?.enabled && (icu.settings as Record<string, unknown>)?.vent_billing !== false) {
+        const icu = await trx.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst();
+        if ((await modUsable(trx, 'icu')) && (icu?.settings as Record<string, unknown>)?.vent_billing !== false) {
           const vm = await trx.selectFrom('stay_vent_days').select(sql<number>`count(*)::int`.as('n')).where('encounter_id', '=', encounterId).where('tariff_id', 'is', null)
             .where('package_included', '=', false).executeTakeFirstOrThrow();
           if (vm.n) throw new ConflictException({ code: 'VENT_TARIFF_MISSING', message: `ხელოვნური ვენტილაციის დღე (${vm.n}) ტარიფის გარეშეა — მოდულები → რეანიმაცია → ვენტილაციის დღის ტარიფი` });

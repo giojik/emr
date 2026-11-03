@@ -1,3 +1,5 @@
+import { ModuleInactive, WriteGuard } from '../components/ModuleGate';
+import { useModules } from '../lib/modules';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom';
@@ -70,11 +72,15 @@ function ExternalResult({ it, canEnter }: { it: LabItemX; canEnter: boolean }) {
 export default function DiagnosticsHub() {
   const { section = '' } = useParams();
   const { user } = useAuth();
+  const mods = useModules();
+  const MOD: Record<string, string> = { lab: 'lab', radiology: 'radiology', endoscopy: 'endoscopy', referrals: 'outpatient' };   // 0086: მხოლოდ აქტიური სექციები
+  const usableMod = (k: string) => !mods.data || !!mods.data.find((m) => m.code === MOD[k])?.enabled;
   const tabs = [['lab', 'ლაბორატორია'], ['radiology', 'რადიოლოგია'], ['endoscopy', 'ენდოსკოპია'], ['referrals', 'სხვა მიმართვები']] as const;
   const allowed = tabs.filter(([k]) => ({
     lab: ['admin', 'diagnostic', 'lab_doctor', 'lab_manager'], radiology: ['admin', 'radiographer', 'radiologist', 'receptionist', 'manager', 'viewer'],
     endoscopy: ['admin', 'endoscopist', 'endoscopy_nurse', 'receptionist', 'manager', 'viewer', 'med_engineer'], referrals: ['admin', 'diagnostic'],
-  } as Record<string, Role[]>)[k].some((c) => can(user, c)));
+  } as Record<string, Role[]>)[k].some((c) => can(user, c)) && usableMod(k));
+  if (!allowed.length) return <ModuleInactive mods={(mods.data ?? []).filter((m) => ['lab', 'radiology', 'endoscopy'].includes(m.code))} />;
   if (!allowed.some(([k]) => k === section)) return <Navigate to={`/diagnostics/${allowed[0]?.[0] ?? 'lab'}`} replace />;
   return (
     <>
@@ -84,9 +90,11 @@ export default function DiagnosticsHub() {
           {allowed.length > 1 && allowed.map(([k, l]) => <NavLink key={k} to={`/diagnostics/${k}`} className="admin-tab">{l}</NavLink>)}
         </nav>
       </header>
-      {section === 'lab' && <LabWorkspace />}
-      {(section === 'radiology' || section === 'endoscopy') && <ImagingWorkspace key={section} section={section} />}
-      {section === 'referrals' && <ReferralsWorklist embedded />}
+      <WriteGuard code={MOD[section] ?? section}>
+        {section === 'lab' && <LabWorkspace />}
+        {(section === 'radiology' || section === 'endoscopy') && <ImagingWorkspace key={section} section={section} />}
+        {section === 'referrals' && <ReferralsWorklist embedded />}
+      </WriteGuard>
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { modUsable } from '../modules/modules-ref';
 import { ConflictException, Global, Injectable, Module } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { has, type AuthUser, type Role } from '../auth/roles';
@@ -65,8 +66,10 @@ export class BmeGuard {
 
   /** მოდული ჩართულია → პარამეტრები; გამორთული → null */
   async settings(ex: Ex = this.db): Promise<BmeSettings | null> {
-    const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'bme').executeTakeFirst();
-    return m?.enabled ? (m.settings as unknown as BmeSettings) : null;
+    // 0086: active ∨ read_only — აპარატის სტატუსი (უსაფრთხოება) ლიცენზიის ვადის შემდეგაც მოქმედებს; გამორთული / ლიცენზიის გარეშე → null
+    if (!(await modUsable(ex, 'bme'))) return null;
+    const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'bme').executeTakeFirst();
+    return (m?.settings ?? {}) as unknown as BmeSettings;
   }
 
   /**
@@ -92,9 +95,9 @@ export class BmeGuard {
   /** გაფრთხილებები ეკრანისთვის: მიბმული აპარატები, რომლებიც არ არის „მუშა“ (შეზღუდული / გაუმართავი / გამოყვანილი) */
   async alerts(area: Area) {
     const s = await this.settings();
-    if (!s) return { area, mode: 'off' as const, items: [] };
+    if (!s) return { enabled: false, area, mode: 'off' as const, items: [] };   // 0086: პორტის ნეიტრალური პასუხი
     const mode = s[`area_${area}`] as AreaMode;
-    if (mode === 'off') return { area, mode, items: [] };
+    if (mode === 'off') return { enabled: true, area, mode, items: [] };
     let q = this.db.selectFrom('bme_devices as b').innerJoin('bme_device_types as t', 't.id', 'b.type_id').leftJoin('departments as d', 'd.id', 'b.department_id')
       .leftJoin('dx_devices as x', 'x.id', 'b.dx_device_id').leftJoin('or_rooms as o', 'o.id', 'b.or_room_id')
       .leftJoin('lab_methods as lm', 'lm.id', 'b.lab_method_id').leftJoin('cssd_machines as cm', 'cm.id', 'b.cssd_machine_id').leftJoin('endo_scopes as es', 'es.id', 'b.endo_scope_id')
@@ -111,7 +114,7 @@ export class BmeGuard {
     else q = q.where('b.or_room_id', 'is not', null).where('b.status', '<>', 'retired')
       .where(sql<boolean>`array_position(ARRAY['low','medium','high','life_support']::text[], b.criticality) >= array_position(ARRAY['low','medium','high','life_support']::text[], ${s.or_alert_criticality}::text)`);
     const items = await q.execute();
-    return { area, mode, items: items.map((i) => ({ ...i, blocking: mode === 'block' && UNAVAILABLE.includes(i.status as BmeStatus) })) };
+    return { enabled: true, area, mode, items: items.map((i) => ({ ...i, blocking: mode === 'block' && UNAVAILABLE.includes(i.status as BmeStatus) })) };
   }
 }
 

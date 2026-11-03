@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { modulesRef } from '../modules/modules-ref';
+import { modActive, modActiveMap, modulesRef } from '../modules/modules-ref';
 import { SECTION_MODULE } from '../modules/registry';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
@@ -62,8 +62,10 @@ function checkCrit(d: CritCall) {
   return { to: to.slice(0, 300), via: d.via, readback: !!d.readback };
 }
 async function critCallMode(ex: Kysely<DB> | Transaction<DB>): Promise<string> {
-  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
-  return m?.enabled ? ((m.settings as { lab_crit_call?: string })?.lab_crit_call ?? 'task') : 'off';
+  // 0086: რბილი კავშირი lab → worklist (კრიტიკული ზარის რეჟიმი); არააქტიურზე — off
+  if (!(await modActive(ex, 'worklist'))) return 'off';
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'worklist').executeTakeFirst();
+  return m ? ((m.settings as { lab_crit_call?: string })?.lab_crit_call ?? 'task') : 'off';
 }
 
 export const ageDays = (birth: string, at: Date) => Math.floor((at.getTime() - new Date(`${birth}T00:00:00Z`).getTime()) / 86_400_000);
@@ -74,13 +76,21 @@ export class DiagnosticsService {
               private readonly core: EncounterCoreService, private readonly allergy: AllergyCheckService) {}
 
   // =============================================================== კატალოგი
-  catalog(q: { section?: string; search?: string; includeInactive?: boolean }) {
+  async catalog(q: { section?: string; search?: string; includeInactive?: boolean; orderable?: boolean }) {
     let query = this.db.selectFrom('dx_services as s').innerJoin('service_tariffs as t', 't.id', 's.tariff_id')
       .select(['s.id', 's.section', 's.code', 's.name', 's.group_name', 's.performed_by', 's.external_lab', 's.specimen_type', 's.container',
         's.modality', 's.body_part', 's.contrast', 's.is_active', 's.needs_review', 's.sort_order', 't.base_price', 's.tariff_id', 's.duration_minutes', 's.prep_instructions'])
       .orderBy('s.section').orderBy('s.group_name').orderBy('s.sort_order');
     if (q.section) query = query.where('s.section', '=', q.section);
     if (!q.includeInactive) query = query.where('s.is_active', '=', true);
+    if (q.orderable) {
+      // 0086: რბილი კავშირი outpatient / ipd_orders → lab / radiology / endoscopy (+ lab_micro, lab_external) — დასანიშნად მხოლოდ აქტიური სექციები
+      const on = await modActiveMap(this.db, ['lab', 'radiology', 'endoscopy', 'lab_micro', 'lab_external']);
+      const sections = Object.keys(SECTION_MODULE).filter((k) => on[SECTION_MODULE[k]]);
+      query = query.where('s.section', 'in', sections.length ? sections : ['—']);
+      if (!on.lab_micro) query = query.where('s.is_micro', '=', false);
+      if (!on.lab_external) query = query.where('s.performed_by', '<>', 'external');
+    }   // ადმინის კატალოგი (orderable-ის გარეშე) — ყველა სექცია
     if (q.search?.trim()) query = query.where((eb) => eb.or([eb('s.name', 'ilike', `%${q.search!.trim()}%`), eb('s.code', 'ilike', `%${q.search!.trim()}%`)]));
     return query.execute();
   }
@@ -216,6 +226,9 @@ export class DiagnosticsService {
     const res = await this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
       this.core.assertClinicalWriter(e, user);
+      // 0086: რბილი კავშირი lab / radiology / endoscopy → outpatient / inpatient — შეკვეთა მხოლოდ აქტიური მოდულის ვიზიტზე (ლაბ. ვიზიტი — თავად lab)
+      const visitModule = e.visit_kind === 'lab' ? null : e.type === 'inpatient' ? 'inpatient' : e.type === 'outpatient' ? 'outpatient' : null;
+      if (visitModule && modulesRef.svc) await modulesRef.svc.assertActive(visitModule);
       return this.insertItems(trx, { id: encounterId, patient_id: e.patient_id }, dto.items, dto.allergy_override_reason, user, ctx);
     });
     if ('conflict' in res) throw new ConflictException({ code: 'ALLERGY_CONFLICT', message: 'პაციენტს აქვს ალერგია კონტრასტზე — საჭიროა დასაბუთება', check: res.conflict });

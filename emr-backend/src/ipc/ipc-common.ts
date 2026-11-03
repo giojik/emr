@@ -5,6 +5,7 @@ import { InjectDb, type Database } from '../database/database.module';
 import type { DB } from '../database/db';
 import { NotificationsService } from '../notifications/notifications';
 import { NotifyService } from '../notify/notify.service';
+import { modActive, modUsable } from '../modules/modules-ref';
 
 export type Trx = Transaction<DB>;
 export type Ex = Database | Trx;
@@ -80,10 +81,14 @@ export const IPC_STATUS_READ: Role[] = ['admin', 'receptionist', 'doctor', 'nurs
 
 export const userName = (alias: string) => sql<string | null>`${sql.ref(`${alias}.first_name`)} || ' ' || ${sql.ref(`${alias}.last_name`)}`;
 
-/** პარამეტრები ბაზიდან (trx-შიც) — გამორთულ მოდულზე null */
-export async function ipcRules(ex: Ex): Promise<IpcRules | null> {
-  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'ipc').executeTakeFirst();
-  return m?.enabled ? { ...IPC_DEFAULTS, ...(m.settings as Partial<IpcRules>) } : null;
+/**
+ * პარამეტრები ბაზიდან (trx-შიც) — არააქტიურ მოდულზე null.
+ * 0086: mode = active (ნაგულისხმევი) — მოქმედება (სიგნალი, ფლაგი, ჯობი, შემოწმება); usable — ჩვენება / ანგარიში / ETL (ლიცენზიის ვადის შემდეგაც).
+ */
+export async function ipcRules(ex: Ex, mode: 'active' | 'usable' = 'active'): Promise<IpcRules | null> {
+  if (!(await (mode === 'usable' ? modUsable(ex, 'ipc') : modActive(ex, 'ipc')))) return null;
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'ipc').executeTakeFirst();
+  return { ...IPC_DEFAULTS, ...((m?.settings ?? {}) as Partial<IpcRules>) };
 }
 
 /** პაციენტის აქტიური MDRO ფლაგები (კოდები) */
@@ -178,9 +183,10 @@ export class IpcCommon {
 
   /** მოდული ჩართულია → პარამეტრები; გამორთულზე — 403 MODULE_DISABLED */
   async rules(): Promise<IpcRules> {
-    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings', 'name']).where('code', '=', 'ipc').executeTakeFirst();
-    if (!m?.enabled) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „ინფექციის კონტროლი“ გამორთულია (ადმინისტრირება → მოდულები)' });
-    return { ...IPC_DEFAULTS, ...(m.settings as Partial<IpcRules>) };
+    // 0086: წვდომას guard წყვეტს; აქ — მხოლოდ usable (ლიცენზიის ვადის შემდეგ ნახვა რჩება)
+    const r = await ipcRules(this.db, 'usable');
+    if (!r) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „ინფექციის კონტროლი“ გამორთულია (ადმინისტრირება → მოდულები)' });
+    return r;
   }
   /** პარამეტრები ან null (გამორთული) — იზოლაცია მოდულის გარეშეც მუშაობს */
   rulesOrNull() { return ipcRules(this.db); }

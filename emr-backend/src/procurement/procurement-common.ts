@@ -39,7 +39,7 @@ export class ProcCommon {
   /** მოდული ჩართულია → პარამეტრები; გამორთულზე — 403 */
   async rules(ex: Ex = this.db): Promise<ProcRules> {
     const r = await procRules(ex as Database);
-    if (!r.enabled) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „შესყიდვები“ გამორთულია (ადმინისტრირება → მოდულები)' });
+    if (!r.usable) throw new ForbiddenException({ code: 'MODULE_DISABLED', message: 'მოდული „შესყიდვები“ გამორთულია (ადმინისტრირება → მოდულები)' });
     return r;
   }
   async rulesPo(ex: Ex = this.db) {

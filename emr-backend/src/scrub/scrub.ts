@@ -144,6 +144,8 @@ export class ScrubService {
   // ---------------------------------------------------------------- შემთხვევა
   async forInvoice(invoiceId: string) {
     const s = await scrubSettings(this.db);
+    // 0086: @ModulePort — არააქტიურ მოდულზე ნეიტრალური პასუხი (წესები არ ეშვება)
+    if (!s.enabled) return { enabled: false, settings: { finalize_check: 'off', claim_check: 'off' }, invoice_id: invoiceId, kind: null, checked: false, issues: [], errors: 0, warnings: 0, overridden: 0 };
     const r = await scrubInvoice(this.db, invoiceId);
     return { enabled: s.enabled, settings: { finalize_check: s.finalize_check, claim_check: s.claim_check }, ...r };
   }

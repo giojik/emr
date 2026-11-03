@@ -130,24 +130,28 @@ export class OrMaterialsService {
     const phases = Object.fromEntries(await Promise.all((['initial', 'pre_closure', 'final'] as const).map(async (ph) => [ph, await countState(this.db, id, ph)])));
     return { case_id: id, case_no: c.case_no, status: c.status, location: loc, items, counts, count_state: phases, packs, implants,
       card: { mode: s.preference_cards, items: card, assembled: items.some((i) => i.source === 'card') }, count_mode: s.count_mode, count_kinds: COUNT_KINDS,
-      cssd: (await this.modules.get('cssd')).enabled,
+      cssd: await this.modules.isActive('cssd'),
+      stock: await this.modules.isActive('stock'),   // 0086: false → მასალის ბლოკი იმალება (ძველი პოზიციები — items, წასაკითხად)   // 0086: რბილი კავშირი or → cssd (ძველი შეფუთვები — packs, ყოველთვის)
       can: { edit: p.nursing_ops && ['scheduled', 'in_progress', 'completed'].includes(c.status), post: p.nursing_ops && ['in_progress', 'completed'].includes(c.status),
         count: p.nursing_ops && c.status === 'in_progress' } };
   }
 
   async stock_(id: string, q: string | undefined) {
+    await this.modules.assertActive('stock', false);   // 0086: or → stock
     const c = await this.or.loadCase(id);
     const loc = await this.location(c.block_id);
     if (!loc) return [];
     return stockAt(this.db, loc.id, q, ['medical_supply', 'implant', 'medication', 'other']);
   }
   async lots(id: string, itemId: string) {
+    await this.modules.assertActive('stock', false);   // 0086: or → stock
     const c = await this.or.loadCase(id);
     const loc = await this.location(c.block_id);
     return loc ? lotsAt(this.db, loc.id, itemId) : [];
   }
 
   async assemble(id: string, u: AuthUser, ctx: AuditContext) {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     const n = await this.db.transaction().execute(async (trx) => {
       const { s, c } = await this.ops(id, u, trx);
       if (s.preference_cards === 'off') throw new ConflictException('preference card გამორთულია (პარამეტრი)');
@@ -160,6 +164,7 @@ export class OrMaterialsService {
   }
 
   async add(id: string, dto: ItemDto, u: AuthUser, ctx: AuditContext, source: 'manual' | 'scan' = 'manual') {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     await this.db.transaction().execute(async (trx) => {
       const { c } = await this.ops(id, u, trx);
       const loc = await this.needLocation(c.block_id, trx);
@@ -184,6 +189,7 @@ export class OrMaterialsService {
 
   /** სკანირება: GS1 / EAN → საქონელი; ლოტი / სერიული — კოდიდან, ბლოკის საწყობში */
   async scan(id: string, dto: ScanDto, u: AuthUser, ctx: AuditContext) {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     const c = await this.or.loadCase(id);
     const loc = await this.needLocation(c.block_id);
     const p = parseBarcode(dto.code);
@@ -211,6 +217,7 @@ export class OrMaterialsService {
   }
 
   async patch(rowId: string, dto: ItemPatchDto, u: AuthUser, ctx: AuditContext) {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     const r = await this.db.selectFrom('or_case_items').select(['case_id']).where('id', '=', rowId).executeTakeFirst();
     if (!r) throw new NotFoundException('ხაზი ვერ მოიძებნა');
     await this.db.transaction().execute(async (trx) => {
@@ -228,6 +235,7 @@ export class OrMaterialsService {
   }
 
   async remove(rowId: string, u: AuthUser, ctx: AuditContext) {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     const r = await this.db.selectFrom('or_case_items').select(['case_id', 'posted_at']).where('id', '=', rowId).executeTakeFirst();
     if (!r) throw new NotFoundException('ხაზი ვერ მოიძებნა');
     if (r.posted_at) throw new ConflictException('ჩამოწერილი მასალა არ იშლება (შესწორება — საწყობის დოკუმენტით)');
@@ -241,6 +249,7 @@ export class OrMaterialsService {
 
   /** ექთანი ადასტურებს → ჩამოწერა ბლოკის ლოკაციიდან (FEFO / მითითებული ლოტი) + ინვოისი; იმპლანტი → რეესტრი */
   async post(id: string, u: AuthUser, ctx: AuditContext) {
+    await this.modules.assertActive('stock');   // 0086: or → stock (მასალის ბლოკი)
     const { c } = await this.ops(id, u, this.db, ['in_progress', 'completed']);
     if (!c.encounter_id) throw new ConflictException('ჰოსპიტალიზაცია არ არის');
     const loc = await this.needLocation(c.block_id);
@@ -300,7 +309,7 @@ export class OrMaterialsService {
   // ================================================================= CSSD
   /** შეფუთვის სკანირება (pack_no ან ნაკრების შტრიხკოდი): სტერილური / გაცემული — ემატება; სხვა → ბლოკი */
   async addPack(id: string, dto: PackDto, u: AuthUser, ctx: AuditContext) {
-    if (!(await this.modules.get('cssd')).enabled) throw new ConflictException('მოდული CSSD გამორთულია');
+    await this.modules.assertActive('cssd');   // 0086: 403 MODULE_DISABLED / NOT_LICENSED / LICENSE_EXPIRED
     const code = dto.code.trim().toUpperCase();
     try {
       await this.db.transaction().execute(async (trx) => {

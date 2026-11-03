@@ -1,6 +1,7 @@
 import { can, type Role } from '../../api/client';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
+import { usePathAllowed } from '../../components/ModuleGate';
 
 const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/users', label: 'მომხმარებლები', roles: ['admin', 'hr', 'manager'] },
@@ -34,7 +35,8 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
 
 export default function AdminLayout() {
   const { user } = useAuth();
-  const tabs = TABS.filter((t) => can(user, ...(t.roles as Role[])));
+  const allowed = usePathAllowed();   // 0086: არააქტიური მოდულის ჩანართი არ ჩანს (lib/moduleRoutes)
+  const tabs = TABS.filter((t) => can(user, ...(t.roles as Role[])) && allowed(t.to));
   return (
     <>
       <header className="topbar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingBottom: 0 }}>

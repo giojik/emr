@@ -1,10 +1,14 @@
 import type { Kysely } from 'kysely';
 import type { Role } from '../auth/roles';
 import type { DB } from '../database/db';
+import { modActive, modUsable } from '../modules/modules-ref';
 
 /** შესყიდვების პარამეტრები (0051) — system_modules.procurement; გამორთულ მოდულზე po_mode = off (მიღება — 0031-ის ქცევა) */
 export interface ProcRules {
+  /** 0086: მოდული სრულად მუშაობს (რბილი კავშირი: PO-ს მოთხოვნა მიღებაზე, PR-ის შექმნა) */
   enabled: boolean;
+  /** 0086: active ∨ read_only — საკუთარი გვერდების წაკითხვა */
+  usable: boolean;
   po_mode: 'off' | 'optional' | 'required';
   pr_approval_levels: 1 | 2;
   pr_finance_threshold: number;
@@ -19,14 +23,14 @@ export interface ProcRules {
   ap_due_alert: boolean;
   ap_due_days: number;
 }
-export const PROC_RULES_DEFAULT: Omit<ProcRules, 'enabled'> = {
+export const PROC_RULES_DEFAULT: Omit<ProcRules, 'enabled' | 'usable'> = {
   po_mode: 'optional', pr_approval_levels: 2, pr_finance_threshold: 1000, controlled_pharmacist: true, price_tolerance_pct: 5, qty_over_delivery: 'warn', po_overdue_alert: true,
   invoice_match: 'rc', match_tolerance: 1, expense_recognition: 'on_invoice', ap_due_alert: true, ap_due_days: 3,
 };
 export async function procRules(db: Kysely<DB>): Promise<ProcRules> {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'procurement').executeTakeFirst();
-  const r = { ...PROC_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<ProcRules>), enabled: !!m?.enabled };
-  if (!r.enabled) r.po_mode = 'off';
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'procurement').executeTakeFirst();
+  const r = { ...PROC_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<ProcRules>), enabled: await modActive(db, 'procurement'), usable: await modUsable(db, 'procurement') };
+  if (!r.usable) r.po_mode = 'off';   // 0086: გამორთული / ლიცენზიის გარეშე (read_only-ზე PO-ების წაკითხვა რჩება)
   return r;
 }
 

@@ -44,7 +44,11 @@ export class AstmLink extends EventEmitter {
   private frames: Buffer[] = []; private frameIdx = 0; private retries = 0;
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly write: (b: Buffer) => void, private readonly opts: { instrument?: boolean } = {}) { super(); }
+  /**
+   * opts.accept (0086, D): ENQ-ზე იკითხება — false → NAK („დაკავებულია“, CLSI LIS1): ანალიზატორი შედეგს ინახავს და ხელახლა ცდის.
+   * ASTM-ში ჩარჩოები ACK-დება შეტყობინების დამუშავებამდე, ამიტომ უარყოფა მხოლოდ ENQ-ზეა შესაძლებელი.
+   */
+  constructor(private readonly write: (b: Buffer) => void, private readonly opts: { instrument?: boolean; accept?: () => boolean } = {}) { super(); }
 
   /** მოდის ბაიტები სოკეტიდან */
   feed(chunk: Buffer) {
@@ -92,6 +96,7 @@ export class AstmLink extends EventEmitter {
     if (this.state === 'enq_sent' && this.opts.instrument) return;          // ანალიზატორი არ უთმობს — ელოდება ACK-ს
     if (this.state === 'enq_sent') this.emit('log', 'ENQ შეჯახება — ვუთმობთ ანალიზატორს');
     if (this.state === 'sending') { this.write(Buffer.from([NAK])); return; }
+    if (this.opts.accept && !this.opts.accept()) { this.clear(); this.state = 'idle'; this.write(Buffer.from([NAK])); this.emit('rejected'); return; }
     this.clear(); this.state = 'receiving'; this.expectedFn = 1; this.text = ''; this.records = [];
     this.write(Buffer.from([ACK])); this.arm(TIMEOUT_RECV_MS, () => { this.emit('log', 'მიღების timeout'); this.reset(); });
   }

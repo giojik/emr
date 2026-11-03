@@ -17,6 +17,7 @@ import { probe, sendRaw, wristbandPdf, wristbandZpl, type WristbandData } from '
 import { ipcBedCheck, ipcRules, isoReplaceLegacy, isoStart } from '../ipc/ipc-common';
 import { RosterLookup } from '../roster/roster-common';
 import { ClinicalHistory, ReadOnlySafe, RequireModule } from '../modules/module-guard';
+import { modUsable } from '../modules/modules-ref';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
@@ -379,6 +380,7 @@ export class InpatientService {
   async board(departmentId: string, u: AuthUser) {
     const s = await this.settings();
     const dep = await this.department(departmentId);
+    const ipcOn = await modUsable(this.db, 'ipc');   // 0086: MDRO-ს ნიშანი — რბილი კავშირი inpatient → ipc (რეესტრიდან)
     const occRaw = await this.db.selectFrom('bed_assignments as a').innerJoin('inpatient_stays as st', 'st.encounter_id', 'a.encounter_id')
       .innerJoin('encounters as e', 'e.id', 'a.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id').leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
       .select(['a.bed_id', 'a.encounter_id', 'a.started_at', 'st.adm_no', 'st.severity', 'st.isolation', 'st.admitted_at', 'p.id as patient_id', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
@@ -402,7 +404,7 @@ export class InpatientService {
         // 0067: აქტიური იზოლაციები (ტიპები) და MDRO ფლაგები (ipc მოდული ჩართულია)
         sql<string[]>`ARRAY(SELECT i.type FROM ipc_isolations i JOIN ipc_isolation_types t ON t.code = i.type WHERE i.encounter_id = a.encounter_id AND i.ended_at IS NULL ORDER BY t.priority DESC)`.as('isolations'),
         sql<string[]>`ARRAY(SELECT f.mdro_code FROM ipc_patient_flags f WHERE f.patient_id = p.id AND f.status = 'active'
-          AND EXISTS (SELECT 1 FROM system_modules m WHERE m.code = 'ipc' AND m.enabled) ORDER BY f.mdro_code)`.as('mdro')])
+          AND ${ipcOn} ORDER BY f.mdro_code)`.as('mdro')])
       .where('a.department_id', '=', departmentId).where('a.ended_at', 'is', null).orderBy('a.started_at').execute();
     const occ = occRaw.map((o) => ({ ...o, consent: o.consents_missing.length === 0 }));
     const reserved = await this.db.selectFrom('inpatient_planned as pl').innerJoin('patients as p', 'p.id', 'pl.patient_id')
@@ -852,7 +854,7 @@ export class InpatientService {
     return { departmentId: st.department_id, data: { adm_no: st.adm_no, last_name: st.last_name, first_name: st.first_name, birth_date: st.birth_date, age,
       sex: st.gender === 'male' ? 'მ' : st.gender === 'female' ? 'მდ' : '—', personal_number: st.personal_number, department: st.department, bed: st.bed, admitted_at: st.admitted_at,
       allergies: allergies.map((a) => a.substance), clinic: clinic?.name ?? '',
-      isolation_mark: !!st.isolation && !!(await ipcRules(this.db))?.wristband_symbol } };
+      isolation_mark: !!st.isolation && !!(await ipcRules(this.db, 'usable'))?.wristband_symbol } };
   }
 
   async wristbandPdf(encounterId: string, u: AuthUser) {

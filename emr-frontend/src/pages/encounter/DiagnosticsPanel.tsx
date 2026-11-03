@@ -1,3 +1,6 @@
+import { IfModule } from '../../components/ModuleGate';
+import { DX_ANY } from '../../lib/moduleRoutes';
+import { useModules } from '../../lib/modules';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CumulativeModal } from '../lab/Cumulative';
@@ -33,7 +36,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
         {hasValidatedLab && <button className="btn sm" type="button" onClick={() => report.mutate()}>ლაბ. ბლანკი</button>}
         {items[0]?.patient_id && <button className="btn sm" type="button" onClick={() => setCum({ name: 'ყველა ანალიზი' })}>ლაბ. დინამიკა</button>}
         {hasValidatedLab && <button className="btn sm" type="button" onClick={() => setDlv(true)}>პასუხი პაციენტს</button>}
-        {canWrite && <button className="btn sm primary" type="button" onClick={() => setOpen(true)}>+ კვლევა</button>}
+        {canWrite && <IfModule code={DX_ANY} write><button className="btn sm primary" type="button" onClick={() => setOpen(true)}>+ კვლევა</button></IfModule>}
       </div>
       {!items.length && <span className="muted small">კვლევა არ არის შეკვეთილი.</span>}
       {(['lab', 'radiology', 'endoscopy'] as DxSection[]).map((sec) => {
@@ -113,7 +116,11 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
   const qc = useQueryClient();
   const labVisit = !!patientId && !encounterId;
   const [referral, setReferral] = useState('');
-  const [section, setSection] = useState<DxSection>('lab');
+  // 0086: მხოლოდ აქტიური სექციები (რბილი კავშირი outpatient / inpatient → lab / radiology / endoscopy); კატალოგი — orderable
+  const mods = useModules();
+  const sections = (['lab', 'radiology', 'endoscopy'] as DxSection[]).filter((s) => !mods.data || mods.data.find((m) => m.code === s)?.active);
+  const [section0, setSection] = useState<DxSection | null>(null);
+  const section: DxSection = section0 && sections.includes(section0) ? section0 : sections[0] ?? 'lab';
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<Record<string, DxService>>({});
   const [urgent, setUrgent] = useState(false);
@@ -121,7 +128,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
   const [conflict, setConflict] = useState<AllergyCheck | null>(null);
   const [reason, setReason] = useState('');
   const ds = useDebounced(search.trim(), 200);
-  const cat = useQuery({ queryKey: ['dx-catalog', section], queryFn: () => api<DxService[]>('/dx/catalog', { query: { section } }), staleTime: 60_000 });
+  const cat = useQuery({ queryKey: ['dx-catalog', section], queryFn: () => api<DxService[]>('/dx/catalog', { query: { section, orderable: 'true' } }), staleTime: 60_000, enabled: sections.length > 0 });
   const groups = useMemo(() => {
     const list = (cat.data ?? []).filter((s) => !ds || s.name.toLowerCase().includes(ds.toLowerCase()) || s.code.toLowerCase().includes(ds.toLowerCase()));
     const m = new Map<string, DxService[]>(); list.forEach((s) => m.set(s.group_name, [...(m.get(s.group_name) ?? []), s]));
@@ -153,7 +160,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
       </>}>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <div className="seg" role="group" aria-label="განყოფილება">
-          {(labVisit ? ['lab', 'radiology', 'endoscopy'] as DxSection[] : ['lab', 'radiology', 'endoscopy'] as DxSection[]).map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
+          {sections.map((s) => <button key={s} type="button" aria-pressed={section === s} onClick={() => setSection(s)}>{SECTION_KA[s]}</button>)}
         </div>
         <input aria-label="ძებნა" className="input grow" style={{ height: 38 }} placeholder="ძებნა კატალოგში" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
       </div>

@@ -1,3 +1,4 @@
+import { usePathAllowed, WriteGuard } from '../../components/ModuleGate';
 import type { ComponentType } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { can, type Role } from '../../api/client';
@@ -56,11 +57,13 @@ const TABS: { key: string; label: string; roles: Role[]; el: ComponentType }[] =
   { key: 'setup', label: 'პარამეტრები', roles: STOCK_ADMIN, el: Setup },
 ];
 
+const STOCK_TAB_MODULE: Record<string, string> = { verification: 'pharmacy', controlled: 'pharmacy', lab: 'lab_stock' };
 /** საწყობი + შიდა აფთიაქი: ნაშთები და მიღება (0031), ნომენკლატურა (0030) */
 export default function Stock() {
   const { user } = useAuth();
   const { view } = useParams();
-  const tabs = TABS.filter((t) => can(user, ...t.roles));
+  const allowed = usePathAllowed();   // 0086: ვერიფიკაცია / ნარკოტიკული — pharmacy; ლაბორატორია — lab_stock (lib/moduleRoutes)
+  const tabs = TABS.filter((t) => can(user, ...t.roles) && allowed(`/stock/${t.key}`));
   const cur = tabs.find((t) => t.key === view);
   if (!cur) return <Navigate to={`/stock/${tabs[0]?.key ?? 'items'}`} replace />;
   const El = cur.el;
@@ -72,7 +75,7 @@ export default function Stock() {
           {tabs.map((t) => <NavLink key={t.key} to={`/stock/${t.key}`} className="admin-tab">{t.label}</NavLink>)}
         </nav>
       </header>
-      <El />
+      <WriteGuard code={STOCK_TAB_MODULE[cur.key] ?? 'stock'}><El /></WriteGuard>
     </>
   );
 }

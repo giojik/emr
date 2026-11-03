@@ -1,3 +1,4 @@
+import { modUsable } from '../modules/modules-ref';
 import { ForbiddenException, Global, Injectable, Module } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { has, type AuthUser, type Role } from '../auth/roles';
@@ -206,14 +207,15 @@ export interface NowPerson { user_id: string | null; staff_id: string; name: str
 @Injectable()
 export class RosterLookup {
   constructor(@InjectDb() private readonly db: Database) {}
+  /** 0086: active ∨ read_only (მორიგეობის ჩვენება სხვა მოდულებში; ლიცენზიის ვადის შემდეგაც) */
   async enabled(ex: Ex = this.db) {
-    const m = await ex.selectFrom('system_modules').select(['enabled']).where('code', '=', 'roster').executeTakeFirst();
-    return !!m?.enabled;
+    return modUsable(ex, 'roster');
   }
   /** მოდულის პარამეტრები (გამორთული — null) */
   async settings(ex: Ex = this.db): Promise<RosterSettings | null> {
-    const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'roster').executeTakeFirst();
-    return m?.enabled ? (m.settings as unknown as RosterSettings) : null;
+    if (!(await this.enabled(ex))) return null;
+    const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'roster').executeTakeFirst();
+    return (m?.settings ?? {}) as unknown as RosterSettings;
   }
   /** გამოქვეყნებული განრიგის მორიგეები მოცემულ მომენტში */
   async onDuty(at: Date, f: { departmentId?: string; dutyRoleId?: string } = {}, ex: Ex = this.db) {

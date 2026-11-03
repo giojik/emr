@@ -1,3 +1,4 @@
+import { IfModule, WriteGuard } from '../../components/ModuleGate';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -157,7 +158,7 @@ export default function Stay() {
               {s.consent !== 'granted' && <Link className="small" to={`/patients/${s.patient_id}`}>გაფორმება →</Link>}</div>
           </section>
           <IsolationPanel encounterId={s.encounter_id} patientId={s.patient_id} />
-          <StayHai encounterId={s.encounter_id} />
+          <IfModule code="ipc"><StayHai encounterId={s.encounter_id} /></IfModule>
           {active && <section className="card card-pad stack" style={{ gap: 10 }}>
             <h2 style={{ margin: 0 }}>მოქმედებები</h2>
             {s.settings.wristband && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -201,11 +202,12 @@ export default function Stay() {
             </div>
           </section>}
         </div>
-        {s.status !== 'cancelled' && <OrStayPanel encounterId={s.encounter_id} patientId={s.patient_id} active={active} />}
-        {s.status !== 'cancelled' && <IcuPanel encounterId={s.encounter_id} />}
+        {/* 0086 (F): რბილი კავშირები inpatient → or / icu / ipd_orders / mar — არააქტიურზე ბლოკი არ ჩანს; read_only — მხოლოდ ნახვა */}
+        {s.status !== 'cancelled' && <IfModule code="or"><WriteGuard code="or"><OrStayPanel encounterId={s.encounter_id} patientId={s.patient_id} active={active} /></WriteGuard></IfModule>}
+        {s.status !== 'cancelled' && <IfModule code="icu"><WriteGuard code="icu"><IcuPanel encounterId={s.encounter_id} /></WriteGuard></IfModule>}
         {s.status !== 'cancelled' && <DoctorNotesPanel encounterId={s.encounter_id} />}
-        {s.status !== 'cancelled' && <OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} />}
-        {s.status !== 'cancelled' && <MarPanel encounterId={s.encounter_id} admNo={s.adm_no} />}
+        {s.status !== 'cancelled' && <IfModule code="ipd_orders"><WriteGuard code="ipd_orders"><OrdersPanel encounterId={s.encounter_id} departmentId={s.current?.department_id ?? s.department_id} /></WriteGuard></IfModule>}
+        {s.status !== 'cancelled' && <IfModule code="mar"><WriteGuard code="mar"><MarPanel encounterId={s.encounter_id} admNo={s.adm_no} /></WriteGuard></IfModule>}
         {s.status !== 'cancelled' && <NursingPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <StayBillingPanel encounterId={s.encounter_id} />}
         {s.status !== 'cancelled' && <EpicrisisPanel encounterId={s.encounter_id} diagnoses={s.diagnoses} encounterActive={active || (s.status === 'discharged' && !s.closed_at)} />}

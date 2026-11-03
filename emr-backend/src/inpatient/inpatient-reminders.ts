@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { ensureMarSlots } from './mar-schedule';
 import { loadBilling } from './ipd-billing-calc';
 import { icuFeatures, syncInfusionVolumes, type IcuSettings } from './icu';
+import { modActive } from '../modules/modules-ref';
 
 const TZ = loadEnv().CLINIC_TZ;
 const SEND_FROM_HOUR = 10;
@@ -23,8 +24,9 @@ export class InpatientRemindersService {
   constructor(@InjectDb() private readonly db: Database, private readonly notify: NotifyService, private readonly bell: NotificationsService) {}
 
   async tick() {
-    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'inpatient').executeTakeFirst();
-    if (m?.enabled) await this.overdue(m.settings as Record<string, number>).catch((e) => this.log.error(`ვადაგადაცილებები: ${(e as Error).message}`));
+    const r = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'inpatient').executeTakeFirst();
+    const m = { enabled: await modActive(this.db, 'inpatient'), settings: r?.settings ?? {} };   // 0086
+    if (m.enabled) await this.overdue(m.settings as Record<string, number>).catch((e) => this.log.error(`ვადაგადაცილებები: ${(e as Error).message}`));
     return this.plannedSms(m);
   }
 
@@ -328,10 +330,10 @@ export class InpatientRemindersService {
    *   SOFA sofa_reminder_time-ის შემდეგ დღეს არ დადასტურებულა (ეპიზოდი > 12 სთ) → მკურნალ ექიმს და განყოფილების ექიმებს.
    */
   async icu() {
-    const m = await this.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'icu').executeTakeFirst();
     const res = { infusion_hours: 0, sheet_gaps: 0, bundles_due: 0, sofa_due: 0 };
-    if (!m?.enabled) return res;
-    const s = m.settings as unknown as IcuSettings;
+    if (!(await modActive(this.db, 'icu'))) return res;   // 0086
+    const m = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'icu').executeTakeFirst();
+    const s = (m?.settings ?? {}) as unknown as IcuSettings;
     const eps = await this.db.selectFrom('icu_episodes as e').innerJoin('inpatient_stays as st', 'st.encounter_id', 'e.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id')
       .innerJoin('departments as d', 'd.id', 'e.department_id').innerJoin('encounters as en', 'en.id', 'e.encounter_id')
       .select(['e.id', 'e.encounter_id', 'e.department_id', 'e.started_at', 'd.care_level', 'd.icu_features', 'st.adm_no', 'p.first_name', 'p.last_name', 'en.attending_doctor_id',

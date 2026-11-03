@@ -6,6 +6,7 @@ import { NotificationsService } from '../notifications/notifications';
 import { stockRules } from './stock-rules';
 import { procRules } from '../procurement/procurement-rules';
 import { finRules } from '../billing/finance-rules';
+import { modActive } from '../modules/modules-ref';
 
 const TZ = loadEnv().CLINIC_TZ;
 
@@ -136,8 +137,7 @@ export class StockAlertsService {
 
   /** CSSD (0039): შენახვაში ვადაგასული სტერილური შეფუთვა → „ვადაგასული“ (ხელახალი დამუშავება); ერთეულის თანამშრომლებს — შეტყობინება */
   async cssdExpiry() {
-    const mod = await this.db.selectFrom('system_modules').select('enabled').where('code', '=', 'cssd').executeTakeFirst();
-    if (!mod?.enabled) return { skipped: true };
+    if (!(await modActive(this.db, 'cssd'))) return { skipped: true };   // 0086: რბილი კავშირი stock → cssd
     const expired = await this.db.updateTable('cssd_packs').set({ status: 'expired' }).where('status', '=', 'sterile')
       .where('expires_on', '<', sql<string>`(now() AT TIME ZONE ${TZ})::date`).returning(['id', 'set_id', 'location_id']).execute();
     for (const p of expired) await this.db.updateTable('cssd_sets').set({ status: 'received' }).where('id', '=', p.set_id).where('status', '=', 'packed').execute();
@@ -234,7 +234,7 @@ export class StockAlertsService {
     const proc = await procRules(this.db);
     const fin = await finRules(this.db);
     for (const kind of ['expiry', 'minmax', 'lab', 'cssd', 'po_overdue', 'ap_due', 'claim_due'] as const) {
-      if (kind === 'po_overdue') { if (proc.po_mode === 'off' || !proc.po_overdue_alert) continue; }   // 0051: შესყიდვების პარამეტრი
+      if (kind === 'po_overdue') { if (!proc.enabled || proc.po_mode === 'off' || !proc.po_overdue_alert) continue; }   // 0051: შესყიდვების პარამეტრი
       else if (kind === 'ap_due') { if (!proc.enabled || !proc.ap_due_alert) continue; }                // 0052
       else if (kind === 'claim_due') { if (!fin.enabled || !fin.claim_overdue_alert) continue; }        // 0053
       else if (kind !== 'cssd' && !rules[`alert_${kind}`]) continue;                // შემადგენლობა — კლინიკის პარამეტრი (0038)

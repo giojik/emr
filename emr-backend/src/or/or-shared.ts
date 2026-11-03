@@ -1,3 +1,4 @@
+import { modActive } from '../modules/modules-ref';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { loadEnv } from '../config/env';
@@ -119,6 +120,7 @@ export async function cardItems(ex: Ex, c: { id: string; surgeon_id: string }, m
 }
 /** ავტომატური შეკრება (დასრულებისას / ხელით): ბარათის პოზიციები, თუ ჯერ არ არის დამატებული */
 export async function assembleCard(ex: Ex, c: { id: string; surgeon_id: string }, mode: OrSettings['preference_cards'], userId: string) {
+  if (!(await modActive(ex, 'stock'))) return 0;   // 0086: რბილი კავშირი or → stock — მასალების ბლოკი არ არის
   const items = await cardItems(ex, c, mode);
   if (!items.length) return 0;
   const has = await ex.selectFrom('or_case_items').select('id').where('case_id', '=', c.id).where('source', '=', 'card').executeTakeFirst();

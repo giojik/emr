@@ -3,7 +3,7 @@ import { loadEnv } from '../config/env';
 import { has, type AuthUser, type Role } from '../auth/roles';
 import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
-import { modulesRef } from '../modules/modules-ref';
+import { activeCodes, modActive, modUsable } from '../modules/modules-ref';
 
 export type Trx = Transaction<DB>;
 export type Ex = Database | Trx;
@@ -341,20 +341,17 @@ export async function myRoleIds(ex: Ex, userId: string): Promise<string[]> {
   return r.rows.map((x) => x.id);
 }
 /** ამ მომენტში მორიგე ვარ თუ არა (გამოქვეყნებული განრიგი) — SQL-ის პირობა t.target_duty_role_id-ზე */
-export const onDutyCond = (userId: string, at: Date | null = null) => sql<boolean>`EXISTS (
+export const onDutyCond = (userId: string, at: Date | null = null, rosterOn = true) => sql<boolean>`${rosterOn} AND EXISTS (
   SELECT 1 FROM roster_entries e JOIN rosters r ON r.id = e.roster_id JOIN staff_members s ON s.id = e.staff_id
    WHERE s.user_id = ${userId} AND e.duty_role_id = t.target_duty_role_id AND e.status = 'active' AND r.status IN ('published', 'closed')
-     AND e.starts_at <= coalesce(${at}::timestamptz, now()) AND e.ends_at > coalesce(${at}::timestamptz, now())
-     AND EXISTS (SELECT 1 FROM system_modules m WHERE m.code = 'roster' AND m.enabled))`;
+     AND e.starts_at <= coalesce(${at}::timestamptz, now()) AND e.ends_at > coalesce(${at}::timestamptz, now()))`;   // 0086: roster — rosterOn (რეესტრიდან)
 
-export async function wlSettings(ex: Ex): Promise<{ enabled: boolean; s: WlSettings }> {
-  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'worklist').executeTakeFirst();
-  return { enabled: !!m?.enabled, s: { ...WL_DEFAULTS, ...((m?.settings ?? {}) as Partial<WlSettings>) } };
+/** 0086: enabled — აქტიური (ჯობები, შეტყობინება, ჩახშობა); usable — active ∨ read_only (საკუთარი სია / დავალებების ნახვა) */
+export async function wlSettings(ex: Ex): Promise<{ enabled: boolean; usable: boolean; s: WlSettings }> {
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'worklist').executeTakeFirst();
+  return { enabled: await modActive(ex, 'worklist'), usable: await modUsable(ex, 'worklist'), s: { ...WL_DEFAULTS, ...((m?.settings ?? {}) as Partial<WlSettings>) } };
 }
 /** აქტიური მოდულები (0085: ლიცენზია + ჩართვა + წინაპირობები — ModulesService); core — ბირთვი, ყოველთვის. სერვისის გარეშე — enabled-ის მიხედვით */
 export async function enabledModules(ex: Ex): Promise<Set<string>> {
-  const svc = modulesRef.svc;
-  if (svc) return new Set(['core', ...[...(await svc.snapshot()).states.values()].filter((x) => x.active).map((x) => x.code)]);
-  const r = await ex.selectFrom('system_modules').select('code').where('enabled', '=', true).execute();
-  return new Set(['core', ...r.map((x) => x.code)]);
+  return new Set(['core', ...(await activeCodes(ex))]);
 }

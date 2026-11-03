@@ -1,3 +1,4 @@
+import { useModuleReq } from '../components/ModuleGate';
 import Form100Dialog from '../components/Form100Dialog';
 import Form100History from '../components/Form100History';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +22,8 @@ export default function Encounter() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const q = useQuery({ queryKey: ['encounter', id], queryFn: () => api<EncounterDetail>(`/encounters/${id}`) });
+  // 0086: ვიტალები / რეცეპტი / მიმართვა / დასრულება / დიაგნოსტიკის დანიშვნა — მოდული outpatient (read_only / გამორთული → მხოლოდ ნახვა; ისტორია ჩანს)
+  const outW = useModuleReq('outpatient').active !== false;
   const [dlg, setDlg] = useState<'discharge' | 'form100' | 'history' | 'allergy' | 'consent' | 'f100hist' | null>(null);
 
   if (q.isLoading) return <Loading />;
@@ -28,8 +31,9 @@ export default function Encounter() {
   const e = q.data;
   const active = e.status === 'active';
   const isAttending = can(user, 'admin') || (can(user, 'doctor') && user!.id === e.attending_doctor_id);
-  const canWrite = active && isAttending;
-  const canVitals = active && (isAttending || can(user, 'nurse'));
+  const canWriteCore = active && isAttending;
+  const canWrite = canWriteCore && outW;
+  const canVitals = active && (isAttending || can(user, 'nurse')) && outW;
   const openRefs = e.referrals.filter((r) => r.status === 'requested' || r.status === 'in_progress');
   const primary = e.diagnoses.find((d) => d.diagnosis_type === 'primary');
   const due = e.invoice ? Number(e.invoice.patient_share) - e.invoice.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
@@ -64,7 +68,7 @@ export default function Encounter() {
           <Prescriptions e={e} canWrite={canWrite} />
         </div>
         <aside className="stack" style={{ width: 420, flexShrink: 0, gap: 14 }}>
-          <Diagnoses e={e} canWrite={canWrite} />
+          <Diagnoses e={e} canWrite={canWriteCore} />
           <DiagnosticsPanel encounterId={e.id} canWrite={canWrite} />
           <Referrals e={e} canWrite={canWrite} />
           {active && (

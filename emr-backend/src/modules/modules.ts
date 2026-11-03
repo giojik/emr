@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Global, Injectable, Logger, Module, NotFoundException, Param, Put, Req, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Global, HttpCode, Injectable, Logger, Module, NotFoundException, Param, Post, Put, Req, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { APP_GUARD, DiscoveryModule, DiscoveryService } from '@nestjs/core';
 import { Client } from 'pg';
 import { IsBoolean, IsObject, IsOptional, IsString, Length } from 'class-validator';
@@ -14,7 +14,8 @@ import { OBS_KEYS, SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
 import { loadEnv } from '../config/env';
 import { LicenseService, type LicenseStatus } from '../license/license.service';
 import { LicenseController } from '../license/license.controller';
-import { MODULE_MAP, MODULES, dependentsOf, type ModuleDef } from './registry';
+import { MODULE_MAP, MODULES, OPTIONAL_CODES, dependentsOf, validateRegistry, type ModuleDef } from './registry';
+import { PROFILES, PROFILE_MAP, validateProfiles } from './profiles';
 import { modulesRef } from './modules-ref';
 import { ModuleGuard, MODULE_KEY, RequireModule } from './module-guard';
 
@@ -455,6 +456,9 @@ export class ModulesService implements OnApplicationBootstrap, OnModuleDestroy {
   async assertActive(code: string, write = true) { const e = await this.denial(code, write); if (e) throw e; }
 
   async onApplicationBootstrap() {
+    // 0086: რეესტრი (კავშირები / ციკლი) + პროფილები (მკაცრი წინაპირობები) — შეცდომაზე გაშვება ჩერდება
+    const regErr = [...validateRegistry(), ...validateProfiles()];
+    if (regErr.length) throw new Error(`მოდულების რეესტრი / პროფილები:\n  ${regErr.join('\n  ')}`);
     // რეესტრი ⇄ ბაზა: ყველა კოდს ჩანაწერი უნდა ჰქონდეს (მიგრაცია / რეესტრი ერთად იცვლება)
     const codes = new Set((await this.db.selectFrom('system_modules').select('code').execute()).map((r) => r.code));
     const missing = MODULES.filter((d) => !codes.has(d.code)).map((d) => d.code);
@@ -493,6 +497,97 @@ export class ModulesService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
   async onModuleDestroy() { this.closing = true; await this.listener?.end().catch(() => undefined); }
+
+  /**
+   * 0086: ადმინის ჩამრთველების ერთობლივი ცვლილების შემოწმება (კონფიგურაციის პაკეტი, პროფილი) — საბოლოო მდგომარეობა მთლიანად, არა თითო ჩანაწერზე.
+   * next — მხოლოდ ცვლილებები (code → enabled); დანარჩენი — მიმდინარე. ბრუნდება: ჩართული წინაპირობის გარეშე / გამორთული ჩართული დამოკიდებულით / ლიცენზიის გარეშე.
+   */
+  async checkTransition(next: Record<string, boolean>, ex: Database = this.db) {
+    const rows = await ex.selectFrom('system_modules').select(['code', 'name', 'enabled']).execute();
+    const cur = new Map(rows.map((r) => [r.code, r.enabled]));
+    const names = new Map(rows.map((r) => [r.code, r.name]));
+    const final = (c: string) => !!MODULE_MAP[c]?.core || (c in next ? next[c] : !!cur.get(c));
+    const lic = (await this.snapshot()).license;
+    const prereq: { code: string; missing: string[] }[] = [];
+    const dependents: { code: string; dependents: string[] }[] = [];
+    const notLicensed: string[] = [];
+    for (const [c, on] of Object.entries(next)) {
+      const d = MODULE_MAP[c]; if (!d || d.core) continue;
+      if (on) {
+        const miss = d.hard.filter((h) => !final(h));
+        if (miss.length) prereq.push({ code: c, missing: miss });
+        if (!(lic.modules === 'all' || lic.modules.includes(c))) notLicensed.push(c);
+      } else {
+        const deps = dependentsOf(c).filter((x) => final(x));
+        if (deps.length) dependents.push({ code: c, dependents: deps });
+      }
+    }
+    return { prereq, dependents, notLicensed, name: (c: string) => names.get(c) ?? c };
+  }
+  /** იმავე პროცესის ქეში + სხვა პროცესები (worker, lab-gateway) — ტრანზაქციის შემდეგ */
+  async notifyChanged(ex: Database, code: string) {
+    await sql`SELECT pg_notify('emr_modules', ${code})`.execute(ex);
+    this.invalidate();
+  }
+
+  // ------------------------------------------------------------------ პროფილები (0086, K)
+  profiles() {
+    return PROFILES.map((p) => ({ code: p.code, name: p.name, description: p.description, modules: p.modules }));
+  }
+  /**
+   * გეგმა: ჩაირთვება (ლიცენზირებული, ჯერ გამორთული) / გამოირთვება (disable_others: პროფილის გარეთ ჩართული) / რჩება ჩართული (ჩართული დამოკიდებული ჰყავს) /
+   * ლიცენზიაში არ არის (გამოტოვდება) / უკვე ჩართულია. რიგი: ჩართვა — წინაპირობები ჯერ; გამორთვა — დამოკიდებულები ჯერ.
+   */
+  async profilePlan(code: string, disableOthers: boolean) {
+    const p = PROFILE_MAP[code];
+    if (!p) throw new NotFoundException(`პროფილი ვერ მოიძებნა: ${code}`);
+    const snap = await this.snapshot();
+    const rows = await this.db.selectFrom('system_modules').select(['code', 'name', 'enabled', 'can_disable']).execute();
+    const cur = new Map(rows.map((r) => [r.code, r]));
+    const licensed = (c: string) => snap.license.modules === 'all' || snap.license.modules.includes(c);
+    const enable = p.modules.filter((c) => !cur.get(c)?.enabled && licensed(c));
+    const notLicensed = p.modules.filter((c) => !licensed(c));
+    const already = p.modules.filter((c) => cur.get(c)?.enabled);
+    let disable = disableOthers ? OPTIONAL_CODES.filter((c) => !p.modules.includes(c) && cur.get(c)?.enabled && cur.get(c)?.can_disable !== false) : [];
+    // გამოსართავს ჩართული დამოკიდებული ჰყავს (რომელიც რჩება) → რჩება ჩართული (fixed point)
+    const kept: { code: string; dependents: string[] }[] = [];
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const c of disable) {
+        const deps = dependentsOf(c).filter((x) => (cur.get(x)?.enabled || enable.includes(x)) && !disable.includes(x));
+        if (deps.length) { kept.push({ code: c, dependents: deps }); disable = disable.filter((x) => x !== c); changed = true; break; }
+      }
+    }
+    // რიგი: წინაპირობები ჯერ (რეესტრის რიგი ტოპოლოგიურია — hard წინ წერია) / დამოკიდებულები ჯერ (უკუ რიგი)
+    const order = MODULES.map((d) => d.code);
+    enable.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    disable.sort((a, b) => order.indexOf(b) - order.indexOf(a));
+    const name = (c: string) => cur.get(c)?.name ?? c;
+    const item = (c: string) => ({ code: c, name: name(c) });
+    return { profile: { code: p.code, name: p.name }, disable_others: disableOthers,
+      enable: enable.map(item), disable: disable.map(item), kept: kept.map((k) => ({ ...item(k.code), dependents: k.dependents.map(item) })),
+      not_licensed: notLicensed.map(item), already: already.map(item) };
+  }
+  async profileApply(code: string, disableOthers: boolean, reason: string, u: AuthUser, req: Request) {
+    const plan = await this.profilePlan(code, disableOthers);
+    const next = Object.fromEntries([...plan.enable.map((x) => [x.code, true]), ...plan.disable.map((x) => [x.code, false])]);
+    const t = await this.checkTransition(next);
+    if (t.prereq.length) throw new ConflictException({ code: 'MODULE_PREREQ_MISSING', message: `ჯერ ჩართეთ: ${t.prereq.flatMap((x) => x.missing).map(t.name).join(', ')}`, missing: t.prereq.flatMap((x) => x.missing) });
+    if (t.dependents.length) throw new ConflictException({ code: 'MODULE_HAS_DEPENDENTS', message: `ჩართულია დამოკიდებული: ${t.dependents.flatMap((x) => x.dependents).map(t.name).join(', ')}`, dependents: t.dependents.flatMap((x) => x.dependents) });
+    if (!plan.enable.length && !plan.disable.length) return { ...plan, applied: false };
+    await this.db.transaction().execute(async (trx) => {
+      for (const x of [...plan.enable.map((e) => ({ ...e, on: true })), ...plan.disable.map((d) => ({ ...d, on: false }))]) {
+        await trx.updateTable('system_modules').set({ enabled: x.on, updated_by: u.id, updated_at: sql`now()` }).where('code', '=', x.code).execute();
+      }
+      await this.audit.log(auditCtx(req), { action: 'MODULE_PROFILE_APPLY', entityName: 'system_modules', entityId: code,
+        newData: { profile: code, disable_others: disableOthers, enabled: plan.enable.map((x) => x.code), disabled: plan.disable.map((x) => x.code),
+          kept: plan.kept.map((x) => x.code), not_licensed: plan.not_licensed.map((x) => x.code), reason } }, trx);
+      await sql`SELECT pg_notify('emr_modules', ${`profile:${code}`})`.execute(trx);
+    });
+    this.invalidate();
+    this.notifications.clearSuppressionCache();
+    return { ...plan, applied: true };
+  }
 
   // ------------------------------------------------------------------ API
   async list() {
@@ -562,6 +657,8 @@ export class ModulesService implements OnApplicationBootstrap, OnModuleDestroy {
 }
 
 class ModuleDto { @IsOptional() @IsBoolean() enabled?: boolean; @IsOptional() @IsObject() settings?: Record<string, unknown>; @IsString() @Length(3, 500) reason: string }
+class ProfilePreviewDto { @IsOptional() @IsBoolean() disable_others?: boolean }
+class ProfileApplyDto { @IsOptional() @IsBoolean() disable_others?: boolean; @IsString() @Length(3, 500) reason: string }
 
 @Controller('modules')
 @RequireModule('core')
@@ -569,6 +666,12 @@ export class ModulesController {
   constructor(private readonly s: ModulesService) {}
   /** ყველა შესულ მომხმარებელს — მენიუ / ჩანართები მოდულის მიხედვით (state / active) */
   @Get() list() { return this.s.list(); }
+  /** 0086 (K): პროფილები — სია / გეგმა / გამოყენება (admin) */
+  @Get('profiles') @Roles('admin') profiles() { return this.s.profiles(); }
+  @Post('profiles/:code/preview') @HttpCode(200) @Roles('admin') preview(@Param('code') code: string, @Body() d: ProfilePreviewDto) { return this.s.profilePlan(code, !!d?.disable_others); }
+  @Post('profiles/:code/apply') @HttpCode(200) @Roles('admin') apply(@Param('code') code: string, @Body() d: ProfileApplyDto, @CurrentUser() u: AuthUser, @Req() r: Request) {
+    return this.s.profileApply(code, !!d.disable_others, d.reason, u, r);
+  }
   @Put(':code') @Roles('admin') put(@Param('code') code: string, @Body() d: ModuleDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.put(code, d, u, r); }
 }
 

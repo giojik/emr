@@ -144,8 +144,8 @@ export class DiagnosticsController {
               private readonly lab: LabConfigService, private readonly delivery: LabDeliveryService, private readonly labNotify: LabNotifyService) {}
 
   // ---- კატალოგი
-  @Get('dx/catalog') catalog(@Query('section') section?: string, @Query('search') search?: string, @Query('include_inactive') inc?: string) {
-    return this.dx.catalog({ section, search, includeInactive: inc === 'true' });
+  @Get('dx/catalog') catalog(@Query('section') section?: string, @Query('search') search?: string, @Query('include_inactive') inc?: string, @Query('orderable') ord?: string) {
+    return this.dx.catalog({ section, search, includeInactive: inc === 'true', orderable: ord === 'true' });   // 0086: orderable — მხოლოდ აქტიური მოდულების კვლევები
   }
   @Get('dx/catalog/groups') groups(@Query('section') section = 'lab') { return this.dx.groups(section); }
   @Post('dx/catalog') @Roles('admin', 'lab_manager', 'lab_doctor')

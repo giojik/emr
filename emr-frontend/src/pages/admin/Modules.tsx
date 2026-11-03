@@ -4,11 +4,20 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { ErrorBox, Field, Loading, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
-import { GROUP_KA, STATE_KA, useModules, type ModuleGroup, type ModuleState, type SystemModule } from '../../lib/modules';
+import { GROUP_KA, STATE_KA, useLicenseStatus, useModules, type ModuleGroup, type ModuleState, type SystemModule } from '../../lib/modules';
 import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 import { RosterSettings } from '../roster/RosterSettings';
 import { WorklistSettings } from '../worklist/WorklistSettings';
+
+/** 0086 (G): ინსტალაციის ID-ის კოპირება (ლიცენზიის მოთხოვნისთვის) */
+function CopyInstallId() {
+  const st = useLicenseStatus();
+  const id = st.data?.install_id;
+  const [ok, setOk] = useState(false);
+  if (!id) return <Link to="/admin/license">ადმინისტრირება → ლიცენზია</Link>;
+  return <button className="btn sm" type="button" onClick={() => { void navigator.clipboard?.writeText(id).then(() => setOk(true)); }}><span className="mono">{id.slice(0, 8)}…</span> {ok ? '✓ დაკოპირდა' : 'კოპირება'}</button>;
+}
 
 /** მოდულები და პარამეტრები: სხვა კლინიკაში — ადგილობრივი წესებით; ნაგულისხმევი = მიმდინარე ქცევა */
 export default function Modules() {
@@ -26,8 +35,56 @@ export default function Modules() {
         <button type="button" className={`btn${group === '' ? ' primary' : ''}`} onClick={() => setGroup('')}>ყველა ({q.data?.length ?? 0})</button>
         {groups.map((g) => <button key={g} type="button" className={`btn${group === g ? ' primary' : ''}`} onClick={() => setGroup(g)}>{GROUP_KA[g]} ({q.data?.filter((m) => m.group === g).length})</button>)}
       </div>
+      <ProfilesCard />
       {q.data?.filter((m) => !group || m.group === group).map((m) => <ModuleCard key={m.code} m={m} names={names} />)}
     </div>
+  );
+}
+
+/** 0086 (K): პროფილის გამოყენება — preview (ჩაირთვება / გამოირთვება / რჩება / ლიცენზიაში არ არის) → დადასტურება */
+interface ProfileRow { code: string; name: string; description: string; modules: string[] }
+interface PlanItem { code: string; name: string }
+interface ProfilePlan { profile: PlanItem; disable_others: boolean; enable: PlanItem[]; disable: PlanItem[]; kept: (PlanItem & { dependents: PlanItem[] })[];
+  not_licensed: PlanItem[]; already: PlanItem[]; applied?: boolean }
+function ProfilesCard() {
+  const qc = useQueryClient(); const toast = useToast();
+  const list = useQuery({ queryKey: ['module-profiles'], queryFn: () => api<ProfileRow[]>('/modules/profiles') });
+  const [code, setCode] = useState('');
+  const [others, setOthers] = useState(false);
+  const [reason, setReason] = useState('');
+  const plan = useQuery({ queryKey: ['module-profile-plan', code, others], enabled: !!code,
+    queryFn: () => api<ProfilePlan>(`/modules/profiles/${code}/preview`, { body: { disable_others: others } }) });
+  const apply = useMutation({
+    mutationFn: () => api<ProfilePlan>(`/modules/profiles/${code}/apply`, { body: { disable_others: others, reason: reason.trim() } }),
+    onSuccess: (r) => { toast.show(r.applied ? `პროფილი „${r.profile.name}“ გამოყენებულია` : 'ცვლილება არ იყო'); setReason(''); setCode('');
+      void qc.invalidateQueries({ queryKey: ['modules'] }); void qc.invalidateQueries({ queryKey: ['module-profile-plan'] }); },
+  });
+  const p = plan.data; const names = (xs: PlanItem[]) => xs.map((x) => x.name).join(', ');
+  return (
+    <section className="card card-pad stack" data-testid="module-profiles">
+      {toast.node}
+      <div className="row" style={{ flexWrap: 'wrap' }}><h2 className="grow" style={{ margin: 0 }}>პროფილის გამოყენება</h2>
+        <select aria-label="პროფილი" className="select" value={code} onChange={(e) => setCode(e.target.value)}>
+          <option value="">— აირჩიეთ პროფილი —</option>
+          {list.data?.map((x) => <option key={x.code} value={x.code}>{x.name} ({x.modules.length})</option>)}
+        </select>
+        <label className="row"><input type="checkbox" checked={others} onChange={(e) => setOthers(e.target.checked)} /> დანარჩენის გამორთვა</label>
+      </div>
+      <span className="small muted">პროფილი = მოდულების მზა ნაკრები კლინიკის ტიპისთვის. გამოყენების შემდეგ მოდულები ცალ-ცალკე ზუსტდება ქვემოთ. მონაცემი არ იშლება.</span>
+      {code && <span className="small">{list.data?.find((x) => x.code === code)?.description}</span>}
+      <ErrorBox error={plan.error ?? apply.error} />
+      {p && <div className="stack small" style={{ gap: 4 }} data-testid="profile-plan">
+        <span><strong>ჩაირთვება:</strong> {p.enable.length ? names(p.enable) : '—'}</span>
+        {p.disable_others && <span><strong>გამოირთვება:</strong> {p.disable.length ? names(p.disable) : '—'}</span>}
+        {p.kept.map((k) => <span key={k.code} className="muted">„{k.name}“ რჩება ჩართული — მასზეა დამოკიდებული: {names(k.dependents)}</span>)}
+        {p.not_licensed.length > 0 && <span style={{ color: 'var(--warn-ink)' }}>ლიცენზიაში არ არის (გამოტოვდება): {names(p.not_licensed)}</span>}
+        {p.already.length > 0 && <span className="muted">უკვე ჩართულია: {names(p.already)}</span>}
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <input aria-label="მიზეზი (პროფილი)" className="input grow" placeholder="მიზეზი (აუდიტისთვის, მინ. 3 სიმბოლო)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <button className="btn primary" type="button" disabled={reason.trim().length < 3 || apply.isPending || (!p.enable.length && !p.disable.length)} onClick={() => apply.mutate()}>გამოყენება</button>
+        </div>
+      </div>}
+    </section>
   );
 }
 
@@ -58,7 +115,8 @@ function ModuleCard({ m, names }: { m: SystemModule; names: Record<string, strin
         {m.settings_of && <span>პარამეტრები — მოდულში „{names[m.settings_of] ?? m.settings_of}“</span>}
       </div>}
       {m.state === 'missing_prereq' && <span className="hint">არააქტიურია — ჩართეთ: {nm(m.missing)}</span>}
-      {m.state === 'not_licensed' && <span className="hint">მოდული ლიცენზიაში არ შედის — მონაცემი ინახება, პაციენტის ისტორია ჩანს.</span>}
+      {m.state === 'not_licensed' && <span className="hint">მოდული ლიცენზიაში არ შედის — მონაცემი ინახება, პაციენტის ისტორია ჩანს. ლიცენზიის მოთხოვნისას მიუთითეთ ინსტალაციის ID: <CopyInstallId /></span>}
+      {!m.core && m.soft.length > 0 && <span className="small muted">რბილი კავშირი (არააქტიურზე ეს ნაწილი უბრალოდ არ ჩანს): {nm(m.soft)}</span>}
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
       {m.code === 'roster' && <RosterSettings s={s} set={setS} />}

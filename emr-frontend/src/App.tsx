@@ -5,7 +5,8 @@ import { useAuth } from './auth/AuthContext';
 import Shell, { homeFor } from './components/Shell';
 import { Loading } from './components/ui';
 import { useQuery } from '@tanstack/react-query';
-import { fetchModules } from './lib/modules';
+import { fetchModules, useModules } from './lib/modules';
+import { ModuleRoute, usePathAllowed } from './components/ModuleGate';
 import Tasks from './pages/worklist/Tasks';
 import Cashier from './pages/Cashier';
 import ChangePassword from './pages/ChangePassword';
@@ -83,10 +84,11 @@ function Guard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
   const { user, ready } = useAuth();
   const home = useHomeOverride();
   const loc = useLocation();
+  const allowed = usePathAllowed();
   if (!ready) return <Loading />;
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   if (user.mustChangePassword && loc.pathname !== '/change-password') return <Navigate to="/change-password" replace />;
-  if (roles && !can(user, ...roles)) return <Navigate to={homeFor(user, home)} replace />;
+  if (roles && !can(user, ...roles)) return <Navigate to={homeFor(user, home, allowed)} replace />;
   return <>{children}</>;
 }
 
@@ -108,11 +110,13 @@ function AdminHome() {
 export default function App() {
   const { user } = useAuth();
   const home = useHomeOverride();
+  const allowed = usePathAllowed();   // 0086: საწყისი გვერდი — მხოლოდ აქტიური მოდულიდან
+  const modsReady = !!useModules().data;
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/change-password" element={<Guard><ChangePassword /></Guard>} />
-      <Route path="/dashboard/tv" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><Tv /></Guard>} />
+      <Route path="/dashboard/tv" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><ModuleRoute code="reporting"><Tv /></ModuleRoute></Guard>} />
       <Route element={<Guard><Shell /></Guard>}>
         <Route path="/reception" element={<Guard roles={['admin', 'receptionist', 'manager', 'viewer']}><Reception /></Guard>} />
         <Route path="/reports" element={<Guard roles={['admin', 'accountant', 'viewer', 'manager']}><Reports /></Guard>} />
@@ -183,7 +187,7 @@ export default function App() {
           <Route path="audit" element={<Guard roles={['admin']}><Audit /></Guard>} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to={user ? homeFor(user, home) : '/login'} replace />} />
+      <Route path="*" element={!user ? <Navigate to="/login" replace /> : !modsReady && !user.mustChangePassword ? <Loading /> : <Navigate to={homeFor(user, home, allowed)} replace />} />
     </Routes>
   );
 }

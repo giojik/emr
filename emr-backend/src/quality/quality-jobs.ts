@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { QM_FULL, QmCommon, type QmRules } from './quality-common';
+import { modActive } from '../modules/modules-ref';
 
 /**
  * worker (ყოველ 10 წუთში), თითო მოვლენა — ერთხელ:
@@ -14,9 +15,9 @@ export class QmJobsService {
   constructor(private readonly c: QmCommon) {}
 
   async tick() {
-    const m = await this.c.db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'quality').executeTakeFirst();
-    if (!m?.enabled) return { overdue: 0, analysis: 0, capa: 0, effectiveness: 0 };
-    const r = m.settings as unknown as QmRules;
+    if (!(await modActive(this.c.db, 'quality'))) return { overdue: 0, analysis: 0, capa: 0, effectiveness: 0 };   // 0086
+    const m = await this.c.db.selectFrom('system_modules').select('settings').where('code', '=', 'quality').executeTakeFirst();
+    const r = (m?.settings ?? {}) as unknown as QmRules;
     const q = (await this.c.usersWith(QM_FULL)).map((x) => x.id);
     const db = this.c.db;
 

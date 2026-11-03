@@ -1,7 +1,9 @@
 import NotificationBell from './NotificationBell';
 import WorklistBadge from './WorklistBadge';
 import { IncidentReportHost } from './IncidentReport';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ModuleRoute, usePathAllowed, WriteGuard } from './ModuleGate';
+import { moduleForPath } from '../lib/moduleRoutes';
 import { can, type Role, type SessionUser } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { initials, ROLE_KA } from '../lib/format';
@@ -63,18 +65,21 @@ const HOME: Record<Role, string> = {
   worklist_manage: '/tasks?tab=team', worklist_all: '/tasks?tab=team',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით; override — მოდულის პარამეტრი (0081: „ჩემი დავალებები“ ყველასთვის) */
-export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>, override?: string | null) {
-  if (override && user.caps.length) return override;
+export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>, override?: string | null, allowed: (path: string) => boolean = () => true) {
+  if (override && user.caps.length && allowed(override)) return override;
   const order = [...(user.roles[0]?.capabilities ?? []), ...user.caps];
-  for (const c of order) if (HOME[c]) return HOME[c];
+  for (const c of order) if (HOME[c] && allowed(HOME[c])) return HOME[c];   // 0086: არააქტიური მოდულის გვერდი გამოიტოვება
   return user.caps.length ? '/patients' : '/no-access';
 }
 
 export default function Shell() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const loc = useLocation();
+  const routeMod = moduleForPath(loc.pathname);   // 0086 (H): route guard + read_only (F) — ერთ ადგილას
   const mods = useModules();
   if (!user) return null;
+  const allowed = usePathAllowed();   // 0086: მისამართის მოდული (lib/moduleRoutes) — ყველა პუნქტზე
   const on = (code?: string) => !code || !!mods.data?.find((m) => m.code === code)?.enabled;
   const set = (x?: [string, string]) => !x || !!(mods.data?.find((m) => m.code === x[0])?.settings as Record<string, unknown> | undefined)?.[x[1]];
   return (
@@ -85,7 +90,7 @@ export default function Shell() {
           <div className="stack" style={{ gap: 0 }}><strong style={{ fontSize: 14 }}>ინოვა მედიკალი</strong><span className="small muted">ამბულატორია</span></div>
         </div>
         <nav className="nav" aria-label="მთავარი მენიუ">
-          {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module) && set(n.setting) && !(n.not && can(user, ...n.not))).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
+          {NAV.filter((n) => (n.roles ? can(user, ...n.roles) : user.caps.length > 0) && on(n.module) && allowed(n.to) && set(n.setting) && !(n.not && can(user, ...n.not))).map((n) => <NavLink key={n.to} to={n.to}>{n.label}</NavLink>)}
         </nav>
         <div className="stack" style={{ marginTop: 'auto', gap: 10 }}>
           <IncidentReportHost />
@@ -103,14 +108,14 @@ export default function Shell() {
           </div>
         </div>
       </aside>
-      <div className="main"><LicenseBanner admin={can(user, 'admin', 'manager')} /><Outlet /></div>
+      <div className="main"><LicenseBanner admin={can(user, 'admin', 'manager')} /><ModuleRoute code={routeMod}>{routeMod ? <WriteGuard code={routeMod}><Outlet /></WriteGuard> : <Outlet />}</ModuleRoute></div>
     </div>
   );
 }
 
 /** 0085: ლიცენზიის ბანერი — admin / manager: გაფრთხილების მთელი პერიოდი (+ dev / ლიცენზიის გარეშე); ყველა: ბოლო 7 დღე, შეღავათი, ვადაგასული */
 function licenseText(st: LicenseStatus): [string, string] | null {
-  if (st.mode === 'dev') return ['სატესტო რეჟიმი: ლიცენზია არ არის — ყველა მოდული ჩართულია.', 'info'];
+  if (st.mode === 'dev') return ['სატესტო რეჟიმი: ლიცენზია არ არის — ყველა მოდული ხელმისაწვდომია (ჩართვა / გამორთვა — ადმინისტრირება → მოდულები).', 'info'];
   if (st.mode === 'none') return ['ლიცენზია არ არის — მუშაობს მხოლოდ ბირთვი (ადმინისტრირება → ლიცენზია).', 'danger'];
   if (st.phase === 'warning') return [`ლიცენზიის ვადა იწურება ${st.expires ? dateGe(st.expires) : ''}${st.days_left !== null ? ` (დარჩა ${st.days_left} დღე)` : ''} — განახლებისთვის დაუკავშირდით მომწოდებელს.`, 'warn'];
   if (st.phase === 'grace') return [`ლიცენზიის ვადა გავიდა ${st.expires ? dateGe(st.expires) : ''}. სისტემა სრულად მუშაობს ${st.grace_until ? tsDate(st.grace_until) : ''}-მდე, შემდეგ ოპციური მოდულები მხოლოდ წაკითხვაზე გადავა.`, 'warn'];

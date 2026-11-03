@@ -5,6 +5,7 @@ import { evaluateStay, schemeOf } from '../drg/drg-calc';
 import { drgRules, gatherInputs, stayInfo } from '../drg/drg-data';
 import { type Cond, evalCond, matchPattern, norm, normPattern, VERSION_SETTINGS_DEFAULT } from '../drg/drg-engine';
 import { loadBilling } from '../inpatient/ipd-billing-calc';
+import { modActive } from '../modules/modules-ref';
 
 /**
  * Claim scrubber (0057): შემთხვევის (ინვოისის) შემოწმება გადამხდელთან გაგზავნამდე.
@@ -20,8 +21,8 @@ export type Mode = 'off' | 'warn' | 'block';
 export interface ScrubRules { finalize_check: Mode; claim_check: Mode }
 export const SCRUB_RULES_DEFAULT: ScrubRules = { finalize_check: 'block', claim_check: 'block' };
 export async function scrubSettings(ex: Ex): Promise<ScrubRules & { enabled: boolean }> {
-  const m = await ex.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'scrubber').executeTakeFirst();
-  return { ...SCRUB_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<ScrubRules>), enabled: m?.enabled ?? false };
+  const m = await ex.selectFrom('system_modules').select('settings').where('code', '=', 'scrubber').executeTakeFirst();
+  return { ...SCRUB_RULES_DEFAULT, ...((m?.settings ?? {}) as Partial<ScrubRules>), enabled: await modActive(ex, 'scrubber') };   // 0086
 }
 
 /** მზა წესები: რომელი გადამხდელზეა მიბმული და რა პარამეტრები აქვს (ადმინისტრირების ეკრანისთვის) */

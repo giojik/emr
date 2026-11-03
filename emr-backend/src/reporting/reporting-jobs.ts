@@ -13,6 +13,7 @@ import { addDays, DATE_RE, RPT_ALL, RPT_CONFIG, RPT_READ, RptCommon, TZ } from '
 import { ReportingDashService } from './reporting-dash';
 import { periodLabel, RptReportService } from './reporting-report';
 import { RequireModule } from '../modules/module-guard';
+import { modActive } from '../modules/modules-ref';
 
 /**
  * 0063: განრიგით გაგზავნა და „ყურადღების“ შეტყობინებები (worker — tick ყოველ 5 წუთში; ხელით — ადმინისტრირებიდან).
@@ -255,8 +256,7 @@ export class RptJobsService {
       return await this.c.db.transaction().execute(async (trx) => {
         const got = (await sql<{ ok: boolean }>`SELECT pg_try_advisory_xact_lock(${LOCK_KEY}) AS ok`.execute(trx)).rows[0].ok;
         if (!got) return null;
-        const mod = await this.c.db.selectFrom('system_modules').select('enabled').where('code', '=', 'reporting').executeTakeFirst();
-        if (!mod?.enabled) return null;
+        if (!(await modActive(this.c.db, 'reporting'))) return null;   // 0086: გაგზავნა — მხოლოდ აქტიურზე
         return { schedules: await this.scheduleTick(), attention: await this.attentionTick() };
       });
     } finally { this.busy = false; }

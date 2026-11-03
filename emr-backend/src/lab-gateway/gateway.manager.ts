@@ -8,6 +8,7 @@ import * as hl7 from './hl7';
 import { LabAlertsService } from './lab-alerts.service';
 import { LabIngestService, type OrderInfo } from './lab-ingest.service';
 import { DEFAULT_TEXT, parseText, TextFramer, type TextSettings } from './text';
+import { modActive } from '../modules/modules-ref';
 
 interface InstrumentCfg {
   id: string; name: string; protocol: 'astm' | 'hl7' | 'text'; conn_mode: 'client' | 'server'; host: string | null; port: number;
@@ -20,6 +21,9 @@ const HEARTBEAT_MS = 20_000;
 const RETENTION_DAYS = 30;
 const COMMANDS_EVERY_MS = 2_000;
 const ALERTS_EVERY_MS = 60_000;
+/** 0086 (D): მოდულის lab_gateway მდგომარეობის განახლება (ModulesService-ის ქეში 30 წმ + NOTIFY emr_modules) */
+const MODULE_EVERY_MS = 10_000;
+const INACTIVE = 'lab_gateway inactive — მოდული არააქტიურია (ადმინისტრირება → მოდულები / ლიცენზია); შედეგი არ ჩაიწერა';
 
 /** TCP-ის შემოწმება (+ ASTM: ENQ → ACK → EOT) — ახალ, დროებით კავშირზე */
 function tcpTest(host: string, port: number, astmProbe: boolean): Promise<Record<string, unknown>> {
@@ -101,8 +105,9 @@ class Runner {
       s.on('data', (d) => framer.feed(d));
       s.once('close', () => framer.close());
     } else if (this.cfg.protocol === 'astm') {
-      const link = new AstmLink((b) => s.write(b));
+      const link = new AstmLink((b) => s.write(b), { accept: () => this.m.moduleActive });
       this.astm = link;
+      link.on('rejected', () => this.m.rejected(this.cfg.id, this.log, 'ASTM: ENQ → NAK'));
       link.on('message', (recs: string[]) => void this.onAstm(recs));
       link.on('log', (t: string) => this.log.warn(t));
       link.on('error', (e: Error) => this.log.warn(e.message));
@@ -151,6 +156,12 @@ class Runner {
   get textSettings(): TextSettings { return { ...DEFAULT_TEXT, ...(this.cfg.settings as Partial<TextSettings>) }; }
   private async onText(text: string) {
     try {
+      if (!this.m.moduleActive) {   // 0086: ცალმხრივი — უარყოფა შეუძლებელია: ჟურნალში რჩება (30 დღე), შედეგი არ იწერება; ack-ის ნაცვლად NAK
+        await this.m.message(this.cfg.id, 'in', 'results', text, null, INACTIVE);
+        if (this.textSettings.ack) this.sock?.write(Buffer.from([0x15]));
+        this.m.rejected(this.cfg.id, this.log, 'ტექსტი: არ დამუშავდა');
+        return;
+      }
       const p = parseText(text, this.textSettings);
       const id = await this.m.message(this.cfg.id, 'in', 'results', text, p.error ? null : `${p.results.length} შედეგი · ${p.barcode}`, p.error ?? undefined);
       if (this.textSettings.ack) this.sock?.write(Buffer.from([0x06]));
@@ -175,6 +186,12 @@ class Runner {
       }
       const settings = { barcode_field: (this.cfg.settings.barcode_field as hl7.Hl7Settings['barcode_field']) || hl7.DEFAULT_HL7.barcode_field,
         code_component: Number(this.cfg.settings.code_component) || hl7.DEFAULT_HL7.code_component };
+      if ((m.type === 'ORU' || m.type === 'OUL') && !this.m.moduleActive) {   // 0086: MSA|AE — ანალიზატორზე „გაუგზავნელი“ რჩება
+        await this.m.message(this.cfg.id, 'in', 'results', raw.replace(/\r/g, '\n'), null, INACTIVE);
+        this.write(hl7.ack(m, 'AE', 'lab_gateway inactive'));
+        this.m.rejected(this.cfg.id, this.log, 'HL7: ORU → AE');
+        return;
+      }
       if (m.type === 'ORU' || m.type === 'OUL') {
         const res = hl7.results(m, settings);
         const id = await this.m.message(this.cfg.id, 'in', 'results', raw.replace(/\r/g, '\n'), `${res.length} შედეგი · ${[...new Set(res.map((r) => r.barcode))].join(', ')}`);
@@ -190,7 +207,7 @@ class Runner {
         const b = hl7.queryBarcode(m);
         await this.m.message(this.cfg.id, 'in', 'query', raw.replace(/\r/g, '\n'), `ქვერი: ${b ?? '?'}`);
         if (this.cfg.settings.hl7_query_reply !== 'dsr') this.write(hl7.ack(m, 'AA'));
-        const o = b && this.cfg.order_mode !== 'none' && !this.cfg.listen_only ? await this.m.ingest.ordersForBarcode(this.cfg.id, b, this.sendName) : null;
+        const o = b && this.cfg.order_mode !== 'none' && !this.cfg.listen_only && this.m.moduleActive ? await this.m.ingest.ordersForBarcode(this.cfg.id, b, this.sendName) : null;
         if (this.cfg.settings.hl7_query_reply === 'dsr') {   // Mindray-ის ტიპი: QCK^Q02 + DSR^Q03 (ACK-ის ნაცვლად)
           const found = !!o?.codes.length;
           this.write(hl7.qck(m, found));
@@ -237,7 +254,7 @@ class Runner {
 
   // ---------------------------------------------------------------- push: მიღებული სინჯარების შეკვეთები
   private async pushTick() {
-    if (this.cfg.order_mode !== 'push' || this.cfg.listen_only || !this.sock || this.pushing) return;
+    if (this.cfg.order_mode !== 'push' || this.cfg.listen_only || !this.sock || this.pushing || !this.m.moduleActive) return;
     if (this.astm?.busy) return;
     this.pushing = true;
     try {
@@ -263,7 +280,23 @@ export class GatewayManager implements OnApplicationShutdown {
   private runners = new Map<string, Runner>();
   private timers: NodeJS.Timeout[] = [];
   private cmdBusy = false;
+  /** 0086 (D): მოდული lab_gateway აქტიურია (ლიცენზია ∧ ჩართვა ∧ lab); არააქტიურზე შედეგი არ იწერება, ანალიზატორი იღებს NAK / AE-ს */
+  moduleActive = true;
+  private lastReject = new Map<string, number>();
   constructor(@InjectDb() private readonly db: Database, readonly ingest: LabIngestService, private readonly alerts: LabAlertsService) {}
+
+  private async refreshModule() {
+    const on = await modActive(this.db, 'lab_gateway').catch(() => this.moduleActive);
+    if (on !== this.moduleActive) this.log.warn(on ? 'lab_gateway active — შედეგების მიღება აღდგა' : 'lab_gateway inactive — შედეგები არ მიიღება (NAK / AE)');
+    this.moduleActive = on;
+  }
+  /** უარყოფის ჟურნალი — ინსტრუმენტზე წუთში ერთხელ (NAK-ის განმეორებითი ციკლი ლოგს არ ავსებს) */
+  rejected(id: string, log: Logger, what: string) {
+    const t = this.lastReject.get(id) ?? 0;
+    if (Date.now() - t < 60_000) return;
+    this.lastReject.set(id, Date.now());
+    log.warn(`lab_gateway inactive — ${what}`);
+  }
 
   async start() {
     const now = new Date();
@@ -271,6 +304,8 @@ export class GatewayManager implements OnApplicationShutdown {
       .onConflict((oc) => oc.column('id').doUpdateSet({ heartbeat_at: now, started_at: now, hostname: os.hostname() })).execute();
     // წინა გაშვების სტატუსები აღარ არის აქტუალური
     await this.db.updateTable('lab_instruments').set({ status: 'offline', peer: null, status_at: now }).execute();
+    await this.refreshModule();
+    this.timers.push(setInterval(() => void this.refreshModule(), MODULE_EVERY_MS));
     await this.reload();
     this.timers.push(setInterval(() => void this.reload().catch((e) => this.log.error(e.message)), RELOAD_EVERY_MS));
     this.timers.push(setInterval(() => void this.db.updateTable('lab_gateway_state').set({ heartbeat_at: new Date() }).where('id', '=', 1).execute().catch(() => undefined), HEARTBEAT_MS));

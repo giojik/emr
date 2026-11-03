@@ -1,3 +1,4 @@
+import { modUsable } from '../modules/modules-ref';
 import { sql, type RawBuilder, type Transaction } from 'kysely';
 import type { Database } from '../database/database.module';
 import type { DB } from '../database/db';
@@ -46,9 +47,9 @@ export const RPT_DEFAULTS: RptRules = { rpt_restricted_weight: 0, rpt_mtbf_exclu
 
 /** მოდული ჩართულია → ანგარიშების პარამეტრები; გამორთული → null */
 export async function bmeRptRules(db: Ex): Promise<RptRules | null> {
-  const m = await db.selectFrom('system_modules').select(['enabled', 'settings']).where('code', '=', 'bme').executeTakeFirst();
-  if (!m?.enabled) return null;
-  return { ...RPT_DEFAULTS, ...((m.settings ?? {}) as Partial<RptRules>) };
+  if (!(await modUsable(db, 'bme'))) return null;   // 0086: ანგარიშები read_only-ზეც
+  const m = await db.selectFrom('system_modules').select('settings').where('code', '=', 'bme').executeTakeFirst();
+  return { ...RPT_DEFAULTS, ...((m?.settings ?? {}) as Partial<RptRules>) };
 }
 
 /** KPI-ები და დამატებითი მაჩვენებლები ჯამებიდან (ანგარიში, პასპორტი, მენეჯერული დაფა — ერთი წესი) */

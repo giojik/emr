@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { BmeCoreModule } from './bme/bme-common';
 import { DiagnosticsModule } from './diagnostics/diagnostics.controller';
 import { GatewayManager } from './lab-gateway/gateway.manager';
+import { ModulesCoreModule } from './modules/modules';
 import { LabAlertsService } from './lab-gateway/lab-alerts.service';
 import { NotificationsModule } from './notifications/notifications';
 import { NotifyModule } from './notify/notify.service';
@@ -17,7 +18,8 @@ import { StorageModule } from './storage/storage.service';
  * კონფიგურაცია ბაზიდან (lab_instruments), ცვლილებები 5 წამში მოქმედებს; HTTP-ს არ ისმენს.
  * NotificationsModule — DiagnosticsModule-ის LabNotifyService-ს სჭირდება (0029-დან; მის გარეშე პროცესი არ ეშვებოდა).
  */
-@Module({ imports: [DatabaseModule, AuditModule, NotificationsModule, StorageModule, NotifyModule, BmeCoreModule, DiagnosticsModule], providers: [GatewayManager, LabAlertsService] })
+/** 0086 (D): ModulesCoreModule — მოდულის lab_gateway მდგომარეობა (ლიცენზია + ჩართვა + წინაპირობა; LISTEN emr_modules) */
+@Module({ imports: [DatabaseModule, AuditModule, NotificationsModule, StorageModule, NotifyModule, ModulesCoreModule, BmeCoreModule, DiagnosticsModule], providers: [GatewayManager, LabAlertsService] })
 class LabGatewayModule {}
 
 async function bootstrap() {
