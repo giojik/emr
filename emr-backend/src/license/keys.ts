@@ -6,6 +6,7 @@
  * სანამ მისი ხელმოწერილი ლიცენზიები მოქმედებს (როტაცია).
  */
 export const PROD_KEYS: Record<string, string> = {
+  '2026-1': 'MCowBQYDK2VwAyEAToUjnjP03r6G8Q9WLPMcSxAvTemjW0gReR8Sap95jzM=', // 0085b — license-manager (Synology), 2026-11-03
 };
 
 /**
