@@ -109,7 +109,7 @@ ok "2 ER-ის შემთხვევა; E1 — ტრიაჟი + აყ�
 
 step "1. მოდული / პარამეტრები"
 M=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="er")')
-chk "რეესტრი: er → roster, lab, radiology, endoscopy (რბილი); მკაცრი — არა" "$(echo "$M" | jq -r '(.hard|length|tostring) + ":" + (.soft|sort|join(","))')" "0:endoscopy,lab,radiology,roster"
+chk "რეესტრი: er → roster, lab, radiology, endoscopy (რბილი; 0089: + stock, pharmacy); მკაცრი — არა" "$(echo "$M" | jq -r '(.hard|length|tostring) + ":" + ([.soft[]|select(.!="stock" and .!="pharmacy")]|sort|join(","))')" "0:endoscopy,lab,radiology,roster"
 chk "ნაგულისხმევი: initial_note_min 60, doctor_write team, dx_unpaid_check skip, dx_default_priority urgent, consult_due_min 30/60/240, consult_billing" \
   "$(echo "$M" | jq -r '.settings|"\(.initial_note_min):\(.doctor_write):\(.dx_unpaid_check):\(.dx_default_priority):\(.consult_due_min.emergency)/\(.consult_due_min.urgent)/\(.consult_due_min.routine):\(.consult_billing)"')" "60:team:skip:urgent:30/60/240:true"
 chk "არასწორი: doctor_write / dx_unpaid_check / initial_note_min 5 / consult_due_min (გასაღები აკლია) — 400" \

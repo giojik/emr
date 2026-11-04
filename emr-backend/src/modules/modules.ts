@@ -337,6 +337,10 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       dx_default_priority: (v) => oneOf(v, ['urgent', 'routine']), consult_billing: bool,
       consult_due_min: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 3
         && (['routine', 'urgent', 'emergency'] as const).every((k) => int((v as Record<string, unknown>)[k], 5, 2880)),
+      // 0089: დანიშვნა / მიცემა / ჩამოწერა
+      prn_max_h: (v) => int(v, 1, 24), verbal_orders: bool, verbal_confirm_h: (v) => int(v, 1, 24),
+      double_check: (v) => oneOf(v, ['off', 'high_alert', 'high_alert_controlled']), dose_rule: (v) => oneOf(v, ['warn', 'reason']),
+      allow_no_stock: bool, stock_deduct: bool, stat_due_min: (v) => int(v, 5, 120),
     },
     extra: async (s, db) => {
       const c = s.triage_scale as string | undefined;

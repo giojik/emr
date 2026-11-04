@@ -11,10 +11,14 @@ import { modulesRef } from '../modules/modules-ref';
 export interface ErClinicalSettings {
   initial_note_min: number; doctor_write: 'team' | 'attending'; dx_unpaid_check: 'skip' | 'ack'; dx_default_priority: 'urgent' | 'routine';
   consult_due_min: { routine: number; urgent: number; emergency: number }; consult_billing: boolean;
+  // 0089: დანიშვნა / მიცემა / ჩამოწერა
+  prn_max_h: number; verbal_orders: boolean; verbal_confirm_h: number; double_check: 'off' | 'high_alert' | 'high_alert_controlled';
+  dose_rule: 'warn' | 'reason'; allow_no_stock: boolean; stock_deduct: boolean; stat_due_min: number;
 }
 export const ER_CLINICAL_DEFAULTS: ErClinicalSettings = {
   initial_note_min: 60, doctor_write: 'team', dx_unpaid_check: 'skip', dx_default_priority: 'urgent',
   consult_due_min: { routine: 240, urgent: 60, emergency: 30 }, consult_billing: true,
+  prn_max_h: 12, verbal_orders: true, verbal_confirm_h: 4, double_check: 'off', dose_rule: 'warn', allow_no_stock: true, stock_deduct: true, stat_due_min: 15,
 };
 
 export async function erClinicalSettings(): Promise<ErClinicalSettings> {

@@ -45,6 +45,19 @@ export function ErSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
           {chk('show_on_duty', 'დაფაზე „მორიგე ექიმი ახლა“', 'საჭიროებს მოდულს „ცვლები და მორიგეობა“ (გამორთულზე — არ ჩანს)')}
           {chk('consult_billing', 'კონსულტაცია ინვოისში (კონსულტანტის ტარიფით)', 'პასუხის ხელმოწერისას — ER-ის ინვოისში (ბილინგი — 0090)')}
         </div>
+        <h3 style={{ gridColumn: '1 / -1', margin: '6px 0 0' }}>დანიშვნა / მიცემა / ჩამოწერა (0089)</h3>
+        <Field label="PRN დანიშნულების ვადა (სთ)" htmlFor="er-prn_max_h" hint="1–24; შემდეგ — ვადაგასული (ახალი დანიშნულება)">{int('prn_max_h', 12, 1, 24)}</Field>
+        <Field label="STAT — შესრულების ვადა (წთ)" htmlFor="er-stat_due_min" hint="5–120; გადაცილება — ნიშანი დაფაზე">{int('stat_due_min', 15, 5, 120)}</Field>
+        <Field label="ზეპირის დადასტურება (სთ)" htmlFor="er-verbal_confirm_h" hint="1–24; ექიმი ადასტურებს">{int('verbal_confirm_h', 4, 1, 24)}</Field>
+        <Field label="დოზის ზღვრის გადაჭარბება" htmlFor="er-dr" hint="აფთიაქის მოდულით (ჯენერიკის ზღვრები)"><select id="er-dr" className="select" value={String(s.dose_rule ?? 'warn')} onChange={(e) => upd('dose_rule', e.target.value)}>
+          <option value="warn">გაფრთხილება (დადასტურება)</option><option value="reason">დასაბუთებით</option></select></Field>
+        <Field label="ორმაგი შემოწმება მიცემისას" htmlFor="er-dc" hint="მეორე თანამშრომელი — მომხმარებელი / პაროლი"><select id="er-dc" className="select" value={String(s.double_check ?? 'off')} onChange={(e) => upd('double_check', e.target.value)}>
+          <option value="off">გამორთული</option><option value="high_alert">მაღალი რისკის მედიკამენტზე</option><option value="high_alert_controlled">მაღალი რისკი + კონტროლირებადი</option></select></Field>
+        <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
+          {chk('verbal_orders', 'ზეპირი დანიშნულება (ექთანი — ექიმის სახელით)', 'ექიმი იღებს შეტყობინებას და ადასტურებს')}
+          {chk('stock_deduct', 'მიცემისას ჩამოწერა ER-ის ქვესაწყობიდან', 'საჭიროებს მოდულს „საწყობი“ (გამორთულზე — მიცემა იწერება ჩამოწერის გარეშე)')}
+          {chk('allow_no_stock', 'ნაშთის გარეშე მიცემა დაშვებულია (დასაბუთებით)', 'გამორთულზე — ნაშთის / ქვესაწყობის გარეშე მიცემა იბლოკება')}
+        </div>
       </div>
     </div>
   );

@@ -379,6 +379,11 @@ export class ErService {
       }
       const paid = await trx.selectFrom('invoices as i').innerJoin('invoice_line_items as l', 'l.invoice_id', 'i.id').select('l.id').where('i.encounter_id', '=', id).limit(1).executeTakeFirst();
       if (paid) throw new ConflictException('შემთხვევას უკვე აქვს მომსახურება ინვოისში — გაუქმება შეუძლებელია');
+      // 0089: მიცემული მედიკამენტი / შესრულებული პროცედურა — გაუქმება შეუძლებელია (ჯერ — მიცემის გაუქმება, შემობრუნებით)
+      const given = await trx.selectFrom('er_administrations').select('id').where('encounter_id', '=', id).where('voided_at', 'is', null).where('outcome', 'in', ['given', 'partial']).limit(1).executeTakeFirst();
+      if (given) throw new ConflictException({ code: 'ER_HAS_ADMINISTRATIONS', message: 'შემთხვევაში მედიკამენტი უკვე მიცემულია — გაუქმება შეუძლებელია' });
+      await trx.updateTable('er_orders').set({ status: 'stopped', stopped_at: sql`now()`, stopped_by: u.id, stop_reason: `ER-ის შემთხვევის გაუქმება: ${reason}` })
+        .where('encounter_id', '=', id).where('status', '=', 'active').execute();
       const r = await trx.updateTable('er_visits').set({ status: 'cancelled', ended_at: sql<string>`now()`, end_reason: reason, spot_id: null })
         .where('encounter_id', '=', id).returningAll().executeTakeFirstOrThrow();
       await trx.updateTable('encounters').set({ status: 'cancelled', end_time: sql<string>`now()` }).where('id', '=', id).execute();
@@ -408,7 +413,16 @@ export class ErService {
         sql<string[]>`ARRAY(SELECT DISTINCT CASE WHEN i.section = 'lab' THEN 'lab' ELSE 'imaging' END FROM dx_order_items i
           WHERE i.encounter_id = v.encounter_id AND i.status NOT IN ('validated', 'cancelled'))
           || CASE WHEN EXISTS (SELECT 1 FROM consultations k WHERE k.encounter_id = v.encounter_id AND k.status = 'requested') THEN ARRAY['consult'] ELSE ARRAY[]::text[] END`.as('waiting_auto'),
-        sql<boolean>`EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = v.encounter_id AND n.kind = 'er_initial' AND n.status = 'signed' AND n.superseded_at IS NULL)`.as('initial_signed')])
+        sql<boolean>`EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = v.encounter_id AND n.kind = 'er_initial' AND n.status = 'signed' AND n.superseded_at IS NULL)`.as('initial_signed'),
+        // 0089: დანიშნულებები — შეუსრულებელი STAT / ერთჯერადი (STAT — stat_due_min წთ-ზე მეტი → ვადაგადაცილებული), დაუდასტურებელი ზეპირი
+        sql<number>`(SELECT count(*)::int FROM er_orders o WHERE o.encounter_id = v.encounter_id AND o.status = 'active' AND o.order_type IN ('stat', 'once')
+          AND NOT EXISTS (SELECT 1 FROM er_administrations a WHERE a.order_id = o.id AND a.voided_at IS NULL AND a.outcome IN ('given', 'partial')))`.as('orders_pending'),
+        sql<number>`(SELECT count(*)::int FROM er_orders o WHERE o.encounter_id = v.encounter_id AND o.status = 'active' AND o.order_type = 'stat'
+          AND o.created_at < now() - make_interval(mins => ${s.stat_due_min ?? 15})
+          AND NOT EXISTS (SELECT 1 FROM er_administrations a WHERE a.order_id = o.id AND a.voided_at IS NULL AND a.outcome IN ('given', 'partial')))`.as('orders_overdue'),
+        sql<number>`(SELECT count(*)::int FROM er_orders o WHERE o.encounter_id = v.encounter_id AND o.is_verbal AND o.verbal_confirmed_at IS NULL AND o.status <> 'stopped')`.as('verbal_pending'),
+        sql<number>`(SELECT count(*)::int FROM er_orders o WHERE o.encounter_id = v.encounter_id AND o.is_verbal AND o.verbal_confirmed_at IS NULL AND o.status <> 'stopped'
+          AND o.verbal_due_at < now())`.as('verbal_overdue')])
       .where('v.ended_at', 'is', null)
       .$if(!!q.department_id, (x) => x.where('v.department_id', '=', q.department_id!))
       .orderBy(sql`v.triage_level IS NOT NULL`).orderBy('v.triage_level').orderBy('v.arrived_at').execute();
@@ -428,6 +442,7 @@ export class ErService {
         doctor: r.doctor_id ? { id: r.doctor_id, name: r.doctor_name } : null, nurse: r.nurse_id ? { id: r.nurse_id, name: r.nurse_name } : null,
         waiting_for: r.waiting_for, waiting_auto: r.waiting_auto, news2: r.news2_score !== null ? { score: r.news2_score, level: r.news2_level } : null,
         initial_note: r.doctor_at ? { signed: r.initial_signed, due_at: noteDue?.toISOString() ?? null, overdue: !!noteDue && now > noteDue } : null,
+        orders: { pending: r.orders_pending, overdue: r.orders_overdue, verbal_pending: r.verbal_pending, verbal_overdue: r.verbal_overdue },
         patient: { name, gender: r.gender, age: ageYears(r.birth_date as unknown as string, now), age_estimated: r.birth_date_estimated, is_unknown: r.is_unknown, unknown_no: r.unknown_no },
         timers: {
           wait_min: minutes(r.arrived_at, now), door_to_triage_min: r.first_triage_at ? minutes(r.arrived_at, new Date(r.first_triage_at)) : null,
@@ -450,6 +465,7 @@ export class ErService {
       in_treatment: items.filter((i) => i.status === 'in_treatment').length,
       overdue: items.filter((i) => i.timers.triage_overdue || i.timers.doctor_overdue || i.timers.retriage_overdue).length,
       notes_overdue: items.filter((i) => i.initial_note?.overdue).length,
+      orders_overdue: items.filter((i) => i.orders.overdue > 0).length, verbal_overdue: items.filter((i) => i.orders.verbal_overdue > 0).length,
       by_level: Object.fromEntries([...new Set(items.filter((i) => i.triage).map((i) => i.triage!.level))].sort().map((l) => [l, items.filter((i) => i.triage?.level === l).length])),
       spots_free: spots.filter((x) => !occ.has(x.id)).length, spots_total: spots.length,
     };
@@ -492,7 +508,10 @@ export class ErService {
     const active = await this.modules.isActive('er').catch(() => false);
     const clinical = { write: !!u && active && !v.ended_at && await erCanWrite(u, v.doctor_id && v.doctor_at ? v.doctor_id : null),
       dx_default_priority: s.dx_default_priority ?? 'urgent', doctor_write: s.doctor_write ?? 'team' };
-    return { ...v, patient: { ...patient, age: ageYears(patient.birth_date as unknown as string) }, triage, allergies, diagnoses, clinical };
+    // 0089: დანიშნულებები — მოკლე სტატუსი ბარათის ჩანართისთვის
+    const ord = await this.db.selectFrom('er_orders').select([sql<number>`count(*) FILTER (WHERE status = 'active')::int`.as('active'),
+      sql<number>`count(*) FILTER (WHERE is_verbal AND verbal_confirmed_at IS NULL AND status <> 'stopped')::int`.as('verbal_pending')]).where('encounter_id', '=', id).executeTakeFirstOrThrow();
+    return { ...v, patient: { ...patient, age: ageYears(patient.birth_date as unknown as string) }, triage, allergies, diagnoses, clinical, orders: ord };
   }
   async patientVisits(patientId: string) {
     return this.db.selectFrom('er_visits as v').innerJoin('departments as d', 'd.id', 'v.department_id')

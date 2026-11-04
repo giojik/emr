@@ -1576,12 +1576,80 @@ export interface EpicrisisRevisions {
   template_version_id: string;
 }
 
+export interface ErAdministrations {
+  administered_at: Timestamp;
+  documented_by: string;
+  dose: Numeric | null;
+  dose_unit: string | null;
+  double_check_by: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  infusion_action: string | null;
+  no_stock: Generated<boolean>;
+  order_id: string;
+  outcome: string;
+  override_reason: string | null;
+  patient_id: string;
+  qty_base: Numeric | null;
+  rate_ml_h: Numeric | null;
+  reason: string | null;
+  recorded_at: Generated<Timestamp>;
+  route_code: string | null;
+  site: string | null;
+  stock_doc_id: string | null;
+  stock_item_id: string | null;
+  void_reason: string | null;
+  void_stock_doc_id: string | null;
+  voided_at: Timestamp | null;
+  voided_by: string | null;
+  warnings: Generated<Json>;
+  witness_id: string | null;
+}
+
 export interface ErArrivalModes {
   code: string;
   is_active: Generated<boolean>;
   kind: string;
   name: string;
   sort_order: Generated<number>;
+}
+
+export interface ErOrders {
+  checks: Generated<Json>;
+  controlled_class: string | null;
+  created_at: Generated<Timestamp>;
+  diluent: string | null;
+  dose: Numeric | null;
+  dose_unit: string | null;
+  drug_text: string | null;
+  encounter_id: string;
+  entered_by: string;
+  expires_at: Timestamp | null;
+  generic_id: string | null;
+  high_alert: Generated<boolean>;
+  id: Generated<string>;
+  instructions: string | null;
+  is_verbal: Generated<boolean>;
+  kind: string;
+  order_type: string;
+  ordered_by: string;
+  override_reason: string | null;
+  patient_id: string;
+  prn_max_doses: number | null;
+  prn_min_interval_h: Numeric | null;
+  prn_reason: string | null;
+  rate_ml_h: Numeric | null;
+  route_code: string | null;
+  status: Generated<string>;
+  stop_reason: string | null;
+  stopped_at: Timestamp | null;
+  stopped_by: string | null;
+  text: string | null;
+  verbal_confirmed_at: Timestamp | null;
+  verbal_confirmed_by: string | null;
+  verbal_due_at: Timestamp | null;
+  volume_ml: Numeric | null;
+  weight_kg: Numeric | null;
 }
 
 export interface ErSpots {
@@ -6115,7 +6183,9 @@ export interface DB {
   endo_scopes: EndoScopes;
   epicrises: Epicrises;
   epicrisis_revisions: EpicrisisRevisions;
+  er_administrations: ErAdministrations;
   er_arrival_modes: ErArrivalModes;
+  er_orders: ErOrders;
   er_spots: ErSpots;
   er_triage: ErTriage;
   er_triage_levels: ErTriageLevels;

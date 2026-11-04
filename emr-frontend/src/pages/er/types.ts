@@ -30,6 +30,8 @@ export interface BoardItem {
   doctor: { id: string; name: string } | null; nurse: { id: string; name: string } | null; waiting_for: string[]; news2: { score: number; level: string } | null;
   /** 0088: ღია შეკვეთა (lab / imaging) / ღია კონსულტაცია — ავტომატურად; პირველადი ჩანაწერის ვადა (აყვანიდან) */
   waiting_auto?: string[]; initial_note?: { signed: boolean; due_at: string | null; overdue: boolean } | null;
+  /** 0089: შეუსრულებელი STAT / ერთჯერადი, STAT-ის ვადაგადაცილება (stat_due_min), დაუდასტურებელი ზეპირი */
+  orders?: { pending: number; overdue: number; verbal_pending: number; verbal_overdue: number };
   patient: { name: string; gender: string; age: number; age_estimated: boolean; is_unknown: boolean; unknown_no: number | null; first_name?: string; last_name?: string; personal_number?: string | null };
   patient_id?: string; chief_complaint?: string; ambulance_crew?: string | null; has_allergy?: boolean;
   timers: { wait_min: number; door_to_triage_min: number | null; door_to_doctor_min: number | null; triage_due_at: string | null; triage_overdue: boolean;
@@ -38,7 +40,7 @@ export interface BoardItem {
 export interface Board {
   now: string; settings: Pick<ErSettings, 'board_refresh_sec' | 'triage_target_min' | 'retriage_alert' | 'news2_hint'>;
   items: BoardItem[]; spots: Spot[]; on_duty: { department_id: string; name: string; phone: string | null; duty_name: string | null }[];
-  counts: { total: number; waiting_triage: number; waiting_doctor: number; in_treatment: number; overdue: number; notes_overdue?: number; by_level: Record<string, number>; spots_free: number; spots_total: number };
+  counts: { total: number; waiting_triage: number; waiting_doctor: number; in_treatment: number; overdue: number; notes_overdue?: number; orders_overdue?: number; verbal_overdue?: number; by_level: Record<string, number>; spots_free: number; spots_total: number };
 }
 export interface TriageRow {
   id: string; scale_code: string; level: number; level_name: string; color: string; is_retriage: boolean; news2_score: number | null; news2_level: string | null; gcs: number | null;
@@ -57,6 +59,8 @@ export interface ErVisit {
   triage: TriageRow[]; allergies: { id: string; substance: string; reaction_type: string | null; severity: string }[];
   // 0088: ICD-10 (ბირთვი) და კლინიკური ჩაწერის უფლება (doctor_write: team / attending; ER აქტიური; შემთხვევა მიმდინარე)
   diagnoses: Diagnosis[]; clinical: { write: boolean; dx_default_priority: 'urgent' | 'routine'; doctor_write: 'team' | 'attending' };
+  /** 0089: დანიშნულებები (აქტიური / დაუდასტურებელი ზეპირი) */
+  orders?: { active: number; verbal_pending: number };
 }
 
 export const STATUS_KA: Record<ErStatus, string> = { waiting: 'ტრიაჟის მოლოდინში', triaged: 'ექიმის მოლოდინში', in_treatment: 'მკურნალობაში', cancelled: 'გაუქმებული' };

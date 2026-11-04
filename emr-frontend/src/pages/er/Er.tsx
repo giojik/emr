@@ -11,6 +11,7 @@ import { dateGe, tsDate } from '../../lib/format';
 import { Diagnoses } from '../encounter/Clinical';
 import DiagnosticsPanel from '../encounter/DiagnosticsPanel';
 import DoctorNotesPanel from '../inpatient/DoctorNotes';
+import ErOrdersPanel from './ErOrders';
 import {
   ACVPU, ARRIVAL_KIND_KA, type Board, type BoardItem, dur, type ErMeta, type ErVisit, GENDER_KA, hm, minsSince, minsUntil, NEWS2_KA, onColor, patientLabel,
   SPOT_KA, STATUS_KA, type TriageScale, WAIT_KA,
@@ -19,7 +20,7 @@ import {
 /**
  * გადაუდებელი დახმარება (ER), 0087: დაფა (ტრიაჟის ფერი, ადგილი, ტაიმერები კარი → ტრიაჟი / ექიმი, ER-ში ყოფნა, ექიმი / ექთანი, მოლოდინი),
  * რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი / განმეორებითი ტრიაჟი (NEWS2 — მინიშნება), აყვანა, მინიჭება, გაუქმება.
- * ?visit=<id> — ბარათი (&tab=notes | dx — 0088: ჩანაწერები / კონსულტაცია, დიაგნოზი / დიაგნოსტიკა); ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
+ * ?visit=<id> — ბარათი (&tab=notes | dx — 0088: ჩანაწერები / კონსულტაცია, დიაგნოზი / დიაგნოსტიკა; orders — 0089: დანიშნულებები / მიცემა); ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
  */
 export function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -69,6 +70,8 @@ export default function Er() {
           <Tile k="ER-ში" v={c.total} /><Tile k="ტრიაჟის მოლოდინში" v={c.waiting_triage} /><Tile k="ექიმის მოლოდინში" v={c.waiting_doctor} />
           <Tile k="მკურნალობაში" v={c.in_treatment} /><Tile k="ვადაგადაცილებული" v={c.overdue} danger={c.overdue > 0} />
           {(c.notes_overdue ?? 0) > 0 && <Tile k="ჩანაწერი აკლია" v={c.notes_overdue!} danger />}
+          {(c.orders_overdue ?? 0) > 0 && <Tile k="STAT ვადაგადაც." v={c.orders_overdue!} danger />}
+          {(c.verbal_overdue ?? 0) > 0 && <Tile k="ზეპირი — დაუდასტ." v={c.verbal_overdue!} danger />}
           <Tile k="თავისუფალი ადგილი" v={`${c.spots_free} / ${c.spots_total}`} />
           {board.data!.on_duty.length > 0 && <div className="card card-pad stack grow" style={{ gap: 2, minWidth: 220 }}><span className="small muted">მორიგე ექიმი ახლა</span>
             <span className="small">{board.data!.on_duty.map((d) => `${d.name}${d.duty_name ? ` (${d.duty_name})` : ''}${d.phone ? ` · ${d.phone}` : ''}`).join('; ')}</span></div>}
@@ -135,7 +138,10 @@ function Row({ i, t, perms, meDoctor, meId, onOpen, onTriage, onPickup, busy }: 
       <td>{i.triage ? <span className="chip" style={{ background: i.triage.color, color: onColor(i.triage.color) }}>{i.triage.name}</span> : <span className="chip warn">ტრიაჟის გარეშე</span>}
         <div className="small muted" style={{ marginTop: 4 }}>{STATUS_KA[i.status]}</div>
         {(() => { const w = [...new Set([...i.waiting_for, ...(i.waiting_auto ?? [])])]; return w.length > 0 && <div className="small" data-testid="er-waiting">მოლოდინი: {w.map((x) => WAIT_KA[x] ?? x).join(', ')}</div>; })()}
-        {i.initial_note && !i.initial_note.signed && i.initial_note.overdue && <span className="chip danger" data-testid="er-note-overdue" title="პირველადი გასინჯვა არ არის ხელმოწერილი">ჩანაწერი აკლია</span>}</td>
+        {i.initial_note && !i.initial_note.signed && i.initial_note.overdue && <span className="chip danger" data-testid="er-note-overdue" title="პირველადი გასინჯვა არ არის ხელმოწერილი">ჩანაწერი აკლია</span>}
+        {i.orders && i.orders.overdue > 0 && <span className="chip danger" data-testid="er-orders-overdue" title="STAT დანიშნულება ვადაში არ შესრულებულა">STAT — {i.orders.overdue}</span>}
+        {i.orders && i.orders.pending > 0 && !i.orders.overdue && <span className="chip warn" title="შეუსრულებელი STAT / ერთჯერადი დანიშნულება">დანიშნ. — {i.orders.pending}</span>}
+        {i.orders && i.orders.verbal_pending > 0 && <span className={`chip ${i.orders.verbal_overdue ? 'danger' : 'warn'}`} data-testid="er-verbal-flag" title="ზეპირი დანიშნულება ექიმს არ დაუდასტურებია">ზეპირი — {i.orders.verbal_pending}</span>}</td>
       <td><div className="stack" style={{ gap: 0 }}>
         <Timer label="ER-ში" since={i.arrived_at} t={t} />
         {!i.first_triage_at && <Timer label="ტრიაჟამდე" due={i.timers.triage_due_at} t={t} overdue={i.timers.triage_overdue} />}
@@ -311,7 +317,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
   const [mergeTarget, setMergeTarget] = useState<string | undefined>();
   const [reason, setReason] = useState('');
   const [sp, setSp] = useSearchParams();
-  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | null) ?? 'card';
+  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | 'orders' | null) ?? 'card';
   const setTab = (t: string) => { const n = new URLSearchParams(sp); if (t === 'card') n.delete('tab'); else n.set('tab', t); setSp(n, { replace: true }); };
   const inv = () => { void qc.invalidateQueries({ queryKey: ['er-board'] }); void qc.invalidateQueries({ queryKey: ['er-visit', id] }); };
   const assign = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/er/visits/${id}`, { method: 'PATCH', body }), onSuccess: () => { toast.show('შენახულია'); inv(); } });
@@ -326,7 +332,10 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
         <button type="button" role="tab" aria-selected={tab === 'card'} aria-pressed={tab === 'card'} className="ro-ok" onClick={() => setTab('card')}>ბარათი / ტრიაჟი</button>
         <button type="button" role="tab" aria-selected={tab === 'notes'} aria-pressed={tab === 'notes'} className="ro-ok" onClick={() => setTab('notes')}>ჩანაწერები / კონსულტაცია</button>
         <button type="button" role="tab" aria-selected={tab === 'dx'} aria-pressed={tab === 'dx'} className="ro-ok" onClick={() => setTab('dx')}>დიაგნოზი / კვლევები</button>
+        <button type="button" role="tab" aria-selected={tab === 'orders'} aria-pressed={tab === 'orders'} className="ro-ok" onClick={() => setTab('orders')}>
+          დანიშნულებები / მიცემა{v.orders && v.orders.active > 0 ? ` (${v.orders.active})` : ''}{v.orders && v.orders.verbal_pending > 0 ? ' •' : ''}</button>
       </div>
+      {tab === 'orders' && <ErOrdersPanel encounterId={id} departmentId={v.department_id} />}
       {tab === 'notes' && <div data-testid="er-notes"><DoctorNotesPanel encounterId={id} scope="er" /></div>}
       {tab === 'dx' && <div className="stack" style={{ gap: 12 }} data-testid="er-dx">
         <Diagnoses e={{ id, diagnoses: v.diagnoses }} canWrite={v.clinical.write} onChanged={inv} />
