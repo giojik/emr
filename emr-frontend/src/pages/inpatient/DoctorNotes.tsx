@@ -10,7 +10,15 @@ import { hhmm, todayISO, tsDate } from '../../lib/format';
 import { useIcu } from './Icu';
 
 // ================================================================= ტიპები (0045)
-export type NoteKind = 'admission' | 'progress' | 'rounds' | 'consult' | 'icu_daily' | 'icu_out';
+export type NoteKind = 'admission' | 'progress' | 'rounds' | 'consult' | 'icu_daily' | 'icu_out' | 'er_initial' | 'er_progress';
+/**
+ * 0088: ერთი კომპონენტი ორ „ისტორიაზე“ — ჰოსპიტალიზაცია (inpatient) და ER-ის შემთხვევა (er). ჩანაწერის / კონსულტაციის ოპერაციები ER-ზე —
+ * /clinical/... (სტაციონარის მოდულის გარეშეც), სტაციონარზე — ძველი /inpatient/... გზები.
+ */
+export type NotesScope = 'inpatient' | 'er';
+const P = (scope: NotesScope) => (scope === 'er'
+  ? { chart: (id: string) => `/er/visits/${id}`, note: (id: string) => `/clinical/notes/${id}`, templates: '/clinical/note-templates', consult: (id: string) => `/clinical/consultations/${id}/cancel` }
+  : { chart: (id: string) => `/inpatient/stays/${id}`, note: (id: string) => `/inpatient/notes/${id}`, templates: '/inpatient/note-templates', consult: (id: string) => `/inpatient/consultations/${id}/cancel` });
 export interface DoctorNote {
   id: string; encounter_id: string; kind: NoteKind; day: string; consultation_id: string | null; content: Record<string, string>; participants: string[]; participant_names: string[];
   status: 'draft' | 'signed'; version: number; root_id: string | null; amends_id: string | null; amend_reason: string | null; superseded_at: string | null;
@@ -22,41 +30,47 @@ export interface Consultation {
   target_doctor_id: string | null; target_doctor_name: string | null; urgency: 'routine' | 'urgent' | 'emergency'; question: string; status: 'requested' | 'answered' | 'cancelled';
   due_at: string; answered_at: string | null; answered_by_name: string | null; answer_note_id: string | null; cancel_reason: string | null; created_at: string;
   // inbox
+  encounter_type?: 'inpatient' | 'emergency'; er_spot?: string | null;
   adm_no?: string; first_name?: string; last_name?: string; birth_date?: string; gender?: string; bed_code?: string | null; patient_department?: string | null; my_draft_id?: string | null;
 }
 type Fields = Record<NoteKind, { key: string; label: string; required?: boolean }[]>;
 interface NotesResp {
+  type?: 'inpatient' | 'emergency'; initial_kind?: NoteKind; kinds?: NoteKind[];
   notes: DoctorNote[]; consultations: Consultation[]; fields: Fields; today: string; admitted_day: string; last_day: string;
-  admission: { note_id: string | null; due_at: string; overdue: boolean }; missing_days: string[]; can: { write: boolean; head: boolean; consult: boolean };
+  admission: { note_id: string | null; due_at: string | null; overdue: boolean }; missing_days: string[]; can: { write: boolean; head: boolean; consult: boolean };
 }
 interface Template { id: string; kind: NoteKind; name: string; content: Record<string, string>; department_id: string | null; department_name: string | null; owner_id: string | null }
 
-export const KIND_KA: Record<NoteKind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანა' };
+export const KIND_KA: Record<NoteKind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანა',
+  er_initial: 'პირველადი გასინჯვა (ER)', er_progress: 'დინამიკა (ER)' };
 const URG: Record<string, [string, string]> = { routine: ['', 'გეგმიური'], urgent: ['warn', 'სასწრაფო'], emergency: ['danger', 'გადაუდებელი'] };
 const CST: Record<string, [string, string]> = { requested: ['info', 'მოლოდინში'], answered: ['ok', 'პასუხი მზადაა'], cancelled: ['', 'გაუქმდა'] };
 const dd = (d: string) => d.split('-').reverse().join('/');
 const dt = (iso: string) => `${tsDate(iso)} ${hhmm(iso)}`;
-const INSERT_INTO: Partial<Record<NoteKind, string>> = { progress: 'o', admission: 'objective' };
+const INSERT_INTO: Partial<Record<NoteKind, string>> = { progress: 'o', admission: 'objective', er_initial: 'objective', er_progress: 'o' };
 const CONSULT_FIELDS = [{ key: 'assessment', label: 'შეფასება / დასკვნა', required: true }, { key: 'recommendations', label: 'რეკომენდაციები', required: true }];
 
 function useInval() {
   const qc = useQueryClient();
-  return () => { void qc.invalidateQueries({ queryKey: ['ipd-notes'] }); void qc.invalidateQueries({ queryKey: ['consult-inbox'] }); void qc.invalidateQueries({ queryKey: ['ipd-stay'] }); };
+  return () => { void qc.invalidateQueries({ queryKey: ['ipd-notes'] }); void qc.invalidateQueries({ queryKey: ['consult-inbox'] }); void qc.invalidateQueries({ queryKey: ['ipd-stay'] });
+    void qc.invalidateQueries({ queryKey: ['er-board'] }); };
 }
 
 // ================================================================= პანელი (ჰოსპიტალიზაციის გვერდი)
-export default function DoctorNotesPanel({ encounterId }: { encounterId: string }) {
-  const { user } = useAuth(); const toast = useToast(); const inval = useInval();
-  const q = useQuery({ queryKey: ['ipd-notes', encounterId], queryFn: () => api<NotesResp>(`/inpatient/stays/${encounterId}/notes`) });
+export default function DoctorNotesPanel({ encounterId, scope = 'inpatient' }: { encounterId: string; scope?: NotesScope }) {
+  const { user } = useAuth(); const toast = useToast(); const inval = useInval(); const p = P(scope); const er = scope === 'er';
+  const q = useQuery({ queryKey: ['ipd-notes', encounterId], queryFn: () => api<NotesResp>(`${p.chart(encounterId)}/notes`) });
   const [ed, setEd] = useState<null | { note?: DoctorNote; kind: NoteKind; date?: string; consultationId?: string }>(null);
   const [amend, setAmend] = useState<DoctorNote | null>(null); const [hist, setHist] = useState<DoctorNote | null>(null);
   const [consult, setConsult] = useState(false); const [old, setOld] = useState(false); const [filter, setFilter] = useState<NoteKind | ''>('');
-  const icu = useIcu(encounterId);   // 0047: ICU დღიური / გაყვანის შეჯამება — ღია ეპიზოდზე, ფუნქცია „icu_note“
-  const icuNotes = !!icu.data?.episode && icu.data.features.includes('icu_note');
-  const cancel = useMutation({ mutationFn: (a: { id: string; reason: string }) => api(`/inpatient/consultations/${a.id}/cancel`, { body: { reason: a.reason } }), onSuccess: () => { toast.show('კონსულტაცია გაუქმდა'); inval(); } });
+  const icu = useIcu(encounterId, !er);   // 0047: ICU დღიური / გაყვანის შეჯამება — ღია ეპიზოდზე, ფუნქცია „icu_note“ (ER-ზე — არა)
+  const icuNotes = !er && !!icu.data?.episode && icu.data.features.includes('icu_note');
+  const cancel = useMutation({ mutationFn: (a: { id: string; reason: string }) => api(p.consult(a.id), { body: { reason: a.reason } }), onSuccess: () => { toast.show('კონსულტაცია გაუქმდა'); inval(); } });
   if (q.isLoading) return <section className="card card-pad" id="notes"><Loading /></section>;
   if (!q.data) return <section className="card card-pad" id="notes"><ErrorBox error={q.error} /></section>;
   const d = q.data;
+  const initial: NoteKind = d.initial_kind ?? 'admission';
+  const kinds: NoteKind[] = d.kinds ?? (Object.keys(KIND_KA) as NoteKind[]).filter((k) => !k.startsWith('er_'));
   const drafts = d.notes.filter((n) => n.status === 'draft' && n.author_id === user?.id);
   const signed = d.notes.filter((n) => n.status === 'signed' && (old || !n.superseded_at) && (!filter || n.kind === filter));
   const openC = d.consultations.filter((c) => c.status === 'requested');
@@ -67,9 +81,12 @@ export default function DoctorNotesPanel({ encounterId }: { encounterId: string 
         <h2 style={{ margin: 0 }}>ექიმის ჩანაწერები</h2>
         {openC.length > 0 && <span className="chip info">კონსულტაცია მოლოდინში: {openC.length}</span>}
         <span className="grow" />
-        <button className="btn sm" type="button" onClick={() => void openBlob(`/inpatient/stays/${encounterId}/notes/pdf`)}>PDF</button>
+        <button className="btn sm" type="button" onClick={() => void openBlob(`${p.chart(encounterId)}/notes/pdf`)}>PDF</button>
         {d.can.consult && <button className="btn sm" type="button" onClick={() => setConsult(true)}>კონსულტაცია</button>}
-        {d.can.write && <>
+        {d.can.write && er && <>
+          {!d.admission.note_id && <button className="btn sm primary" type="button" onClick={() => setEd({ kind: 'er_initial' })}>+ პირველადი გასინჯვა</button>}
+          <button className={`btn sm${d.admission.note_id ? ' primary' : ''}`} type="button" onClick={() => setEd({ kind: 'er_progress' })}>+ დინამიკა</button></>}
+        {d.can.write && !er && <>
           {!d.admission.note_id && <button className="btn sm" type="button" onClick={() => setEd({ kind: 'admission' })}>+ მიმღები გასინჯვა</button>}
           <button className="btn sm" type="button" onClick={() => setEd({ kind: 'rounds' })}>+ შემოვლა</button>
           {icuNotes && <button className="btn sm" type="button" onClick={() => setEd({ kind: 'icu_out' })}>+ გაყვანის შეჯამება</button>}
@@ -78,7 +95,7 @@ export default function DoctorNotesPanel({ encounterId }: { encounterId: string 
       </div>
       <div className="card-pad stack" style={{ gap: 10 }}>
         <ErrorBox error={cancel.error} />
-        {!d.admission.note_id && <div className={`alert ${d.admission.overdue ? 'danger' : 'info'}`}>მიმღები გასინჯვა არ არის ხელმოწერილი{d.admission.overdue ? ' — ვადა გავიდა' : ` (ვადა: ${dt(d.admission.due_at)})`}.</div>}
+        {!d.admission.note_id && (d.admission.due_at || !er) && <div className={`alert ${d.admission.overdue ? 'danger' : 'info'}`} data-testid="initial-note-alert">{KIND_KA[initial]} არ არის ხელმოწერილი{d.admission.overdue ? ' — ვადა გავიდა' : d.admission.due_at ? ` (ვადა: ${dt(d.admission.due_at)})` : ''}.</div>}
         {d.missing_days.length > 0 && <div className="alert warn row" style={{ gap: 6, flexWrap: 'wrap' }}>დღიური აკლია:
           {d.missing_days.map((x) => d.can.write ? <button key={x} className="btn sm" type="button" onClick={() => setEd({ kind: 'progress', date: x })}>{dd(x)}</button> : <span key={x} className="chip">{dd(x)}</span>)}</div>}
         {drafts.length > 0 && <div className="stack" style={{ gap: 4 }}><span className="label">ჩემი შავი ვერსიები</span>
@@ -96,17 +113,17 @@ export default function DoctorNotesPanel({ encounterId }: { encounterId: string 
         <div className="row" style={{ gap: 8 }}>
           <div className="seg" role="group" aria-label="ფილტრი" style={{ width: 'max-content', flexWrap: 'wrap' }}>
             <button type="button" aria-pressed={filter === ''} onClick={() => setFilter('')}>ყველა</button>
-            {(Object.keys(KIND_KA) as NoteKind[]).map((k) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{KIND_KA[k]}</button>)}</div>
+            {kinds.map((k) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{KIND_KA[k]}</button>)}</div>
           <span className="grow" /><label className="row small"><input type="checkbox" checked={old} onChange={(e) => setOld(e.target.checked)} /> ძველი ვერსიებიც</label>
         </div>
         {!signed.length && <span className="muted">ხელმოწერილი ჩანაწერი არ არის.</span>}
         {signed.map((n) => <NoteCard key={n.id} n={n} fields={d.fields} canAmend={d.can.write || n.author_id === user?.id} onAmend={() => setAmend(n)} onHistory={() => setHist(n)} />)}
       </div>
-      {ed && <NoteEditor encounterId={encounterId} kind={ed.kind} note={ed.note} date={ed.date} consultationId={ed.consultationId} fields={d.fields[ed.kind]} limits={{ min: d.admitted_day, max: d.last_day }}
+      {ed && <NoteEditor scope={scope} encounterId={encounterId} kind={ed.kind} note={ed.note} date={ed.date} consultationId={ed.consultationId} fields={d.fields[ed.kind]} limits={{ min: d.admitted_day, max: d.last_day }}
         onClose={() => setEd(null)} onDone={(m) => { toast.show(m); inval(); }} />}
-      {amend && <AmendDialog note={amend} onClose={() => setAmend(null)} onDone={(n) => { setAmend(null); inval(); setEd({ note: n, kind: n.kind }); }} />}
-      {hist && <HistoryDialog note={hist} fields={d.fields} onClose={() => setHist(null)} />}
-      {consult && <ConsultDialog encounterId={encounterId} onClose={() => setConsult(false)} onDone={(m) => { toast.show(m); inval(); }} />}
+      {amend && <AmendDialog scope={scope} note={amend} onClose={() => setAmend(null)} onDone={(n) => { setAmend(null); inval(); setEd({ note: n, kind: n.kind }); }} />}
+      {hist && <HistoryDialog scope={scope} note={hist} fields={d.fields} onClose={() => setHist(null)} />}
+      {consult && <ConsultDialog scope={scope} encounterId={encounterId} onClose={() => setConsult(false)} onDone={(m) => { toast.show(m); inval(); }} />}
     </section>
   );
 }
@@ -115,7 +132,7 @@ function NoteCard({ n, fields, canAmend, onAmend, onHistory }: { n: DoctorNote; 
   return (
     <article className="card card-pad stack" style={{ gap: 6, opacity: n.superseded_at ? 0.55 : 1 }}>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <span className={`chip ${n.kind === 'admission' ? 'info' : n.kind === 'consult' ? 'warn' : ''}`}>{KIND_KA[n.kind]}</span>
+        <span className={`chip ${n.kind === 'admission' || n.kind === 'er_initial' ? 'info' : n.kind === 'consult' ? 'warn' : ''}`}>{KIND_KA[n.kind]}</span>
         <strong>{dd(n.day)}</strong><span className="small muted">{n.author_name}{n.author_specialty ? `, ${n.author_specialty}` : ''}{n.kind === 'consult' && n.department_name ? ` · ${n.department_name}` : ''} · {dt(n.signed_at!)}</span>
         {n.version > 1 && <button type="button" className="chip" style={{ cursor: 'pointer' }} title={n.amend_reason ?? ''} onClick={onHistory}>შესწორებული · ვ.{n.version}</button>}
         {n.superseded_at && <span className="chip">შეცვლილია {dt(n.superseded_at)}</span>}
@@ -130,30 +147,30 @@ function NoteCard({ n, fields, canAmend, onAmend, onHistory }: { n: DoctorNote; 
 }
 
 // ---------------------------------------------------------------- რედაქტორი
-export function NoteEditor({ encounterId, kind, note, date, consultationId, fields, limits, onClose, onDone }: { encounterId: string; kind: NoteKind; note?: DoctorNote; date?: string;
+export function NoteEditor({ scope = 'inpatient', createPath, encounterId, kind, note, date, consultationId, fields, limits, onClose, onDone }: { scope?: NotesScope; createPath?: string; encounterId: string; kind: NoteKind; note?: DoctorNote; date?: string;
   consultationId?: string; fields: { key: string; label: string; required?: boolean }[]; limits?: { min: string; max: string }; onClose: () => void; onDone: (m: string) => void }) {
-  const inval = useInval();
+  const inval = useInval(); const p = P(scope);
   const [id, setId] = useState<string | null>(note?.id ?? null);
   const [c, setC] = useState<Record<string, string>>(note?.content ?? {});
   const [day, setDay] = useState(note?.day ?? date ?? (limits && todayISO() > limits.max ? limits.max : todayISO()));
   const [parts, setParts] = useState<string[]>(note?.participants ?? []);
   const [dirty, setDirty] = useState(false); const [saved, setSaved] = useState<string | null>(note ? note.updated_at : null);
   const [tplName, setTplName] = useState<string | null>(null);
-  const tpls = useQuery({ queryKey: ['note-templates', kind], queryFn: () => api<Template[]>('/inpatient/note-templates', { query: { kind } }) });
+  const tpls = useQuery({ queryKey: ['note-templates', scope, kind], queryFn: () => api<Template[]>(p.templates, { query: { kind } }) });
   const doctors = useQuery({ queryKey: ['doctors'], queryFn: () => api<Doctor[]>('/doctors'), enabled: kind === 'rounds' });
   const save = async () => {
-    if (id) { await api(`/inpatient/notes/${id}`, { method: 'PUT', body: { content: c, participants: parts, ...(!note?.amends_id && { note_date: day }) } }); }
+    if (id) { await api(p.note(id), { method: 'PUT', body: { content: c, participants: parts, ...(!note?.amends_id && { note_date: day }) } }); }
     else {
-      const r = await api<DoctorNote>(`/inpatient/stays/${encounterId}/notes`, { body: { kind, content: c, note_date: day, participants: parts, consultation_id: consultationId } });
+      const r = await api<DoctorNote>(createPath ?? `${p.chart(encounterId)}/notes`, { body: { kind, content: c, note_date: day, participants: parts, consultation_id: consultationId } });
       setId(r.id); return r.id;
     }
     return id;
   };
   const sv = useMutation({ mutationFn: save, onSuccess: () => { setDirty(false); setSaved(new Date().toISOString()); inval(); } });
-  const sign = useMutation({ mutationFn: async () => { const x = await save(); return api<DoctorNote>(`/inpatient/notes/${x}/sign`, { body: {} }); },
+  const sign = useMutation({ mutationFn: async () => { const x = await save(); return api<DoctorNote>(`${p.note(x!)}/sign`, { body: {} }); },
     onSuccess: (r) => { onDone(`${KIND_KA[kind]} — ხელმოწერილია${r.billed ? ` · ინვოისში: ${r.billed.tariff} ${Number(r.billed.amount).toFixed(2)} ₾` : ''}${r.warning ? ` · ${r.warning}` : ''}`); inval(); onClose(); } });
-  const discard = useMutation({ mutationFn: () => api(`/inpatient/notes/${id}`, { method: 'DELETE' }), onSuccess: () => { onDone('შავი ვერსია წაიშალა'); inval(); onClose(); } });
-  const ins = useMutation({ mutationFn: () => api<{ text: string }>(`/inpatient/stays/${encounterId}/notes/insert`),
+  const discard = useMutation({ mutationFn: () => api(p.note(id!), { method: 'DELETE' }), onSuccess: () => { onDone('შავი ვერსია წაიშალა'); inval(); onClose(); } });
+  const ins = useMutation({ mutationFn: () => api<{ text: string }>(`${p.chart(encounterId)}/notes/insert`),
     onSuccess: (r) => { const k = INSERT_INTO[kind]!; setC((x) => ({ ...x, [k]: [x[k]?.trim(), r.text].filter(Boolean).join('\n') })); setDirty(true); } });
   // 0047: ICU — „ჩასმა“ სისტემების მიხედვით (ვენტილაცია, ვაზოპრესორები, ბალანსი, SOFA); გაყვანის შეჯამებაში — ჩატარებული
   const insIcu = useMutation({ mutationFn: () => api<Record<string, string>>(`/inpatient/stays/${encounterId}/icu/insert`),
@@ -167,7 +184,7 @@ export function NoteEditor({ encounterId, kind, note, date, consultationId, fiel
       });
       setDirty(true);
     } });
-  const saveTpl = useMutation({ mutationFn: () => api('/inpatient/note-templates', { body: { kind, name: tplName!.trim(), content: c } }),
+  const saveTpl = useMutation({ mutationFn: () => api(p.templates, { body: { kind, name: tplName!.trim(), content: c } }),
     onSuccess: () => { setTplName(null); void tpls.refetch(); } });
   const missing = fields.filter((f) => f.required && !(c[f.key] ?? '').trim());
   const err = sign.error instanceof ApiError && sign.error.code === 'NOTE_REQUIRED' ? null : sign.error ?? sv.error ?? discard.error ?? ins.error ?? insIcu.error ?? saveTpl.error;
@@ -187,7 +204,7 @@ export function NoteEditor({ encounterId, kind, note, date, consultationId, fiel
             onChange={(e) => { setDay(e.target.value); setDirty(true); }} /></Field>}
           <Field label="შაბლონი" htmlFor="ne-t"><select id="ne-t" className="select" value="" onChange={(e) => { const t = tpls.data?.find((x) => x.id === e.target.value); if (t) { setC((x) => ({ ...x, ...Object.fromEntries(Object.entries(t.content).filter(([, v]) => v)) })); setDirty(true); } }}>
             <option value="">— აირჩიეთ —</option>{tpls.data?.map((t) => <option key={t.id} value={t.id}>{t.name}{t.department_name ? ` (${t.department_name})` : ''}</option>)}</select></Field>
-          {INSERT_INTO[kind] && <button className="btn sm" type="button" disabled={ins.isPending} onClick={() => ins.mutate()} title="ბოლო ვიტალები, NEWS2, ბალანსი, ბოლო 24 სთ-ის კვლევები, აქტიური მკურნალობა">ჩასმა: ვიტალები / კვლევები / მკურნალობა</button>}
+          {INSERT_INTO[kind] && !createPath && <button className="btn sm" type="button" disabled={ins.isPending} onClick={() => ins.mutate()} title="ბოლო ვიტალები, NEWS2, ბალანსი, ბოლო 24 სთ-ის კვლევები, აქტიური მკურნალობა">ჩასმა: ვიტალები / კვლევები / მკურნალობა</button>}
           {(kind === 'icu_daily' || kind === 'icu_out') && <button className="btn sm" type="button" disabled={insIcu.isPending} onClick={() => insIcu.mutate()} title="ვენტილაცია, ABG, ჰემოდინამიკა, ვაზოპრესორები, GCS / RASS, ხაზები, ბალანსი, SOFA">ჩასმა: ICU მონაცემები</button>}
           <span className="grow" />
           {tplName === null ? <button className="btn sm" type="button" onClick={() => setTplName('')}>შაბლონად შენახვა</button>
@@ -209,9 +226,9 @@ export function NoteEditor({ encounterId, kind, note, date, consultationId, fiel
   );
 }
 
-function AmendDialog({ note, onClose, onDone }: { note: DoctorNote; onClose: () => void; onDone: (n: DoctorNote) => void }) {
+function AmendDialog({ scope, note, onClose, onDone }: { scope: NotesScope; note: DoctorNote; onClose: () => void; onDone: (n: DoctorNote) => void }) {
   const [reason, setReason] = useState('');
-  const m = useMutation({ mutationFn: () => api<DoctorNote>(`/inpatient/notes/${note.id}/amend`, { body: { reason: reason.trim() } }), onSuccess: onDone });
+  const m = useMutation({ mutationFn: () => api<DoctorNote>(`${P(scope).note(note.id)}/amend`, { body: { reason: reason.trim() } }), onSuccess: onDone });
   return (
     <Modal title={`შესწორება — ${KIND_KA[note.kind]} ${dd(note.day)}`} onClose={onClose} width={520}
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={reason.trim().length < 3 || m.isPending} onClick={() => m.mutate()}>გაგრძელება</button></>}>
@@ -223,8 +240,8 @@ function AmendDialog({ note, onClose, onDone }: { note: DoctorNote; onClose: () 
     </Modal>
   );
 }
-function HistoryDialog({ note, fields, onClose }: { note: DoctorNote; fields: Fields; onClose: () => void }) {
-  const q = useQuery({ queryKey: ['note-history', note.id], queryFn: () => api<DoctorNote[]>(`/inpatient/notes/${note.id}/history`) });
+function HistoryDialog({ scope, note, fields, onClose }: { scope: NotesScope; note: DoctorNote; fields: Fields; onClose: () => void }) {
+  const q = useQuery({ queryKey: ['note-history', note.id], queryFn: () => api<DoctorNote[]>(`${P(scope).note(note.id)}/history`) });
   return (
     <Modal title={`ვერსიები — ${KIND_KA[note.kind]} ${dd(note.day)}`} onClose={onClose} width={820}>
       {q.isLoading ? <Loading /> : <div className="stack" style={{ gap: 10 }}>{(q.data ?? []).map((n) => (
@@ -235,11 +252,12 @@ function HistoryDialog({ note, fields, onClose }: { note: DoctorNote; fields: Fi
 }
 
 // ---------------------------------------------------------------- კონსულტაცია
-function ConsultDialog({ encounterId, onClose, onDone }: { encounterId: string; onClose: () => void; onDone: (m: string) => void }) {
+function ConsultDialog({ scope, encounterId, onClose, onDone }: { scope: NotesScope; encounterId: string; onClose: () => void; onDone: (m: string) => void }) {
   const deps = useQuery({ queryKey: ['departments'], queryFn: () => api<Department[]>('/departments') });
   const doctors = useQuery({ queryKey: ['doctors'], queryFn: () => api<Doctor[]>('/doctors') });
-  const [dep, setDep] = useState(''); const [doc, setDoc] = useState(''); const [urg, setUrg] = useState<'routine' | 'urgent' | 'emergency'>('routine'); const [q, setQ] = useState('');
-  const m = useMutation({ mutationFn: () => api(`/inpatient/stays/${encounterId}/consultations`, { body: { target_department_id: dep || undefined, target_doctor_id: doc || undefined, urgency: urg, question: q.trim() } }),
+  // 0088: ER — ნაგულისხმევად „სასწრაფო“
+  const [dep, setDep] = useState(''); const [doc, setDoc] = useState(''); const [urg, setUrg] = useState<'routine' | 'urgent' | 'emergency'>(scope === 'er' ? 'urgent' : 'routine'); const [q, setQ] = useState('');
+  const m = useMutation({ mutationFn: () => api(`${P(scope).chart(encounterId)}/consultations`, { body: { target_department_id: dep || undefined, target_doctor_id: doc || undefined, urgency: urg, question: q.trim() } }),
     onSuccess: () => { onDone('კონსულტაცია მოთხოვნილია'); onClose(); } });
   return (
     <Modal title="კონსულტაციის მოთხოვნა" onClose={onClose} width={620}
@@ -261,11 +279,15 @@ function ConsultDialog({ encounterId, onClose, onDone }: { encounterId: string; 
   );
 }
 
-/** სტაციონარი → კონსულტაციები: ჩემთვის / ჩემი განყოფილებისთვის */
-export function ConsultInbox() {
-  const q = useQuery({ queryKey: ['consult-inbox'], queryFn: () => api<Consultation[]>('/inpatient/consultations/inbox'), refetchInterval: 60_000 });
+/**
+ * სტაციონარი → კონსულტაციები: ჩემთვის / ჩემი განყოფილებისთვის.
+ * 0088: all — „კონსულტაციები“ გვერდი (/consults): ჰოსპიტალიზაციები + ER-ის შემთხვევები; პასუხი — /clinical/charts/:eid/notes (ორივე ტიპზე).
+ */
+export function ConsultInbox({ all = false }: { all?: boolean }) {
+  const q = useQuery({ queryKey: ['consult-inbox', all], queryFn: () => api<Consultation[]>(all ? '/clinical/consultations/inbox' : '/inpatient/consultations/inbox'), refetchInterval: 60_000 });
   const toast = useToast(); const [ans, setAns] = useState<Consultation | null>(null);
-  const draft = useQuery({ queryKey: ['consult-draft', ans?.my_draft_id], queryFn: () => api<DoctorNote>(`/inpatient/notes/${ans!.my_draft_id}`), enabled: !!ans?.my_draft_id });
+  const noteBase = all ? '/clinical/notes' : '/inpatient/notes';
+  const draft = useQuery({ queryKey: ['consult-draft', ans?.my_draft_id], queryFn: () => api<DoctorNote>(`${noteBase}/${ans!.my_draft_id}`), enabled: !!ans?.my_draft_id });
   if (q.isLoading) return <Loading />;
   if (!q.data) return <ErrorBox error={q.error} />;
   return (
@@ -276,13 +298,15 @@ export function ConsultInbox() {
         <tr key={c.id} style={{ opacity: c.status === 'requested' ? 1 : 0.65 }}>
           <td style={{ width: 130 }}><span className={`chip ${URG[c.urgency][0]}`}>{URG[c.urgency][1]}</span><div className="small muted" style={{ marginTop: 4 }}>{c.status === 'requested' ? `ვადა ${dt(c.due_at)}` : CST[c.status][1]}</div>
             {c.status === 'requested' && new Date(c.due_at) < new Date() && <span className="chip danger">ვადაგადაცილებული</span>}</td>
-          <td><Link to={`/inpatient/stay/${c.encounter_id}#notes`}><strong>{c.last_name} {c.first_name}</strong></Link> <span className="small muted mono">{c.adm_no}</span>
-            <div className="small muted">{c.patient_department}{c.bed_code ? ` · ${c.bed_code}` : ''} · ითხოვს: {c.requested_by_name}{c.target_doctor_name ? ` → ${c.target_doctor_name}` : ''}</div>
+          <td><Link to={c.encounter_type === 'emergency' ? `/er?visit=${c.encounter_id}` : `/inpatient/stay/${c.encounter_id}#notes`}><strong>{c.last_name} {c.first_name}</strong></Link> <span className="small muted mono">{c.adm_no}</span>
+            {c.encounter_type === 'emergency' && <span className="chip danger" style={{ marginLeft: 6 }}>ER</span>}
+            <div className="small muted">{c.encounter_type === 'emergency' ? (c.from_department_name ?? 'ER') : c.patient_department}{c.bed_code ? ` · ${c.bed_code}` : ''}{c.er_spot ? ` · ${c.er_spot}` : ''} · ითხოვს: {c.requested_by_name}{c.target_doctor_name ? ` → ${c.target_doctor_name}` : ''}</div>
             <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{c.question}</div></td>
           <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{c.status === 'requested' ? <button className="btn sm primary" type="button" onClick={() => setAns(c)}>{c.my_draft_id ? 'პასუხი (გაგრძელება)' : 'პასუხი'}</button>
             : c.answered_by_name && <span className="small muted">{c.answered_by_name}</span>}</td>
         </tr>))}</tbody></table></div>}
-      {ans && (!ans.my_draft_id || draft.data) && <NoteEditor encounterId={ans.encounter_id} kind="consult" consultationId={ans.id} fields={CONSULT_FIELDS}
+      {ans && (!ans.my_draft_id || draft.data) && <NoteEditor scope={all || ans.encounter_type === 'emergency' ? 'er' : 'inpatient'} createPath={all ? `/clinical/charts/${ans.encounter_id}/notes` : undefined}
+        encounterId={ans.encounter_id} kind="consult" consultationId={ans.id} fields={CONSULT_FIELDS}
         note={ans.my_draft_id ? draft.data : undefined} onClose={() => setAns(null)} onDone={(m) => { toast.show(m); void q.refetch(); }} />}
     </div>
   );

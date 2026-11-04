@@ -19,6 +19,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
   { to: '/er', label: 'გადაუდებელი', roles: ['admin', 'er_triage', 'er_doctor', 'er_manage', 'manager', 'viewer'], module: 'er' },
+  { to: '/consults', label: 'კონსულტაციები', roles: ['doctor'] },   // 0088: სტაციონარი + ER (moduleRoutes — რომელიმე)
   { to: '/inpatient', label: 'სტაციონარი', roles: ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'], module: 'inpatient' },
   { to: '/or', label: 'საოპერაციო', roles: ['admin', 'doctor', 'nurse', 'or_schedule', 'anesthesiologist', 'or_nurse', 'manager', 'viewer'], module: 'or' },
   { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },

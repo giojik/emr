@@ -332,6 +332,11 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       triage_scale: (v) => typeof v === 'string' && /^[A-Z][A-Z0-9_]{1,19}$/.test(v), triage_target_min: (v) => int(v, 1, 120),
       doctor_before_triage: (v) => oneOf(v, ['allow', 'block']), ambulance_fields: (v) => oneOf(v, ['optional', 'required']),
       retriage_alert: bool, news2_hint: bool, show_on_duty: bool, board_refresh_sec: (v) => int(v, 10, 300), tv_patient_names: (v) => oneOf(v, ['initials', 'full']),
+      // 0088: კლინიკური ნაწილი
+      initial_note_min: (v) => int(v, 10, 720), doctor_write: (v) => oneOf(v, ['team', 'attending']), dx_unpaid_check: (v) => oneOf(v, ['skip', 'ack']),
+      dx_default_priority: (v) => oneOf(v, ['urgent', 'routine']), consult_billing: bool,
+      consult_due_min: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 3
+        && (['routine', 'urgent', 'emergency'] as const).every((k) => int((v as Record<string, unknown>)[k], 5, 2880)),
     },
     extra: async (s, db) => {
       const c = s.triage_scale as string | undefined;

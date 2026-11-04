@@ -1,3 +1,4 @@
+import { assertErWriter } from '../er/er-access';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditContext } from '../audit/audit.service';
@@ -72,6 +73,11 @@ export class EncounterCoreService {
     if (allowNurse && has(user, 'nurse')) return;
     if (has(user, 'doctor') && e.attending_doctor_id === user.id) return;
     throw new ForbiddenException('ამ ვიზიტში ჩაწერა შეუძლია მხოლოდ მკურნალ ექიმს');
+  }
+  /** 0088: ვიზიტის ტიპის მიხედვით — ER-ის შემთხვევაზე ER-ის წესი (doctor_write: team / attending, er_doctor), სხვაზე — assertClinicalWriter */
+  async assertWriter(e: { type: string; attending_doctor_id: string | null }, user: AuthUser, allowNurse = false) {
+    if (e.type === 'emergency') return assertErWriter(user, e.attending_doctor_id);
+    this.assertClinicalWriter(e, user, allowNurse);
   }
 
   invoiceOf(executor: Executor, encounterId: string) {

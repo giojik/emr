@@ -58,12 +58,12 @@ export class EncountersController {
     return this.clinical.addVitals(id, dto, u, auditCtx(req));
   }
 
-  @Post(':id/diagnoses') @Roles('admin', 'doctor')
+  @Post(':id/diagnoses') @Roles('admin', 'doctor', 'er_doctor')
   addDx(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DiagnosisDto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.addDiagnosis(id, dto, u, auditCtx(req));
   }
 
-  @Delete(':id/diagnoses/:dxId') @HttpCode(204) @Roles('admin', 'doctor')
+  @Delete(':id/diagnoses/:dxId') @HttpCode(204) @Roles('admin', 'doctor', 'er_doctor')
   removeDx(@Param('id', ParseUUIDPipe) id: string, @Param('dxId', ParseUUIDPipe) dxId: string, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.clinical.removeDiagnosis(id, dxId, u, auditCtx(req));
   }

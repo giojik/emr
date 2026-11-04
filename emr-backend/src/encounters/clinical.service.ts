@@ -41,7 +41,7 @@ export class ClinicalService {
   addDiagnosis(encounterId: string, dto: DiagnosisDto, user: AuthUser, ctx: AuditContext) {
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
-      this.core.assertClinicalWriter(e, user);
+      await this.core.assertWriter(e, user);
       const icd = await trx.selectFrom('icd10_codes').select(['code', 'title', 'is_asterisk', 'is_active'])
         .where('code', '=', dto.icd10_code).executeTakeFirst();
       if (!icd || !icd.is_active) throw new BadRequestException(`ICD-10 კოდი ${dto.icd10_code} კლასიფიკატორში არ არსებობს`);
@@ -57,7 +57,7 @@ export class ClinicalService {
   removeDiagnosis(encounterId: string, dxId: string, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
-      this.core.assertClinicalWriter(e, user);
+      await this.core.assertWriter(e, user);
       const dx = await trx.deleteFrom('encounter_diagnoses').where('id', '=', dxId).where('encounter_id', '=', encounterId)
         .returningAll().executeTakeFirst();
       if (!dx) throw new NotFoundException('დიაგნოზი ვერ მოიძებნა');

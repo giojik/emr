@@ -208,6 +208,8 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   // ---- 0083: კონსულტაცია / გადაყვანა
   consult_todo: { group: 'კონსულტაცია / გადაყვანა', name: 'კონსულტაცია — მოთხოვნილი', module: 'inpatient', who: 'სამიზნე ექიმი / განყოფილების ექიმები (სასწრაფო + duty — მორიგე)' },
   transfer_in: { group: 'კონსულტაცია / გადაყვანა', name: 'გადმოყვანის მოთხოვნა', module: 'inpatient', who: 'მიმღები განყოფილება (dept_side)' },
+  // ---- 0088: ER — კონსულტაცია ER-ის შემთხვევაზე (ER-ის სამუშაო სიები — 0090)
+  er_consult: { group: 'კონსულტაცია / გადაყვანა', name: 'კონსულტაცია ER-ში — მოთხოვნილი', module: 'er', who: 'სამიზნე ექიმი / განყოფილების ექიმები (სასწრაფო + duty — მორიგე)' },
   // ---- 0083: საექთნო / NEWS2
   nur_scale: { group: 'საექთნო / NEWS2', name: 'სავალდებულო შკალები — ვადა (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
   nur_line: { group: 'საექთნო / NEWS2', name: 'ხაზი / კათეტერი — საჭიროების შეფასება', module: 'inpatient', who: 'მკურნალი ექიმი + განყოფილების ექთნები' },

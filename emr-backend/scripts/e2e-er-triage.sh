@@ -86,7 +86,7 @@ keep() { local e; e=$(echo "$1" | jq -r '.encounter_id // empty'); [ -n "$e" ] &
 
 step "1. მოდული, უფლებები, პარამეტრები"
 M=$(api GET /modules "$ADM" | jq -c '.[]|select(.code=="er")')
-chk "რეესტრი: er — clinical, მკაცრი წინაპირობა არ აქვს, რბილი → roster" "$(echo "$M" | jq -r '.group + ":" + (.hard|length|tostring) + ":" + (.soft|join(","))')" "clinical:0:roster"
+chk "რეესტრი: er — clinical, მკაცრი წინაპირობა არ აქვს, რბილი → roster (0088: + lab / radiology / endoscopy)" "$(echo "$M" | jq -r '.group + ":" + (.hard|length|tostring) + ":" + (.soft|index("roster") != null|tostring)')" "clinical:0:true"
 CAPS=$(api GET /roles/capabilities "$ADM")
 chk "უფლებების კატალოგი: er_triage / er_doctor / er_manage → მოდული er" "$(echo "$CAPS" | jq -r '[.[]|select(.code|startswith("er_"))|.module|tostring]|join(",")')" "er,er,er"
 chk "პარამეტრი: უცნობი გასაღები — 400" "$(code PUT /modules/er "$ADM" -d '{"settings":{"nope":1},"reason":"ტესტ-E2E"}')" "400"

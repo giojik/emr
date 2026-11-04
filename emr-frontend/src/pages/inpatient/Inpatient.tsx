@@ -47,7 +47,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'icu' ? <IcuBoardTab /> : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'icu' ? <IcuBoardTab /> : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox all /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }

@@ -157,17 +157,17 @@ export class DiagnosticsController {
   saveAnalyte(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AnalyteDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.saveAnalyte(id, dto, u, auditCtx(req)); }
 
   // ---- შეკვეთა
-  @Post('encounters/:id/dx-orders') @Roles('admin', 'doctor')
+  @Post('encounters/:id/dx-orders') @Roles('admin', 'doctor', 'er_doctor')
   order(@Param('id', ParseUUIDPipe) id: string, @Body() dto: OrderDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.order(id, dto, u, auditCtx(req)); }
 
   /** მკურნალი ექიმი ლაბორატორიულ შედეგს ხედავს მხოლოდ ვალიდაციის შემდეგ */
-  @Get('encounters/:id/dx-orders') @ClinicalHistory() @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse')
+  @Get('encounters/:id/dx-orders') @ClinicalHistory() @Roles('admin', 'doctor', 'nurse', 'diagnostic', 'lab_doctor', 'receptionist', 'billing', 'radiographer', 'radiologist', 'endoscopist', 'endoscopy_nurse', 'er_triage', 'er_doctor', 'er_manage')
   async items(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     const rows = await this.dx.encounterItems(id);
     const labStaff = has(u, 'admin', 'diagnostic', 'lab_doctor');
     return rows.map((r) => (r.section === 'lab' && r.status !== 'validated' && !labStaff ? { ...r, results: [] } : r));
   }
-  @Post('dx-orders/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor')
+  @Post('dx-orders/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor', 'er_doctor')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @CurrentUser() u: AuthUser, @Req() req: Request) { return this.dx.cancel(id, dto.reason, u, auditCtx(req)); }
 
   // ---- ლაბორატორიული ვიზიტი (რეგისტრატურა, ექიმის გარეშე)

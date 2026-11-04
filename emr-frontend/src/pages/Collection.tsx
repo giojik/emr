@@ -9,7 +9,7 @@ const SPECIMEN_KA: Record<string, string> = { blood: 'სისხლი', serum
 /** საცობის ფერი — ვიზუალური მინიშნება; ფაქტობრივი ფერი მწარმოებლის სტანდარტზეა დამოკიდებული */
 const CAP: Record<string, string> = { citrate: '#5DA9E9', serum: '#E4B429', heparin: '#3FA66B', edta: '#9B59B6', fluoride: '#8E9AA6' };
 const capColor = (c: string | null) => { const k = Object.keys(CAP).find((x) => (c ?? '').toLowerCase().includes(x)); return k ? CAP[k] : '#C9C6BC'; };
-const PAID: Record<string, [string, string]> = { paid: ['ok', 'გადახდილი'], partially_paid: ['warn', 'ნაწილობრივ'], unpaid: ['danger', 'გადაუხდელი'] };
+const PAID: Record<string, [string, string]> = { paid: ['ok', 'გადახდილი'], partially_paid: ['warn', 'ნაწილობრივ'], unpaid: ['danger', 'გადაუხდელი'], exempt: ['info', 'ER — გადახდა შემდეგ'] };   // 0088: exempt
 
 /** ფლებოტომია: რიგი → პაციენტის არჩევა → იდენტიფიკაცია → სისხლის აღება → სტიკერები */
 export default function Collection() {

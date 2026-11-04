@@ -1,3 +1,4 @@
+import { assertErWriter, unpaidApplies } from '../er/er-access';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { modActive, modActiveMap, modulesRef } from '../modules/modules-ref';
 import { SECTION_MODULE } from '../modules/registry';
@@ -225,9 +226,10 @@ export class DiagnosticsService {
     if (!dto.items?.length) throw new BadRequestException('აირჩიეთ მინიმუმ ერთი კვლევა');
     const res = await this.db.transaction().execute(async (trx) => {
       const e = await this.core.lock(trx, encounterId, ['active']);
-      this.core.assertClinicalWriter(e, user);
+      await this.core.assertWriter(e, user);
       // 0086: რბილი კავშირი lab / radiology / endoscopy → outpatient / inpatient — შეკვეთა მხოლოდ აქტიური მოდულის ვიზიტზე (ლაბ. ვიზიტი — თავად lab)
-      const visitModule = e.visit_kind === 'lab' ? null : e.type === 'inpatient' ? 'inpatient' : e.type === 'outpatient' ? 'outpatient' : null;
+      // 0088: ER-ის შემთხვევა → er (ადრე — შემოწმების გარეშე)
+      const visitModule = e.visit_kind === 'lab' ? null : e.type === 'inpatient' ? 'inpatient' : e.type === 'outpatient' ? 'outpatient' : e.type === 'emergency' ? 'er' : null;
       if (visitModule && modulesRef.svc) await modulesRef.svc.assertActive(visitModule);
       return this.insertItems(trx, { id: encounterId, patient_id: e.patient_id }, dto.items, dto.allergy_override_reason, user, ctx);
     });
@@ -335,8 +337,9 @@ export class DiagnosticsService {
       const it = await trx.selectFrom('dx_order_items').selectAll().where('id', '=', itemId).forUpdate().executeTakeFirst();
       if (!it) throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
       if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('გაუქმება შესაძლებელია მხოლოდ შესრულების დაწყებამდე');
-      const e = await trx.selectFrom('encounters').select(['attending_doctor_id', 'status']).where('id', '=', it.encounter_id).executeTakeFirstOrThrow();
-      if (!(has(user, 'admin') || (has(user, 'doctor') && e.attending_doctor_id === user.id))) throw new ForbiddenException('გაუქმება შეუძლია მკურნალ ექიმს');
+      const e = await trx.selectFrom('encounters').select(['attending_doctor_id', 'status', 'type']).where('id', '=', it.encounter_id).executeTakeFirstOrThrow();
+      if (e.type === 'emergency') await assertErWriter(user, e.attending_doctor_id);   // 0088: ER — ER-ის წესი
+      else if (!(has(user, 'admin') || (has(user, 'doctor') && e.attending_doctor_id === user.id))) throw new ForbiddenException('გაუქმება შეუძლია მკურნალ ექიმს');
       await trx.deleteFrom('invoice_line_items').where('dx_order_item_id', '=', itemId).execute();
       await trx.updateTable('dx_order_items').set({ status: 'cancelled', cancel_reason: reason, device_id: null, scheduled_start: null, scheduled_end: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'CANCEL_DX_ORDER', entityName: 'dx_order_items', entityId: itemId, newData: { reason } }, trx);
@@ -353,27 +356,27 @@ export class DiagnosticsService {
       .innerJoin('patients as p', 'p.id', 'i.patient_id')
       .innerJoin('encounters as e', 'e.id', 'i.encounter_id')
       .leftJoin('invoices as inv', 'inv.encounter_id', 'e.id')
-      .select(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status as encounter_status',
+      .select(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status as encounter_status', 'e.type as encounter_type',
         'inv.paid_status', sql<number>`count(*)::int`.as('tests'), sql<string[]>`array_agg(s.name ORDER BY s.sort_order)`.as('names'),
         sql<boolean>`bool_or(i.priority = 'urgent')`.as('urgent'), sql<Date>`min(i.ordered_at)`.as('ordered_at'),
         sql<string | null>`max(i.collection_issue)`.as('collection_issue')])
       .where('i.section', '=', 'lab').where('i.status', '=', 'ordered').where('e.status', 'in', ['planned', 'active', 'discharged'])
-      .groupBy(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status', 'inv.paid_status'])
+      .groupBy(['i.encounter_id', 'i.patient_id', 'p.first_name', 'p.last_name', 'p.personal_number', 'p.birth_date', 'e.visit_kind', 'e.status', 'e.type', 'inv.paid_status'])
       .orderBy(sql`bool_or(i.priority = 'urgent')`, 'desc').orderBy(sql`min(i.ordered_at)`);
     if (q.search?.trim()) {
       const t = q.search.trim();
       query = query.where((eb) => eb.or([eb('p.personal_number', '=', t), eb('p.last_name', 'ilike', `${t}%`), eb('p.first_name', 'ilike', `${t}%`)]));
     }
-    return query.execute();
+    return query.execute().then((rows) => withPayExempt(rows));
   }
 
   /** არჩეული პაციენტი: იდენტიფიკაცია + მხოლოდ დანიშნული ანალიზები + სინჯარები აღების რიგით */
   async collectionDetail(encounterId: string) {
     const e = await this.db.selectFrom('encounters as e').innerJoin('patients as p', 'p.id', 'e.patient_id').leftJoin('invoices as inv', 'inv.encounter_id', 'e.id')
       .leftJoin('users as d', 'd.id', 'e.attending_doctor_id')
-      .select(['e.id as encounter_id', 'e.status as encounter_status', 'e.visit_kind', 'e.external_referral', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
+      .select(['e.id as encounter_id', 'e.status as encounter_status', 'e.visit_kind', 'e.type as encounter_type', 'e.external_referral', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
         'p.personal_number', 'p.passport_number', 'inv.paid_status', sql<string | null>`d.first_name || ' ' || d.last_name`.as('doctor_name')])
-      .where('e.id', '=', encounterId).executeTakeFirst();
+      .where('e.id', '=', encounterId).executeTakeFirst().then(async (r) => (r ? (await withPayExempt([r]))[0] : r));
     if (!e) throw new NotFoundException('ვიზიტი ვერ მოიძებნა');
     const items = await this.db.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
       .select(['i.id', 'i.priority', 'i.clinical_note', 'i.collection_issue', 's.name', 's.code', 's.specimen_type', 's.container', 's.performed_by', 's.external_lab'])
@@ -388,8 +391,9 @@ export class DiagnosticsService {
   async collect(encounterId: string, dto: { item_ids?: string[]; identity_confirmed?: boolean; unpaid_ack?: boolean; pregnancy_weeks?: number | null }, user: AuthUser, ctx: AuditContext) {
     if (!dto.identity_confirmed) throw new BadRequestException('დაადასტურეთ პაციენტის იდენტიფიკაცია (სახელი და დაბადების თარიღი)');
     const specimens = await this.db.transaction().execute(async (trx) => {
-      const inv = await trx.selectFrom('invoices').select('paid_status').where('encounter_id', '=', encounterId).executeTakeFirst();
-      if (inv?.paid_status === 'unpaid' && !dto.unpaid_ack) throw new ConflictException({ code: 'UNPAID', message: 'ანალიზები გადახდილი არ არის' });
+      const inv = await trx.selectFrom('invoices as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').select(['v.paid_status', 'e.type']).where('v.encounter_id', '=', encounterId).executeTakeFirst();
+      // 0088: ER (dx_unpaid_check = skip) — გადახდის დადასტურება არ მოითხოვება
+      if (inv?.paid_status === 'unpaid' && !dto.unpaid_ack && await unpaidApplies(inv.type)) throw new ConflictException({ code: 'UNPAID', message: 'ანალიზები გადახდილი არ არის' });
       let q = trx.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id')
         .select(['i.id', 'i.patient_id', 's.specimen_type', 's.container', 's.name', 's.performed_by'])
         .where('i.encounter_id', '=', encounterId).where('i.section', '=', 'lab').where('i.status', '=', 'ordered').forUpdate(['i']);
@@ -685,4 +689,10 @@ export class DiagnosticsService {
         .whereRef('r.analyte_id', '=', 'a.id')).as('ranges'))
       .where('a.service_id', '=', serviceId).where('a.is_active', '=', true).orderBy('a.sort_order').execute();
   }
+}
+
+/** 0088: ER-ის შემთხვევა (dx_unpaid_check = skip) — გადახდის სტატუსი სიაში „exempt“ (UI დადასტურებას არ ითხოვს) */
+async function withPayExempt<T extends { encounter_type: string; paid_status: string | null }>(rows: T[]): Promise<T[]> {
+  if (!rows.some((r) => r.encounter_type === 'emergency') || await unpaidApplies('emergency')) return rows;
+  return rows.map((r) => (r.encounter_type === 'emergency' && r.paid_status !== 'paid' ? { ...r, paid_status: 'exempt' } : r));
 }

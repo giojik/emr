@@ -13,7 +13,8 @@ import { ErrorBox, Modal, useDebounced } from '../../components/ui';
 import { hhmm, money, refRange, SECTION_KA, tsDate, unitFmt } from '../../lib/format';
 
 /** ვიზიტის დიაგნოსტიკა: შეკვეთა + სტატუსები + შედეგები (ლაბ. — მხოლოდ ვალიდაციის შემდეგ) */
-export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterId: string; canWrite: boolean }) {
+/** 0088: defaultUrgent — ER (dx_default_priority = urgent): „სასწრაფო“ ნაგულისხმევად */
+export default function DiagnosticsPanel({ encounterId, canWrite, defaultUrgent }: { encounterId: string; canWrite: boolean; defaultUrgent?: boolean }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
         );
       })}
       <ErrorBox error={q.error ?? cancel.error ?? report.error} />
-      {open && <OrderDialog encounterId={encounterId} onClose={() => setOpen(false)} />}
+      {open && <OrderDialog encounterId={encounterId} defaultUrgent={defaultUrgent} onClose={() => setOpen(false)} />}
       {dlv && <DeliveryDialog encounterId={encounterId} onClose={() => setDlv(false)} />}
       {micro && <MicroView id={micro.id} title={micro.name} onClose={() => setMicro(null)} />}
       {cum && items[0] && <CumulativeModal patientId={items[0].patient_id} serviceId={cum.service_id} title={`ლაბორატორიული დინამიკა — ${cum.name}`} onClose={() => setCum(null)} />}
@@ -112,7 +113,7 @@ export default function DiagnosticsPanel({ encounterId, canWrite }: { encounterI
 /**
  * კვლევის შეკვეთა: ექიმის ვიზიტიდან (encounterId) ან ლაბორატორიული ვიზიტი რეგისტრატურიდან (patientId, ექიმის გარეშე).
  */
-export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { encounterId?: string; patientId?: string; onClose: () => void; onLabVisit?: (encounterId: string) => void }) {
+export function OrderDialog({ encounterId, patientId, onClose, onLabVisit, defaultUrgent }: { encounterId?: string; patientId?: string; onClose: () => void; onLabVisit?: (encounterId: string) => void; defaultUrgent?: boolean }) {
   const qc = useQueryClient();
   const labVisit = !!patientId && !encounterId;
   const [referral, setReferral] = useState('');
@@ -123,7 +124,7 @@ export function OrderDialog({ encounterId, patientId, onClose, onLabVisit }: { e
   const section: DxSection = section0 && sections.includes(section0) ? section0 : sections[0] ?? 'lab';
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<Record<string, DxService>>({});
-  const [urgent, setUrgent] = useState(false);
+  const [urgent, setUrgent] = useState(!!defaultUrgent);
   const [note, setNote] = useState('');
   const [conflict, setConflict] = useState<AllergyCheck | null>(null);
   const [reason, setReason] = useState('');

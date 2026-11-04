@@ -1,3 +1,4 @@
+import { unpaidApplies } from '../er/er-access';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
@@ -138,7 +139,7 @@ export class EndoscopyService {
     return this.db.transaction().execute(async (trx) => {
       const it = await this.lockEndoItem(trx, itemId);
       if (!['ordered', 'scheduled', 'arrived'].includes(it.status)) throw new ConflictException('პროცედურა უკვე დასრულებულად არის მონიშნული');
-      if (it.paid_status === 'unpaid' && !dto.unpaid_ack) throw new ConflictException({ code: 'UNPAID', message: 'პროცედურა გადახდილი არ არის' });
+      if (it.paid_status === 'unpaid' && !dto.unpaid_ack && await unpaidApplies(it.encounter_type)) throw new ConflictException({ code: 'UNPAID', message: 'პროცედურა გადახდილი არ არის' });
       const cur = await trx.selectFrom('endo_procedures').selectAll().where('order_item_id', '=', itemId).executeTakeFirst();
       const m = { ...(cur ?? {}), ...this.procValues(dto, user, 'insert') } as Record<string, unknown>;
       const miss: string[] = [];
@@ -382,8 +383,8 @@ export class EndoscopyService {
 
   // =============================================================== helpers
   private async lockEndoItem(trx: Trx, itemId: string) {
-    const it = await trx.selectFrom('dx_order_items as i').leftJoin('invoices as inv', 'inv.encounter_id', 'i.encounter_id')
-      .select(['i.id', 'i.status', 'i.section', 'i.patient_id', 'i.encounter_id', 'i.arrived_at', 'i.arrived_by', 'inv.paid_status'])
+    const it = await trx.selectFrom('dx_order_items as i').leftJoin('invoices as inv', 'inv.encounter_id', 'i.encounter_id').innerJoin('encounters as enc', 'enc.id', 'i.encounter_id')
+      .select(['i.id', 'i.status', 'i.section', 'i.patient_id', 'i.encounter_id', 'i.arrived_at', 'i.arrived_by', 'inv.paid_status', 'enc.type as encounter_type'])
       .where('i.id', '=', itemId).forUpdate(['i']).executeTakeFirst();
     if (!it || it.section !== 'endoscopy') throw new NotFoundException('ენდოსკოპიური შეკვეთა ვერ მოიძებნა');
     if (it.status === 'cancelled') throw new ConflictException('შეკვეთა გაუქმებულია');

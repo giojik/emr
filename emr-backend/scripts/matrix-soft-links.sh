@@ -90,6 +90,7 @@ step "1. რეესტრის ყველა რბილი წყვი�
 PAIRS=$(echo "$REG" | jq -r '.[]|.code as $a|.soft[]|"\($a)>\(.)"')
 chk "რბილი წყვილები რეესტრში: 0086-ის 4 ახალი (lab → worklist, or → ipc, stock → cssd, bme → procurement)" "$(echo "$PAIRS" | grep -cxE 'lab>worklist|or>ipc|stock>cssd|bme>procurement')" "4"
 chk "0087: er → roster რეესტრში (მორიგე ექიმი დაფაზე)" "$(echo "$PAIRS" | grep -cx 'er>roster')" "1"
+chk "0088: er → lab / radiology / endoscopy რეესტრში (დიაგნოსტიკა ER-ის შემთხვევაზე)" "$(echo "$PAIRS" | grep -cxE 'er>lab|er>radiology|er>endoscopy')" "3"
 echo "  (წყვილები სულ: $(echo "$PAIRS" | wc -l | tr -d ' '))"
 for P in $PAIRS; do
   A=${P%>*}; Bm=${P#*>}; CL=$(closure "$Bm")

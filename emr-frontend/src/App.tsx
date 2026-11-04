@@ -36,6 +36,7 @@ import Bme from './pages/bme/Bme';
 import Roster from './pages/roster/Roster';
 import Cssd from './pages/cssd/Cssd';
 import Inpatient from './pages/inpatient/Inpatient';
+import Consults from './pages/Consults';
 import Stay from './pages/inpatient/Stay';
 import Or from './pages/or/Or';
 import CaseCard from './pages/or/CaseCard';
@@ -143,6 +144,7 @@ export default function App() {
         <Route path="/roster" element={<Roster />} />
         <Route path="/cssd" element={<Cssd />} />
         <Route path="/er" element={<Guard roles={ER_READ}><Er /></Guard>} />
+        <Route path="/consults" element={<Guard roles={['admin', 'doctor']}><Consults /></Guard>} />
         <Route path="/inpatient" element={<Guard roles={IPD_READ}><Inpatient /></Guard>} />
         <Route path="/inpatient/stay/:id" element={<Guard roles={IPD_READ}><Stay /></Guard>} />
         <Route path="/or" element={<Guard roles={OR_READ}><Or /></Guard>} />

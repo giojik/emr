@@ -99,13 +99,15 @@ function VitalsDialog({ encounterId, onClose }: { encounterId: string; onClose: 
 
 // ------------------------------------------------------------------ დიაგნოზები
 const DX_KA: Record<Diagnosis['diagnosis_type'], string> = { primary: 'ძირითადი', secondary: 'თანმხლები', complication: 'გართულება', admission: 'შემოსვლისას' };
-export function Diagnoses({ e, canWrite }: { e: EncounterDetail; canWrite: boolean }) {
+/** 0088: ER-ის ბარათიც იყენებს (e = { id, diagnoses }, onChanged — ER-ის ბარათის განახლება) */
+export function Diagnoses({ e, canWrite, onChanged }: { e: Pick<EncounterDetail, 'id' | 'diagnoses'>; canWrite: boolean; onChanged?: () => void }) {
   const qc = useQueryClient();
+  const done = () => { inval(qc, e.id); onChanged?.(); };
   const hasPrimary = e.diagnoses.some((d) => d.diagnosis_type === 'primary');
   const [type, setType] = useState<Diagnosis['diagnosis_type']>(hasPrimary ? 'secondary' : 'primary');
   useEffect(() => { setType(hasPrimary ? 'secondary' : 'primary'); }, [hasPrimary]);
-  const add = useMutation({ mutationFn: (c: IcdCode) => api(`/encounters/${e.id}/diagnoses`, { body: { icd10_code: c.code, diagnosis_type: type } }), onSuccess: () => inval(qc, e.id) });
-  const del = useMutation({ mutationFn: (id: string) => api(`/encounters/${e.id}/diagnoses/${id}`, { method: 'DELETE' }), onSuccess: () => inval(qc, e.id) });
+  const add = useMutation({ mutationFn: (c: IcdCode) => api(`/encounters/${e.id}/diagnoses`, { body: { icd10_code: c.code, diagnosis_type: type } }), onSuccess: done });
+  const del = useMutation({ mutationFn: (id: string) => api(`/encounters/${e.id}/diagnoses/${id}`, { method: 'DELETE' }), onSuccess: done });
   const sorted = [...e.diagnoses].sort((a, b) => (a.diagnosis_type === 'primary' ? -1 : b.diagnosis_type === 'primary' ? 1 : 0));
   return (
     <section className="card card-pad stack">

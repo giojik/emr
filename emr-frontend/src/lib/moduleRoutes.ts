@@ -13,6 +13,7 @@ export const ROUTE_MODULES: [prefix: string, module: ModuleReq][] = [
   ['/visits', 'outpatient'],
   ['/er', 'er'],
   ['/inpatient', 'inpatient'],
+  ['/consults', ['inpatient', 'er']],   // 0088: კონსულტაციები (სტაციონარი + ER)
   ['/or', 'or'],
   ['/collection', 'lab'],
   ['/diagnostics/lab', 'lab'],

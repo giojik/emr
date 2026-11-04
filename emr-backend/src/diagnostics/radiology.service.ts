@@ -1,3 +1,4 @@
+import { unpaidApplies } from '../er/er-access';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
@@ -179,7 +180,7 @@ export class RadiologyService {
     return this.db.transaction().execute(async (trx) => {
       const it = await this.lockItem(trx, itemId);
       if (!['ordered', 'scheduled'].includes(it.status)) throw new ConflictException('პაციენტი უკვე მიღებულია');
-      this.assertPayable(it, dto.unpaid_ack);
+      await this.assertPayable(it, dto.unpaid_ack);
       await trx.updateTable('dx_order_items').set({ status: 'arrived', arrived_at: sql`now()`, arrived_by: user.id, collection_issue: null, collection_issue_at: null }).where('id', '=', itemId).execute();
       await this.audit.log(ctx, { action: 'DX_ARRIVED', entityName: 'dx_order_items', entityId: itemId, newData: { unpaid_ack: it.paid_status === 'unpaid' || undefined } }, trx);
       return { id: itemId, status: 'arrived' };
@@ -193,7 +194,7 @@ export class RadiologyService {
       const it = await this.lockItem(trx, itemId);
       if (it.section !== 'radiology') throw new BadRequestException('მხოლოდ რადიოლოგიური კვლევა');
       if (!['ordered', 'scheduled', 'arrived'].includes(it.status)) throw new ConflictException('კვლევა უკვე შესრულებულად არის მონიშნული');
-      this.assertPayable(it, dto.unpaid_ack);
+      await this.assertPayable(it, dto.unpaid_ack);
       const safety = dto.safety ?? {};
       if (it.modality === 'MR' && safety.mr_screening !== true) throw new BadRequestException('MRI: შეავსეთ უსაფრთხოების კითხვარი (იმპლანტები, კარდიოსტიმულატორი, მეტალი)');
       const age = ageYears(it.birth_date);
@@ -404,16 +405,17 @@ export class RadiologyService {
   // =============================================================== helpers
   private async lockItem(trx: Trx, itemId: string) {
     const it = await trx.selectFrom('dx_order_items as i').innerJoin('dx_services as s', 's.id', 'i.service_id').innerJoin('patients as p', 'p.id', 'i.patient_id')
-      .leftJoin('invoices as inv', 'inv.encounter_id', 'i.encounter_id')
+      .leftJoin('invoices as inv', 'inv.encounter_id', 'i.encounter_id').innerJoin('encounters as enc', 'enc.id', 'i.encounter_id')
       .select(['i.id', 'i.status', 'i.section', 'i.encounter_id', 'i.device_id', 'i.scheduled_start', 'i.arrived_at', 'i.arrived_by',
-        's.modality', 's.contrast', 's.duration_minutes', 's.name', 'p.gender', 'p.birth_date', 'inv.paid_status'])
+        's.modality', 's.contrast', 's.duration_minutes', 's.name', 'p.gender', 'p.birth_date', 'inv.paid_status', 'enc.type as encounter_type'])
       .where('i.id', '=', itemId).forUpdate(['i']).executeTakeFirst();
     if (!it || it.section === 'lab') throw new NotFoundException('შეკვეთა ვერ მოიძებნა');
     if (it.status === 'cancelled') throw new ConflictException('შეკვეთა გაუქმებულია');
     return it;
   }
-  private assertPayable(it: { paid_status: string | null }, ack?: boolean) {
-    if (it.paid_status === 'unpaid' && !ack) throw new ConflictException({ code: 'UNPAID', message: 'კვლევა გადახდილი არ არის' });
+  private async assertPayable(it: { paid_status: string | null; encounter_type: string }, ack?: boolean) {
+    // 0088: ER (dx_unpaid_check = skip) — დადასტურება არ მოითხოვება
+    if (it.paid_status === 'unpaid' && !ack && await unpaidApplies(it.encounter_type)) throw new ConflictException({ code: 'UNPAID', message: 'კვლევა გადახდილი არ არის' });
   }
   private assertReportable(it: { section: string; status: string }) {
     if (!['performed', 'in_progress'].includes(it.status)) {

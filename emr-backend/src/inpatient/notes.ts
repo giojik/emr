@@ -17,11 +17,21 @@ import { NotificationsService } from '../notifications/notifications';
 import { InpatientModule, InpatientService } from './inpatient';
 import { RosterLookup } from '../roster/roster-common';
 import { ClinicalHistory, RequireModule } from '../modules/module-guard';
+import { modulesRef } from '../modules/modules-ref';
+import { erCanWrite, erClinicalSettings } from '../er/er-access';
 
 type Trx = Transaction<DB>;
 type Ex = Database | Trx;
 const TZ = loadEnv().CLINIC_TZ;
-const KINDS = ['admission', 'progress', 'rounds', 'consult', 'icu_daily', 'icu_out'] as const;
+const KINDS = ['admission', 'progress', 'rounds', 'consult', 'icu_daily', 'icu_out', 'er_initial', 'er_progress'] as const;
+/** 0088: შემთხვევის ტიპი → დასაშვები სახეები (ბაზაშიც — clinical_chart_check) */
+export const CHART_KINDS: Record<ChartType, readonly string[]> = {
+  inpatient: ['admission', 'progress', 'rounds', 'consult', 'icu_daily', 'icu_out'],
+  emergency: ['er_initial', 'er_progress', 'consult'],
+};
+/** „პირველადი“ ჩანაწერი (ერთი მოქმედი): სტაციონარი — მიმღები გასინჯვა, ER — პირველადი გასინჯვა */
+const INITIAL: Record<ChartType, Kind> = { inpatient: 'admission', emergency: 'er_initial' };
+export type ChartType = 'inpatient' | 'emergency';
 /** დღიურად ითვლება (0047: ICU დღიურიც) */
 export const DAILY_KINDS = ['progress', 'icu_daily'];
 type Kind = (typeof KINDS)[number];
@@ -51,8 +61,20 @@ export const NOTE_FIELDS: Record<Kind, { key: string; label: string; required?: 
     { key: 'course', label: 'მიმდინარეობა რეანიმაციაში', required: true }, { key: 'procedures', label: 'ჩატარებული (ვენტილაცია, ხაზები, ინფუზიები)' },
     { key: 'condition', label: 'მდგომარეობა გადაყვანისას', required: true }, { key: 'recommendations', label: 'რეკომენდაციები მიმღებ განყოფილებას', required: true },
   ],
+  // 0088: ER — პირველადი გასინჯვა და დინამიკა (დამატებითი ჩანაწერი დროით)
+  er_initial: [
+    { key: 'complaints', label: 'ჩივილები', required: true }, { key: 'anamnesis_morbi', label: 'დაავადების ანამნეზი' },
+    { key: 'anamnesis_vitae', label: 'ცხოვრების ანამნეზი / გადატანილი დაავადებები' }, { key: 'allergy_meds', label: 'ალერგია / მიმდინარე მედიკამენტები' },
+    { key: 'objective', label: 'ობიექტური სტატუსი', required: true }, { key: 'assessment', label: 'შეფასება / წინასწარი დიაგნოზი' },
+    { key: 'plan', label: 'გამოკვლევისა და მკურნალობის გეგმა', required: true },
+  ],
+  er_progress: [
+    { key: 'o', label: 'მდგომარეობის დინამიკა / ობიექტური' }, { key: 'results', label: 'კვლევების შედეგები' },
+    { key: 'a', label: 'შეფასება', required: true }, { key: 'p', label: 'გეგმა' },
+  ],
 };
-export const KIND_KA: Record<Kind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანის შეჯამება' };
+export const KIND_KA: Record<Kind, string> = { admission: 'მიმღები გასინჯვა', progress: 'დღიური', rounds: 'შემოვლა', consult: 'კონსულტაცია', icu_daily: 'ICU დღიური', icu_out: 'რეანიმაციიდან გაყვანის შეჯამება',
+  er_initial: 'ER — პირველადი გასინჯვა', er_progress: 'ER — დინამიკა' };
 const URGENCY_KA: Record<string, string> = { routine: 'გეგმიური', urgent: 'სასწრაფო', emergency: 'გადაუდებელი' };
 
 // ================================================================= DTO
@@ -96,6 +118,46 @@ export class NotesService {
               private readonly bell: NotificationsService, private readonly roster: RosterLookup) {}
 
   // ---------------------------------------------------------------- საერთო
+  /**
+   * 0088: „სამედიცინო ისტორია“ — ჰოსპიტალიზაცია ან ER-ის შემთხვევა (ერთი ფორმა: adm_no = № , admitted_* = დაწყება).
+   * expect — მხოლოდ ეს ტიპი (ძველი /inpatient/stays/... გზები: ER-ის შემთხვევა → 404).
+   */
+  async chart(encounterId: string, ex: Ex = this.db, expect?: ChartType) {
+    const t = await ex.selectFrom('encounters').select('type').where('id', '=', encounterId).executeTakeFirst();
+    if (t?.type === 'emergency' && expect !== 'inpatient') return this.erChart(encounterId, ex);
+    if (expect === 'emergency') throw new NotFoundException('ER-ის შემთხვევა ვერ მოიძებნა');
+    return { ...(await this.stay(encounterId, ex)), type: 'inpatient' as ChartType, module: 'inpatient' };
+  }
+  private async erChart(encounterId: string, ex: Ex) {
+    const v = await ex.selectFrom('er_visits as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').innerJoin('patients as p', 'p.id', 'v.patient_id')
+      .select(['v.encounter_id', 'v.patient_id', 'v.status as er_status', 'v.visit_no as adm_no', 'v.arrived_at as admitted_at', 'v.ended_at', 'v.doctor_at', 'e.attending_doctor_id',
+        'p.first_name', 'p.last_name', 'v.department_id',
+        sql<string>`to_char(v.arrived_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD')`.as('admitted_day'),
+        sql<string>`to_char(coalesce(v.ended_at, now()) AT TIME ZONE ${TZ}, 'YYYY-MM-DD')`.as('last_day')])
+      .where('v.encounter_id', '=', encounterId).executeTakeFirst();
+    if (!v) throw new NotFoundException('ER-ის შემთხვევა ვერ მოიძებნა');
+    // ER: მიმდინარე → active; გაუქმებული → cancelled; დასრულებული (0089) → დოკუმენტაცია დახურულია
+    const status = v.er_status === 'cancelled' ? 'cancelled' : v.ended_at ? 'discharged' : 'active';
+    return { ...v, status, closed_at: v.ended_at, type: 'emergency' as ChartType, module: 'er' };
+  }
+  /** ჩაწერა: შემთხვევის მოდული აქტიური უნდა იყოს (გამორთული / ვადაგასული → 403; ისტორია იკითხება) */
+  private async assertWritable(st: { module: string }) {
+    if (modulesRef.svc) await modulesRef.svc.assertActive(st.module);
+  }
+  private async settingsOf(st: { type: ChartType }) {
+    if (st.type === 'emergency') {
+      const e = await erClinicalSettings();
+      return { consult_billing: e.consult_billing, consult_due_min: e.consult_due_min, initial_note_min: e.initial_note_min, progress_note_daily: false, admission_note_hours: null as number | null };
+    }
+    const s = await this.ipd.settings();
+    return { ...s, consult_due_min: null as null | Record<string, number>, initial_note_min: null as number | null };
+  }
+  private async event(trx: Trx, st: { type: ChartType; encounter_id: string }, kind: string, data: Record<string, unknown>, u: AuthUser) {
+    if (st.type === 'inpatient') await this.ipd.event(trx, { encounter_id: st.encounter_id, kind: kind as never, data }, u);
+  }
+  private link(st: { type: ChartType; encounter_id: string }, anchor = 'notes') {
+    return st.type === 'emergency' ? `/er?visit=${st.encounter_id}` : `/inpatient/stay/${st.encounter_id}#${anchor}`;
+  }
   async stay(encounterId: string, ex: Ex = this.db) {
     const st = await ex.selectFrom('inpatient_stays as st').innerJoin('encounters as e', 'e.id', 'st.encounter_id').innerJoin('patients as p', 'p.id', 'st.patient_id')
       .select(['st.encounter_id', 'st.patient_id', 'st.status', 'st.adm_no', 'st.admitted_at', 'st.ended_at', 'st.closed_at', 'e.attending_doctor_id', 'p.first_name', 'p.last_name',
@@ -111,7 +173,8 @@ export class NotesService {
     if (st.status === 'cancelled') throw new ConflictException('ჰოსპიტალიზაცია გაუქმებულია');
     if (st.status !== 'active' && st.closed_at) throw new ConflictException('შემთხვევის დოკუმენტაცია დახურულია');
   }
-  async canWrite(u: AuthUser, st: { attending_doctor_id: string | null; department_id: string }, ex: Ex = this.db) {
+  async canWrite(u: AuthUser, st: { attending_doctor_id: string | null; department_id: string; type?: ChartType }, ex: Ex = this.db) {
+    if (st.type === 'emergency') return erCanWrite(u, st.attending_doctor_id);   // 0088: ER — doctor_write (team / attending)
     if (has(u, 'admin')) return true;
     if (!has(u, 'doctor')) return false;
     if (st.attending_doctor_id === u.id) return true;
@@ -158,11 +221,13 @@ export class NotesService {
   }
 
   // ---------------------------------------------------------------- ჩანაწერები
-  async create(encounterId: string, dto: NoteCreateDto, u: AuthUser, ctx: AuditContext) {
+  async create(encounterId: string, dto: NoteCreateDto, u: AuthUser, ctx: AuditContext, expect?: ChartType) {
     const content = this.clean(dto.kind, dto.content);
     const id = await this.db.transaction().execute(async (trx) => {
-      const st = await this.stay(encounterId, trx);
+      const st = await this.chart(encounterId, trx, expect);
       this.open(st);
+      if (!CHART_KINDS[st.type].includes(dto.kind)) throw new BadRequestException(`ჩანაწერის სახე „${KIND_KA[dto.kind]}“ ამ შემთხვევაზე არ გამოიყენება`);
+      await this.assertWritable(st);
       let consult: { id: string; status: string; target_doctor_id: string | null; target_department_id: string | null; encounter_id: string } | undefined;
       if (dto.kind === 'consult') {
         if (!dto.consultation_id) throw new BadRequestException('კონსულტაციის პასუხი — მიუთითეთ მოთხოვნა');
@@ -177,13 +242,13 @@ export class NotesService {
       if (dto.kind === 'rounds' && !(await this.isHeadDoctor(u, st.department_id, trx)) && !has(u, 'admin') && !(dto.participants?.length)) {
         throw new BadRequestException('შემოვლა: მიუთითეთ მონაწილეები (ან ჩაწერს განყოფილების ხელმძღვანელი)');
       }
-      if (dto.kind === 'admission') {
-        const ex = await trx.selectFrom('doctor_notes').select('id').where('encounter_id', '=', encounterId).where('kind', '=', 'admission')
+      if (dto.kind === INITIAL[st.type]) {
+        const ex = await trx.selectFrom('doctor_notes').select('id').where('encounter_id', '=', encounterId).where('kind', '=', dto.kind)
           .where('status', '=', 'signed').where('superseded_at', 'is', null).executeTakeFirst();
-        if (ex) throw new ConflictException({ code: 'ADMISSION_NOTE_EXISTS', message: 'მიმღები გასინჯვა უკვე ხელმოწერილია — გამოიყენეთ შესწორება', note_id: ex.id });
+        if (ex) throw new ConflictException({ code: 'ADMISSION_NOTE_EXISTS', message: `${KIND_KA[dto.kind]} უკვე ხელმოწერილია — გამოიყენეთ შესწორება`, note_id: ex.id });
       }
       const day = dto.note_date ?? await this.today(trx);
-      if (day < st.admitted_day || day > st.last_day) throw new BadRequestException('თარიღი ჰოსპიტალიზაციის პერიოდის გარეთაა');
+      if (day < st.admitted_day || day > st.last_day) throw new BadRequestException(st.type === 'emergency' ? 'თარიღი ER-ის შემთხვევის პერიოდის გარეთაა' : 'თარიღი ჰოსპიტალიზაციის პერიოდის გარეთაა');
       if (dto.participants?.length) {
         const n = await trx.selectFrom('users').select(sql<number>`count(*)::int`.as('n')).where('id', 'in', dto.participants).where('is_active', '=', true).executeTakeFirstOrThrow();
         if (n.n !== new Set(dto.participants).size) throw new BadRequestException('მონაწილე ვერ მოიძებნა');
@@ -203,8 +268,9 @@ export class NotesService {
       if (!n) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
       if (n.author_id !== u.id) throw new ForbiddenException('შავ ვერსიას ასწორებს მხოლოდ ავტორი');
       if (n.status !== 'draft') throw new ConflictException('ხელმოწერილი ჩანაწერი არ რედაქტირდება — შესწორება');
-      const st = await this.stay(n.encounter_id, trx);
-      if (dto.note_date && (dto.note_date < st.admitted_day || dto.note_date > st.last_day)) throw new BadRequestException('თარიღი ჰოსპიტალიზაციის პერიოდის გარეთაა');
+      const st = await this.chart(n.encounter_id, trx);
+      await this.assertWritable(st);
+      if (dto.note_date && (dto.note_date < st.admitted_day || dto.note_date > st.last_day)) throw new BadRequestException('თარიღი შემთხვევის პერიოდის გარეთაა');
       await trx.updateTable('doctor_notes').set({ ...(dto.content && { content: JSON.stringify(this.clean(n.kind as Kind, dto.content)) }),
         ...(dto.note_date && !n.amends_id && { note_date: dto.note_date }), ...(dto.participants && { participants: dto.participants }) }).where('id', '=', id).execute();
       void ctx;
@@ -213,23 +279,25 @@ export class NotesService {
   }
 
   async discard(id: string, u: AuthUser, ctx: AuditContext) {
-    const n = await this.db.selectFrom('doctor_notes').select(['id', 'author_id', 'status']).where('id', '=', id).executeTakeFirst();
+    const n = await this.db.selectFrom('doctor_notes').select(['id', 'author_id', 'status', 'encounter_id']).where('id', '=', id).executeTakeFirst();
     if (!n) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
     if (n.author_id !== u.id || n.status !== 'draft') throw new ForbiddenException('იშლება მხოლოდ საკუთარი შავი ვერსია');
+    await this.assertWritable(await this.chart(n.encounter_id));
     await this.db.deleteFrom('doctor_notes').where('id', '=', id).execute();
     await this.audit.log(ctx, { action: 'NOTE_DISCARD', entityName: 'doctor_notes', entityId: id });
     return { id, deleted: true };
   }
 
   async sign(id: string, u: AuthUser, ctx: AuditContext) {
-    const s = await this.ipd.settings();
     const res = await this.db.transaction().execute(async (trx) => {
       const n = await trx.selectFrom('doctor_notes').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!n) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
       if (n.author_id !== u.id) throw new ForbiddenException('ხელს აწერს ავტორი');
       if (n.status !== 'draft') throw new ConflictException('უკვე ხელმოწერილია');
-      const st = await this.stay(n.encounter_id, trx);
+      const st = await this.chart(n.encounter_id, trx);
       this.open(st);
+      await this.assertWritable(st);
+      const s = await this.settingsOf(st);
       const content = n.content as Record<string, string>;
       const miss = NOTE_FIELDS[n.kind as Kind].filter((f) => f.required && !(content[f.key] ?? '').trim()).map((f) => f.label);
       if (miss.length) throw new BadRequestException({ code: 'NOTE_REQUIRED', message: `შეავსეთ: ${miss.join(', ')}`, fields: miss });
@@ -240,8 +308,8 @@ export class NotesService {
       }
       try {
         await trx.updateTable('doctor_notes').set({ status: 'signed', signed_at: sql`now()` }).where('id', '=', id).execute();
-      } catch (e) { mapPgError(e, { ux_dn_admission: 'მიმღები გასინჯვა უკვე ხელმოწერილია — გამოიყენეთ შესწორება' }); }
-      await this.ipd.event(trx, { encounter_id: n.encounter_id, kind: n.amends_id ? 'note_amended' : 'note_signed', data: { note_id: id, kind: n.kind, version: n.version, reason: n.amend_reason } }, u);
+      } catch (e) { mapPgError(e, { ux_dn_admission: 'მიმღები გასინჯვა უკვე ხელმოწერილია — გამოიყენეთ შესწორება', ux_dn_er_initial: 'ER-ის პირველადი გასინჯვა უკვე ხელმოწერილია — გამოიყენეთ შესწორება' }); }
+      await this.event(trx, st, n.amends_id ? 'note_amended' : 'note_signed', { note_id: id, kind: n.kind, version: n.version, reason: n.amend_reason }, u);
       let billed: { amount: string; tariff: string } | null = null; let warning: string | null = null;
       let consult: { id: string; requested_by: string; urgency: string } | null = null;
       if (n.kind === 'consult' && !n.amends_id) {
@@ -249,13 +317,13 @@ export class NotesService {
         if (c.status !== 'requested') throw new ConflictException('კონსულტაცია უკვე დასრულებულია / გაუქმებულია');
         consult = c;
         await trx.updateTable('consultations').set({ status: 'answered', answered_by: u.id, answered_at: sql`now()`, answer_note_id: id }).where('id', '=', c.id).execute();
-        await this.ipd.event(trx, { encounter_id: n.encounter_id, kind: 'consult_answered', data: { consultation_id: c.id, note_id: id } }, u);
+        await this.event(trx, st, 'consult_answered', { consultation_id: c.id, note_id: id }, u);
         if (s.consult_billing !== false) {
           const t = await trx.selectFrom('users as x').leftJoin('service_tariffs as t', (j) => j.onRef('t.id', '=', 'x.consultation_tariff_id').on('t.is_active', '=', true))
             .select(['t.id', 't.title', 't.base_price']).where('x.id', '=', u.id).executeTakeFirst();
           const inv = await trx.selectFrom('invoices').select('id').where('encounter_id', '=', n.encounter_id).forUpdate().executeTakeFirst();
           if (t?.id && t.base_price !== null && inv) {
-            await trx.insertInto('invoice_line_items').values({ invoice_id: inv.id, tariff_id: t.id, consultation_id: c.id, description: `${t.title} (სტაციონარში კონსულტაცია)`,
+            await trx.insertInto('invoice_line_items').values({ invoice_id: inv.id, tariff_id: t.id, consultation_id: c.id, description: `${t.title} (${st.type === 'emergency' ? 'ER-ში' : 'სტაციონარში'} კონსულტაცია)`,
               quantity: 1, unit_price: t.base_price, original_price: t.base_price }).execute();
             billed = { amount: t.base_price, tariff: t.title ?? '' };
           } else warning = !t?.id ? 'კონსულტანტს კონსულტაციის ტარიფი არ აქვს — ინვოისში არ დაემატა' : 'ვიზიტს ინვოისი არ აქვს';
@@ -268,7 +336,7 @@ export class NotesService {
     if (res.consult) {
       await this.notifyIds([res.consult.requested_by, res.st.attending_doctor_id], { kind: 'ipd_consult_done', title: `კონსულტაცია: პასუხი მზადაა`,
         body: `${res.st.last_name} ${res.st.first_name} (${res.st.adm_no})`, item: res.st.adm_no, entityId: res.n.encounter_id,
-        link: `/inpatient/stay/${res.n.encounter_id}#notes`, urgent: res.consult.urgency !== 'routine' }, u.id);
+        link: this.link(res.st), urgent: res.consult.urgency !== 'routine' }, u.id);
     }
     // 0047: რეანიმაციიდან გაყვანის შეჯამება → მკურნალ ექიმს და მიმღები განყოფილების ექიმებს
     if (res.n.kind === 'icu_out' && !res.n.amends_id) {
@@ -288,9 +356,11 @@ export class NotesService {
       const n = await trx.selectFrom('doctor_notes').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
       if (!n) throw new NotFoundException('ჩანაწერი ვერ მოიძებნა');
       if (n.status !== 'signed' || n.superseded_at) throw new ConflictException('შესწორდება მხოლოდ მოქმედი ხელმოწერილი ვერსია');
-      const st = await this.stay(n.encounter_id, trx);
+      const st = await this.chart(n.encounter_id, trx);
       this.open(st);
-      const ok = n.author_id === u.id || has(u, 'admin') || (n.kind !== 'consult' && (st.attending_doctor_id === u.id || await this.isHeadDoctor(u, st.department_id, trx)));
+      await this.assertWritable(st);
+      const ok = n.author_id === u.id || has(u, 'admin') || (n.kind !== 'consult' && (st.type === 'emergency' ? await erCanWrite(u, st.attending_doctor_id)
+        : st.attending_doctor_id === u.id || await this.isHeadDoctor(u, st.department_id, trx)));
       if (!ok) throw new ForbiddenException('ასწორებს ავტორი, მკურნალი ექიმი ან განყოფილების ხელმძღვანელი');
       try {
         const r = await trx.insertInto('doctor_notes').values({ encounter_id: n.encounter_id, patient_id: n.patient_id, department_id: n.department_id, kind: n.kind, note_date: n.note_date,
@@ -310,28 +380,34 @@ export class NotesService {
   }
 
   /** ჰოსპიტალიზაციის ჩანაწერები: ხელმოწერილი (მოქმედი + ისტორიის ნიშანი), ჩემი შავი ვერსიები, კონსულტაციები, აკლია */
-  async list(encounterId: string, u: AuthUser) {
-    const s = await this.ipd.settings();
-    const st = await this.stay(encounterId);
+  async list(encounterId: string, u: AuthUser, expect?: ChartType) {
+    const st = await this.chart(encounterId, this.db, expect);
+    const s = await this.settingsOf(st);
     const notes = await this.base().where('n.encounter_id', '=', encounterId)
       .where((eb) => eb.or([eb('n.status', '=', 'signed'), eb('n.author_id', '=', u.id)])).orderBy('n.note_date', 'desc').orderBy('n.created_at', 'desc').execute();
     const consults = await this.consultBase().where('c.encounter_id', '=', encounterId).orderBy('c.created_at', 'desc').execute();
     const today = await this.today();
     const current = notes.filter((n) => n.status === 'signed' && !n.superseded_at);
-    const admission = current.find((n) => n.kind === 'admission') ?? null;
+    const admission = current.find((n) => n.kind === INITIAL[st.type]) ?? null;
     const progressDays = new Set(current.filter((n) => DAILY_KINDS.includes(n.kind)).map((n) => n.day));
     const missing: string[] = [];
     if (s.progress_note_daily !== false) {
       // ჰოსპიტალიზაციის მეორე დღიდან (პირველ დღეს — მიმღები გასინჯვა) გუშინდელამდე (ან გაწერის დღემდე ჩათვლით)
       for (let d = addDay(st.admitted_day, 1); d < (st.status === 'active' ? today : addDay(st.last_day, 1)); d = addDay(d, 1)) if (!progressDays.has(d)) missing.push(d);
     }
-    const admissionDue = new Date(new Date(st.admitted_at).getTime() + (s.admission_note_hours ?? 24) * 3_600_000);
+    // ER: პირველადი ჩანაწერის ვადა — ექიმის აყვანიდან initial_note_min წთ (აყვანამდე — ვადა არ ითვლება)
+    const erDoctorAt = st.type === 'emergency' ? (st as { doctor_at?: string | Date | null }).doctor_at ?? null : null;
+    const admissionDue = st.type === 'emergency'
+      ? (erDoctorAt ? new Date(new Date(erDoctorAt).getTime() + (s.initial_note_min ?? 60) * 60_000) : null)
+      : new Date(new Date(st.admitted_at).getTime() + (s.admission_note_hours ?? 24) * 3_600_000);
     const writable = st.status !== 'cancelled' && !(st.status !== 'active' && st.closed_at);
+    const modOk = modulesRef.svc ? await modulesRef.svc.isActive(st.module) : true;
     return {
+      type: st.type, initial_kind: INITIAL[st.type], kinds: CHART_KINDS[st.type],
       notes, consultations: consults, fields: NOTE_FIELDS, today, admitted_day: st.admitted_day, last_day: st.last_day,
-      admission: { note_id: admission?.id ?? null, due_at: admissionDue, overdue: !admission && admissionDue.getTime() < Date.now() },
+      admission: { note_id: admission?.id ?? null, due_at: admissionDue, overdue: !admission && !!admissionDue && admissionDue.getTime() < Date.now() },
       missing_days: missing,
-      can: { write: writable && await this.canWrite(u, st), head: await this.isHeadDoctor(u, st.department_id), consult: writable && await this.canWrite(u, st) },
+      can: { write: writable && modOk && await this.canWrite(u, st), head: await this.isHeadDoctor(u, st.department_id), consult: writable && modOk && st.status === 'active' && await this.canWrite(u, st) },
     };
   }
 
@@ -392,12 +468,13 @@ export class NotesService {
       .selectAll('c').select([sql<string>`r.last_name || ' ' || r.first_name`.as('requested_by_name'), sql<string | null>`t.last_name || ' ' || t.first_name`.as('target_doctor_name'),
         'td.name as target_department_name', 'fd.name as from_department_name', sql<string | null>`a.last_name || ' ' || a.first_name`.as('answered_by_name')]);
   }
-  async requestConsult(encounterId: string, dto: ConsultDto, u: AuthUser, ctx: AuditContext) {
+  async requestConsult(encounterId: string, dto: ConsultDto, u: AuthUser, ctx: AuditContext, expect?: ChartType) {
     if (!dto.target_department_id && !dto.target_doctor_id) throw new BadRequestException('მიუთითეთ განყოფილება ან ექიმი');
-    const s = await this.ipd.settings();
     const res = await this.db.transaction().execute(async (trx) => {
-      const st = await this.stay(encounterId, trx);
-      if (st.status !== 'active') throw new ConflictException('კონსულტაცია — მხოლოდ აქტიურ ჰოსპიტალიზაციაზე');
+      const st = await this.chart(encounterId, trx, expect);
+      if (st.status !== 'active') throw new ConflictException(st.type === 'emergency' ? 'კონსულტაცია — მხოლოდ მიმდინარე ER-ის შემთხვევაზე' : 'კონსულტაცია — მხოლოდ აქტიურ ჰოსპიტალიზაციაზე');
+      await this.assertWritable(st);
+      const s = await this.settingsOf(st);
       if (!(await this.canWrite(u, st, trx))) throw new ForbiddenException('კონსულტაციას ითხოვს მკურნალი ან განყოფილების ექიმი');
       let depId = dto.target_department_id ?? null;
       if (dto.target_doctor_id) {
@@ -410,11 +487,13 @@ export class NotesService {
         const d = await trx.selectFrom('departments').select('id').where('id', '=', depId).where('is_active', '=', true).executeTakeFirst();
         if (!d) throw new BadRequestException('განყოფილება ვერ მოიძებნა');
       }
-      const hours = (s.consult_due_hours ?? { routine: 24, urgent: 2, emergency: 1 })[dto.urgency] ?? 24;
+      // ვადა: სტაციონარი — consult_due_hours (სთ); ER — consult_due_min (წთ)
+      const dueMs = s.consult_due_min ? (s.consult_due_min[dto.urgency] ?? 60) * 60_000
+        : (((s as { consult_due_hours?: Record<string, number> }).consult_due_hours ?? { routine: 24, urgent: 2, emergency: 1 })[dto.urgency] ?? 24) * 3_600_000;
       const c = await trx.insertInto('consultations').values({ encounter_id: encounterId, patient_id: st.patient_id, requested_by: u.id, from_department_id: st.department_id,
         target_department_id: depId, target_doctor_id: dto.target_doctor_id ?? null, urgency: dto.urgency, question: dto.question.trim(),
-        due_at: new Date(Date.now() + hours * 3_600_000) }).returningAll().executeTakeFirstOrThrow();
-      await this.ipd.event(trx, { encounter_id: encounterId, kind: 'consult_requested', data: { consultation_id: c.id, urgency: dto.urgency } }, u);
+        due_at: new Date(Date.now() + dueMs) }).returningAll().executeTakeFirstOrThrow();
+      await this.event(trx, st, 'consult_requested', { consultation_id: c.id, urgency: dto.urgency }, u);
       await this.audit.log(ctx, { action: 'CONSULT_REQUEST', entityName: 'consultations', entityId: c.id, newData: dto }, trx);
       return { c, st };
     });
@@ -424,8 +503,8 @@ export class NotesService {
       const duty = (await this.roster.now({ departmentId: res.c.target_department_id, category: 'doctor' })).map((p) => p.user_id).filter((x): x is string => !!x && x !== u.id);
       if (duty.length) to = duty;
     }
-    await this.notifyIds(to, { kind: 'ipd_consult', title: `კონსულტაცია (${URGENCY_KA[res.c.urgency]}): ${res.st.last_name} ${res.st.first_name}`, body: res.c.question.slice(0, 200),
-      item: res.st.adm_no, entityId: res.c.id, link: `/inpatient?tab=consults`, urgent: res.c.urgency !== 'routine' }, u.id);
+    await this.notifyIds(to, { kind: 'ipd_consult', title: `კონსულტაცია (${URGENCY_KA[res.c.urgency]}${res.st.type === 'emergency' ? ', ER' : ''}): ${res.st.last_name} ${res.st.first_name}`, body: res.c.question.slice(0, 200),
+      item: res.st.adm_no, entityId: res.c.id, link: res.st.type === 'emergency' ? '/consults' : `/inpatient?tab=consults`, urgent: res.c.urgency !== 'routine' }, u.id);
     return (await this.consultBase().where('c.id', '=', res.c.id).executeTakeFirst())!;
   }
   async cancelConsult(id: string, reason: string, u: AuthUser, ctx: AuditContext) {
@@ -434,20 +513,32 @@ export class NotesService {
       if (!c) throw new NotFoundException('კონსულტაცია ვერ მოიძებნა');
       if (c.status !== 'requested') throw new ConflictException('კონსულტაცია უკვე დასრულებულია / გაუქმებულია');
       if (c.requested_by !== u.id && !has(u, 'admin')) throw new ForbiddenException('აუქმებს მომთხოვნი');
+      const st = await this.chart(c.encounter_id, trx);
+      await this.assertWritable(st);
       await trx.updateTable('consultations').set({ status: 'cancelled', cancelled_by: u.id, cancelled_at: sql`now()`, cancel_reason: reason.trim() }).where('id', '=', id).execute();
-      await this.ipd.event(trx, { encounter_id: c.encounter_id, kind: 'consult_cancelled', data: { consultation_id: id, reason } }, u);
+      await this.event(trx, st, 'consult_cancelled', { consultation_id: id, reason }, u);
       await this.audit.log(ctx, { action: 'CONSULT_CANCEL', entityName: 'consultations', entityId: id, newData: { reason } }, trx);
       return { id, status: 'cancelled' };
     });
   }
-  /** კონსულტანტის სია: ჩემთვის / ჩემი განყოფილებისთვის (ღია + ბოლო 3 დღის პასუხები) */
-  async inbox(u: AuthUser) {
+  /**
+   * კონსულტანტის სია: ჩემთვის / ჩემი განყოფილებისთვის (ღია + ბოლო 3 დღის პასუხები).
+   * 0088: scope = all — ჰოსპიტალიზაციები (inpatient usable) + ER-ის შემთხვევები (er usable); inpatient — მხოლოდ ჰოსპიტალიზაციები (ძველი გზა).
+   */
+  async inbox(u: AuthUser, scope: 'inpatient' | 'all' = 'inpatient') {
     const me = await this.ipd.me(u);
-    return this.consultBase().innerJoin('inpatient_stays as st', 'st.encounter_id', 'c.encounter_id').innerJoin('patients as p', 'p.id', 'c.patient_id')
-      .select(['st.adm_no', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
+    const types: string[] = [];
+    if (scope === 'inpatient' || !modulesRef.svc || await modulesRef.svc.isUsable('inpatient')) types.push('inpatient');
+    if (scope === 'all' && (!modulesRef.svc || await modulesRef.svc.isUsable('er'))) types.push('emergency');
+    if (!types.length) return [];
+    return this.consultBase().innerJoin('encounters as enc', 'enc.id', 'c.encounter_id').leftJoin('inpatient_stays as st', 'st.encounter_id', 'c.encounter_id')
+      .leftJoin('er_visits as ev', 'ev.encounter_id', 'c.encounter_id').innerJoin('patients as p', 'p.id', 'c.patient_id')
+      .select([sql<string>`coalesce(st.adm_no, ev.visit_no)`.as('adm_no'), 'enc.type as encounter_type', 'p.first_name', 'p.last_name', 'p.birth_date', 'p.gender',
+        sql<string | null>`(SELECT s2.name FROM er_spots s2 WHERE s2.id = ev.spot_id)`.as('er_spot'),
         sql<string | null>`(SELECT b.code FROM bed_assignments ba JOIN beds b ON b.id = ba.bed_id WHERE ba.encounter_id = c.encounter_id AND ba.ended_at IS NULL LIMIT 1)`.as('bed_code'),
         sql<string | null>`(SELECT d.name FROM bed_assignments ba JOIN departments d ON d.id = ba.department_id WHERE ba.encounter_id = c.encounter_id AND ba.ended_at IS NULL LIMIT 1)`.as('patient_department'),
         sql<string | null>`(SELECT n.id FROM doctor_notes n WHERE n.consultation_id = c.id AND n.status = 'draft' AND n.author_id = ${u.id} LIMIT 1)`.as('my_draft_id')])
+      .where('enc.type', 'in', types as ('inpatient' | 'emergency')[])
       .where((eb) => eb.or([eb('c.target_doctor_id', '=', u.id),
         ...(me.department_id ? [eb.and([eb('c.target_doctor_id', 'is', null), eb('c.target_department_id', '=', me.department_id)])] : []),
         ...(has(u, 'admin') ? [eb.val(true)] : [])]))
@@ -456,24 +547,31 @@ export class NotesService {
   }
 
   // ---------------------------------------------------------------- შაბლონები
+  /** 0088: ER-ის განყოფილების შაბლონები (ნაგულისხმევი ER-ის შაბლონი) — er_manage-ც მართავს */
+  private async erTemplateManager(u: AuthUser, departmentId: string) {
+    if (!has(u, 'er_manage')) return false;
+    return !!(await this.db.selectFrom('departments').select('id').where('id', '=', departmentId).where('type', '=', 'emergency').executeTakeFirst());
+  }
   templates(u: AuthUser, kind?: string) {
     return this.ipd.me(u).then((me) => {
       let q = this.db.selectFrom('note_templates as t').leftJoin('departments as d', 'd.id', 't.department_id')
         .selectAll('t').select('d.name as department_name').where('t.is_active', '=', true)
-        .where((eb) => eb.or([eb('t.owner_id', '=', u.id), ...(me.department_id ? [eb('t.department_id', '=', me.department_id)] : [])]));
+        .where((eb) => eb.or([eb('t.owner_id', '=', u.id), ...(me.department_id ? [eb('t.department_id', '=', me.department_id)] : []),
+          // 0088: ER-ის შაბლონები (ER-ის განყოფილების) — ყველა ER-ის ექიმს, მისი განყოფილების მიუხედავად
+          ...(has(u, 'er_doctor', 'er_manage') ? [eb.and([eb('t.kind', 'in', ['er_initial', 'er_progress']), eb('d.type', '=', 'emergency')])] : [])]));
       if (kind) q = q.where('t.kind', '=', kind);
       return q.orderBy('t.kind').orderBy('t.department_id').orderBy('t.name').execute();
     });
   }
   async saveTemplate(id: string | null, dto: NoteTemplateDto, u: AuthUser, ctx: AuditContext) {
     const content = this.clean(dto.kind, dto.content);
-    if (dto.department_id ? !(await this.isHeadDoctor(u, dto.department_id)) && !has(u, 'admin') : !has(u, 'doctor')) {
+    if (dto.department_id ? !(await this.isHeadDoctor(u, dto.department_id)) && !has(u, 'admin') && !(await this.erTemplateManager(u, dto.department_id)) : !has(u, 'doctor', 'er_doctor')) {
       throw new ForbiddenException(dto.department_id ? 'განყოფილების შაბლონს მართავს ხელმძღვანელი' : 'პირადი შაბლონი — ექიმი');
     }
     if (id) {
       const t = await this.db.selectFrom('note_templates').selectAll().where('id', '=', id).executeTakeFirst();
       if (!t) throw new NotFoundException('შაბლონი ვერ მოიძებნა');
-      if (t.owner_id ? t.owner_id !== u.id : !(await this.isHeadDoctor(u, t.department_id!)) && !has(u, 'admin')) throw new ForbiddenException('შაბლონს ასწორებს მფლობელი / ხელმძღვანელი');
+      if (t.owner_id ? t.owner_id !== u.id : !(await this.isHeadDoctor(u, t.department_id!)) && !has(u, 'admin') && !(await this.erTemplateManager(u, t.department_id!))) throw new ForbiddenException('შაბლონს ასწორებს მფლობელი / ხელმძღვანელი');
       await this.db.updateTable('note_templates').set({ name: dto.name.trim(), content: JSON.stringify(content), is_active: dto.is_active ?? true }).where('id', '=', id).execute();
       await this.audit.log(ctx, { action: 'NOTE_TEMPLATE_UPDATE', entityName: 'note_templates', entityId: id, newData: dto });
       return { id };
@@ -485,8 +583,9 @@ export class NotesService {
   }
 
   // ---------------------------------------------------------------- PDF (სამედიცინო ისტორიისთვის)
-  async pdf(encounterId: string, ctx: AuditContext) {
-    const st = await this.stay(encounterId);
+  async pdf(encounterId: string, ctx: AuditContext, expect?: ChartType) {
+    const st = await this.chart(encounterId, this.db, expect);
+    const er = st.type === 'emergency';
     const rows = await this.base().where('n.encounter_id', '=', encounterId).where('n.status', '=', 'signed').where('n.superseded_at', 'is', null)
       .orderBy('n.note_date').orderBy('n.signed_at').execute();
     const clinic = await this.db.selectFrom('clinic_settings').select('name').where('id', '=', 1).executeTakeFirst();
@@ -499,7 +598,7 @@ export class NotesService {
     const dt = (d: string | Date) => new Intl.DateTimeFormat('ka-GE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d));
     doc.font('R').fontSize(8).fillColor('#444').text(clinic?.name ?? '', { width: W, align: 'right' }).fillColor('black');
     doc.font('B').fontSize(14).text('ექიმის ჩანაწერები', { width: W, align: 'center' });
-    doc.font('R').fontSize(10).text(`${st.last_name} ${st.first_name} · ${st.adm_no} · ჰოსპიტალიზაცია: ${dt(st.admitted_at)}${st.ended_at ? ` — ${dt(st.ended_at)}` : ''}`, { width: W, align: 'center' });
+    doc.font('R').fontSize(10).text(`${st.last_name} ${st.first_name} · ${st.adm_no} · ${er ? 'ER — შემოსვლა' : 'ჰოსპიტალიზაცია'}: ${dt(st.admitted_at)}${st.ended_at ? ` — ${dt(st.ended_at)}` : ''}`, { width: W, align: 'center' });
     doc.moveDown(0.8);
     for (const n of rows) {
       if (doc.y > doc.page.height - 140) doc.addPage();
@@ -518,7 +617,7 @@ export class NotesService {
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(i); doc.font('R').fontSize(8).fillColor('#666').text(`${st.adm_no} · გვ. ${i + 1}/${range.count}`, 50, doc.page.height - 35, { width: W, align: 'center', lineBreak: false }); }
     doc.end();
-    await this.audit.log(ctx, { action: 'NOTES_PDF', entityName: 'inpatient_stays', entityId: encounterId });
+    await this.audit.log(ctx, { action: 'NOTES_PDF', entityName: er ? 'er_visits' : 'inpatient_stays', entityId: encounterId });
     return { pdf: await done, name: `notes-${st.adm_no}.pdf` };
   }
 
@@ -545,17 +644,17 @@ const READ = ['admin', 'doctor', 'nurse', 'manager'] as const;
 @RequireModule('inpatient')
 export class NotesController {
   constructor(private readonly s: NotesService) {}
-  @Get('stays/:eid/notes') @ClinicalHistory() @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u); }
+  @Get('stays/:eid/notes') @ClinicalHistory() @Roles(...READ) list(@Param('eid', ParseUUIDPipe) eid: string, @CurrentUser() u: AuthUser) { return this.s.list(eid, u, 'inpatient'); }
   @Get('stays/:eid/notes/insert') @Roles('admin', 'doctor') insert(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.insertData(eid); }
   @Get('stays/:eid/notes/course') @Roles('admin', 'doctor') course(@Param('eid', ParseUUIDPipe) eid: string) { return this.s.course(eid); }
   @Get('stays/:eid/notes/pdf') @ClinicalHistory() @Roles(...READ)
   async pdf(@Param('eid', ParseUUIDPipe) eid: string, @Req() r: Request, @Res({ passthrough: true }) res: Response) {
-    const out = await this.s.pdf(eid, auditCtx(r));
+    const out = await this.s.pdf(eid, auditCtx(r), 'inpatient');
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${out.name}"` });
     return new StreamableFile(out.pdf);
   }
   @Post('stays/:eid/notes') @Roles('admin', 'doctor')
-  create(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: NoteCreateDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(eid, d, u, auditCtx(r)); }
+  create(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: NoteCreateDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.create(eid, d, u, auditCtx(r), 'inpatient'); }
   @Get('notes/:id/history') @ClinicalHistory() @Roles(...READ) history(@Param('id', ParseUUIDPipe) id: string) { return this.s.history(id); }
   @Get('notes/:id') @ClinicalHistory() @Roles(...READ)
   async one(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
@@ -571,7 +670,7 @@ export class NotesController {
   amend(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.amend(id, d.reason, u, auditCtx(r)); }
 
   @Post('stays/:eid/consultations') @Roles('admin', 'doctor')
-  consult(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: ConsultDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.requestConsult(eid, d, u, auditCtx(r)); }
+  consult(@Param('eid', ParseUUIDPipe) eid: string, @Body() d: ConsultDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.requestConsult(eid, d, u, auditCtx(r), 'inpatient'); }
   @Post('consultations/:id/cancel') @HttpCode(200) @Roles('admin', 'doctor')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() d: ReasonDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.cancelConsult(id, d.reason, u, auditCtx(r)); }
   @Get('consultations/inbox') @Roles('admin', 'doctor') inbox(@CurrentUser() u: AuthUser) { return this.s.inbox(u); }

@@ -8,6 +8,9 @@ import PatientSearch from '../../components/PatientSearch';
 import { IdentifyDialog, MergeDialog, UnknownChip } from '../../components/UnknownPatient';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { dateGe, tsDate } from '../../lib/format';
+import { Diagnoses } from '../encounter/Clinical';
+import DiagnosticsPanel from '../encounter/DiagnosticsPanel';
+import DoctorNotesPanel from '../inpatient/DoctorNotes';
 import {
   ACVPU, ARRIVAL_KIND_KA, type Board, type BoardItem, dur, type ErMeta, type ErVisit, GENDER_KA, hm, minsSince, minsUntil, NEWS2_KA, onColor, patientLabel,
   SPOT_KA, STATUS_KA, type TriageScale, WAIT_KA,
@@ -16,7 +19,7 @@ import {
 /**
  * გადაუდებელი დახმარება (ER), 0087: დაფა (ტრიაჟის ფერი, ადგილი, ტაიმერები კარი → ტრიაჟი / ექიმი, ER-ში ყოფნა, ექიმი / ექთანი, მოლოდინი),
  * რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი / განმეორებითი ტრიაჟი (NEWS2 — მინიშნება), აყვანა, მინიჭება, გაუქმება.
- * ?visit=<id> — ბარათი; ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
+ * ?visit=<id> — ბარათი (&tab=notes | dx — 0088: ჩანაწერები / კონსულტაცია, დიაგნოზი / დიაგნოსტიკა); ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
  */
 export function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -38,7 +41,7 @@ export default function Er() {
   const [reg, setReg] = useState<string | 'new' | null>(sp.get('register') ? sp.get('register') : null);
   const [tri, setTri] = useState<BoardItem | null>(null);
   const visitId = sp.get('visit');
-  const openVisit = (id: string | null) => { const n = new URLSearchParams(sp); if (id) n.set('visit', id); else n.delete('visit'); setSp(n, { replace: true }); };
+  const openVisit = (id: string | null) => { const n = new URLSearchParams(sp); if (id) n.set('visit', id); else { n.delete('visit'); n.delete('tab'); } setSp(n, { replace: true }); };
   const perms = meta.data?.perms;
   const qc = useQueryClient(); const toast = useToast();
   const pickup = useMutation({
@@ -65,6 +68,7 @@ export default function Er() {
         {c && <div className="row" style={{ gap: 10, flexWrap: 'wrap' }} data-testid="er-counts">
           <Tile k="ER-ში" v={c.total} /><Tile k="ტრიაჟის მოლოდინში" v={c.waiting_triage} /><Tile k="ექიმის მოლოდინში" v={c.waiting_doctor} />
           <Tile k="მკურნალობაში" v={c.in_treatment} /><Tile k="ვადაგადაცილებული" v={c.overdue} danger={c.overdue > 0} />
+          {(c.notes_overdue ?? 0) > 0 && <Tile k="ჩანაწერი აკლია" v={c.notes_overdue!} danger />}
           <Tile k="თავისუფალი ადგილი" v={`${c.spots_free} / ${c.spots_total}`} />
           {board.data!.on_duty.length > 0 && <div className="card card-pad stack grow" style={{ gap: 2, minWidth: 220 }}><span className="small muted">მორიგე ექიმი ახლა</span>
             <span className="small">{board.data!.on_duty.map((d) => `${d.name}${d.duty_name ? ` (${d.duty_name})` : ''}${d.phone ? ` · ${d.phone}` : ''}`).join('; ')}</span></div>}
@@ -130,7 +134,8 @@ function Row({ i, t, perms, meDoctor, meId, onOpen, onTriage, onPickup, busy }: 
       <td><span className="mono">{hm(i.arrived_at)}</span><div className="small muted">{i.arrival_name}{i.ambulance_crew ? ` · №${i.ambulance_crew}` : ''}</div></td>
       <td>{i.triage ? <span className="chip" style={{ background: i.triage.color, color: onColor(i.triage.color) }}>{i.triage.name}</span> : <span className="chip warn">ტრიაჟის გარეშე</span>}
         <div className="small muted" style={{ marginTop: 4 }}>{STATUS_KA[i.status]}</div>
-        {i.waiting_for.length > 0 && <div className="small">მოლოდინი: {i.waiting_for.map((w) => WAIT_KA[w] ?? w).join(', ')}</div>}</td>
+        {(() => { const w = [...new Set([...i.waiting_for, ...(i.waiting_auto ?? [])])]; return w.length > 0 && <div className="small" data-testid="er-waiting">მოლოდინი: {w.map((x) => WAIT_KA[x] ?? x).join(', ')}</div>; })()}
+        {i.initial_note && !i.initial_note.signed && i.initial_note.overdue && <span className="chip danger" data-testid="er-note-overdue" title="პირველადი გასინჯვა არ არის ხელმოწერილი">ჩანაწერი აკლია</span>}</td>
       <td><div className="stack" style={{ gap: 0 }}>
         <Timer label="ER-ში" since={i.arrived_at} t={t} />
         {!i.first_triage_at && <Timer label="ტრიაჟამდე" due={i.timers.triage_due_at} t={t} overdue={i.timers.triage_overdue} />}
@@ -305,6 +310,9 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
   const [dlg, setDlg] = useState<'triage' | 'cancel' | 'identify' | 'merge' | null>(null);
   const [mergeTarget, setMergeTarget] = useState<string | undefined>();
   const [reason, setReason] = useState('');
+  const [sp, setSp] = useSearchParams();
+  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | null) ?? 'card';
+  const setTab = (t: string) => { const n = new URLSearchParams(sp); if (t === 'card') n.delete('tab'); else n.set('tab', t); setSp(n, { replace: true }); };
   const inv = () => { void qc.invalidateQueries({ queryKey: ['er-board'] }); void qc.invalidateQueries({ queryKey: ['er-visit', id] }); };
   const assign = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/er/visits/${id}`, { method: 'PATCH', body }), onSuccess: () => { toast.show('შენახულია'); inv(); } });
   const cancel = useMutation({ mutationFn: () => api(`/er/visits/${id}/cancel`, { body: { reason: reason.trim() } }), onSuccess: () => { inv(); onClose(); } });
@@ -312,9 +320,19 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
   const v = q.data; const p = v.patient; const open = !v.ended_at;
   const free = spots.filter((s) => s.department_id === v.department_id && (!s.encounter_id || s.encounter_id === id));
   return (
-    <Modal title={`${v.visit_no} — ${patientLabel(p)}`} onClose={onClose} width={860}>
+    <Modal title={`${v.visit_no} — ${patientLabel(p)}`} onClose={onClose} width={980}>
       {toast.node}
-      <div className="stack" style={{ gap: 12 }} data-testid="er-visit">
+      <div className="seg" role="tablist" aria-label="ER-ის ბარათი" style={{ width: 'max-content', marginBottom: 12 }}>
+        <button type="button" role="tab" aria-selected={tab === 'card'} aria-pressed={tab === 'card'} className="ro-ok" onClick={() => setTab('card')}>ბარათი / ტრიაჟი</button>
+        <button type="button" role="tab" aria-selected={tab === 'notes'} aria-pressed={tab === 'notes'} className="ro-ok" onClick={() => setTab('notes')}>ჩანაწერები / კონსულტაცია</button>
+        <button type="button" role="tab" aria-selected={tab === 'dx'} aria-pressed={tab === 'dx'} className="ro-ok" onClick={() => setTab('dx')}>დიაგნოზი / კვლევები</button>
+      </div>
+      {tab === 'notes' && <div data-testid="er-notes"><DoctorNotesPanel encounterId={id} scope="er" /></div>}
+      {tab === 'dx' && <div className="stack" style={{ gap: 12 }} data-testid="er-dx">
+        <Diagnoses e={{ id, diagnoses: v.diagnoses }} canWrite={v.clinical.write} onChanged={inv} />
+        <DiagnosticsPanel encounterId={id} canWrite={v.clinical.write} defaultUrgent={v.clinical.dx_default_priority === 'urgent'} />
+      </div>}
+      {tab === 'card' && <div className="stack" style={{ gap: 12 }} data-testid="er-visit">
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {v.color ? <span className="chip" style={{ background: v.color, color: onColor(v.color) }}>{v.level_name}</span> : <span className="chip warn">ტრიაჟის გარეშე</span>}
           <span className="chip">{STATUS_KA[v.status]}</span><UnknownChip p={p} />
@@ -365,7 +383,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
                 <td>{t.news2_score !== null ? `${t.news2_score} (${NEWS2_KA[t.news2_level ?? ''] ?? ''})` : '—'}</td>
                 <td className="small">{[t.discriminator, t.note].filter(Boolean).join(' — ') || '—'}</td><td className="small">{t.user_name}</td></tr>)}</tbody></table>)}
         </section>
-      </div>
+      </div>}
       {dlg === 'triage' && <TriageDialog meta={meta} encounterId={id} title={`${v.first_triage_at ? 'განმეორებითი ტრიაჟი' : 'ტრიაჟი'} — ${patientLabel(p)}`} scale={v.triage_scale ?? undefined} age={p.age} onClose={() => setDlg(null)} />}
       {dlg === 'identify' && <IdentifyDialog patient={p} onClose={() => setDlg(null)} onMerge={meta.perms.merge ? (t) => { setMergeTarget(t.id); setDlg('merge'); } : undefined} />}
       {dlg === 'merge' && <MergeDialog source={p} initialTarget={mergeTarget} onClose={() => setDlg(null)} />}

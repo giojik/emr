@@ -14,6 +14,7 @@ import { news2 } from '../inpatient/news2';
 import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 import { ModulesService } from '../modules/modules';
 import { RosterLookup } from '../roster/roster-common';
+import { erCanWrite, type ErClinicalSettings } from './er-access';
 
 /**
  * გადაუდებელი დახმარება (ER), 0087 — რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი, დაფა / TV, ადგილები, ცნობარები.
@@ -25,7 +26,7 @@ type Trx = Transaction<DB>;
 type Ex = Kysely<DB> | Trx;
 const TZ = 'Asia/Tbilisi';
 
-export interface ErSettings {
+export interface ErSettings extends Partial<ErClinicalSettings> {
   triage_scale: string; triage_target_min: number; doctor_before_triage: 'allow' | 'block'; ambulance_fields: 'optional' | 'required';
   retriage_alert: boolean; news2_hint: boolean; show_on_duty: boolean; board_refresh_sec: number; tv_patient_names: 'initials' | 'full';
 }
@@ -402,7 +403,12 @@ export class ErService {
         'p.first_name', 'p.last_name', 'p.gender', 'p.birth_date', 'p.birth_date_estimated', 'p.is_unknown', 'p.unknown_no', 'p.personal_number',
         sql<boolean>`EXISTS (SELECT 1 FROM patient_allergies a WHERE a.patient_id = p.id AND a.is_active)`.as('has_allergy'),
         sql<number | null>`(SELECT t.news2_score FROM er_triage t WHERE t.encounter_id = v.encounter_id ORDER BY t.recorded_at DESC LIMIT 1)`.as('news2_score'),
-        sql<string | null>`(SELECT t.news2_level FROM er_triage t WHERE t.encounter_id = v.encounter_id ORDER BY t.recorded_at DESC LIMIT 1)`.as('news2_level')])
+        sql<string | null>`(SELECT t.news2_level FROM er_triage t WHERE t.encounter_id = v.encounter_id ORDER BY t.recorded_at DESC LIMIT 1)`.as('news2_level'),
+        // 0088: „მოლოდინი“ ავტომატურად — ღია შეკვეთა (ლაბ. / კვლევა) და ღია კონსულტაცია; ხელით მონიშვნა (waiting_for) რჩება
+        sql<string[]>`ARRAY(SELECT DISTINCT CASE WHEN i.section = 'lab' THEN 'lab' ELSE 'imaging' END FROM dx_order_items i
+          WHERE i.encounter_id = v.encounter_id AND i.status NOT IN ('validated', 'cancelled'))
+          || CASE WHEN EXISTS (SELECT 1 FROM consultations k WHERE k.encounter_id = v.encounter_id AND k.status = 'requested') THEN ARRAY['consult'] ELSE ARRAY[]::text[] END`.as('waiting_auto'),
+        sql<boolean>`EXISTS (SELECT 1 FROM doctor_notes n WHERE n.encounter_id = v.encounter_id AND n.kind = 'er_initial' AND n.status = 'signed' AND n.superseded_at IS NULL)`.as('initial_signed')])
       .where('v.ended_at', 'is', null)
       .$if(!!q.department_id, (x) => x.where('v.department_id', '=', q.department_id!))
       .orderBy(sql`v.triage_level IS NOT NULL`).orderBy('v.triage_level').orderBy('v.arrived_at').execute();
@@ -410,6 +416,8 @@ export class ErService {
       const triageDue = new Date(new Date(r.arrived_at).getTime() + s.triage_target_min * 60_000);
       const doctorDue = r.first_triage_at && r.target_doctor_min !== null ? new Date(new Date(r.first_triage_at).getTime() + r.target_doctor_min * 60_000) : null;
       const retriageDue = s.retriage_alert && r.status === 'triaged' && r.last_triage_at && r.retriage_min ? new Date(new Date(r.last_triage_at).getTime() + r.retriage_min * 60_000) : null;
+      // 0088 (C): პირველადი ჩანაწერი — ექიმის აყვანიდან initial_note_min წთ-ში
+      const noteDue = r.doctor_at && !r.initial_signed ? new Date(new Date(r.doctor_at).getTime() + (s.initial_note_min ?? 60) * 60_000) : null;
       const name = q.tv && s.tv_patient_names === 'initials' ? (r.is_unknown && r.first_name === 'უცნობი' ? `უცნობი #${r.unknown_no}` : initials(r.first_name, r.last_name)) : `${r.first_name} ${r.last_name}`;
       const base = {
         encounter_id: r.encounter_id, visit_no: r.visit_no, department_id: r.department_id, department_name: r.department_name, arrived_at: r.arrived_at,
@@ -418,7 +426,8 @@ export class ErService {
         triage: r.triage_level ? { scale: r.triage_scale, level: r.triage_level, name: r.level_name, color: r.color, target_doctor_min: r.target_doctor_min, retriage_min: r.retriage_min } : null,
         first_triage_at: r.first_triage_at, last_triage_at: r.last_triage_at, doctor_at: r.doctor_at,
         doctor: r.doctor_id ? { id: r.doctor_id, name: r.doctor_name } : null, nurse: r.nurse_id ? { id: r.nurse_id, name: r.nurse_name } : null,
-        waiting_for: r.waiting_for, news2: r.news2_score !== null ? { score: r.news2_score, level: r.news2_level } : null,
+        waiting_for: r.waiting_for, waiting_auto: r.waiting_auto, news2: r.news2_score !== null ? { score: r.news2_score, level: r.news2_level } : null,
+        initial_note: r.doctor_at ? { signed: r.initial_signed, due_at: noteDue?.toISOString() ?? null, overdue: !!noteDue && now > noteDue } : null,
         patient: { name, gender: r.gender, age: ageYears(r.birth_date as unknown as string, now), age_estimated: r.birth_date_estimated, is_unknown: r.is_unknown, unknown_no: r.unknown_no },
         timers: {
           wait_min: minutes(r.arrived_at, now), door_to_triage_min: r.first_triage_at ? minutes(r.arrived_at, new Date(r.first_triage_at)) : null,
@@ -440,6 +449,7 @@ export class ErService {
       total: items.length, waiting_triage: items.filter((i) => i.status === 'waiting').length, waiting_doctor: items.filter((i) => i.status === 'triaged').length,
       in_treatment: items.filter((i) => i.status === 'in_treatment').length,
       overdue: items.filter((i) => i.timers.triage_overdue || i.timers.doctor_overdue || i.timers.retriage_overdue).length,
+      notes_overdue: items.filter((i) => i.initial_note?.overdue).length,
       by_level: Object.fromEntries([...new Set(items.filter((i) => i.triage).map((i) => i.triage!.level))].sort().map((l) => [l, items.filter((i) => i.triage?.level === l).length])),
       spots_free: spots.filter((x) => !occ.has(x.id)).length, spots_total: spots.length,
     };
@@ -455,7 +465,7 @@ export class ErService {
   }
 
   // ---------------------------------------------------------------- ბარათი / ისტორია
-  async visit(id: string) {
+  async visit(id: string, u?: AuthUser) {
     const v = await this.db.selectFrom('er_visits as v').innerJoin('er_arrival_modes as am', 'am.code', 'v.arrival_mode').innerJoin('departments as dep', 'dep.id', 'v.department_id')
       .leftJoin('er_spots as sp', 'sp.id', 'v.spot_id').leftJoin('users as d', 'd.id', 'v.doctor_id').leftJoin('users as n', 'n.id', 'v.nurse_id')
       .leftJoin('users as c', 'c.id', 'v.created_by').leftJoin('external_institutions as ei', 'ei.id', 'v.referral_institution_id')
@@ -465,7 +475,7 @@ export class ErService {
         sql<string | null>`c.first_name || ' ' || c.last_name`.as('created_by_name')])
       .where('v.encounter_id', '=', id).executeTakeFirst();
     if (!v) throw new NotFoundException('ER-ის შემთხვევა ვერ მოიძებნა');
-    const [patient, triage, allergies] = await Promise.all([
+    const [patient, triage, allergies, diagnoses] = await Promise.all([
       this.db.selectFrom('patients').select(['id', 'first_name', 'last_name', 'personal_number', 'passport_number', 'birth_date', 'birth_date_estimated', 'gender', 'phone_number', 'is_unknown', 'unknown_no', 'merged_into_id'])
         .where('id', '=', v.patient_id).executeTakeFirstOrThrow(),
       this.db.selectFrom('er_triage as t').innerJoin('er_triage_levels as l', (j) => j.onRef('l.scale_code', '=', 't.scale_code').onRef('l.level', '=', 't.level'))
@@ -475,8 +485,14 @@ export class ErService {
           'ev.o2_flow', 'ev.consciousness', 'ev.pain', 'ev.glucose', 'ev.weight_kg'])
         .where('t.encounter_id', '=', id).orderBy('t.recorded_at', 'desc').execute(),
       this.db.selectFrom('patient_allergies').select(['id', 'substance', 'reaction_type', 'severity']).where('patient_id', '=', v.patient_id).where('is_active', '=', true).execute(),
+      this.db.selectFrom('encounter_diagnoses').selectAll().where('encounter_id', '=', id).orderBy('created_at').execute(),
     ]);
-    return { ...v, patient: { ...patient, age: ageYears(patient.birth_date as unknown as string) }, triage, allergies };
+    // 0088: კლინიკური ჩაწერა (ჩანაწერი / ICD-10 / დიაგნოსტიკა / კონსულტაცია) — ER აქტიური, შემთხვევა მიმდინარე, doctor_write
+    const s = await this.settings();
+    const active = await this.modules.isActive('er').catch(() => false);
+    const clinical = { write: !!u && active && !v.ended_at && await erCanWrite(u, v.doctor_id && v.doctor_at ? v.doctor_id : null),
+      dx_default_priority: s.dx_default_priority ?? 'urgent', doctor_write: s.doctor_write ?? 'team' };
+    return { ...v, patient: { ...patient, age: ageYears(patient.birth_date as unknown as string) }, triage, allergies, diagnoses, clinical };
   }
   async patientVisits(patientId: string) {
     return this.db.selectFrom('er_visits as v').innerJoin('departments as d', 'd.id', 'v.department_id')
@@ -566,7 +582,7 @@ export class ErController {
     return this.s.board({ department_id: dep || undefined, tv: tv === '1' || tv === 'true' });
   }
   @Post('visits') @Roles(...ER_REG) register(@Body() d: RegisterDto, @CurrentUser() u: AuthUser, @Req() r: Request) { return this.s.register(d, u, auditCtx(r)); }
-  @Get('visits/:id') @ClinicalHistory() @Roles(...ER_READ, 'doctor', 'nurse') visit(@Param('id', ParseUUIDPipe) id: string) { return this.s.visit(id); }
+  @Get('visits/:id') @ClinicalHistory() @Roles(...ER_READ, 'doctor', 'nurse') visit(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) { return this.s.visit(id, u); }
   @Post('visits/:id/triage') @HttpCode(200) @Roles(...ER_WRITE) triage(@Param('id', ParseUUIDPipe) id: string, @Body() d: TriageDto, @CurrentUser() u: AuthUser, @Req() r: Request) {
     return this.s.triage(id, d, u, auditCtx(r));
   }

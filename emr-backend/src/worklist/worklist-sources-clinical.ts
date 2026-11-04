@@ -132,6 +132,7 @@ export class WorklistClinicalSources {
       { module: 'inpatient', codes: ['med_verify', 'med_rejected', 'med_approve', 'med_verbal', 'med_abx_end'], fetch: c((x, k) => this.meds(x, k)) },
       { module: 'inpatient', codes: ['mar_due', 'mar_missed'], fetch: c((x, k) => this.mar(x, k)) },
       { module: 'inpatient', codes: ['consult_todo', 'transfer_in'], fetch: c((x, k) => this.consults(x, k)) },
+      { module: 'er', codes: ['er_consult'], fetch: c((x, k) => this.consults(x, k)) },   // 0088
       { module: 'inpatient', codes: ['nur_scale', 'nur_line', 'nur_handover', 'nur_obs', 'news2_review'], fetch: c((x, k) => this.nursing(x, k)) },
       { module: 'icu', codes: ['icu_sheet', 'icu_bundle', 'icu_sofa'], fetch: c((x, k) => this.icu(x, k)) },
       { module: 'or', codes: ['or_request', 'or_preop', 'or_ready', 'or_docs', 'or_pacu'], fetch: c((x, k) => this.orSources(x, k)) },
@@ -304,7 +305,7 @@ export class WorklistClinicalSources {
   private async consults(x: ClinCtx, c: Set<string>): Promise<Row[]> {
     const out: Row[] = [];
     const me = await x.x.me();
-    if (c.has('consult_todo') && x.isDoctor()) {
+    if ((c.has('consult_todo') || c.has('er_consult')) && x.isDoctor()) {
       // სამიზნე ექიმი; განყოფილებაზე — მისი ექიმები (users.department_id); სასწრაფო + roster.link_consult = duty — მხოლოდ ცვლაში მყოფი ექიმები (თუ ვინმეა)
       const ro = await this.db.selectFrom('system_modules').select('settings').where('code', '=', 'roster').executeTakeFirst();
       const duty = (await modUsable(this.db, 'roster')) && (ro?.settings as Record<string, unknown>)?.link_consult === 'duty';
@@ -312,16 +313,20 @@ export class WorklistClinicalSources {
         JOIN staff_members sm ON sm.id = re.staff_id LEFT JOIN staff_positions sp ON sp.id = sm.position_id
         WHERE re.status = 'active' AND r.status IN ('published', 'closed') AND re.starts_at <= now() AND re.ends_at > now() AND r.department_id = ${dep}
           AND sp.category = 'doctor' AND sm.user_id IS NOT NULL AND ${user})`;
-      const r = await sql<{ id: string; urgency: string; question: string; due_at: Date; created_at: Date; encounter_id: string; adm_no: string; pname: string; from_dep: string; by: string }>`
-        SELECT k.id, k.urgency, k.question, k.due_at, k.created_at, s.encounter_id, s.adm_no, s.pname, s.dep_name AS from_dep, ru.last_name || ' ' || ru.first_name AS by
-          FROM consultations k JOIN ${stays(sql`st.status = 'active'`)} s ON s.encounter_id = k.encounter_id JOIN users ru ON ru.id = k.requested_by
+      // 0088: ჰოსპიტალიზაცია (consult_todo) და / ან ER-ის მიმდინარე შემთხვევა (er_consult) — ერთი ფილტრი
+      const charts = sql`(${c.has('consult_todo') ? sql`SELECT s0.encounter_id, s0.adm_no, s0.pname, s0.dep_name, 'consult_todo' AS src FROM ${stays(sql`st.status = 'active'`)} s0` : sql`SELECT NULL::uuid, NULL, NULL, NULL, NULL WHERE FALSE`}
+        UNION ALL ${c.has('er_consult') ? sql`SELECT v.encounter_id, v.visit_no, p.last_name || ' ' || p.first_name, d.name, 'er_consult' FROM er_visits v JOIN patients p ON p.id = v.patient_id
+          JOIN departments d ON d.id = v.department_id WHERE v.ended_at IS NULL` : sql`SELECT NULL::uuid, NULL, NULL, NULL, NULL WHERE FALSE`})`;
+      const r = await sql<{ id: string; urgency: string; question: string; due_at: Date; created_at: Date; encounter_id: string; adm_no: string; pname: string; from_dep: string; by: string; src: string }>`
+        SELECT k.id, k.urgency, k.question, k.due_at, k.created_at, s.encounter_id, s.adm_no, s.pname, s.dep_name AS from_dep, ru.last_name || ' ' || ru.first_name AS by, s.src
+          FROM consultations k JOIN ${charts} s(encounter_id, adm_no, pname, dep_name, src) ON s.encounter_id = k.encounter_id JOIN users ru ON ru.id = k.requested_by
          WHERE k.status = 'requested' AND (k.target_doctor_id = ${x.u.id}
             OR (k.target_doctor_id IS NULL AND k.target_department_id = ${me.department_id ?? NIL}::uuid AND k.requested_by <> ${x.u.id}
                 AND (NOT ${duty} OR k.urgency = 'routine' OR ${ONSHIFT(sql`k.target_department_id`, sql`sm.user_id = ${x.u.id}`)}
                      OR NOT ${ONSHIFT(sql`k.target_department_id`, sql`sm.user_id <> k.requested_by`)})))
          ORDER BY k.due_at LIMIT ${LIMIT}`.execute(this.db);
-      for (const k of r.rows) out.push({ id: k.id, source: 'consult_todo', title: `კონსულტაცია — ${who(k)}`, detail: `${k.from_dep} · ${k.by}: ${k.question.slice(0, 140)}`,
-        patient: k.pname, department: k.from_dep, due_at: k.due_at, priority: URG[k.urgency] ?? 'normal', link: '/inpatient?tab=consults', created_at: k.created_at });
+      for (const k of r.rows) out.push({ id: k.id, source: k.src, title: `კონსულტაცია${k.src === 'er_consult' ? ' (ER)' : ''} — ${who(k)}`, detail: `${k.from_dep} · ${k.by}: ${k.question.slice(0, 140)}`,
+        patient: k.pname, department: k.from_dep, due_at: k.due_at, priority: URG[k.urgency] ?? 'normal', link: k.src === 'er_consult' ? '/consults' : '/inpatient?tab=consults', created_at: k.created_at });
     }
     if (c.has('transfer_in')) {
       const dep = await x.sideDept(['nurse', 'doctor', 'manager']);
