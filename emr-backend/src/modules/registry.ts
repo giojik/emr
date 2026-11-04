@@ -35,6 +35,8 @@ export const MODULES: ModuleDef[] = [
   m('mar', 'clinical', ['ipd_orders'], ['stock'], { settingsOf: 'inpatient' }),
   m('icu', 'clinical', ['inpatient'], ['mar']),
   m('or', 'clinical', ['inpatient'], ['stock', 'cssd', 'roster', 'bme', 'ipc']),   // 0086: + ipc (SSI / პროფილაქტიკის ფანჯარა)
+  // 0087: გადაუდებელი (ER) — მკაცრი წინაპირობა არ აქვს; რბილი კავშირები ემატება ეტაპობრივად, როცა ქცევა კოდშია (0087: roster — „მორიგე ახლა“ დაფაზე)
+  m('er', 'clinical', [], ['roster']),
   // დიაგნოსტიკა
   m('lab', 'diagnostics', [], ['outpatient', 'inpatient', 'worklist']),   // 0086: + worklist (კრიტიკული ზარი / პასუხის გაცნობა)
   m('lab_gateway', 'diagnostics', ['lab'], ['lab_qc']),
@@ -89,6 +91,7 @@ export const CAP_MODULE: Partial<Record<Role, string | string[]>> = {
   bme_dept: 'bme', bme_view: 'bme',
   roster: 'roster', roster_all: 'roster', roster_view: 'roster', absence_approve: 'roster',
   worklist_manage: 'worklist', worklist_all: 'worklist',
+  er_triage: 'er', er_doctor: 'er', er_manage: 'er',
 };
 
 /** დიაგნოსტიკის სექცია → მოდული (საერთო controller-ებში დინამიკური შემოწმებისთვის) */

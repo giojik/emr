@@ -45,7 +45,7 @@ trap restore EXIT
 
 step "1. რეესტრი"
 M=$(mods)
-chk "მოდულები: ბირთვი 4 + ოპციური 29" "$(echo "$M" | jq '[.[]|select(.core)]|length'):$(echo "$M" | jq '[.[]|select(.core|not)]|length')" "4:29"
+chk "მოდულები: ბირთვი 4 + ოპციური 30 (0087: + er)" "$(echo "$M" | jq '[.[]|select(.core)]|length'):$(echo "$M" | jq '[.[]|select(.core|not)]|length')" "4:30"
 chk "ბირთვი: core, mpi, encounters, billing — აქტიური, არ ითიშება" "$(echo "$M" | jq -c '[.[]|select(.core)|"\(.code)=\(.state)=\(.can_disable)"]|sort')" '["billing=active=false","core=active=false","encounters=active=false","mpi=active=false"]'
 chk "ახალი მოდულები (12) რეესტრშია" "$(echo "$M" | jq '[.[]|select(.code|IN("outpatient","ipd_orders","mar","lab","lab_gateway","lab_external","lab_qc","lab_micro","radiology","endoscopy","pharmacy","lab_stock"))]|length')" "12"
 chk "stock / tariffs — ახლა ოპციურია" "$(echo "$M" | jq -r '[.[]|select(.code=="stock" or .code=="tariffs")|.can_disable]|join(",")')" "true,true"
@@ -79,7 +79,7 @@ chk "დიაგნოსტიკის კატალოგი (რომე
 REFS=$(api GET /worklist/refs "$ADM")
 chk "სამუშაო სია: ლაბ. წყაროები — module_enabled false, რადიოლოგია — true" "$(echo "$REFS" | jq -r '[.sources[]|select(.code=="lab_collect" or .code=="lab_ext_due" or .code=="rad_report")|"\(.code)=\(.module_enabled)"]|sort|join(",")')" "lab_collect=false,lab_ext_due=false,rad_report=true"
 CAPS=$(api GET /roles/capabilities "$ADM")
-chk "უფლებები: 47 (უცვლელი); lab_doctor — module_active false, diagnostic — true (რომელიმე)" "$(echo "$CAPS" | jq length):$(echo "$CAPS" | jq -r '[.[]|select(.code=="lab_doctor" or .code=="diagnostic")|"\(.code)=\(.module_active)"]|sort|join(",")')" "47:diagnostic=true,lab_doctor=false"
+chk "უფლებები: 50 (უცვლელი); lab_doctor — module_active false, diagnostic — true (რომელიმე; 0087: + er_triage, er_doctor, er_manage)" "$(echo "$CAPS" | jq length):$(echo "$CAPS" | jq -r '[.[]|select(.code=="lab_doctor" or .code=="diagnostic")|"\(.code)=\(.module_active)"]|sort|join(",")')" "50:diagnostic=true,lab_doctor=false"
 KP=$(api GET /reporting/meta "$ADM" | jq -r '[.kpis[]?.code]|join(",")')
 chk "KPI: lab_orders დამალულია, dx_orders (ბირთვი) — ჩანს" "$(echo ",$KP," | grep -q ',lab_orders,' && echo shown || echo hidden):$(echo ",$KP," | grep -q ',dx_orders,' && echo shown || echo hidden)" "hidden:shown"
 chk "lab → ჩართვა" "$(setm lab true | jq -r .state)" "active"

@@ -8,6 +8,7 @@ import { GROUP_KA, STATE_KA, useLicenseStatus, useModules, type ModuleGroup, typ
 import { useHaiCatalog } from '../ipc/types';
 import { ALL_FEATURES, FEATURE_KA, type IcuFeature } from '../inpatient/Icu';
 import { RosterSettings } from '../roster/RosterSettings';
+import { ErSettings } from '../er/ErSettings';
 import { WorklistSettings } from '../worklist/WorklistSettings';
 
 /** 0086 (G): ინსტალაციის ID-ის კოპირება (ლიცენზიის მოთხოვნისთვის) */
@@ -120,6 +121,7 @@ function ModuleCard({ m, names }: { m: SystemModule; names: Record<string, strin
       {m.code === 'asset_register' && <AssetSettings s={s} set={setS} />}
       {m.code === 'bme' && <BmeSettings s={s} set={setS} />}
       {m.code === 'roster' && <RosterSettings s={s} set={setS} />}
+      {m.code === 'er' && <ErSettings s={s} set={setS} />}
       {m.code === 'worklist' && <WorklistSettings s={s} set={setS} enabled={m.admin_enabled} />}
       {m.code === 'stock' && <StockSettings s={s} set={setS} />}
       {m.code === 'cssd' && <CssdSettings s={s} set={setS} />}

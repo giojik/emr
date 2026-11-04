@@ -16,7 +16,8 @@ export const ROLES = ['admin', 'doctor', 'nurse', 'receptionist', 'billing', 'ph
   'infection', 'infection_dept', 'infection_view',
   'bme_dept', 'bme_view',
   'roster', 'roster_all', 'roster_view', 'absence_approve',
-  'worklist_manage', 'worklist_all'] as const;
+  'worklist_manage', 'worklist_all',
+  'er_triage', 'er_doctor', 'er_manage'] as const;
 export type Role = (typeof ROLES)[number];
 export const CAPABILITIES = ROLES;
 export type Capability = Role;

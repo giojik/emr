@@ -11,6 +11,8 @@ export interface Doctor {
 export interface PatientListItem {
   id: string; personal_number: string | null; passport_number: string | null; first_name: string; last_name: string;
   birth_date: string; gender: Gender; phone_number: string;
+  /** 0087: უცნობი / დაუდასტურებელი იდენტობა (ER) */
+  is_unknown?: boolean; unknown_no?: number | null; birth_date_estimated?: boolean;
 }
 export interface Allergy {
   id: string; substance: string; reaction_type: string | null; severity: Severity; allergy_type: 'allergy' | 'intolerance';
@@ -21,6 +23,7 @@ export interface Patient extends PatientListItem {
   citizenship: string; blood_group: string | null; address: string | null;
   address_unit_code: string | null; address_district_code: string | null; address_village: string | null; address_line: string | null; address_country: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; is_deceased: boolean;
+  merged_into_id?: string | null; merged_at?: string | null; identified_at?: string | null;
   allergies: Allergy[]; chronic_conditions: { id: string; icd10_code: string | null; condition_name: string }[];
 }
 export type AppointmentStatus = 'scheduled' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled' | 'no_show';

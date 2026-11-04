@@ -326,6 +326,19 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
     },
     extra: async (s) => (s.night_from === s.night_to ? 'ღამის საათები: დასაწყისი და დასასრული ერთმანეთს არ უნდა ემთხვეოდეს' : null),
   },
+  // 0087: გადაუდებელი (ER)
+  er: {
+    keys: {
+      triage_scale: (v) => typeof v === 'string' && /^[A-Z][A-Z0-9_]{1,19}$/.test(v), triage_target_min: (v) => int(v, 1, 120),
+      doctor_before_triage: (v) => oneOf(v, ['allow', 'block']), ambulance_fields: (v) => oneOf(v, ['optional', 'required']),
+      retriage_alert: bool, news2_hint: bool, show_on_duty: bool, board_refresh_sec: (v) => int(v, 10, 300), tv_patient_names: (v) => oneOf(v, ['initials', 'full']),
+    },
+    extra: async (s, db) => {
+      const c = s.triage_scale as string | undefined;
+      if (c && !(await db.selectFrom('er_triage_scales').select('code').where('code', '=', c).where('is_active', '=', true).executeTakeFirst())) return 'ტრიაჟის შკალა ვერ მოიძებნა ან გათიშულია';
+      return null;
+    },
+  },
   // 0081: სამუშაო სიები
   worklist: {
     keys: {

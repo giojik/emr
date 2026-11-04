@@ -1576,6 +1576,90 @@ export interface EpicrisisRevisions {
   template_version_id: string;
 }
 
+export interface ErArrivalModes {
+  code: string;
+  is_active: Generated<boolean>;
+  kind: string;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface ErSpots {
+  code: string;
+  created_at: Generated<Timestamp>;
+  department_id: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: Generated<string>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface ErTriage {
+  discriminator: string | null;
+  encounter_id: string;
+  gcs: number | null;
+  id: Generated<string>;
+  is_retriage: Generated<boolean>;
+  level: number;
+  news2_level: string | null;
+  news2_score: number | null;
+  note: string | null;
+  recorded_at: Generated<Timestamp>;
+  scale_code: string;
+  user_id: string;
+  vitals_id: string | null;
+}
+
+export interface ErTriageLevels {
+  color: string;
+  description: string | null;
+  is_active: Generated<boolean>;
+  level: number;
+  name: string;
+  retriage_min: number | null;
+  scale_code: string;
+  target_doctor_min: number;
+}
+
+export interface ErTriageScales {
+  code: string;
+  description: string | null;
+  is_active: Generated<boolean>;
+  is_system: Generated<boolean>;
+  name: string;
+  sort_order: Generated<number>;
+}
+
+export interface ErVisits {
+  ambulance_call_at: Timestamp | null;
+  ambulance_crew: string | null;
+  arrival_mode: string;
+  arrival_note: string | null;
+  arrived_at: Generated<Timestamp>;
+  chief_complaint: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  department_id: string;
+  doctor_at: Timestamp | null;
+  doctor_id: string | null;
+  encounter_id: string;
+  end_reason: string | null;
+  ended_at: Timestamp | null;
+  first_triage_at: Timestamp | null;
+  last_triage_at: Timestamp | null;
+  nurse_id: string | null;
+  patient_id: string;
+  referral_institution_id: string | null;
+  spot_id: string | null;
+  status: Generated<string>;
+  triage_level: number | null;
+  triage_scale: string | null;
+  updated_at: Generated<Timestamp>;
+  visit_no: string;
+  waiting_for: Generated<string[]>;
+}
+
 export interface Expenses {
   amount: Numeric;
   ap_invoice_id: string | null;
@@ -3866,6 +3950,7 @@ export interface Patients {
   address_unit_code: string | null;
   address_village: string | null;
   birth_date: string;
+  birth_date_estimated: Generated<boolean>;
   blood_group: string | null;
   citizenship: Generated<string>;
   created_at: Generated<Timestamp>;
@@ -3876,13 +3961,20 @@ export interface Patients {
   first_name: string;
   gender: GenderType;
   id: Generated<string>;
+  identified_at: Timestamp | null;
+  identified_by: string | null;
   is_deceased: Generated<boolean>;
+  is_unknown: Generated<boolean>;
   last_name: string;
+  merged_at: Timestamp | null;
+  merged_by: string | null;
+  merged_into_id: string | null;
   passport_number: string | null;
   personal_number: string | null;
   phone_number: string;
   result_email: Generated<boolean>;
   result_sms: Generated<boolean>;
+  unknown_no: number | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -6023,6 +6115,12 @@ export interface DB {
   endo_scopes: EndoScopes;
   epicrises: Epicrises;
   epicrisis_revisions: EpicrisisRevisions;
+  er_arrival_modes: ErArrivalModes;
+  er_spots: ErSpots;
+  er_triage: ErTriage;
+  er_triage_levels: ErTriageLevels;
+  er_triage_scales: ErTriageScales;
+  er_visits: ErVisits;
   expenses: Expenses;
   external_institutions: ExternalInstitutions;
   fin_claim_allocations: FinClaimAllocations;

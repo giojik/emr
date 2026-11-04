@@ -69,6 +69,10 @@ import Ipc from './pages/ipc/Ipc';
 import FlagCard from './pages/ipc/FlagCard';
 import HaiCard from './pages/ipc/HaiCard';
 import { AntibiogramPage } from './pages/ipc/Abg';
+import Er from './pages/er/Er';
+import ErTv from './pages/er/ErTv';
+import ErSetup from './pages/admin/ErSetup';
+import { ER_READ } from './pages/er/types';
 
 const IPD_READ: Role[] = ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'];
 
@@ -104,7 +108,7 @@ function NoAccess() {
 
 function AdminHome() {
   const { user } = useAuth();
-  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing', 'tariffs', 'tariffs_approve') ? '/admin/tariffs' : can(user, 'drg', 'drg_admin') ? '/admin/drg' : can(user, 'reports_all') ? '/admin/reporting' : '/admin/catalog'} replace />;
+  return <Navigate to={can(user, 'admin', 'hr', 'manager') ? '/admin/users' : can(user, 'med_engineer') ? '/admin/devices' : can(user, 'pharmacist') ? '/admin/allergens' : can(user, 'billing', 'tariffs', 'tariffs_approve') ? '/admin/tariffs' : can(user, 'drg', 'drg_admin') ? '/admin/drg' : can(user, 'reports_all') ? '/admin/reporting' : can(user, 'er_manage') ? '/admin/er' : '/admin/catalog'} replace />;
 }
 
 export default function App() {
@@ -117,6 +121,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/change-password" element={<Guard><ChangePassword /></Guard>} />
       <Route path="/dashboard/tv" element={<Guard roles={['admin', 'reports', 'reports_all', 'manager', 'viewer']}><ModuleRoute code="reporting"><Tv /></ModuleRoute></Guard>} />
+      <Route path="/er/tv" element={<Guard roles={ER_READ}><ModuleRoute code="er"><ErTv /></ModuleRoute></Guard>} />
       <Route element={<Guard><Shell /></Guard>}>
         <Route path="/reception" element={<Guard roles={['admin', 'receptionist', 'manager', 'viewer']}><Reception /></Guard>} />
         <Route path="/reports" element={<Guard roles={['admin', 'accountant', 'viewer', 'manager']}><Reports /></Guard>} />
@@ -137,6 +142,7 @@ export default function App() {
         <Route path="/bme" element={<Bme />} />
         <Route path="/roster" element={<Roster />} />
         <Route path="/cssd" element={<Cssd />} />
+        <Route path="/er" element={<Guard roles={ER_READ}><Er /></Guard>} />
         <Route path="/inpatient" element={<Guard roles={IPD_READ}><Inpatient /></Guard>} />
         <Route path="/inpatient/stay/:id" element={<Guard roles={IPD_READ}><Stay /></Guard>} />
         <Route path="/or" element={<Guard roles={OR_READ}><Or /></Guard>} />
@@ -155,7 +161,7 @@ export default function App() {
         <Route path="/ipc/hai/:id" element={<HaiCard />} />
         <Route path="/antibiogram" element={<AntibiogramPage />} />
         <Route path="/encounters/:id" element={<Guard roles={['admin', 'doctor', 'nurse']}><Encounter /></Guard>} />
-        <Route path="/admin" element={<Guard roles={['admin', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin', 'reports_all']}><AdminLayout /></Guard>}>
+        <Route path="/admin" element={<Guard roles={['admin', 'er_manage', 'pharmacist', 'billing', 'lab_doctor', 'lab_manager', 'hr', 'manager', 'med_engineer', 'tariffs', 'tariffs_approve', 'accountant', 'viewer', 'drg', 'drg_admin', 'reports_all']}><AdminLayout /></Guard>}>
           <Route index element={<AdminHome />} />
           <Route path="users" element={<Guard roles={['admin', 'hr', 'manager']}><Users /></Guard>} />
           <Route path="departments" element={<Guard roles={['admin']}><Departments /></Guard>} />
@@ -171,6 +177,7 @@ export default function App() {
           <Route path="reporting" element={<Guard roles={['admin', 'reports_all']}><ReportingAdmin /></Guard>} />
           <Route path="beds" element={<Guard roles={['admin']}><Beds /></Guard>} />
           <Route path="icu" element={<Guard roles={['admin']}><IcuSetup /></Guard>} />
+          <Route path="er" element={<Guard roles={['admin', 'er_manage']}><ErSetup /></Guard>} />
           <Route path="or" element={<Guard roles={['admin']}><OrSetup /></Guard>} />
           <Route path="printers" element={<Guard roles={['admin']}><Printers /></Guard>} />
           <Route path="catalog" element={<Guard roles={['admin', 'lab_doctor', 'lab_manager', 'billing']}><Catalog /></Guard>} />

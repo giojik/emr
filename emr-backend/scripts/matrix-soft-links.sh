@@ -42,7 +42,7 @@ declare -A EP=(
   [stock]=/stock/minmax [pharmacy]=/stock/controlled/summary [lab_stock]=/stock/lab/kits [procurement]=/payables/summary
   [cssd]=/cssd/sets [asset_register]=/assets/summary [bme]=/bme/summary [tariffs]=/tariff-lists [finance]=/finance/summary
   [drg]=/drg/meta [scrubber]=/scrub/meta [reporting]=/reporting/dashboards [quality]=/quality/reports/meta [ipc]=/ipc/hai-catalog
-  [roster]=/roster/refs [worklist]=/worklist/mine
+  [roster]=/roster/refs [worklist]=/worklist/mine [er]=/er/board
 )
 
 ORIG=$(mods | jq -c '[.[]|{code, enabled}]')
@@ -89,6 +89,7 @@ LABSVC=$(api GET "/dx/catalog?section=lab&orderable=true" | jq -r '[.[]|select(.
 step "1. რეესტრის ყველა რბილი წყვილი (A მუშაობს B-ს გარეშე)"
 PAIRS=$(echo "$REG" | jq -r '.[]|.code as $a|.soft[]|"\($a)>\(.)"')
 chk "რბილი წყვილები რეესტრში: 0086-ის 4 ახალი (lab → worklist, or → ipc, stock → cssd, bme → procurement)" "$(echo "$PAIRS" | grep -cxE 'lab>worklist|or>ipc|stock>cssd|bme>procurement')" "4"
+chk "0087: er → roster რეესტრში (მორიგე ექიმი დაფაზე)" "$(echo "$PAIRS" | grep -cx 'er>roster')" "1"
 echo "  (წყვილები სულ: $(echo "$PAIRS" | wc -l | tr -d ' '))"
 for P in $PAIRS; do
   A=${P%>*}; Bm=${P#*>}; CL=$(closure "$Bm")

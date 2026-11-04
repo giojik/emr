@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# matrix-module.sh (0086, L) — e2e მატრიცა: თითო ოპციური მოდული (29) სათითაოდ ითიშება და მოწმდება, რომ
+# matrix-module.sh (0086, L) — e2e მატრიცა: თითო ოპციური მოდული (30; 0087: + er) სათითაოდ ითიშება და მოწმდება, რომ
 #   1) მისი მთავარი endpoint → 403 MODULE_DISABLED (გამორთვამდე ჯერ ითიშება მისი დამოკიდებულები, უკუ რიგით);
 #   2) GET /modules → active = false; frontend-ის მენიუს რუკაში (lib/moduleRoutes.ts) მისი მისამართები არააქტიურია;
 #   3) დანარჩენზე smoke: პაციენტის ძებნა → ვიზიტი → ინვოისი → გადახდა; სტაციონარი; ლაბ. შეკვეთა (თუ lab აქტიურია);
@@ -38,7 +38,7 @@ declare -A EP=(
   [stock]=/stock/minmax [pharmacy]=/stock/controlled/summary [lab_stock]=/stock/lab/kits [procurement]=/payables/summary
   [cssd]=/cssd/sets [asset_register]=/assets/summary [bme]=/bme/summary [tariffs]=/tariff-lists [finance]=/finance/summary
   [drg]=/drg/meta [scrubber]=/scrub/meta [reporting]=/reporting/dashboards [quality]=/quality/reports/meta [ipc]=/ipc/hai-catalog
-  [roster]=/roster/refs [worklist]=/worklist/mine
+  [roster]=/roster/refs [worklist]=/worklist/mine [er]=/er/board
 )
 
 # --- საწყისი მდგომარეობა
@@ -95,12 +95,13 @@ smoke() {   # $1 — გამორთული მოდული (ინფ�
   fi
   if [ "$(act inpatient)" = "true" ]; then c=$(code GET /inpatient/census); [ "$c" = "200" ] || fails+=" სტაციონარი($c)"; fi
   if [ "$(act worklist)" = "true" ]; then c=$(code GET /worklist/mine); [ "$c" = "200" ] || fails+=" worklist($c)"; fi
+  if [ "$(act er)" = "true" ]; then c=$(code GET /er/board); [ "$c" = "200" ] || fails+=" ER-დაფა($c)"; fi
   if [ "$(act reporting)" = "true" ]; then c=$(code GET /reporting/dashboards); [ "$c" = "200" ] || fails+=" რეპორტინგი($c)"; fi
   c=$(code GET /worklist/count); [ "$c" = "200" ] || fails+=" worklist/count-პორტი($c)"
   echo "${fails:-ok}"
 }
 
-step "1. მატრიცა (29 მოდული)"
+step "1. მატრიცა ($(echo $ORDER | wc -w) მოდული)"
 for M in $ORDER; do
   CL=$(closure "$M")
   # რამდენიმე გავლა: 409-ზე (დამოკიდებული ჯერ ჩართულია) — შემდეგ გავლაზე; რიგი ჯგუფებს შორის არ არის ტოპოლოგიური

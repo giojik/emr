@@ -46,6 +46,7 @@ step "1. პროფილები (API)"
 PR=$(api GET /modules/profiles)
 chk "3 პროფილი: outpatient_lab, elective_inpatient, multi" "$(echo "$PR" | jq -r '[.[].code]|join(",")')" "outpatient_lab,elective_inpatient,multi"
 chk "outpatient_lab — 12 მოდული; multi — ყველა ოპციური" "$(echo "$PR" | jq -r '.[]|select(.code=="outpatient_lab")|.modules|length'):$(echo "$PR" | jq -r '.[]|select(.code=="multi")|.modules|length')" "12:$(mods | jq '[.[]|select(.core|not)]|length')"
+chk "0087: elective_inpatient — ყველა er-ის გარდა; multi — er-ით" "$(echo "$PR" | jq -r '.[]|select(.code=="elective_inpatient")|(.modules|index("er")==null)'):$(echo "$PR" | jq -r '.[]|select(.code=="elective_inpatient")|.modules|length'):$(echo "$PR" | jq -r '.[]|select(.code=="multi")|(.modules|index("er")!=null)')" "true:$(( $(mods | jq '[.[]|select(.core|not)]|length') - 1 )):true"
 chk "უცნობი პროფილი — 404" "$(code POST /modules/profiles/nope/preview -d '{}')" "404"
 PV=$(api POST /modules/profiles/outpatient_lab/preview -d '{"disable_others":true}')
 chk "preview (დანარჩენის გამორთვა): ჩასართავი 0 (ყველა ჩართულია), გამოსართავი — inpatient-ის ჩათვლით" \

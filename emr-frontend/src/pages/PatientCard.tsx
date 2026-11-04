@@ -20,11 +20,14 @@ import { OrderDialog } from './encounter/DiagnosticsPanel';
 import { ImplantsPanel } from './or/Library';
 import { ErrorBox, Field, Loading, Modal, StatusChip } from '../components/ui';
 import { age, dateGe, initials, money, tsDate } from '../lib/format';
+import { IdentifyDialog, MergeDialog, UnknownChip } from '../components/UnknownPatient';
+import { ER_REG } from './er/types';
 
 export default function PatientCard() {
   const { id = '' } = useParams();
   const { user } = useAuth();
-  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | 'lab' | null>(null);
+  const [dlg, setDlg] = useState<'appt' | 'walkin' | 'allergy' | 'edit' | 'lab' | 'identify' | 'merge' | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<string | undefined>();
   const [cum, setCum] = useState(false); const [f100, setF100] = useState(false);
   const nav = useNavigate();
   const p = useQuery({ queryKey: ['patient', id], queryFn: () => api<Patient>(`/patients/${id}`) });
@@ -43,9 +46,12 @@ export default function PatientCard() {
       <header className="topbar">
         <div className="avatar" style={{ width: 48, height: 48, fontSize: 16, background: 'var(--ink)', color: '#fff' }} aria-hidden="true">{initials(name)}</div>
         <div className="stack grow" style={{ gap: 2 }}>
-          <h1>{name}</h1>
-          <span className="muted">{x.gender === 'male' ? 'მამრობითი' : x.gender === 'female' ? 'მდედრობითი' : '—'} · {age(x.birth_date)} წლის · <span className="mono">{x.personal_number ?? `პასპ. ${x.passport_number}`}</span>{x.blood_group ? ` · ${x.blood_group}` : ''}</span>
+          <h1 className="row" style={{ gap: 8 }}>{name} <UnknownChip p={x} /></h1>
+          <span className="muted">{x.gender === 'male' ? 'მამრობითი' : x.gender === 'female' ? 'მდედრობითი' : '—'} · {x.birth_date_estimated ? '~' : ''}{age(x.birth_date)} წლის · <span className="mono">{x.personal_number ?? (x.passport_number ? `პასპ. ${x.passport_number}` : 'საბუთი —')}</span>{x.blood_group ? ` · ${x.blood_group}` : ''}</span>
         </div>
+        {x.is_unknown && !x.merged_into_id && can(user, 'admin', 'receptionist', 'er_triage', 'er_manage') && <button className="btn" type="button" onClick={() => setDlg('identify')}>იდენტიფიკაცია</button>}
+        {x.is_unknown && !x.merged_into_id && can(user, 'admin', 'er_manage') && <button className="btn" type="button" onClick={() => { setMergeTarget(undefined); setDlg('merge'); }}>გაერთიანება…</button>}
+        {!x.merged_into_id && !x.is_deceased && can(user, ...ER_REG) && <IfModule code="er" write><button className="btn" type="button" onClick={() => nav(`/er?register=${x.id}`)}>ER-ში მიღება</button></IfModule>}
         {front && <>
           <button className="btn" type="button" onClick={() => setDlg('edit')}>რედაქტირება</button>
           <IfModule code={DX_ANY} write><button className="btn" type="button" onClick={() => setDlg('lab')}>ანალიზები / რადიოლოგია</button></IfModule>
@@ -57,6 +63,8 @@ export default function PatientCard() {
       </header>
       <div className="content">
         {x.is_deceased && <div className="alert danger">პაციენტი გარდაცვლილად არის მონიშნული.</div>}
+        {x.merged_into_id && <div className="alert info">ეს დროებითი (უცნობი #{x.unknown_no}) ჩანაწერი გაერთიანებულია ნამდვილ ბარათთან — <Link to={`/patients/${x.merged_into_id}`}>ნამდვილი ბარათი →</Link></div>}
+        {x.is_unknown && !x.merged_into_id && <div className="alert warn">იდენტობა დაუდასტურებელია (უცნობი #{x.unknown_no}){x.birth_date_estimated ? ', დაბადების თარიღი შეფასებულია' : ''} — საჭიროა იდენტიფიკაცია ან გაერთიანება ნამდვილ ჩანაწერთან.</div>}
         <AllergyBanner allergies={x.allergies} chronic={x.chronic_conditions} onAdd={front || clinical ? () => setDlg('allergy') : undefined} />
         <IpcBanner patientId={id} />
 
@@ -84,7 +92,7 @@ export default function PatientCard() {
                 {visits.data.map((v) => (
                   <tr key={v.id}>
                     <td className="mono">{tsDate(v.start_time)}</td>
-                    <td>{v.type === 'inpatient' ? <Link to={`/inpatient/stay/${v.id}`}>სტაციონარი · {v.doctor_name}</Link> : v.visit_kind === 'lab' ? <span className="muted">დიაგნოსტიკური ვიზიტი (ექიმის გარეშე)</span> : clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
+                    <td>{v.type === 'emergency' ? <Link to={`/er?visit=${v.id}`}>გადაუდებელი (ER){v.doctor_name ? ` · ${v.doctor_name}` : ''}</Link> : v.type === 'inpatient' ? <Link to={`/inpatient/stay/${v.id}`}>სტაციონარი · {v.doctor_name}</Link> : v.visit_kind === 'lab' ? <span className="muted">დიაგნოსტიკური ვიზიტი (ექიმის გარეშე)</span> : clinical ? <Link to={`/encounters/${v.id}`}>{v.doctor_name}</Link> : v.doctor_name}</td>
                     <td>{v.primary_diagnosis ?? <span className="muted">—</span>}</td>
                     <td className="num">{v.total_amount ? money(v.total_amount) : '—'}</td>
                     <td><StatusChip status={v.status} /></td>
@@ -98,6 +106,8 @@ export default function PatientCard() {
       {dlg === 'appt' && <AppointmentDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'walkin' && <WalkInDialog patient={x} onClose={() => setDlg(null)} />}
       {dlg === 'allergy' && <AllergyDialog patientId={x.id} onClose={() => setDlg(null)} />}
+      {dlg === 'identify' && <IdentifyDialog patient={x} onClose={() => setDlg(null)} onMerge={can(user, 'admin', 'er_manage') ? (t) => { setMergeTarget(t.id); setDlg('merge'); } : undefined} />}
+      {dlg === 'merge' && <MergeDialog source={x} initialTarget={mergeTarget} onClose={() => setDlg(null)} onDone={(t) => nav(`/patients/${t}`)} />}
       {dlg === 'edit' && <EditPatientDialog patient={x} onClose={() => setDlg(null)} />}
       {f100 && <Form100History patientId={x.id} onClose={() => setF100(false)} />}
       {cum && <CumulativeModal patientId={x.id} title={`${x.first_name} ${x.last_name} — ლაბორატორიული დინამიკა`} onClose={() => setCum(false)} />}

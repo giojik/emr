@@ -18,6 +18,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting
   { to: '/cashier', label: 'სალარო', roles: ['admin', 'receptionist', 'billing'] },
   { to: '/doctor', label: 'ჩემი ვიზიტები', roles: ['doctor'] },
   { to: '/visits', label: 'ვიზიტები', roles: ['admin', 'nurse'] },
+  { to: '/er', label: 'გადაუდებელი', roles: ['admin', 'er_triage', 'er_doctor', 'er_manage', 'manager', 'viewer'], module: 'er' },
   { to: '/inpatient', label: 'სტაციონარი', roles: ['admin', 'doctor', 'nurse', 'receptionist', 'manager', 'viewer', 'billing', 'drg'], module: 'inpatient' },
   { to: '/or', label: 'საოპერაციო', roles: ['admin', 'doctor', 'nurse', 'or_schedule', 'anesthesiologist', 'or_nurse', 'manager', 'viewer'], module: 'or' },
   { to: '/collection', label: 'ნიმუშის აღება', roles: ['admin', 'nurse', 'phlebotomist'] },
@@ -40,6 +41,7 @@ const NAV: { to: string; label: string; roles?: Role[]; module?: string; setting
   { to: '/reports', label: 'რეპორტები', roles: ['admin', 'accountant', 'viewer', 'manager'] },
   { to: '/diagnostics/endoscopy?view=scopes', label: 'ენდოსკოპები', roles: ['med_engineer'] },
   { to: '/admin', label: 'ადმინისტრირება', roles: ['admin', 'billing', 'hr', 'manager', 'med_engineer'] },
+  { to: '/admin/er', label: 'ER — ცნობარები', roles: ['er_manage'], module: 'er', not: ['admin'] },
   { to: '/admin/tariffs', label: 'ტარიფები', roles: ['tariffs', 'tariffs_approve', 'accountant', 'viewer'] },
   { to: '/admin/drg', label: 'DRG', roles: ['drg', 'drg_admin'], module: 'drg' },
   { to: '/admin/allergens', label: 'ალერგენები', roles: ['pharmacist'] },
@@ -63,6 +65,7 @@ const HOME: Record<Role, string> = {
   bme_dept: '/bme', bme_view: '/bme',
   roster: '/roster', roster_all: '/roster', roster_view: '/roster', absence_approve: '/roster?tab=approvals',
   worklist_manage: '/tasks?tab=team', worklist_all: '/tasks?tab=team',
+  er_triage: '/er', er_doctor: '/er', er_manage: '/er',
 };
 /** საწყისი გვერდი: ძირითადი როლის პირველი უფლებით, შემდეგ — დანარჩენებით; override — მოდულის პარამეტრი (0081: „ჩემი დავალებები“ ყველასთვის) */
 export function homeFor(user: Pick<SessionUser, 'caps' | 'roles'>, override?: string | null, allowed: (path: string) => boolean = () => true) {

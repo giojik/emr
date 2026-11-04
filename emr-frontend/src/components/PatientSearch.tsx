@@ -21,7 +21,7 @@ export default function PatientSearch({ onSelect, autoFocus, initial = '' }: { o
     <div className="stack" style={{ gap: 0 }}>
       <label htmlFor="psearch" className="sr-only">პაციენტის ძებნა</label>
       <div className="row" style={{ position: 'relative' }}>
-        <input id="psearch" className="input" autoFocus={autoFocus} autoComplete="off" placeholder="პირადი ნომერი, გვარი ან ტელეფონი"
+        <input id="psearch" className="input" autoFocus={autoFocus} autoComplete="off" placeholder="პირადი ნომერი, გვარი, ტელეფონი ან #N (უცნობი)"
           value={q} onChange={(e) => { setQ(e.target.value); setIdx(0); }}
           role="combobox" aria-expanded={items.length > 0} aria-controls="psearch-list"
           onKeyDown={(e) => {
@@ -36,8 +36,8 @@ export default function PatientSearch({ onSelect, autoFocus, initial = '' }: { o
         <ul className="listbox" id="psearch-list" role="listbox" aria-label="შედეგები">
           {items.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === idx} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); onSelect(p); }}>
-              <span className="grow"><strong>{p.first_name} {p.last_name}</strong></span>
-              <span className="mono small muted">{p.personal_number ?? p.passport_number} · {dateGe(p.birth_date)} · {p.phone_number}</span>
+              <span className="grow"><strong>{p.first_name} {p.last_name}</strong>{p.is_unknown && <span className="chip warn" style={{ marginLeft: 6 }}>უცნობი #{p.unknown_no}</span>}</span>
+              <span className="mono small muted">{p.personal_number ?? p.passport_number ?? '—'} · {p.birth_date_estimated ? '~' : ''}{dateGe(p.birth_date)}{p.phone_number ? ` · ${p.phone_number}` : ''}</span>
             </li>
           ))}
         </ul>

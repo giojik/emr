@@ -30,7 +30,8 @@ export type Role = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'billing' | '
   | 'infection' | 'infection_dept' | 'infection_view'
   | 'bme_dept' | 'bme_view'
   | 'roster' | 'roster_all' | 'roster_view' | 'absence_approve'
-  | 'worklist_manage' | 'worklist_all';
+  | 'worklist_manage' | 'worklist_all'
+  | 'er_triage' | 'er_doctor' | 'er_manage';
 export interface SessionResponse { accessToken: string; expiresIn: number; user: SessionUser }
 
 let accessToken: string | null = null;

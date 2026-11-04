@@ -23,6 +23,7 @@ const TABS: { to: string; label: string; roles: string[] }[] = [
   { to: '/admin/reporting', label: 'რეპორტინგი', roles: ['admin', 'reports_all'] },
   { to: '/admin/beds', label: 'საწოლფონდი', roles: ['admin'] },
   { to: '/admin/icu', label: 'რეანიმაცია', roles: ['admin'] },
+  { to: '/admin/er', label: 'გადაუდებელი (ER)', roles: ['admin', 'er_manage'] },
   { to: '/admin/or', label: 'საოპერაციო', roles: ['admin'] },
   { to: '/admin/printers', label: 'პრინტერები', roles: ['admin'] },
   { to: '/admin/templates', label: 'დოკუმენტების შაბლონები', roles: ['admin'] },

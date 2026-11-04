@@ -71,7 +71,7 @@ ROLE_NURSE_ID=$(api GET /roles "$ADM" | jq -r --arg c "$R_NURSE" '.[]|select(.co
 
 step "1. მოდული, უფლებები, პარამეტრები"
 CAPS=$(api GET /roles/capabilities "$ADM")
-chk "უფლებები: worklist_manage, worklist_all; სულ 47" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="worklist_manage" or .code=="worklist_all")]|length'):$(echo "$CAPS" | jq length)" "2:47"
+chk "უფლებები: worklist_manage, worklist_all; სულ 50 (0087: + er_*)" "$(echo "$CAPS" | jq -r '[.[]|select(.code=="worklist_manage" or .code=="worklist_all")]|length'):$(echo "$CAPS" | jq length)" "2:50"
 chk "უცნობი პარამეტრი / assign_scope / ვადები (2 ელემენტი) / უცნობი წყარო — 400" "$(code PUT /modules/worklist "$ADM" -d '{"settings":{"foo":1},"reason":"ტესტ"}'):$(code PUT /modules/worklist "$ADM" -d '{"settings":{"assign_scope":"all"},"reason":"ტესტ"}'):$(code PUT /modules/worklist "$ADM" -d '{"settings":{"due_default_hours":[1,2]},"reason":"ტესტ"}'):$(code PUT /modules/worklist "$ADM" -d '{"settings":{"sources":{"xyz":false}},"reason":"ტესტ"}')" "400:400:400:400"
 REFS=$(api GET /worklist/refs "$N1")
 chk "ცნობარი: 5 seed კატეგორია; ექთანი — ხელმძღვანელის ხედი / კატეგორიები არა; წყაროები ≥ 21" "$(echo "$REFS" | jq -r '[.categories[]|select(.code=="ADMIN" or .code=="CLINICAL" or .code=="TECH" or .code=="CLEANING" or .code=="OTHER")]|length'):$(echo "$REFS" | jq -r '"\(.can.team):\(.can.categories)"'):$(echo "$REFS" | jq -r '.sources|length >= 21')" "5:false:false:true"
