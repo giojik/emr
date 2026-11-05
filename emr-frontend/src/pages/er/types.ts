@@ -10,6 +10,7 @@ export const ER_MANAGE: Role[] = ['admin', 'er_manage'];
 export interface ErSettings {
   triage_scale: string; triage_target_min: number; doctor_before_triage: 'allow' | 'block'; ambulance_fields: 'optional' | 'required';
   retriage_alert: boolean; news2_hint: boolean; show_on_duty: boolean; board_refresh_sec: number; tv_patient_names: 'initials' | 'full';
+  payer_at_registration?: 'off' | 'optional' | 'required';
 }
 export interface TriageLevel { scale_code: string; level: number; name: string; color: string; target_doctor_min: number; retriage_min: number | null; description: string | null; is_active: boolean }
 export interface TriageScale { code: string; name: string; description: string | null; is_system: boolean; is_active: boolean; sort_order: number; levels: TriageLevel[] }
@@ -20,6 +21,7 @@ export interface ErMeta {
   settings: ErSettings; departments: { id: string; name: string; code: string }[]; arrival_modes: ArrivalMode[]; scales: TriageScale[]; spots: Spot[];
   institutions: { id: string; name: string }[]; waiting_for: string[];
   perms: { register: boolean; triage: boolean; pickup: boolean; assign: boolean; manage: boolean; identify: boolean; merge: boolean };
+  payers?: { id: string; name: string; kind: string }[];
 }
 export type ErStatus = 'waiting' | 'triaged' | 'in_treatment' | 'departed' | 'cancelled';
 export interface BoardItem {

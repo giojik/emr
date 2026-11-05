@@ -11,6 +11,7 @@ import type { AuthUser } from '../auth/roles';
 import { InjectDb, type Database } from '../database/database.module';
 import { NotificationsService } from '../notifications/notifications';
 import { OBS_KEYS, SLA_KEYS, SOURCE_CODES } from '../worklist/worklist-common';
+import { REMINDER_KINDS, WL_TO_OPTIONS } from '../er/er-access';
 import { loadEnv } from '../config/env';
 import { LicenseService, type LicenseStatus } from '../license/license.service';
 import { LicenseController } from '../license/license.controller';
@@ -349,6 +350,17 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       summary_mode: (v) => oneOf(v, ['builtin', 'template']),
       summary_sections: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 10 && new Set(v).size === v.length
         && v.every((x) => typeof x === 'string' && ['arrival', 'triage', 'notes', 'diagnoses', 'lab', 'dx', 'consults', 'orders', 'disposition', 'recommendations'].includes(x)),
+      // 0091: ბილინგი / სამუშაო სიები / შეხსენებები
+      fee_mode: (v) => oneOf(v, ['none', 'visit', 'level', 'time']), fee_at: (v) => oneOf(v, ['departure', 'doctor']), fee_level_basis: (v) => oneOf(v, ['last', 'highest']),
+      fee_exempt: (v) => Array.isArray(v) && v.length <= 6 && new Set(v).size === v.length && v.every((x) => typeof x === 'string' && ['home', 'admitted', 'transfer', 'ama', 'lwbs', 'death'].includes(x)),
+      admit_invoice: (v) => oneOf(v, ['merge', 'separate', 'ask']), admit_fee: (v) => oneOf(v, ['charge', 'exempt']),
+      invoice_close: (v) => oneOf(v, ['departure', 'doc_close', 'manual']), unpaid_check: (v) => oneOf(v, ['info', 'warn', 'off']),
+      payer_at_registration: (v) => oneOf(v, ['off', 'optional', 'required']),
+      reminders: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length > 0
+        && Object.entries(v as Record<string, unknown>).every(([k, x]) => (REMINDER_KINDS as readonly string[]).includes(k) && typeof x === 'boolean'),
+      remind_repeat_min: (v) => v === 0 || int(v, 15, 720), admit_wait_min: (v) => int(v, 10, 1440), doc_close_warn_h: (v) => int(v, 0, 48),
+      wl_to: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length > 0
+        && Object.entries(v as Record<string, unknown>).every(([k, x]) => k in WL_TO_OPTIONS && (WL_TO_OPTIONS[k as keyof typeof WL_TO_OPTIONS] as readonly unknown[]).includes(x)),
     },
     extra: async (s, db) => {
       const c = s.triage_scale as string | undefined;

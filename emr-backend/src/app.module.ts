@@ -55,6 +55,7 @@ import { RosterCoreModule } from './roster/roster-common';
 import { RosterModule } from './roster/roster.module';
 import { WorklistModule } from './worklist/worklist.module';
 import { ErModule } from './er/er';
+import { ErBillingModule } from './er/er-billing';
 import { ErClinicalModule } from './er/er-clinical';
 import { ErOrdersModule } from './er/er-orders';
 import { ErDispositionModule } from './er/er-disposition';
@@ -64,7 +65,7 @@ import { PgLockFilter } from './common/pg-lock.filter';
 @Module({
   imports: [DatabaseModule, AuditModule, NotificationsModule, ModulesModule, AssetsModule, CssdModule, InpatientModule, TemplatesModule, EpicrisisModule, TransfersModule, DischargeModule, OrdersModule, MarModule, NursingModule, IcuModule, OrAdminModule, OrModule, NotesModule, IpdBillingModule, BillingConfigModule, AuthModule, DepartmentsModule, UsersModule, RolesModule, ManagementReportsModule, Icd10Module, PatientsModule,
     TariffsModule, AppointmentsModule, EncountersModule, BillingModule,
-    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule, DrgModule, ScrubModule, ConfigPackageModule, RptCommonModule, ReportingModule, QualityModule, IpcModule, BmeCoreModule, BmeModule, RosterCoreModule, RosterModule, WorklistModule, ErModule, ErClinicalModule, ErOrdersModule, ErDispositionModule],
+    StorageModule, ClinicSettingsModule, DocumentsModule, AllergiesModule, ReportsModule, PatientFilesModule, ConsentsModule, DiagnosticsModule, StockModule, ProcurementModule, FinanceModule, DrgModule, ScrubModule, ConfigPackageModule, RptCommonModule, ReportingModule, QualityModule, IpcModule, BmeCoreModule, BmeModule, RosterCoreModule, RosterModule, WorklistModule, ErModule, ErClinicalModule, ErOrdersModule, ErDispositionModule, ErBillingModule],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: PgLockFilter }],
 })

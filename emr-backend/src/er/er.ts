@@ -14,7 +14,8 @@ import { news2 } from '../inpatient/news2';
 import { ClinicalHistory, RequireModule } from '../modules/module-guard';
 import { ModulesService } from '../modules/modules';
 import { RosterLookup } from '../roster/roster-common';
-import { erCanWrite, type ErClinicalSettings } from './er-access';
+import { erCanWrite, mergeErSettings, type ErClinicalSettings } from './er-access';
+import { erFeeSync } from './er-billing';
 
 /**
  * გადაუდებელი დახმარება (ER), 0087 (+ 0090: გამოსავალი — er-disposition.ts) — რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი, დაფა / TV, ადგილები, ცნობარები.
@@ -76,6 +77,9 @@ export class RegisterDto {
   @IsOptional() @IsUUID() referral_institution_id?: string;
   @IsOptional() @IsString() @MaxLength(1000) arrival_note?: string;
   @IsOptional() @IsUUID() spot_id?: string;
+  /** 0091: გადამხდელი რეგისტრაციისას (payer_at_registration: off / optional / required) */
+  @IsOptional() @IsUUID() payer_id?: string;
+  @IsOptional() @IsBoolean() self_pay?: boolean;
 }
 class TriageVitals {
   @IsOptional() @Transform(num) @IsInt() @Min(40) @Max(300) systolic_bp?: number;
@@ -180,8 +184,10 @@ export class ErService {
       this.db.selectFrom('er_spots as s').innerJoin('departments as d', 'd.id', 's.department_id').selectAll('s').select('d.name as department_name').orderBy('d.name').orderBy('s.sort_order').orderBy('s.code').execute(),
       this.db.selectFrom('external_institutions').select(['id', 'name']).where('is_active', '=', true).orderBy('sort_order').orderBy('name').execute(),
     ]);
-    return { settings: s, departments, arrival_modes: arrival, scales: scales.map((x) => ({ ...x, levels: levels.filter((l) => l.scale_code === x.code) })),
-      spots, institutions, waiting_for: WAITING_FOR, perms: this.perms(u) };
+    const cfg = mergeErSettings(s);
+    const payers = cfg.payer_at_registration === 'off' ? [] : await this.db.selectFrom('payers').select(['id', 'name', 'kind']).where('is_active', '=', true).orderBy('kind').orderBy('name').execute();
+    return { settings: { ...s, payer_at_registration: cfg.payer_at_registration }, departments, arrival_modes: arrival, scales: scales.map((x) => ({ ...x, levels: levels.filter((l) => l.scale_code === x.code) })),
+      spots, institutions, waiting_for: WAITING_FOR, perms: this.perms(u), payers };
   }
   async staff() {
     const rows = await this.db.selectFrom('users as u').innerJoin('user_capabilities as c', 'c.user_id', 'u.id')
@@ -206,6 +212,15 @@ export class ErService {
         if (dto.referral_institution_id && !(await trx.selectFrom('external_institutions').select('id').where('id', '=', dto.referral_institution_id).executeTakeFirst())) {
           throw new BadRequestException('გამგზავნი კლინიკა ვერ მოიძებნა');
         }
+        // 0091: გადამხდელი რეგისტრაციისას
+        const cfg = mergeErSettings(s);
+        let payer: { id: string; kind: string } | null = null;
+        if (cfg.payer_at_registration !== 'off' && dto.payer_id) {
+          const p = await trx.selectFrom('payers').select(['id', 'kind', 'is_active']).where('id', '=', dto.payer_id).executeTakeFirst();
+          if (!p?.is_active) throw new BadRequestException('გადამხდელი ვერ მოიძებნა ან გათიშულია');
+          payer = p;
+        }
+        if (cfg.payer_at_registration === 'required' && !payer && !dto.self_pay) throw new BadRequestException({ code: 'ER_PAYER_REQUIRED', message: 'მიუთითეთ გადამხდელი ან „თვითდაფინანსება“' });
         const arrived = dto.arrived_at ? new Date(dto.arrived_at) : new Date();
         if (arrived.getTime() > Date.now() + 5 * 60_000) throw new BadRequestException('შემოსვლის დრო მომავალშია');
         if (arrived.getTime() < Date.now() - 24 * 3600_000) throw new BadRequestException('შემოსვლის დრო 24 საათზე ძველია');
@@ -218,6 +233,7 @@ export class ErService {
         const enc = await trx.insertInto('encounters').values({ patient_id: patient.id, department_id: dep.id, type: 'emergency', status: 'active',
           start_time: arrived.toISOString(), chief_complaint: dto.chief_complaint.trim() }).returningAll().executeTakeFirstOrThrow();
         await trx.insertInto('invoices').values({ encounter_id: enc.id, total_amount: '0', patient_share: '0',
+          insurance_payer_id: payer && payer.kind !== 'state' ? payer.id : null, state_payer_id: payer?.kind === 'state' ? payer.id : null,
           invoice_number: sql<string>`'INV-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('invoice_number_seq')::text, 6, '0')` }).execute();
         const visitNo = await this.nextNo(trx);
         const v = await trx.insertInto('er_visits').values({
@@ -226,7 +242,7 @@ export class ErService {
           arrival_note: dto.arrival_note?.trim() || null, chief_complaint: dto.chief_complaint.trim(), spot_id: dto.spot_id ?? null, created_by: u.id,
         }).returningAll().executeTakeFirstOrThrow();
         await this.audit.log(ctx, { action: 'ER_REGISTER', entityName: 'er_visits', entityId: enc.id,
-          newData: { visit_no: visitNo, patient_id: patient.id, unknown: patient.is_unknown, department_id: dep.id, arrival_mode: mode.code, spot_id: v.spot_id } }, trx);
+          newData: { visit_no: visitNo, patient_id: patient.id, unknown: patient.is_unknown, department_id: dep.id, arrival_mode: mode.code, spot_id: v.spot_id, payer_id: payer?.id ?? null } }, trx);
         return { ...v, patient };
       });
     } catch (e) { mapPgError(e, { uq_er_visit_active_patient: 'პაციენტი უკვე ER-შია', uq_er_visit_active_spot: 'ადგილი დაკავებულია', patients_personal_number_key: 'პაციენტი ამ პირადი ნომრით უკვე არსებობს — აირჩიეთ ძებნით' }); }
@@ -336,6 +352,7 @@ export class ErService {
         .where('encounter_id', '=', id).returningAll().executeTakeFirstOrThrow();
       await trx.updateTable('encounters').set({ attending_doctor_id: u.id }).where('id', '=', id).execute();
       await this.audit.log(ctx, { action: 'ER_PICKUP', entityName: 'er_visits', entityId: id, oldData: { doctor_id: v.doctor_id, status: v.status }, newData: { doctor_id: u.id, first: !v.doctor_at } }, trx);
+      if (!v.doctor_at && mergeErSettings(s).fee_at === 'doctor') await erFeeSync(trx, id, u.id);   // 0091: ტარიფი ექიმის აყვანისას
       return r;
     });
   }
@@ -377,11 +394,13 @@ export class ErService {
         if (!has(u, 'er_triage')) throw new ForbiddenException('უფლება არ გაქვთ');
         if (v.status !== 'waiting') throw new ForbiddenException('ტრიაჟის შემდეგ გაუქმება — მხოლოდ ER-ის მენეჯერს');
       }
-      const paid = await trx.selectFrom('invoices as i').innerJoin('invoice_line_items as l', 'l.invoice_id', 'i.id').select('l.id').where('i.encounter_id', '=', id).limit(1).executeTakeFirst();
+      const paid = await trx.selectFrom('invoices as i').innerJoin('invoice_line_items as l', 'l.invoice_id', 'i.id').select('l.id').where('i.encounter_id', '=', id)
+        .where('l.er_fee_rule_id', 'is', null).limit(1).executeTakeFirst();   // 0091: ER-ის ტარიფის ხაზი (fee_at = doctor) — არ ითვლება, იშლება
       if (paid) throw new ConflictException('შემთხვევას უკვე აქვს მომსახურება ინვოისში — გაუქმება შეუძლებელია');
       // 0089: მიცემული მედიკამენტი / შესრულებული პროცედურა — გაუქმება შეუძლებელია (ჯერ — მიცემის გაუქმება, შემობრუნებით)
       const given = await trx.selectFrom('er_administrations').select('id').where('encounter_id', '=', id).where('voided_at', 'is', null).where('outcome', 'in', ['given', 'partial']).limit(1).executeTakeFirst();
       if (given) throw new ConflictException({ code: 'ER_HAS_ADMINISTRATIONS', message: 'შემთხვევაში მედიკამენტი უკვე მიცემულია — გაუქმება შეუძლებელია' });
+      await sql`DELETE FROM invoice_line_items l USING invoices i WHERE i.id = l.invoice_id AND i.encounter_id = ${id} AND l.er_fee_rule_id IS NOT NULL`.execute(trx);
       await trx.updateTable('er_orders').set({ status: 'stopped', stopped_at: sql`now()`, stopped_by: u.id, stop_reason: `ER-ის შემთხვევის გაუქმება: ${reason}` })
         .where('encounter_id', '=', id).where('status', '=', 'active').execute();
       const r = await trx.updateTable('er_visits').set({ status: 'cancelled', ended_at: sql<string>`now()`, end_reason: reason, spot_id: null })

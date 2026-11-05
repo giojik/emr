@@ -1,5 +1,6 @@
 import { Field } from '../../components/ui';
 import { useErMeta } from './Er';
+import { ErFeeRules } from './ErFeeRules';
 
 const SECTIONS: [string, string][] = [['arrival', 'შემოსვლა'], ['triage', 'ტრიაჟი'], ['notes', 'ჩანაწერები'], ['diagnoses', 'დიაგნოზი'], ['lab', 'ლაბორატორია'],
   ['dx', 'ინსტრუმენტული'], ['consults', 'კონსულტაციები'], ['orders', 'მკურნალობა'], ['disposition', 'გამოსავალი'], ['recommendations', 'რეკომენდაციები']];
@@ -85,7 +86,52 @@ export function ErSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
         <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
           {chk('recommendations_required', 'რეკომენდაციები სავალდებულოა (სახლში / გადაყვანა / AMA)')}
         </div>
+        <h3 style={{ gridColumn: '1 / -1', margin: '6px 0 0' }}>ბილინგი (0091)</h3>
+        {sel('fee_mode', 'ER-ის მომსახურების ტარიფი', 'visit', [['none', 'არ ერიცხება'], ['visit', 'ვიზიტზე (ერთი ტარიფი)'], ['level', 'ტრიაჟის დონით'], ['time', 'ხანგრძლივობით (ზოლები / საათი)']], 'წესები — ქვემოთ, ფასი — ტარიფებში')}
+        {sel('fee_at', 'ტარიფი ერიცხება', 'departure', [['departure', 'გამოსავლისას'], ['doctor', 'ექიმის აყვანისას (ხანგრძლივობით — გამოსავლისას)']])}
+        {sel('fee_level_basis', 'ტრიაჟის დონე ტარიფისთვის', 'last', [['last', 'ბოლო დონე'], ['highest', 'ყველაზე სასწრაფო დონე']])}
+        {sel('admit_invoice', 'ინვოისი ჰოსპიტალიზაციისას', 'merge', [['merge', 'გაერთიანება სტაციონარისაში'], ['separate', 'ცალკე რჩება'], ['ask', 'არჩევით (ვინც აფორმებს)']], 'გადახდილი / ქლეიმში შემავალი ER-ის ინვოისი — ცალკე რჩება')}
+        {sel('admit_fee', 'ER-ის ტარიფი ჰოსპიტალიზაციისას', 'charge', [['charge', 'ერიცხება'], ['exempt', 'არ ერიცხება']])}
+        {sel('invoice_close', 'ER-ის ინვოისის დახურვა', 'departure', [['departure', 'გამოსავლისას'], ['doc_close', 'დოკუმენტაციის ფანჯრის ბოლოს'], ['manual', 'ხელით (ბილინგი)']])}
+        {sel('unpaid_check', 'გადაუხდელი ნაშთი გამოსავლისას', 'info', [['info', 'ინფორმაცია'], ['warn', 'გაფრთხილება (დასაბუთებით)'], ['off', 'არ ჩანს']], 'გამოსავალს არასდროს ბლოკავს')}
+        {sel('payer_at_registration', 'გადამხდელი რეგისტრაციისას', 'optional', [['off', 'არ ჩანს'], ['optional', 'არასავალდებულო'], ['required', 'სავალდებულო (ან თვითდაფინანსება)']])}
+        <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
+          <span className="small muted">ტარიფი არ ერიცხება გამოსავლისას:</span>
+          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>{DISP.map(([k, l]) => {
+            const cur = (s.fee_exempt as string[] | undefined) ?? ['lwbs'];
+            return <label key={k} className="row small"><input type="checkbox" checked={cur.includes(k)} onChange={(e) => upd('fee_exempt', e.target.checked ? [...cur, k] : cur.filter((x) => x !== k))} /> {l}</label>; })}</div>
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}><ErFeeRules /></div>
+        <h3 style={{ gridColumn: '1 / -1', margin: '6px 0 0' }}>სამუშაო სიები / შეხსენებები (0091)</h3>
+        {WL.map(([k, l, opts]) => {
+          const cur = (s.wl_to as Record<string, string> | undefined) ?? {};
+          return <Field key={k} label={l} htmlFor={`er-wl-${k}`}><select id={`er-wl-${k}`} className="select" value={cur[k] ?? opts[0][0]} onChange={(e) => upd('wl_to', { ...cur, [k]: e.target.value })}>
+            {opts.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>;
+        })}
+        <Field label="შეხსენების გამეორება (წთ)" htmlFor="er-remind_repeat_min" hint="0 — ერთხელ; 15–720 — ვადაგადაცილებულზე ყოველ N წთ-ში">
+          <input id="er-remind_repeat_min" className="input mono" type="number" min={0} max={720} value={Number(s.remind_repeat_min ?? 0)}
+            onChange={(e) => { const v = Math.round(Number(e.target.value) || 0); upd('remind_repeat_min', v <= 0 ? 0 : Math.max(15, Math.min(720, v))); }} /></Field>
+        <Field label="ჰოსპიტალიზაციის მოთხოვნა — ესკალაცია (წთ)" htmlFor="er-admit_wait_min" hint="10–1440; → განყოფილების ხელმძღვანელი + ER-ის მენეჯერი">{int('admit_wait_min', 60, 10, 1440)}</Field>
+        <Field label="ფანჯრის დახურვამდე შეხსენება (სთ)" htmlFor="er-doc_close_warn_h" hint="0–48; 0 — გამორთულია">{int('doc_close_warn_h', 2, 0, 48)}</Field>
+        <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
+          <span className="small muted">შეხსენებები (ზარი):</span>
+          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>{REM.map(([k, l]) => {
+            const cur = (s.reminders as Record<string, boolean> | undefined) ?? {};
+            return <label key={k} className="row small"><input type="checkbox" checked={cur[k] !== false} onChange={(e) => upd('reminders', { ...cur, [k]: e.target.checked })} /> {l}</label>; })}</div>
+        </div>
       </div>
     </div>
   );
 }
+
+const DISP: [string, string][] = [['home', 'სახლში'], ['admitted', 'ჰოსპიტალიზაცია'], ['transfer', 'გადაყვანა'], ['ama', 'AMA'], ['lwbs', 'LWBS'], ['death', 'გარდაცვალება']];
+const REM: [string, string][] = [['verbal', 'ზეპირი დანიშნულება'], ['stat', 'STAT-ის ვადა'], ['consult', 'კონსულტაციის ვადა'], ['admit_wait', 'ჰოსპიტალიზაციის მოთხოვნა'],
+  ['retriage', 'განმეორებითი ტრიაჟი'], ['doc_close', 'დოკუმენტაციის ფანჯარა']];
+const WL: [string, string, [string, string][]][] = [
+  ['er_verbal', 'სია „ზეპირი — დადასტურება“', [['ordering', 'დამნიშნავი ექიმი'], ['ordering_team', '+ ER-ის ყველა ექიმი (გუნდი)']]],
+  ['er_stat', 'სია „STAT — შესასრულებელი“', [['nurses', 'ER-ის ექთნები'], ['nurses_doctor', 'ექთნები + მკურნალი ექიმი']]],
+  ['er_admit_req', 'სია „ჰოსპიტალიზაციის მოთხოვნა“', [['doctors', 'განყოფილების ექიმები'], ['head', 'განყოფილების ხელმძღვანელი']]],
+  ['er_retriage', 'სია „განმეორებითი ტრიაჟი“', [['triage', 'ტრიაჟის ექთანი'], ['triage_nurses', '+ ER-ის ექთნები']]],
+  ['er_doc_open', 'სია „დოკუმენტაციის ფანჯარა“', [['attending', 'მკურნალი ექიმი'], ['attending_author', '+ მონახაზის ავტორი']]],
+  ['er_unpaid', 'სია „ER — გადაუხდელი“', [['billing', 'ბილინგი'], ['billing_reception', 'ბილინგი + რეგისტრატურა']]],
+];

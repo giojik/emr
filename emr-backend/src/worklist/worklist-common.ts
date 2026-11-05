@@ -210,6 +210,13 @@ export const SOURCES: Record<string, { group: string; name: string; module: stri
   transfer_in: { group: 'კონსულტაცია / გადაყვანა', name: 'გადმოყვანის მოთხოვნა', module: 'inpatient', who: 'მიმღები განყოფილება (dept_side)' },
   // ---- 0088: ER — კონსულტაცია ER-ის შემთხვევაზე (ER-ის სამუშაო სიები — 0090)
   er_consult: { group: 'კონსულტაცია / გადაყვანა', name: 'კონსულტაცია ER-ში — მოთხოვნილი', module: 'er', who: 'სამიზნე ექიმი / განყოფილების ექიმები (სასწრაფო + duty — მორიგე)' },
+  // ---- 0091: ER — სამუშაო სიები (მიმღებები — ER-ის პარამეტრი wl_to)
+  er_verbal: { group: 'გადაუდებელი (ER)', name: 'ზეპირი დანიშნულება — დადასტურება (ER)', module: 'er', who: 'დამნიშნავი ექიმი (ordering) / ER-ის ექიმები (ordering_team)' },
+  er_stat: { group: 'გადაუდებელი (ER)', name: 'STAT — შესასრულებელი (ER)', module: 'er', who: 'ER-ის განყოფილების ექთნები (+ მკურნალი ექიმი — nurses_doctor)' },
+  er_admit_req: { group: 'გადაუდებელი (ER)', name: 'ჰოსპიტალიზაციის მოთხოვნა ER-იდან', module: 'er', who: 'განყოფილების ექიმები (doctors) / ხელმძღვანელი (head) + სასურველი მკურნალი' },
+  er_retriage: { group: 'გადაუდებელი (ER)', name: 'განმეორებითი ტრიაჟი — ვადა', module: 'er', who: 'ტრიაჟის ექთანი (+ ER-ის ექთნები — triage_nurses)' },
+  er_doc_open: { group: 'გადაუდებელი (ER)', name: 'ER-ის დოკუმენტაცია — ფანჯარა ღიაა', module: 'er', who: 'მკურნალი ექიმი (+ მონახაზის ავტორი — attending_author)' },
+  er_unpaid: { group: 'გადაუდებელი (ER)', name: 'ER — გადაუხდელი ნაშთი', module: 'er', who: 'ბილინგი (billing) / + რეგისტრატურა (billing_reception)' },
   // ---- 0083: საექთნო / NEWS2
   nur_scale: { group: 'საექთნო / NEWS2', name: 'სავალდებულო შკალები — ვადა (პაციენტზე)', module: 'inpatient', who: 'განყოფილების ექთნები (nurse_scope)' },
   nur_line: { group: 'საექთნო / NEWS2', name: 'ხაზი / კათეტერი — საჭიროების შეფასება', module: 'inpatient', who: 'მკურნალი ექიმი + განყოფილების ექთნები' },
@@ -271,6 +278,9 @@ export const BELL_SOURCE: Record<string, string> = {
   ipd_consult: 'consult_todo', ipd_consult_late: 'consult_todo', ipd_transfer_late: 'transfer_in', ipd_scale_due: 'nur_scale', ipd_line_due: 'nur_line',
   icu_sheet_gap: 'icu_sheet', icu_bundle_due: 'icu_bundle', icu_sofa_due: 'icu_sofa', or_request: 'or_request',
   lab_ready: 'res_ack', lab_prelim: 'res_ack',
+  // 0091: ER
+  er_verbal_confirm: 'er_verbal', er_remind_verbal: 'er_verbal', er_remind_stat: 'er_stat', er_admit_request: 'er_admit_req', er_remind_admit: 'er_admit_req',
+  er_remind_retriage: 'er_retriage', er_remind_doc: 'er_doc_open', er_consult: 'er_consult', er_remind_consult: 'er_consult',
 };
 export const BELL_ALWAYS = new Set(['lab_critical', 'mar_missed', 'ipd_mar_missed', 'ipd_news2', 'cssd_recall', 'bme_sla_breach', 'wl_task']);
 

@@ -1,5 +1,6 @@
 import { sql, type Transaction } from 'kysely';
 import type { DB } from '../database/db';
+import { erBillingOnReopen, erInvoiceUnmerge } from './er-billing';
 
 /**
  * 0090: ER-ის გამოსავლის გაუქმება (შეცდომა) — DI-ს გარეშე (ER-ის reopen და სტაციონარის „ჰოსპიტალიზაციის გაუქმება“ ერთნაირად იყენებს).
@@ -21,6 +22,8 @@ export async function reopenErVisitTx(trx: Transaction<DB>, encounterId: string,
     const v = await trx.selectFrom('er_visits').select('patient_id').where('encounter_id', '=', encounterId).executeTakeFirstOrThrow();
     await trx.updateTable('patients').set({ is_deceased: false, death_datetime: null }).where('id', '=', v.patient_id).execute();
   }
+  // 0091: ინვოისი იხსნება (ქლეიმში შემავალი — არა), გამოსავლის ტარიფი იშლება (fee_at = doctor — რჩება)
+  await erBillingOnReopen(trx, encounterId, userId);
   return x;
 }
 
@@ -29,5 +32,6 @@ export async function erOnAdmissionCancelled(trx: Transaction<DB>, inpatientEnco
   const x = await trx.selectFrom('er_dispositions').select(['encounter_id']).where('inpatient_encounter_id', '=', inpatientEncounterId).where('reopened_at', 'is', null)
     .where('kind', '=', 'admitted').forUpdate().executeTakeFirst();
   if (!x) return null;
+  await erInvoiceUnmerge(trx, inpatientEncounterId);   // 0091: გაერთიანებული ER-ის ხაზები ბრუნდება
   return reopenErVisitTx(trx, x.encounter_id, userId, `ჰოსპიტალიზაცია გაუქმდა: ${reason}`);
 }

@@ -623,7 +623,7 @@ export class InpatientService {
         if (hours > s.cancel_hours) throw new ConflictException(`გაუქმების ვადა (${s.cancel_hours} სთ) გასულია — მიმართეთ ადმინისტრატორს`);
       }
       const used = await sql<{ n: number }>`SELECT (
-          (SELECT count(*) FROM invoice_line_items l JOIN invoices i ON i.id = l.invoice_id WHERE i.encounter_id = ${encounterId})
+          (SELECT count(*) FROM invoice_line_items l JOIN invoices i ON i.id = l.invoice_id WHERE i.encounter_id = ${encounterId} AND l.moved_from_invoice_id IS NULL)   -- 0091: ER-იდან გადატანილი — არა
         + (SELECT count(*) FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE i.encounter_id = ${encounterId})
         + (SELECT count(*) FROM dx_order_items x WHERE x.encounter_id = ${encounterId} AND x.status <> 'cancelled')
         + (SELECT count(*) FROM stock_docs d WHERE d.encounter_id = ${encounterId})

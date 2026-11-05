@@ -211,7 +211,7 @@ OINF=$(O "$E8" '{"kind":"infusion","order_type":"once","drug_text":"ტესტ
 OPR=$(O "$E8" '{"kind":"procedure","order_type":"once","text":"ტესტ-E2E შარდის ბუშტის კათეტერი"}')
 api POST "/er/orders/$OINF/administer" "$TR" -d '{"outcome":"given","infusion_action":"start","override_reason":"ტესტ-E2E"}' >/dev/null
 I=$(INFO "$E8")
-chk "ჰოსპიტალიზაცია: info ORDERS_RECONCILE; 3 დანიშნულება, ნაგულისხმევი — გაგრძელება; ინფუზია — running" "$(echo "$I" | jq -r '"\([.checks.admitted[]|.code]|join(",")):\(.orders|length):\([.orders[]|.default]|unique|join(",")):\([.orders[]|select(.running)]|length)"')" "ORDERS_RECONCILE:3:continue:1"
+chk "ჰოსპიტალიზაცია: info ORDERS_RECONCILE; 3 დანიშნულება, ნაგულისხმევი — გაგრძელება; ინფუზია — running" "$(echo "$I" | jq -r '"\([.checks.admitted[]|.code|select(startswith("INVOICE_")|not)]|join(",")):\(.orders|length):\([.orders[]|.default]|unique|join(",")):\([.orders[]|select(.running)]|length)"')" "ORDERS_RECONCILE:3:continue:1"
 chk "admit-request (direct რეჟიმში) — 400 ER_ADMIT_DIRECT_MODE; მკურნალის გარეშე — 400" "$(api POST "/er/visits/$E8/admit-request" "$DR" -d "{\"department_id\":\"$DIN\",\"icd10_code\":\"J18.9\"}" | jq -r .code):$(code POST "/er/visits/$E8/disposition" "$DR" -d "{\"kind\":\"admitted\",\"admit\":{\"department_id\":\"$DIN\",\"icd10_code\":\"J18.9\"}}")" "ER_ADMIT_DIRECT_MODE:400"
 chk "ფორმის მონაცემები: სტაციონარის განყოფილება + ექიმი" "$(api GET /er/admit/options "$DR" | jq -r --arg d "$DIN" --arg u "$IDID" '.departments[]|select(.id==$d)|[.doctors[]|select(.id==$u)]|length')" "1"
 R=$(DISP "$E8" "$DR" "{\"kind\":\"admitted\",\"admit\":{\"department_id\":\"$DIN\",\"attending_doctor_id\":\"$IDID\",\"icd10_code\":\"J18.9\",\"severity\":\"moderate\"},\"orders_plan\":{\"$OPRN\":\"continue\",\"$OINF\":\"continue\",\"$OPR\":\"stop\"}}")
@@ -231,7 +231,7 @@ chk "ER-ის ფურცელი: გამოსავალი ჰოს�
 sets "$(echo "$BASE" | jq -c '. + {transfer_orders:"stop_all"}')" >/dev/null
 P9=$(pat 9 ცხრა); E9=$(visit "$P9"); note "$E9" >/dev/null; dx "$E9" >/dev/null
 O9=$(O "$E9" '{"kind":"procedure","order_type":"once","text":"ტესტ-E2E პროცედურა"}')
-chk "stop_all: info ORDERS_STOP" "$(INFO "$E9" | jq -r '[.checks.admitted[]|.code]|join(",")')" "ORDERS_STOP"
+chk "stop_all: info ORDERS_STOP (0091: ბილინგის info — გამოტოვებულია)" "$(INFO "$E9" | jq -r '[.checks.admitted[]|.code|select(startswith("INVOICE_")|not)]|join(",")')" "ORDERS_STOP"
 R=$(DISP "$E9" "$DR" "{\"kind\":\"admitted\",\"admit\":{\"department_id\":\"$DIN\",\"attending_doctor_id\":\"$IDID\",\"icd10_code\":\"I10\"}}")
 IP9=$(echo "$R" | jq -r '.inpatient_encounter_id // empty')
 chk "stop_all: გაგრძელება 0, შეწყვეტა 1; med_orders — 0" "$(echo "$R" | jq -r '"\(.orders.continued|length):\(.orders.stopped|length)"'):$(api GET "/inpatient/stays/$IP9/orders" "$ADM" | jq -r '.orders|length')" "0:1:0"

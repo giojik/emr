@@ -42,7 +42,7 @@ interface AdmitReq {
 export interface DispInfo {
   status: string; open: boolean; doc_open: boolean; doc_closes_at: string | null;
   settings: { admit_mode: 'direct' | 'request'; transfer_orders: 'reconcile' | 'stop_all'; ama_proof: 'consent_or_witnesses' | 'reason'; recommendations_required: boolean;
-    doc_window_h: number; reopen_h: number; summary_mode: 'builtin' | 'template' };
+    doc_window_h: number; reopen_h: number; summary_mode: 'builtin' | 'template'; admit_invoice?: 'merge' | 'separate' | 'ask'; fee_mode?: string; unpaid_check?: string };
   modules: { inpatient: boolean; ipd_orders: boolean };
   checks: Record<DKind, Check[]>; orders: OrderRow[]; disposition: Disp | null; history: Disp[]; requests: AdmitReq[];
   can: { dispose: boolean; lwbs: boolean; request: boolean; regenerate: boolean; reopen: boolean };
@@ -130,6 +130,7 @@ function DispositionForm({ info, encounterId, patientId, primaryDx, hasPending, 
   const [dep, setDep] = useState(''); const [att, setAtt] = useState(''); const [icd, setIcd] = useState<{ code: string; title: string } | null>(primaryDx);
   const [sev, setSev] = useState(''); const [iso, setIso] = useState(''); const [plan, setPlan] = useState<Record<string, 'continue' | 'stop'>>(() => Object.fromEntries(info.orders.map((o) => [o.id, o.default])));
   const [confirm, setConfirm] = useState(false);
+  const [merge, setMerge] = useState(true);   // 0091: admit_invoice = ask
   // გადაყვანა
   const [destId, setDestId] = useState(''); const [destText, setDestText] = useState(''); const [transport, setTransport] = useState(''); const [trReason, setTrReason] = useState(''); const [receiver, setReceiver] = useState('');
   // AMA
@@ -143,13 +144,14 @@ function DispositionForm({ info, encounterId, patientId, primaryDx, hasPending, 
   const request = kind === 'admitted' && info.settings.admit_mode === 'request';
   const reconcile = kind === 'admitted' && info.modules.ipd_orders && info.settings.transfer_orders === 'reconcile' && info.orders.length > 0;
   const recRequired = info.settings.recommendations_required && ['home', 'transfer', 'ama'].includes(kind);
+  const askMerge = kind === 'admitted' && info.settings.admit_invoice === 'ask' && checks.some((c) => c.code === 'INVOICE_MERGE');
   const depRow = opts.data?.departments.find((x) => x.id === dep);
   const at = customTime ? localISO(dDate, dTime) : undefined;
 
   const body = () => ({
     kind, departed_at: kind === 'death' ? undefined : at, recommendations: rec.trim() || undefined, note: note.trim() || undefined, override_reason: override.trim() || undefined,
     ...(kind === 'admitted' ? { admit: { department_id: dep, attending_doctor_id: att || undefined, icd10_code: icd?.code, severity: sev || undefined, isolation: iso || undefined, confirm: confirm || undefined },
-      orders_plan: reconcile ? plan : undefined } : {}),
+      orders_plan: reconcile ? plan : undefined, invoice_merge: askMerge ? merge : undefined } : {}),
     ...(kind === 'transfer' ? { destination_id: destId || undefined, destination_text: destId ? undefined : destText.trim(), transport: transport || undefined, transfer_reason: trReason.trim(), receiver: receiver.trim() || undefined } : {}),
     ...(kind === 'ama' ? (info.settings.ama_proof === 'reason' ? { ama_reason: amaReason.trim() } : refusalMode === 'sign' ? { refusal_consent_id: refusalId ?? undefined } : { refusal_witnesses: witnesses }) : {}),
     ...(kind === 'death' ? { death_at: localISO(dDate, dTime), death_icd10_code: deathIcd?.code, autopsy_required: autopsy ?? undefined, dead_on_arrival: doa || undefined } : {}),
@@ -157,7 +159,7 @@ function DispositionForm({ info, encounterId, patientId, primaryDx, hasPending, 
   const m = useMutation({
     mutationFn: () => request
       ? api(`/er/visits/${encounterId}/admit-request`, { body: { department_id: dep, attending_doctor_id: att || undefined, icd10_code: icd?.code, severity: sev || undefined, isolation: iso || undefined,
-          note: note.trim() || undefined, orders_plan: reconcile ? plan : undefined, override_reason: override.trim() || undefined } })
+          note: note.trim() || undefined, orders_plan: reconcile ? plan : undefined, override_reason: override.trim() || undefined, invoice_merge: askMerge ? merge : undefined } })
       : api(`/er/visits/${encounterId}/disposition`, { body: body() }),
     onSuccess: onDone,
   });
@@ -192,6 +194,7 @@ function DispositionForm({ info, encounterId, patientId, primaryDx, hasPending, 
           <Field label="იზოლაცია" htmlFor="ds-iso"><select id="ds-iso" className="select" value={iso} onChange={(e) => setIso(e.target.value)}><option value="">—</option>
             {Object.entries(ISOLATION_KA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         </div>
+        {askMerge && <label className="row small" data-testid="ds-merge"><input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} /> ER-ის ინვოისის გაერთიანება სტაციონარისაში</label>}
         <span className="label">დიაგნოზი ჰოსპიტალიზაციისას (ICD-10)</span>
         {icd ? <div className="row"><span className="mono">{icd.code}</span> {icd.title}<button className="btn sm" type="button" onClick={() => setIcd(null)}>შეცვლა</button></div>
           : <IcdPicker primary onPick={(x) => setIcd({ code: x.code, title: x.title })} />}

@@ -1617,6 +1617,7 @@ export interface ErAdmitRequests {
   icd10_title: string;
   id: Generated<string>;
   inpatient_encounter_id: string | null;
+  invoice_merge: boolean | null;
   isolation: string | null;
   note: string | null;
   orders_plan: Generated<Json>;
@@ -1652,6 +1653,7 @@ export interface ErDispositions {
   encounter_id: string;
   id: Generated<string>;
   inpatient_encounter_id: string | null;
+  invoice_merge: boolean | null;
   kind: string;
   note: string | null;
   orders_plan: Generated<Json>;
@@ -1668,6 +1670,22 @@ export interface ErDispositions {
   summary_document_id: string | null;
   transfer_reason: string | null;
   transport: string | null;
+}
+
+export interface ErFeeRules {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  department_id: string | null;
+  from_min: number | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  kind: string;
+  level: number | null;
+  note: string | null;
+  scale_code: string | null;
+  tariff_id: string;
+  to_min: number | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ErOrders {
@@ -1706,6 +1724,15 @@ export interface ErOrders {
   verbal_due_at: Timestamp | null;
   volume_ml: Numeric | null;
   weight_kg: Numeric | null;
+}
+
+export interface ErRemindersSent {
+  id: Generated<string>;
+  kind: string;
+  recipients: Generated<number>;
+  ref_id: string;
+  sent_at: Generated<Timestamp>;
+  stage: string;
 }
 
 export interface ErSpots {
@@ -2266,9 +2293,11 @@ export interface InvoiceLineItems {
   description: string;
   discount_reason: string | null;
   dx_order_item_id: string | null;
+  er_fee_rule_id: string | null;
   id: Generated<string>;
   invoice_id: string;
   line_total: Generated<Numeric | null>;
+  moved_from_invoice_id: string | null;
   or_case_id: string | null;
   ordering_department_id: string | null;
   original_price: Numeric | null;
@@ -2314,6 +2343,7 @@ export interface Invoices {
   insurance_payer_id: string | null;
   insurance_share: Generated<Numeric>;
   invoice_number: string;
+  merged_into_invoice_id: string | null;
   paid_status: Generated<string>;
   patient_share: Numeric;
   payer_shares_at: Timestamp | null;
@@ -6246,7 +6276,9 @@ export interface DB {
   er_admit_requests: ErAdmitRequests;
   er_arrival_modes: ErArrivalModes;
   er_dispositions: ErDispositions;
+  er_fee_rules: ErFeeRules;
   er_orders: ErOrders;
+  er_reminders_sent: ErRemindersSent;
   er_spots: ErSpots;
   er_triage: ErTriage;
   er_triage_levels: ErTriageLevels;

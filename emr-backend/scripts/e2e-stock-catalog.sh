@@ -180,8 +180,9 @@ chk "განმეორებით — ყველაფერი გამ
 chk "მესაწყობეს იმპორტი არ შეუძლია — 403" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/stock/import" -H "authorization: Bearer $SK" -F "file=@$CSV;filename=import.csv")" "403"
 
 step "გასუფთავება"
-for X in $(api GET "/stock/items?search=$(enc ტესტ-E2E)&all=true&limit=1000" "$SM" | jq -r ".[]|select(.name|test(\"$S\"))|.id"); do api PATCH "/stock/items/$X" "$SM" -d '{"is_active":false}' >/dev/null; done
-for X in $(api GET "/pharmacy/generics?search=$(enc ტესტ-E2E)&limit=1000" "$PH" | jq -r ".[]|select(.inn|test(\"$S\"))|.id"); do api PATCH "/pharmacy/generics/$X" "$PH" -d '{"is_active":false}' >/dev/null; done
+# 0091a: ძებნა — ამ გაშვების სუფიქსით ($S): „ტესტ-E2E“-ით სია 300-ით შემოიფარგლება და დაგროვილ ნარჩენებში ამ გაშვების ჩანაწერი შეიძლება არ მოხვდეს
+for X in $(api GET "/stock/items?search=$S&all=true&limit=1000" "$SM" | jq -r ".[]|select(.name|test(\"$S\"))|.id"); do api PATCH "/stock/items/$X" "$SM" -d '{"is_active":false}' >/dev/null; done
+for X in $(api GET "/pharmacy/generics?search=$S&limit=1000" "$PH" | jq -r ".[]|select(.inn|test(\"$S\"))|.id"); do api PATCH "/pharmacy/generics/$X" "$PH" -d '{"is_active":false}' >/dev/null; done
 for X in $(cat "$TMP/ix" 2>/dev/null); do api PATCH "/pharmacy/interactions/$X" "$PH" -d '{"is_active":false}' >/dev/null; done
 for X in $(cat "$TMP/sup" 2>/dev/null); do api PATCH "/stock/suppliers/$X" "$SM" -d '{"is_active":false}' >/dev/null; done
 for X in $(cat "$TMP/loc" 2>/dev/null); do api PATCH "/stock/locations/$X" "$SM" -d '{"is_active":false}' >/dev/null; done

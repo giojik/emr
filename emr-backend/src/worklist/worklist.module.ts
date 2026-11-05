@@ -11,6 +11,7 @@ import { WorklistSources } from './worklist-sources';
 import { WorklistAdminSources } from './worklist-sources-admin';
 import { WorklistClinicalSources } from './worklist-sources-clinical';
 import { WorklistDxSources } from './worklist-sources-dx';
+import { WorklistErSources } from './worklist-sources-er';
 import { WorklistTasksService } from './worklist-tasks';
 
 /**
@@ -21,7 +22,7 @@ import { WorklistTasksService } from './worklist-tasks';
 @Module({
   imports: [AuditModule, RosterModule, StockModule, OrModule],
   controllers: [WorklistController],
-  providers: [WorklistService, WorklistSources, WorklistAdminSources, WorklistClinicalSources, WorklistDxSources, WorklistTasksService, WorklistJobsService, WorklistSchedulesService, WorklistKpiService],
+  providers: [WorklistService, WorklistSources, WorklistAdminSources, WorklistClinicalSources, WorklistDxSources, WorklistErSources, WorklistTasksService, WorklistJobsService, WorklistSchedulesService, WorklistKpiService],
   exports: [WorklistJobsService, WorklistTasksService],
 })
 export class WorklistModule {}

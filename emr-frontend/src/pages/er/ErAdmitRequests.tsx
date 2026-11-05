@@ -17,7 +17,7 @@ interface Req {
   requested_by_name: string; attending_name: string | null; active_orders: number;
 }
 interface Opts { departments: { id: string; name: string; doctors: { id: string; name: string; specialty: string | null }[] }[] }
-interface ROrders { transfer_orders: string; ipd_orders: boolean; orders: { id: string; label: string; running: boolean; untransferable: string | null; default: 'continue' | 'stop' }[] }
+interface ROrders { transfer_orders: string; ipd_orders: boolean; admit_invoice: 'merge' | 'separate' | 'ask'; invoice_merge: boolean; invoice_mergeable: boolean; orders: { id: string; label: string; running: boolean; untransferable: string | null; default: 'continue' | 'stop' }[] }
 
 export default function ErAdmitRequests({ departmentId, picker }: { departmentId: string; picker?: React.ReactNode }) {
   const [status, setStatus] = useState('requested');
@@ -56,10 +56,12 @@ function AcceptDialog({ r, onClose }: { r: Req; onClose: () => void }) {
   const board = useQuery({ queryKey: ['ipd-board', r.department_id], queryFn: () => api<Board>('/inpatient/board', { query: { department_id: r.department_id } }) });
   const [att, setAtt] = useState(r.attending_doctor_id ?? ''); const [bed, setBed] = useState(''); const [confirm, setConfirm] = useState(false);
   const [plan, setPlan] = useState<Record<string, 'continue' | 'stop'> | null>(null);
+  const [merge, setMerge] = useState<boolean | null>(null);   // 0091: admit_invoice = ask
   const cur = plan ?? Object.fromEntries((ord.data?.orders ?? []).map((o) => [o.id, o.default]));
   const m = useMutation({
     mutationFn: () => api<{ adm_no: string }>(`/er/admit-requests/${r.id}/accept`, { body: { attending_doctor_id: att, bed_id: bed || undefined, confirm: confirm || undefined,
-      orders_plan: ord.data?.ipd_orders && ord.data.transfer_orders === 'reconcile' ? cur : undefined } }),
+      orders_plan: ord.data?.ipd_orders && ord.data.transfer_orders === 'reconcile' ? cur : undefined,
+      invoice_merge: ord.data?.admit_invoice === 'ask' ? merge ?? ord.data.invoice_merge : undefined } }),
     onSuccess: (x) => { toast.show(`ჰოსპიტალიზებულია (${x.adm_no})`); for (const k of ['er-admit-requests', 'ipd-board', 'ipd-census', 'ipd-stays']) void qc.invalidateQueries({ queryKey: [k] }); onClose(); },
   });
   const doctors = opts.data?.departments.find((d) => d.id === r.department_id)?.doctors ?? [];
@@ -82,6 +84,9 @@ function AcceptDialog({ r, onClose }: { r: Req; onClose: () => void }) {
             <td style={{ width: 220 }}><div className="seg" role="group" aria-label={o.label}>
               <button type="button" aria-pressed={cur[o.id] === 'continue'} disabled={!!o.untransferable} onClick={() => setPlan({ ...cur, [o.id]: 'continue' })}>გაგრძელება</button>
               <button type="button" aria-pressed={cur[o.id] === 'stop'} onClick={() => setPlan({ ...cur, [o.id]: 'stop' })}>შეწყვეტა</button></div></td></tr>)}</tbody></table></div>}
+        {ord.data?.admit_invoice === 'ask' && <label className="row small" data-testid="ea-merge"><input type="checkbox" disabled={!ord.data.invoice_mergeable}
+          checked={ord.data.invoice_mergeable && (merge ?? ord.data.invoice_merge)} onChange={(e) => setMerge(e.target.checked)} />
+          ER-ის ინვოისის გაერთიანება სტაციონარისაში{!ord.data.invoice_mergeable && ' (შეუძლებელია — გადახდილია / ქლეიმშია)'}</label>}
         <label className="row small"><input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} /> გაფრთხილებების დადასტურება (სქესი / იზოლაცია)</label>
         <ErrorBox error={m.error ?? ord.error} />
       </div>

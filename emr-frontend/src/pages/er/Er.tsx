@@ -12,6 +12,7 @@ import { Diagnoses } from '../encounter/Clinical';
 import DiagnosticsPanel from '../encounter/DiagnosticsPanel';
 import DoctorNotesPanel from '../inpatient/DoctorNotes';
 import ErOrdersPanel from './ErOrders';
+import { ErBillingPanel } from './ErBilling';
 import ErDispositionPanel, { DepartedList, DISP_KA } from './ErDisposition';
 import {
   ACVPU, ARRIVAL_KIND_KA, type Board, type BoardItem, dur, type ErMeta, type ErVisit, GENDER_KA, hm, minsSince, minsUntil, NEWS2_KA, onColor, patientLabel,
@@ -175,7 +176,8 @@ function RegisterDialog({ meta, dep, patientId, spots, onClose, onDone }: { meta
   const pat = picked ?? (pre.data as PatientListItem | undefined) ?? null;
   const activeModes = meta.arrival_modes.filter((a) => a.is_active);
   const [f, setF] = useState({ department_id: dep || meta.departments[0]?.id || '', arrival_mode: activeModes[0]?.code ?? '', chief_complaint: '', ambulance_crew: '', ambulance_call_at: '',
-    referral_institution_id: '', arrival_note: '', spot_id: '' });
+    referral_institution_id: '', arrival_note: '', spot_id: '', payer_id: '', self_pay: '' });
+  const payerMode = meta.settings.payer_at_registration ?? 'off';   // 0091
   const [np, setNp] = useState({ first_name: '', last_name: '', gender: 'male', birth_date: '', age_years: '', personal_number: '', passport_number: '', phone_number: '' });
   const kind = activeModes.find((a) => a.code === f.arrival_mode)?.kind;
   const freeSpots = spots.filter((s) => s.department_id === f.department_id && !s.encounter_id);
@@ -186,6 +188,7 @@ function RegisterDialog({ meta, dep, patientId, spots, onClose, onDone }: { meta
       department_id: f.department_id, arrival_mode: f.arrival_mode, chief_complaint: f.chief_complaint.trim(), spot_id: f.spot_id || undefined, arrival_note: f.arrival_note.trim() || undefined,
       ...(kind === 'ambulance' && { ambulance_crew: f.ambulance_crew.trim() || undefined, ambulance_call_at: f.ambulance_call_at ? new Date(f.ambulance_call_at).toISOString() : undefined }),
       ...(kind === 'transfer' && f.referral_institution_id && { referral_institution_id: f.referral_institution_id }),
+      ...(payerMode !== 'off' && (f.payer_id ? { payer_id: f.payer_id } : f.self_pay ? { self_pay: true } : {})),
       ...(mode === 'search' ? { patient_id: pat?.id } : { new_patient: {
         gender: np.gender, first_name: np.first_name.trim() || undefined, last_name: np.last_name.trim() || undefined,
         ...(np.birth_date ? { birth_date: np.birth_date } : { age_years: Number(np.age_years) }),
@@ -196,7 +199,8 @@ function RegisterDialog({ meta, dep, patientId, spots, onClose, onDone }: { meta
   });
   const active = m.error instanceof ApiError && m.error.code === 'ER_ALREADY_ACTIVE' ? (m.error.body?.encounter_id as string) : null;
   const pOk = mode === 'search' ? !!pat : (!!np.birth_date || np.age_years !== '') && (mode === 'unknown' || (!!np.first_name.trim() && !!np.last_name.trim()));
-  const ok = pOk && !!f.department_id && !!f.arrival_mode && f.chief_complaint.trim().length >= 2 && !(kind === 'ambulance' && meta.settings.ambulance_fields === 'required' && !f.ambulance_crew.trim());
+  const ok = pOk && !!f.department_id && !!f.arrival_mode && f.chief_complaint.trim().length >= 2 && !(kind === 'ambulance' && meta.settings.ambulance_fields === 'required' && !f.ambulance_crew.trim())
+    && !(payerMode === 'required' && !f.payer_id && !f.self_pay);
   return (
     <Modal title="მიღება ER-ში" onClose={onClose} width={720}
       footer={<><button className="btn" type="button" onClick={onClose}>გაუქმება</button><button className="btn primary" type="button" disabled={!ok || m.isPending} onClick={() => m.mutate()}>მიღება</button></>}>
@@ -237,6 +241,10 @@ function RegisterDialog({ meta, dep, patientId, spots, onClose, onDone }: { meta
           {kind === 'transfer' && <Field label="გამგზავნი კლინიკა" htmlFor="rg-ri"><select id="rg-ri" className="select" value={f.referral_institution_id} onChange={set('referral_institution_id')}>
             <option value="">—</option>{meta.institutions.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>}
         </div>
+        {payerMode !== 'off' && <Field label="გადამხდელი" htmlFor="rg-py" required={payerMode === 'required'} hint="დაზღვევა / სახელმწიფო პროგრამა — წილს სალარო / წესები ითვლის">
+          <select id="rg-py" className="select" value={f.payer_id || (f.self_pay ? 'self' : '')} onChange={(e) => setF({ ...f, payer_id: e.target.value === 'self' ? '' : e.target.value, self_pay: e.target.value === 'self' ? '1' : '' })}>
+            <option value="">—</option><option value="self">თვითდაფინანსება</option>
+            {(meta.payers ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}{x.kind === 'state' ? ' (სახელმწიფო)' : ''}</option>)}</select></Field>}
         <Field label="მთავარი ჩივილი" htmlFor="rg-cc" required><textarea id="rg-cc" className="textarea" rows={2} value={f.chief_complaint} onChange={set('chief_complaint')} /></Field>
         {kind && kind !== 'walk_in' && <Field label={`შენიშვნა (${ARRIVAL_KIND_KA[kind]})`} htmlFor="rg-an"><input id="rg-an" className="input" value={f.arrival_note} onChange={set('arrival_note')} /></Field>}
         <ErrorBox error={m.error} />
@@ -318,13 +326,14 @@ function news2Hint(v: { respiratory_rate?: number; spo2?: number; o2_supplement?
 // ======================================================================= ბარათი
 function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; spots: Board['spots']; onClose: () => void }) {
   const qc = useQueryClient(); const toast = useToast();
+  const { user } = useAuth();
   const q = useQuery({ queryKey: ['er-visit', id], queryFn: () => api<ErVisit>(`/er/visits/${id}`) });
   const staff = useQuery({ queryKey: ['er-staff'], enabled: meta.perms.assign, queryFn: () => api<{ doctors: { id: string; name: string }[]; nurses: { id: string; name: string }[] }>('/er/staff') });
   const [dlg, setDlg] = useState<'triage' | 'cancel' | 'identify' | 'merge' | null>(null);
   const [mergeTarget, setMergeTarget] = useState<string | undefined>();
   const [reason, setReason] = useState('');
   const [sp, setSp] = useSearchParams();
-  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | 'orders' | 'disposition' | null) ?? 'card';
+  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | 'orders' | 'disposition' | 'billing' | null) ?? 'card';
   const setTab = (t: string) => { const n = new URLSearchParams(sp); if (t === 'card') n.delete('tab'); else n.set('tab', t); setSp(n, { replace: true }); };
   const inv = () => { void qc.invalidateQueries({ queryKey: ['er-board'] }); void qc.invalidateQueries({ queryKey: ['er-visit', id] }); };
   const assign = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/er/visits/${id}`, { method: 'PATCH', body }), onSuccess: () => { toast.show('შენახულია'); inv(); } });
@@ -335,7 +344,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
   return (
     <Modal title={`${v.visit_no} — ${patientLabel(p)}`} onClose={onClose} width={980}>
       {toast.node}
-      <div className="seg" role="tablist" aria-label="ER-ის ბარათი" style={{ width: 'max-content', marginBottom: 12 }}>
+      <div className="seg" role="tablist" aria-label="ER-ის ბარათი" style={{ width: 'max-content', maxWidth: '100%', flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" role="tab" aria-selected={tab === 'card'} aria-pressed={tab === 'card'} className="ro-ok" onClick={() => setTab('card')}>ბარათი / ტრიაჟი</button>
         <button type="button" role="tab" aria-selected={tab === 'notes'} aria-pressed={tab === 'notes'} className="ro-ok" onClick={() => setTab('notes')}>ჩანაწერები / კონსულტაცია</button>
         <button type="button" role="tab" aria-selected={tab === 'dx'} aria-pressed={tab === 'dx'} className="ro-ok" onClick={() => setTab('dx')}>დიაგნოზი / კვლევები</button>
@@ -343,7 +352,10 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
           დანიშნულებები / მიცემა{v.orders && v.orders.active > 0 ? ` (${v.orders.active})` : ''}{v.orders && v.orders.verbal_pending > 0 ? ' •' : ''}</button>
         <button type="button" role="tab" aria-selected={tab === 'disposition'} aria-pressed={tab === 'disposition'} className="ro-ok" onClick={() => setTab('disposition')}>
           გამოსავალი{v.disposition ? ' ✓' : ''}</button>
+        {can(user, 'admin', 'billing', 'receptionist', 'accountant', 'er_triage', 'er_doctor', 'er_manage', 'manager', 'viewer') &&
+          <button type="button" role="tab" aria-selected={tab === 'billing'} aria-pressed={tab === 'billing'} className="ro-ok" onClick={() => setTab('billing')}>ანგარიში</button>}
       </div>
+      {tab === 'billing' && <ErBillingPanel encounterId={id} />}
       {tab === 'disposition' && <ErDispositionPanel encounterId={id} patientId={p.id} onChanged={inv}
         primaryDx={(() => { const d = v.diagnoses.find((x) => x.diagnosis_type === 'primary'); return d ? { code: d.icd10_code, title: d.icd10_title } : null; })()} />}
       {tab === 'orders' && <ErOrdersPanel encounterId={id} departmentId={v.department_id} />}

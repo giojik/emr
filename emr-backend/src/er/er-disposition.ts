@@ -22,6 +22,7 @@ import { erCanWrite, erClinicalSettings, type ErClinicalSettings } from './er-ac
 import { reopenErVisitTx } from './er-hooks';
 import { ER_MANAGE, ER_READ } from './er';
 import { ErSummaryService } from './er-summary';
+import { erBillingAfterDisposition, erBillingFacts, resolveMerge } from './er-billing';
 
 /**
  * გადაუდებელი დახმარება (ER), 0090 — გამოსავალი.
@@ -73,16 +74,20 @@ export class DispositionDto {
   @IsOptional() @ValidateNested() @Type(() => AdmitPartDto) admit?: AdmitPartDto;
   @IsOptional() @IsObject() orders_plan?: Plan;
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
+  /** 0091: admit_invoice = ask — ER-ის ინვოისის გაერთიანება სტაციონარისაში */
+  @IsOptional() @IsBoolean() invoice_merge?: boolean;
 }
 export class AdmitRequestDto extends AdmitPartDto {
   @IsOptional() @IsObject() orders_plan?: Plan;
   @IsOptional() @IsString() @Length(5, 1000) override_reason?: string;
+  @IsOptional() @IsBoolean() invoice_merge?: boolean;
 }
 export class AcceptDto {
   @IsUUID() attending_doctor_id: string;
   @IsOptional() @IsUUID() bed_id?: string;
   @IsOptional() @IsBoolean() confirm?: boolean;
   @IsOptional() @IsObject() orders_plan?: Plan;
+  @IsOptional() @IsBoolean() invoice_merge?: boolean;
 }
 export class ReasonDto { @IsString() @Length(3, 1000) reason: string }
 
@@ -164,7 +169,8 @@ export class ErDispositionService {
            AND b.infusion_action = 'stop' AND b.administered_at >= a.administered_at))) AS running,
         (SELECT q.id FROM er_admit_requests q WHERE q.encounter_id = ${v.encounter_id} AND q.status = 'requested') AS request_id`.execute(ex);
     const [inpatient, ipdOrders] = [await modActive(ex, 'inpatient'), await modActive(ex, 'ipd_orders')];
-    return { ...r.rows[0], inpatient, ipdOrders };
+    const bill = await erBillingFacts(ex, v.encounter_id);   // 0091
+    return { ...r.rows[0], inpatient, ipdOrders, bill };
   }
   private checksFor(kind: Kind, f: Awaited<ReturnType<ErDispositionService['facts']>>, v: VisitRow, s: ErClinicalSettings, activeOrders: number, viaRequest = false): DispCheck[] {
     const out: DispCheck[] = [];
@@ -192,6 +198,15 @@ export class ErDispositionService {
       else out.push({ code: 'ORDERS_STOP', level: 'info', message: `აქტიური დანიშნულებები (${activeOrders}) შეწყდება${kind === 'admitted' && !f.ipdOrders ? ' (მოდული „დანიშნულებები“ არააქტიურია)' : ''}` });
     }
     if (f.request_id && !viaRequest && kind !== 'admitted') out.push({ code: 'ADMIT_REQUEST_OPEN', level: 'info', message: 'ჰოსპიტალიზაციის ღია მოთხოვნა გაუქმდება' });
+    // 0091: ბილინგი — გამოსავალს არასდროს ბლოკავს (unpaid_check: info / warn / off)
+    const b = f.bill;
+    if (b) {
+      const merge = kind === 'admitted' && s.admit_invoice !== 'separate';
+      if (merge && b.paid > 0) out.push({ code: 'INVOICE_SEPARATE', level: 'info', message: `ER-ის ინვოისზე უკვე არის გადახდა (${b.paid.toFixed(2)} ₾) — ინვოისი სტაციონარისას არ გაერთიანდება` });
+      else if (merge && b.in_claim) out.push({ code: 'INVOICE_SEPARATE', level: 'info', message: 'ER-ის ინვოისი შედის ქლეიმში — სტაციონარისას არ გაერთიანდება' });
+      else if (merge) out.push({ code: 'INVOICE_MERGE', level: 'info', message: s.admit_invoice === 'ask' ? 'ER-ის ინვოისი — სტაციონარის ინვოისში გაერთიანება (არჩევადი)' : 'ER-ის ინვოისის ხაზები გადავა სტაციონარის ინვოისში' });
+      else if (s.unpaid_check !== 'off' && b.due > 0) out.push({ code: 'UNPAID_BALANCE', level: s.unpaid_check, message: `გადაუხდელი ნაშთი: ${b.due.toFixed(2)} ₾ (${b.number})${s.fee_mode !== 'none' && !s.fee_exempt.includes(kind) ? ' + ER-ის ტარიფი' : ''}` });
+    }
     return out;
   }
   private gate(checks: DispCheck[], override: string | undefined) {
@@ -229,7 +244,7 @@ export class ErDispositionService {
     return {
       status: v.status, open, doc_open: docOpen, doc_closes_at: departedAt.doc_closes_at,
       settings: { admit_mode: s.admit_mode, transfer_orders: s.transfer_orders, ama_proof: s.ama_proof, recommendations_required: s.recommendations_required,
-        doc_window_h: s.doc_window_h, reopen_h: s.reopen_h, summary_mode: s.summary_mode },
+        doc_window_h: s.doc_window_h, reopen_h: s.reopen_h, summary_mode: s.summary_mode, admit_invoice: s.admit_invoice, fee_mode: s.fee_mode, unpaid_check: s.unpaid_check },
       modules: { inpatient: f.inpatient, ipd_orders: f.ipdOrders },
       checks: Object.fromEntries(KINDS.map((k) => [k, open ? this.checksFor(k, f, v, s, orders.length) : []])),
       orders: orders.map((o) => ({ id: o.id, label: this.orderLabel(o), kind: o.kind, order_type: o.order_type, running: o.running, untransferable: this.untransferable(o),
@@ -270,12 +285,14 @@ export class ErDispositionService {
         } else {
           result.stopped = await this.stopOrders(trx, orders, `გამოსავალი: ${ER_DISPOSITION_KA[dto.kind]}`, u);
         }
+        const merge = dto.kind === 'admitted' ? resolveMerge(s, dto.invoice_merge) : null;
         await this.finish(trx, v, dto.kind, u, ctx, s, { ...fields, overrides, orders_plan: dto.orders_plan ?? {}, orders_result: result,
-          inpatient_encounter_id: admitted?.encounter_id ?? null, recommendations: dto.recommendations?.trim() || null, note: dto.note?.trim() || null });
-        return { v, admitted, result };
+          inpatient_encounter_id: admitted?.encounter_id ?? null, recommendations: dto.recommendations?.trim() || null, note: dto.note?.trim() || null, invoice_merge: merge });
+        const billing = await erBillingAfterDisposition(trx, id, dto.kind, s, u.id, admitted ? { ipdEncounterId: admitted.encounter_id, merge: !!merge } : undefined);
+        return { v, admitted, result, billing };
       });
       if (out.admitted) await this.afterAdmit(out.v, out.admitted, u);
-      return { encounter_id: id, disposition: dto.kind, inpatient_encounter_id: out.admitted?.encounter_id ?? null, adm_no: out.admitted?.adm_no ?? null, orders: out.result };
+      return { encounter_id: id, disposition: dto.kind, inpatient_encounter_id: out.admitted?.encounter_id ?? null, adm_no: out.admitted?.adm_no ?? null, orders: out.result, billing: out.billing };
     } catch (e) { mapPgError(e, { ux_inpatient_stays_patient_active: 'პაციენტი უკვე ჰოსპიტალიზებულია', ux_er_disposition_active: 'გამოსავალი უკვე გაფორმებულია' }); }
   }
 
@@ -428,7 +445,8 @@ export class ErDispositionService {
       for (const [k, x] of Object.entries(dto.orders_plan ?? {})) if (!['continue', 'stop'].includes(x) || !orders.some((o) => o.id === k)) throw new BadRequestException('orders_plan: აქტიური დანიშნულება — continue | stop');
       const r = await trx.insertInto('er_admit_requests').values({ encounter_id: id, patient_id: v.patient_id, department_id: dep.id, attending_doctor_id: dto.attending_doctor_id ?? null,
         icd10_code: icd.code, icd10_title: icd.title, severity: dto.severity ?? null, isolation: dto.isolation ?? null, note: dto.note?.trim() || null,
-        orders_plan: JSON.stringify(dto.orders_plan ?? {}), overrides: overrides ? JSON.stringify(overrides) : null, requested_by: u.id }).returning('id').executeTakeFirstOrThrow();
+        orders_plan: JSON.stringify(dto.orders_plan ?? {}), overrides: overrides ? JSON.stringify(overrides) : null, requested_by: u.id,
+        invoice_merge: s.admit_invoice === 'ask' ? dto.invoice_merge ?? null : null }).returning('id').executeTakeFirstOrThrow();
       if (!v.waiting_for.includes('bed')) await trx.updateTable('er_visits').set({ waiting_for: sql`array_append(waiting_for, 'bed')` }).where('encounter_id', '=', id).execute();
       await this.audit.log(ctx, { action: 'ER_ADMIT_REQUEST', entityName: 'er_admit_requests', entityId: r.id, newData: { ...dto, overrides } }, trx);
       return { id: r.id, v, dep };
@@ -500,14 +518,16 @@ export class ErDispositionService {
         const plan = { ...(r.orders_plan as Plan), ...(dto.orders_plan ?? {}) };
         const result = await this.transferOrders(trx, v, orders, admitted, plan, s, ipdS, u, f.ipdOrders);
         await trx.updateTable('er_admit_requests').set({ status: 'accepted', decided_by: u.id, decided_at: sql`now()`, inpatient_encounter_id: admitted.encounter_id }).where('id', '=', rid).execute();
+        const merge = resolveMerge(s, dto.invoice_merge, r.invoice_merge);
         await this.finish(trx, v, 'admitted', u, ctx, s, { departed_at: new Date(), overrides: r.overrides, orders_plan: plan, orders_result: result, inpatient_encounter_id: admitted.encounter_id,
-          note: r.note }, { decidedBy: r.requested_by, requestId: rid });
-        return { v, admitted, r, result };
+          note: r.note, invoice_merge: merge }, { decidedBy: r.requested_by, requestId: rid });
+        const billing = await erBillingAfterDisposition(trx, v.encounter_id, 'admitted', s, u.id, { ipdEncounterId: admitted.encounter_id, merge });
+        return { v, admitted, r, result, billing };
       });
       await this.afterAdmit(out.v, out.admitted, u);
       await this.notify([out.r.requested_by], { kind: 'er_admit_accepted', title: `ჰოსპიტალიზაცია მიღებულია — ${out.admitted.department.name}`, body: `${out.v.last_name} ${out.v.first_name} (${out.admitted.adm_no})`,
         entityId: out.v.encounter_id, link: `/er?visit=${out.v.encounter_id}&tab=disposition` }, u.id);
-      return { id: rid, status: 'accepted', inpatient_encounter_id: out.admitted.encounter_id, adm_no: out.admitted.adm_no, bed: out.admitted.bed, orders: out.result };
+      return { id: rid, status: 'accepted', inpatient_encounter_id: out.admitted.encounter_id, adm_no: out.admitted.adm_no, bed: out.admitted.bed, orders: out.result, billing: out.billing };
     } catch (e) { mapPgError(e, { ux_inpatient_stays_patient_active: 'პაციენტი უკვე ჰოსპიტალიზებულია', ux_bed_assignments_bed: 'საწოლი უკვე დაკავებულია' }); }
   }
 
@@ -529,12 +549,14 @@ export class ErDispositionService {
 
   /** ER-ის აქტიური დანიშნულებები მოთხოვნის მიმღებისთვის (reconcile) */
   async requestOrders(rid: string) {
-    const r = await this.db.selectFrom('er_admit_requests').select(['encounter_id', 'orders_plan', 'status']).where('id', '=', rid).executeTakeFirst();
+    const r = await this.db.selectFrom('er_admit_requests').select(['encounter_id', 'orders_plan', 'status', 'invoice_merge']).where('id', '=', rid).executeTakeFirst();
     if (!r) throw new NotFoundException('მოთხოვნა ვერ მოიძებნა');
     const orders = r.status === 'requested' ? await this.db.transaction().execute((trx) => this.activeOrders(trx, r.encounter_id)) : [];
     const plan = r.orders_plan as Plan;
     const s = await erClinicalSettings();
+    const bill = await erBillingFacts(this.db, r.encounter_id);
     return { transfer_orders: s.transfer_orders, ipd_orders: await modActive(this.db, 'ipd_orders'),
+      admit_invoice: s.admit_invoice, invoice_merge: resolveMerge(s, r.invoice_merge), invoice_mergeable: !!bill && bill.paid <= 0 && !bill.in_claim,
       orders: orders.map((o) => ({ id: o.id, label: this.orderLabel(o), order_type: o.order_type, kind: o.kind, running: o.running, untransferable: this.untransferable(o),
         default: plan[o.id] ?? (this.untransferable(o) ? 'stop' : 'continue') })) };
   }

@@ -18,11 +18,12 @@ import { BmePmJobsService } from './bme/bme-pm-jobs';
 import { BmeRepairJobsService } from './bme/bme-repair-jobs';
 import { WorklistModule } from './worklist/worklist.module';
 import { RosterCoreModule } from './roster/roster-common';
+import { ErJobsService } from './er/er-jobs';
 
 /**
  * ფონური პროცესები: SSA სინქრონიზაცია, SMS, ფორმა 100-ის მასიური გენერაცია.
  * რიგები (BullMQ + Redis) აქ დაემატება — worker HTTP-ს არ ისმენს.
  */
 @Module({ imports: [DatabaseModule, AuditModule, NotifyModule, StorageModule, RptCommonModule, NotificationsModule, ReportingModule, ModulesCoreModule, QualityModule, IpcModule, RosterCoreModule, WorklistModule],
-  providers: [LabAlertsService, LabMailService, LabMailPoller, StockAlertsService, InpatientRemindersService, TariffTickService, BmePmJobsService, BmeRepairJobsService] })
+  providers: [LabAlertsService, LabMailService, LabMailPoller, StockAlertsService, InpatientRemindersService, TariffTickService, BmePmJobsService, BmeRepairJobsService, ErJobsService] })
 export class WorkerModule {}
