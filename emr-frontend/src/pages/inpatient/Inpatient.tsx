@@ -12,6 +12,7 @@ import { age, dateGe, genderShort, hhmm, shiftDay, todayISO, tsDate } from '../.
 import { useModules } from '../../lib/modules';
 import IcdPicker from '../encounter/IcdPicker';
 import { BillingWorklist } from './Billing';
+import ErAdmitRequests from '../er/ErAdmitRequests';
 import { ConsultInbox } from './DoctorNotes';
 import { DepartmentMar } from './Mar';
 import { IcuBoardTab } from './Icu';
@@ -33,8 +34,11 @@ export default function Inpatient() {
   const m = mods.data?.find((x) => x.code === 'inpatient');
   const planned = !!(m?.settings as { planned_queue?: boolean } | undefined)?.planned_queue;
   const icuOn = !!mods.data?.find((x) => x.code === 'icu')?.enabled;
+  // 0090: ER → ჰოსპიტალიზაციის მოთხოვნები (admit_mode = request)
+  const erM = mods.data?.find((x) => x.code === 'er');
+  const erReq = !!erM?.enabled && (erM.settings as { admit_mode?: string } | undefined)?.admit_mode === 'request';
   const tabs: [string, string, boolean][] = [['board', 'განყოფილების დაფა', true], ['icu', 'რეანიმაცია', icuOn && can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['list', 'პაციენტები', true], ['admit', 'ჰოსპიტალიზაცია', can(user, ...ADMITTERS)],
-    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager', 'drg')], ['planned', 'გეგმიური რიგი', planned], ['census', 'საწოლფონდი', true]];
+    ['orders', 'დანიშნულებები', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['mar', 'MAR', can(user, 'admin', 'doctor', 'nurse', 'manager', 'pharmacist')], ['handover', 'ცვლა', can(user, 'admin', 'doctor', 'nurse', 'manager')], ['consults', 'კონსულტაციები', can(user, 'admin', 'doctor')], ['billing', 'ბილინგი', can(user, 'admin', 'billing', 'receptionist', 'manager', 'drg')], ['planned', 'გეგმიური რიგი', planned], ['er', 'ER — მოთხოვნები', erReq && can(user, 'admin', 'doctor', 'nurse', 'manager')], ['census', 'საწოლფონდი', true]];
   const visible = tabs.filter((t) => t[2]);
   const tab = sp.get('tab') ?? 'board';
   if (mods.isLoading) return <div className="content"><Loading /></div>;
@@ -47,7 +51,7 @@ export default function Inpatient() {
         </nav>
       </header>
       {!m?.enabled ? <div className="content"><div className="card empty">მოდული „სტაციონარი“ გამორთულია (ადმინისტრირება → მოდულები).</div></div>
-        : tab === 'icu' ? <IcuBoardTab /> : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox all /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'census' ? <Census /> : <BoardView />}
+        : tab === 'icu' ? <IcuBoardTab /> : tab === 'list' ? <Stays /> : tab === 'orders' ? <OrdersTab /> : tab === 'mar' ? <MarTab /> : tab === 'handover' ? <HandoverTab /> : tab === 'consults' ? <div className="content"><ConsultInbox all /></div> : tab === 'billing' ? <BillingWorklist /> : tab === 'admit' ? <Admit /> : tab === 'planned' ? <PlannedQueue /> : tab === 'er' ? <ErRequestsTab /> : tab === 'census' ? <Census /> : <BoardView />}
     </>
   );
 }
@@ -62,6 +66,13 @@ function useDepartment() {
       {deps.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
     </select>);
   return { id, picker, loading: census.isLoading, empty: !census.isLoading && !deps.length };
+}
+
+// ---------------------------------------------------------------- 0090: ER — ჰოსპიტალიზაციის მოთხოვნები
+function ErRequestsTab() {
+  const { id, picker, loading } = useDepartment();
+  if (loading) return <div className="content"><Loading /></div>;
+  return id ? <ErAdmitRequests departmentId={id} picker={picker} /> : <div className="content"><div className="row">{picker}</div></div>;
 }
 
 // ---------------------------------------------------------------- ცვლის გადაბარება (0044)

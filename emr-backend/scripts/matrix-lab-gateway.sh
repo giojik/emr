@@ -56,6 +56,7 @@ api PUT "/lab/instruments/$M2/codes" -d "{\"codes\":[{\"code\":\"GLU\",\"analyte
 sleep 7
 chk "gateway უსმენს :4103" "$(api GET /lab/instruments | jq -r ".[]|select(.method_id==\"$M1\")|.status")" "listening"
 cnt() { api GET "/lab/instruments/$1/messages" | jq -r --arg k "$2" '[.[]|select(.kind==$k and .direction=="in")]|length'; }
+cntb() { api GET "/lab/instruments/$1/messages?limit=500" | jq -r --arg b "$2" '[.[]|select(.kind=="results" and .direction=="in" and .error==null and (.raw|contains($b)))]|length'; }   # შეცდომის გარეშე ჩაწერილი შედეგი — ნიმუშით
 
 step "1. lab_gateway გამორთულია → NAK / AE"
 chk "lab_gateway → გამორთვა" "$(setm lab_gateway false | jq -r .state)" "disabled"
@@ -73,7 +74,8 @@ sleep 12
 O=$(sim --proto astm --connect 127.0.0.1:4103 --result "7$S" GLUC3=5.4/mmol/L)
 chk "ASTM: შედეგი გაიგზავნა (ACK)" "$(echo "$O" | jq -rs '[.[]|select(.type=="sent")]|length')" "1"
 sleep 1
-chk "ASTM: ჟურნალში შედეგი — მხოლოდ ჩართვის შემდეგი (გამორთულზე გაგზავნილი არ ჩაწერილა)" "$(cnt "$M1" results)" "1"
+# 0090: ნიმუშის ნომრით (არა ჯამური რაოდენობით) — ჩართვის მომენტის ხელახალი ცდა / დუბლი ჟურნალში მეორე ჩანაწერს ამატებს და ტესტს დროის ფანჯარაზე ამოკიდებდა
+chk "ASTM: ჟურნალში შედეგი — მხოლოდ ჩართვის შემდეგი (7…: ჩაიწერა; გამორთულზე გაგზავნილი 9… — არა)" "$([ "$(cntb "$M1" "7$S")" -ge 1 ] && echo yes || echo no):$(cntb "$M1" "9$S")" "yes:0"
 chk "HL7: ჟურნალში — შეცდომით „lab_gateway inactive“ (შედეგი არ დამუშავდა, 30 დღე ინახება)" \
   "$(api GET "/lab/instruments/$M2/messages" | jq -r '[.[]|select(.kind=="results" and .direction=="in")][0].error // "—"|test("lab_gateway inactive")')" "true"
 O=$(sim --proto hl7 --connect 127.0.0.1:4104 --result "6$S" GLU=5.4/mmol/L)

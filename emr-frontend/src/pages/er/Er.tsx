@@ -12,6 +12,7 @@ import { Diagnoses } from '../encounter/Clinical';
 import DiagnosticsPanel from '../encounter/DiagnosticsPanel';
 import DoctorNotesPanel from '../inpatient/DoctorNotes';
 import ErOrdersPanel from './ErOrders';
+import ErDispositionPanel, { DepartedList, DISP_KA } from './ErDisposition';
 import {
   ACVPU, ARRIVAL_KIND_KA, type Board, type BoardItem, dur, type ErMeta, type ErVisit, GENDER_KA, hm, minsSince, minsUntil, NEWS2_KA, onColor, patientLabel,
   SPOT_KA, STATUS_KA, type TriageScale, WAIT_KA,
@@ -20,7 +21,7 @@ import {
 /**
  * გადაუდებელი დახმარება (ER), 0087: დაფა (ტრიაჟის ფერი, ადგილი, ტაიმერები კარი → ტრიაჟი / ექიმი, ER-ში ყოფნა, ექიმი / ექთანი, მოლოდინი),
  * რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი / განმეორებითი ტრიაჟი (NEWS2 — მინიშნება), აყვანა, მინიჭება, გაუქმება.
- * ?visit=<id> — ბარათი (&tab=notes | dx — 0088: ჩანაწერები / კონსულტაცია, დიაგნოზი / დიაგნოსტიკა; orders — 0089: დანიშნულებები / მიცემა); ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
+ * ?visit=<id> — ბარათი (&tab=notes | dx — 0088; orders — 0089; disposition — 0090: გამოსავალი); ?view=departed — გასულები; ?register=<patient_id> — მიღება პაციენტის ბარათიდან.
  */
 export function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -42,6 +43,8 @@ export default function Er() {
   const [reg, setReg] = useState<string | 'new' | null>(sp.get('register') ? sp.get('register') : null);
   const [tri, setTri] = useState<BoardItem | null>(null);
   const visitId = sp.get('visit');
+  const view = sp.get('view') === 'departed' ? 'departed' : 'board';
+  const setView = (v: string) => { const n = new URLSearchParams(sp); if (v === 'board') n.delete('view'); else n.set('view', v); setSp(n, { replace: true }); };
   const openVisit = (id: string | null) => { const n = new URLSearchParams(sp); if (id) n.set('visit', id); else { n.delete('visit'); n.delete('tab'); } setSp(n, { replace: true }); };
   const perms = meta.data?.perms;
   const qc = useQueryClient(); const toast = useToast();
@@ -76,7 +79,11 @@ export default function Er() {
           {board.data!.on_duty.length > 0 && <div className="card card-pad stack grow" style={{ gap: 2, minWidth: 220 }}><span className="small muted">მორიგე ექიმი ახლა</span>
             <span className="small">{board.data!.on_duty.map((d) => `${d.name}${d.duty_name ? ` (${d.duty_name})` : ''}${d.phone ? ` · ${d.phone}` : ''}`).join('; ')}</span></div>}
         </div>}
-        {!board.data ? <Loading /> : (
+        <div className="seg" role="tablist" aria-label="ER" style={{ width: 'max-content' }}>
+          <button type="button" role="tab" aria-selected={view === 'board'} aria-pressed={view === 'board'} className="ro-ok" onClick={() => setView('board')}>დაფა</button>
+          <button type="button" role="tab" aria-selected={view === 'departed'} aria-pressed={view === 'departed'} className="ro-ok" onClick={() => setView('departed')}>გასულები</button>
+        </div>
+        {view === 'departed' ? <DepartedList departmentId={dep} onOpen={(id) => openVisit(id)} /> : !board.data ? <Loading /> : (
           <div className="card">
             <table className="table" data-testid="er-board">
               <thead><tr><th style={{ width: 8 }} /><th>ადგილი</th><th>პაციენტი</th><th>ჩივილი</th><th>შემოსვლა</th><th>სტატუსი</th><th>ტაიმერები</th><th>ექიმი / ექთანი</th><th /></tr></thead>
@@ -88,7 +95,7 @@ export default function Er() {
             </table>
           </div>
         )}
-        {board.data && board.data.spots.length > 0 && <section className="card card-pad stack" style={{ gap: 8 }}>
+        {view === 'board' && board.data && board.data.spots.length > 0 && <section className="card card-pad stack" style={{ gap: 8 }}>
           <h2 style={{ margin: 0 }}>ადგილები</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }} data-testid="er-spots">
             {board.data.spots.map((s) => { const occ = board.data!.items.find((i) => i.encounter_id === s.encounter_id);
@@ -317,7 +324,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
   const [mergeTarget, setMergeTarget] = useState<string | undefined>();
   const [reason, setReason] = useState('');
   const [sp, setSp] = useSearchParams();
-  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | 'orders' | null) ?? 'card';
+  const tab = (sp.get('tab') as 'card' | 'notes' | 'dx' | 'orders' | 'disposition' | null) ?? 'card';
   const setTab = (t: string) => { const n = new URLSearchParams(sp); if (t === 'card') n.delete('tab'); else n.set('tab', t); setSp(n, { replace: true }); };
   const inv = () => { void qc.invalidateQueries({ queryKey: ['er-board'] }); void qc.invalidateQueries({ queryKey: ['er-visit', id] }); };
   const assign = useMutation({ mutationFn: (body: Record<string, unknown>) => api(`/er/visits/${id}`, { method: 'PATCH', body }), onSuccess: () => { toast.show('შენახულია'); inv(); } });
@@ -334,11 +341,15 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
         <button type="button" role="tab" aria-selected={tab === 'dx'} aria-pressed={tab === 'dx'} className="ro-ok" onClick={() => setTab('dx')}>დიაგნოზი / კვლევები</button>
         <button type="button" role="tab" aria-selected={tab === 'orders'} aria-pressed={tab === 'orders'} className="ro-ok" onClick={() => setTab('orders')}>
           დანიშნულებები / მიცემა{v.orders && v.orders.active > 0 ? ` (${v.orders.active})` : ''}{v.orders && v.orders.verbal_pending > 0 ? ' •' : ''}</button>
+        <button type="button" role="tab" aria-selected={tab === 'disposition'} aria-pressed={tab === 'disposition'} className="ro-ok" onClick={() => setTab('disposition')}>
+          გამოსავალი{v.disposition ? ' ✓' : ''}</button>
       </div>
+      {tab === 'disposition' && <ErDispositionPanel encounterId={id} patientId={p.id} onChanged={inv}
+        primaryDx={(() => { const d = v.diagnoses.find((x) => x.diagnosis_type === 'primary'); return d ? { code: d.icd10_code, title: d.icd10_title } : null; })()} />}
       {tab === 'orders' && <ErOrdersPanel encounterId={id} departmentId={v.department_id} />}
       {tab === 'notes' && <div data-testid="er-notes"><DoctorNotesPanel encounterId={id} scope="er" /></div>}
       {tab === 'dx' && <div className="stack" style={{ gap: 12 }} data-testid="er-dx">
-        <Diagnoses e={{ id, diagnoses: v.diagnoses }} canWrite={v.clinical.write} onChanged={inv} />
+        <Diagnoses e={{ id, diagnoses: v.diagnoses }} canWrite={v.clinical.doc_write ?? v.clinical.write} onChanged={inv} />
         <DiagnosticsPanel encounterId={id} canWrite={v.clinical.write} defaultUrgent={v.clinical.dx_default_priority === 'urgent'} />
       </div>}
       {tab === 'card' && <div className="stack" style={{ gap: 12 }} data-testid="er-visit">
@@ -363,7 +374,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
           {v.arrival_note && <div style={{ gridColumn: '1 / -1' }}><Info k="შენიშვნა" v={v.arrival_note} /></div>}
           <Info k="პირველი ტრიაჟი" v={hm(v.first_triage_at)} /><Info k="ექიმმა ნახა" v={v.doctor_at ? `${hm(v.doctor_at)} (${v.doctor_name})` : '—'} />
           <Info k="განყოფილება" v={v.department_name} /><Info k="დაარეგისტრირა" v={v.created_by_name ?? '—'} />
-          {v.ended_at && <div style={{ gridColumn: '1 / -1' }}><Info k="დასრულდა" v={`${tsDate(v.ended_at)} ${hm(v.ended_at)} — ${v.end_reason ?? ''}`} /></div>}
+          {v.ended_at && <div style={{ gridColumn: '1 / -1' }}><Info k={v.disposition ? 'გამოსავალი' : 'დასრულდა'} v={`${tsDate(v.ended_at)} ${hm(v.ended_at)} — ${v.disposition ? DISP_KA[v.disposition] : v.end_reason ?? ''}`} /></div>}
         </div>
         {open && meta.perms.assign && <section className="card card-pad stack" style={{ gap: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
@@ -398,7 +409,7 @@ function VisitDialog({ id, meta, spots, onClose }: { id: string; meta: ErMeta; s
       {dlg === 'merge' && <MergeDialog source={p} initialTarget={mergeTarget} onClose={() => setDlg(null)} />}
       {dlg === 'cancel' && <Modal title="ER-ის შემთხვევის გაუქმება" onClose={() => setDlg(null)} width={480}
         footer={<><button className="btn" type="button" onClick={() => setDlg(null)}>დახურვა</button><button className="btn primary" type="button" disabled={reason.trim().length < 3 || cancel.isPending} onClick={() => cancel.mutate()}>გაუქმება</button></>}>
-        <span className="small muted">მხოლოდ შეცდომით რეგისტრაცია (მაგ. სხვა პაციენტი / დუბლიკატი). პაციენტის გასვლა / გაწერა — შემდეგ ეტაპზე („გამოსავალი“).</span>
+        <span className="small muted">მხოლოდ შეცდომით რეგისტრაცია (მაგ. სხვა პაციენტი / დუბლიკატი). პაციენტის გასვლა / გაწერა — ჩანართი „გამოსავალი“.</span>
         <Field label="მიზეზი" htmlFor="cn-r" required><input id="cn-r" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <ErrorBox error={cancel.error} />
       </Modal>}

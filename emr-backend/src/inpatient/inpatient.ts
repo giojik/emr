@@ -1,3 +1,4 @@
+import { erOnAdmissionCancelled } from '../er/er-hooks';
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
@@ -427,10 +428,26 @@ export class InpatientService {
   // ================================================================= ჰოსპიტალიზაცია
   async admit(dto: AdmitDto, u: AuthUser, ctx: AuditContext) {
     const s = await this.settings();
+    try {
+      const out = await this.db.transaction().execute((trx) => this.admitTx(trx, dto, u, ctx, s));
+      if (!out.bed) await this.notifyAwaiting(out.department.id, out.department.name, `${out.patient.last_name} ${out.patient.first_name}`, out.adm_no);
+      return { encounter_id: out.encounter_id, adm_no: out.adm_no, bed: out.bed };
+    } catch (e) { mapPgError(e, { ux_inpatient_stays_patient_active: 'პაციენტი უკვე ჰოსპიტალიზებულია', ux_bed_assignments_bed: 'საწოლი უკვე დაკავებულია' }); }
+  }
+  /** საწოლის მოლოდინი (ორეტაპიანი) — ტრანზაქციის შემდეგ; 0090: ER-იდან ჰოსპიტალიზაციაც */
+  async afterAdmit(out: { bed: string | null; department: { id: string; name: string }; patient: { first_name: string; last_name: string }; adm_no: string }) {
+    if (!out.bed) await this.notifyAwaiting(out.department.id, out.department.name, `${out.patient.last_name} ${out.patient.first_name}`, out.adm_no).catch(() => undefined);
+  }
+
+  /**
+   * ჰოსპიტალიზაცია გარე ტრანზაქციაში (0090: ER → სტაციონარი — ER-ის დახურვა, ჰოსპიტალიზაცია, დანიშნულებების გადატანა — ერთად).
+   * opts.bedAllowed — ER-ის მიმღები ექიმი საწოლს არ ანიჭებს (ორეტაპიანი; განყოფილება ანიჭებს), მოთხოვნის მიმღები განყოფილება — კი.
+   */
+  async admitTx(trx: Trx, dto: AdmitDto, u: AuthUser, ctx: AuditContext, s: InpatientSettings) {
     if (dto.source === 'transfer_in' && !dto.referring_institution?.trim()) throw new BadRequestException('სხვა კლინიკიდან გადმოყვანისას მიუთითეთ დაწესებულება');
     if (dto.planned_id && !s.planned_queue) throw new BadRequestException('გეგმიური რიგი გამორთულია');
-    try {
-      const out = await this.db.transaction().execute(async (trx) => {
+    {
+      {
         const patient = await trx.selectFrom('patients').select(['id', 'gender', 'is_deceased', 'first_name', 'last_name']).where('id', '=', dto.patient_id).forUpdate().executeTakeFirst();
         if (!patient) throw new NotFoundException('პაციენტი ვერ მოიძებნა');
         if (patient.is_deceased) throw new BadRequestException('პაციენტი გარდაცვლილად არის მონიშნული');
@@ -504,10 +521,8 @@ export class InpatientService {
         if (bed) await this.event(trx, { encounter_id: enc.id, bed_id: bed.id, kind: 'bed_assigned', data: { bed: bed.code, ward: bed.ward_code, warnings: bed.warnings } }, u);
         await this.audit.log(ctx, { action: 'INPATIENT_ADMIT', entityName: 'encounters', entityId: enc.id, newData: { adm_no: admNo, ...dto } }, trx);
         return { encounter_id: enc.id, adm_no: admNo, bed: bed?.code ?? null, department: dep, patient };
-      });
-      if (!out.bed) await this.notifyAwaiting(out.department.id, out.department.name, `${out.patient.last_name} ${out.patient.first_name}`, out.adm_no);
-      return { encounter_id: out.encounter_id, adm_no: out.adm_no, bed: out.bed };
-    } catch (e) { mapPgError(e, { ux_inpatient_stays_patient_active: 'პაციენტი უკვე ჰოსპიტალიზებულია', ux_bed_assignments_bed: 'საწოლი უკვე დაკავებულია' }); }
+      }
+    }
   }
 
   /** ორეტაპიანი: განყოფილების ექთნებს / ხელმძღვანელს — „პაციენტი ელოდება საწოლს“ */
@@ -630,7 +645,9 @@ export class InpatientService {
       await trx.updateTable('encounters').set({ status: 'cancelled', end_time: sql`now()` }).where('id', '=', encounterId).execute();
       if (st.planned_id) await trx.updateTable('inpatient_planned').set({ status: 'waiting', encounter_id: null, bed_id: null }).where('id', '=', st.planned_id).execute();
       if (st.referral_id) await trx.updateTable('referrals').set({ status: 'requested', completed_at: null, result_text: null }).where('id', '=', st.referral_id).execute();
-      await this.event(trx, { encounter_id: encounterId, bed_id: cur?.bed_id, kind: 'cancelled', data: { reason } }, u);
+      // 0090: ER-იდან ჰოსპიტალიზებული — ER-ის შემთხვევა ისევ იხსნება (დაფაზე ბრუნდება)
+      const er = st.source === 'emergency' ? await erOnAdmissionCancelled(trx, encounterId, u.id, reason) : null;
+      await this.event(trx, { encounter_id: encounterId, bed_id: cur?.bed_id, kind: 'cancelled', data: { reason, er_reopened: !!er } }, u);
       await this.audit.log(ctx, { action: 'INPATIENT_CANCEL', entityName: 'encounters', entityId: encounterId, newData: { reason } }, trx);
       return { encounter_id: encounterId, status: 'cancelled' };
     });

@@ -12,15 +12,15 @@ import { RequireModule } from '../modules/module-guard';
 export class DocumentsController {
   constructor(private readonly docs: DocumentsService) {}
 
-  @Get('encounters/:id/form100/draft') @Roles('admin', 'doctor')
+  @Get('encounters/:id/form100/draft') @Roles('admin', 'doctor', 'er_doctor')
   draft(@Param('id', ParseUUIDPipe) id: string) { return this.docs.draft(id); }
 
-  @Post('encounters/:id/form100') @Roles('admin', 'doctor')
+  @Post('encounters/:id/form100') @Roles('admin', 'doctor', 'er_doctor')
   issue(@Param('id', ParseUUIDPipe) id: string, @Body() dto: IssueForm100Dto, @CurrentUser() u: AuthUser, @Req() req: Request) {
     return this.docs.issueForm100(id, dto, u, auditCtx(req));
   }
 
-  @Get('documents') @Roles('admin', 'doctor', 'receptionist')
+  @Get('documents') @Roles('admin', 'doctor', 'receptionist', 'er_doctor')
   list(@Query('type') type?: string, @Query('encounter_id') encounterId?: string, @Query('patient_id') patientId?: string,
        @Query('from') from?: string, @Query('to') to?: string) {
     return this.docs.list({ type, encounterId, patientId, from, to });
@@ -32,7 +32,7 @@ export class DocumentsController {
     return meta;
   }
 
-  @Get('documents/:id/pdf') @Roles('admin', 'doctor', 'receptionist')
+  @Get('documents/:id/pdf') @Roles('admin', 'doctor', 'receptionist', 'er_doctor')
   async pdf(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const f = await this.docs.pdf(id, auditCtx(req));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${f.filename}"`, 'Cache-Control': 'no-store' });

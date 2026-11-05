@@ -21,7 +21,7 @@ export interface ErMeta {
   institutions: { id: string; name: string }[]; waiting_for: string[];
   perms: { register: boolean; triage: boolean; pickup: boolean; assign: boolean; manage: boolean; identify: boolean; merge: boolean };
 }
-export type ErStatus = 'waiting' | 'triaged' | 'in_treatment' | 'cancelled';
+export type ErStatus = 'waiting' | 'triaged' | 'in_treatment' | 'departed' | 'cancelled';
 export interface BoardItem {
   encounter_id: string; visit_no: string; department_id: string; department_name: string; arrived_at: string; arrival_mode: string; arrival_name: string; arrival_kind: string;
   status: ErStatus; spot: { id: string; code: string; name: string; kind: SpotKind } | null;
@@ -58,12 +58,14 @@ export interface ErVisit {
     phone_number: string; is_unknown: boolean; unknown_no: number | null; merged_into_id: string | null; age: number };
   triage: TriageRow[]; allergies: { id: string; substance: string; reaction_type: string | null; severity: string }[];
   // 0088: ICD-10 (ბირთვი) და კლინიკური ჩაწერის უფლება (doctor_write: team / attending; ER აქტიური; შემთხვევა მიმდინარე)
-  diagnoses: Diagnosis[]; clinical: { write: boolean; dx_default_priority: 'urgent' | 'routine'; doctor_write: 'team' | 'attending' };
+  diagnoses: Diagnosis[]; clinical: { write: boolean; doc_write?: boolean; doc_open?: boolean; dx_default_priority: 'urgent' | 'routine'; doctor_write: 'team' | 'attending' };
+  /** 0090: გამოსავალი */
+  disposition?: 'home' | 'admitted' | 'transfer' | 'ama' | 'lwbs' | 'death' | null; doc_closes_at?: string | null;
   /** 0089: დანიშნულებები (აქტიური / დაუდასტურებელი ზეპირი) */
   orders?: { active: number; verbal_pending: number };
 }
 
-export const STATUS_KA: Record<ErStatus, string> = { waiting: 'ტრიაჟის მოლოდინში', triaged: 'ექიმის მოლოდინში', in_treatment: 'მკურნალობაში', cancelled: 'გაუქმებული' };
+export const STATUS_KA: Record<ErStatus, string> = { waiting: 'ტრიაჟის მოლოდინში', triaged: 'ექიმის მოლოდინში', in_treatment: 'მკურნალობაში', departed: 'გასულია', cancelled: 'გაუქმებული' };
 export const WAIT_KA: Record<string, string> = { lab: 'ანალიზი', imaging: 'კვლევა (გამოსახულება)', consult: 'კონსულტაცია', bed: 'საწოლი', transport: 'ტრანსპორტი', other: 'სხვა' };
 export const SPOT_KA: Record<SpotKind, string> = { bed: 'ტახტი', chair: 'სავარძელი', corridor: 'დერეფანი', resus: 'რეანიმაციული', isolation: 'იზოლაცია', other: 'სხვა' };
 export const ARRIVAL_KIND_KA: Record<string, string> = { walk_in: 'თვითდინება', ambulance: 'სასწრაფო', transfer: 'გადმოყვანა', police: 'პოლიცია', other: 'სხვა' };

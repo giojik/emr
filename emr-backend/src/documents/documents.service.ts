@@ -1,3 +1,4 @@
+import { erCanWrite } from '../er/er-access';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
@@ -171,7 +172,7 @@ export class DocumentsService {
       const e = await trx.selectFrom('encounters as e')
         .innerJoin('patients as p', 'p.id', 'e.patient_id')
         .innerJoin('users as u', 'u.id', 'e.attending_doctor_id')
-        .select(['e.id', 'e.status', 'e.start_time', 'e.attending_doctor_id',
+        .select(['e.id', 'e.status', 'e.type', 'e.start_time', 'e.attending_doctor_id',
           'p.first_name', 'p.last_name', 'p.birth_date', 'p.personal_number', 'p.passport_number', 'p.address', 'p.phone_number',
           'u.first_name as doc_first', 'u.last_name as doc_last', 'u.specialty', 'u.license_number'])
         .where('e.id', '=', encounterId).forUpdate(['e']).executeTakeFirstOrThrow();
@@ -185,7 +186,9 @@ export class DocumentsService {
           .orderBy(sql`ended_at IS NULL`, 'desc').orderBy('started_at', 'desc').limit(1).executeTakeFirst();
         head = me.is_section_head && !!dep && me.department_id === dep.department_id;
       }
-      if (!(has(user, 'admin') || (has(user, 'doctor') && (user.id === e.attending_doctor_id || head)))) {
+      // 0090: ER-ის შემთხვევა — ER-ის ექიმი (doctor_write: team / attending)
+      const er = e.type === 'emergency' && has(user, 'er_doctor') && (await erCanWrite(user, e.attending_doctor_id));
+      if (!(er || has(user, 'admin') || (has(user, 'doctor') && (user.id === e.attending_doctor_id || head)))) {
         throw new ForbiddenException(d.inpatient ? 'ცნობას გასცემს მკურნალი ექიმი ან განყოფილების ხელმძღვანელი' : 'ცნობას გასცემს მკურნალი ექიმი');
       }
       const conclusion = dto.conclusion ?? null;
@@ -317,4 +320,5 @@ export class DocumentsService {
 const DOC_TYPE_KA: Record<string, string> = {
   form_100: 'ფორმა №IV-100/ა — ცნობა ჯანმრთელობის მდგომარეობის შესახებ',
   epicrisis: 'ეპიკრიზი (სტაციონარი)',
+  er_summary: 'ამონაწერი გადაუდებელი განყოფილებიდან (ER-ის ფურცელი)',
 };

@@ -1,12 +1,18 @@
 import { Field } from '../../components/ui';
 import { useErMeta } from './Er';
 
+const SECTIONS: [string, string][] = [['arrival', 'შემოსვლა'], ['triage', 'ტრიაჟი'], ['notes', 'ჩანაწერები'], ['diagnoses', 'დიაგნოზი'], ['lab', 'ლაბორატორია'],
+  ['dx', 'ინსტრუმენტული'], ['consults', 'კონსულტაციები'], ['orders', 'მკურნალობა'], ['disposition', 'გამოსავალი'], ['recommendations', 'რეკომენდაციები']];
+
 /** ადმინისტრირება → მოდულები → გადაუდებელი დახმარება (0087): პარამეტრები */
 export function ErSettings({ s, set }: { s: Record<string, unknown>; set: (v: Record<string, unknown>) => void }) {
   const meta = useErMeta();
   const upd = (k: string, v: unknown) => set({ ...s, [k]: v });
   const int = (k: string, d: number, min: number, max: number) => (
     <input id={`er-${k}`} className="input mono" type="number" min={min} max={max} value={Number(s[k] ?? d)} onChange={(e) => upd(k, Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} />);
+  const sel = (k: string, label: string, d: string, opts: [string, string][], hint?: string) => (
+    <Field label={label} htmlFor={`er-${k}`} hint={hint}><select id={`er-${k}`} className="select" value={String(s[k] ?? d)} onChange={(e) => upd(k, e.target.value)}>
+      {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>);
   const chk = (k: string, label: string, hint?: string) => <label className="row small" title={hint}><input type="checkbox" checked={!!s[k]} onChange={(e) => upd(k, e.target.checked)} /> {label}</label>;
   return (
     <div className="stack">
@@ -57,6 +63,27 @@ export function ErSettings({ s, set }: { s: Record<string, unknown>; set: (v: Re
           {chk('verbal_orders', 'ზეპირი დანიშნულება (ექთანი — ექიმის სახელით)', 'ექიმი იღებს შეტყობინებას და ადასტურებს')}
           {chk('stock_deduct', 'მიცემისას ჩამოწერა ER-ის ქვესაწყობიდან', 'საჭიროებს მოდულს „საწყობი“ (გამორთულზე — მიცემა იწერება ჩამოწერის გარეშე)')}
           {chk('allow_no_stock', 'ნაშთის გარეშე მიცემა დაშვებულია (დასაბუთებით)', 'გამორთულზე — ნაშთის / ქვესაწყობის გარეშე მიცემა იბლოკება')}
+        </div>
+        <h3 style={{ gridColumn: '1 / -1', margin: '6px 0 0' }}>გამოსავალი (0090)</h3>
+        {sel('admit_mode', 'ჰოსპიტალიზაცია', 'direct', [['direct', 'ER-ის ექიმი აფორმებს პირდაპირ'], ['request', 'მოთხოვნა → განყოფილება იღებს']], 'საჭიროებს მოდულს „სტაციონარი“')}
+        {sel('transfer_orders', 'აქტიური დანიშნულებები ჰოსპიტალიზაციისას', 'reconcile', [['reconcile', 'გაგრძელება / შეწყვეტა (არჩევით)'], ['stop_all', 'ყველა წყდება']], 'გაგრძელება — მოდულით „დანიშნულებები“')}
+        {sel('require_initial_note', 'ხელმოწერილი პირველადი გასინჯვა', 'block', [['block', 'სავალდებულო'], ['warn', 'გაფრთხილება (დასაბუთებით)'], ['off', 'არ მოწმდება']], 'LWBS — არ მოწმდება; გარდაცვალება — გაფრთხილება')}
+        {sel('require_diagnosis', 'ძირითადი დიაგნოზი (ICD-10)', 'block', [['block', 'სავალდებულო'], ['warn', 'გაფრთხილება (დასაბუთებით)'], ['off', 'არ მოწმდება']])}
+        {sel('verbal_unconfirmed', 'დაუდასტურებელი ზეპირი დანიშნულება', 'block', [['block', 'ბლოკავს'], ['warn', 'გაფრთხილება (დასაბუთებით)']])}
+        {sel('open_items_check', 'ღია კვლევა / კონსულტაცია / ინფუზია', 'warn', [['warn', 'გაფრთხილება (დასაბუთებით)'], ['off', 'არ მოწმდება']])}
+        {sel('ama_proof', 'AMA — დადასტურება', 'consent_or_witnesses', [['consent_or_witnesses', 'ხელწერილი ან 2 მოწმე'], ['reason', 'მხოლოდ მიზეზი']], 'ხელწერილის ტექსტი — დოკუმენტების შაბლონები → ER_SELF_DISCHARGE')}
+        <Field label="დოკუმენტაციის ფანჯარა (სთ)" htmlFor="er-doc_window_h" hint="0–168; გამოსავლის შემდეგ — ჩანაწერი, ICD-10, ფურცლის განახლება (0 — მაშინვე იხურება)">{int('doc_window_h', 24, 0, 168)}</Field>
+        <Field label="გამოსავლის გაუქმება (სთ)" htmlFor="er-reopen_h" hint="0–72; შეცდომის გასწორება — ER-ის მენეჯერი (გარდაცვალება — admin); 0 — გამორთულია">{int('reopen_h', 4, 0, 72)}</Field>
+        {sel('summary_mode', 'ER-ის ფურცელი', 'builtin', [['builtin', 'სტანდარტული (სექციების არჩევით)'], ['template', 'შაბლონით (ER_SUMMARY)']], 'შაბლონი — ადმინისტრირება → დოკუმენტების შაბლონები → ER-ის ფურცელი')}
+        {String(s.summary_mode ?? 'builtin') === 'builtin' && <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
+          <span className="small muted">ფურცლის სექციები (რიგით):</span>
+          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>{SECTIONS.map(([k, l]) => {
+            const cur = (s.summary_sections as string[] | undefined) ?? SECTIONS.map((x) => x[0]);
+            return <label key={k} className="row small"><input type="checkbox" checked={cur.includes(k)} disabled={cur.length === 1 && cur.includes(k)}
+              onChange={(e) => upd('summary_sections', e.target.checked ? SECTIONS.map((x) => x[0]).filter((x) => x === k || cur.includes(x)) : cur.filter((x) => x !== k))} /> {l}</label>; })}</div>
+        </div>}
+        <div className="stack" style={{ gap: 6, gridColumn: '1 / -1' }}>
+          {chk('recommendations_required', 'რეკომენდაციები სავალდებულოა (სახლში / გადაყვანა / AMA)')}
         </div>
       </div>
     </div>

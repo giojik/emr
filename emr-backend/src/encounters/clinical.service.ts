@@ -6,6 +6,7 @@ import { has, type AuthUser } from '../auth/roles';
 import { withPgErrors } from '../common/pg-errors';
 import { InjectDb, type Database } from '../database/database.module';
 import type { DiagnosisDto, PrescriptionDto, ReferralDto, UpdateReferralDto, VitalsDto } from './dto/encounters.dto';
+import { erDocOpen } from '../er/er-access';
 import { EncounterCoreService } from './encounter-core.service';
 import { PAYMENT_ERRORS } from './encounters.service';
 
@@ -38,9 +39,18 @@ export class ClinicalService {
     }), { chk_vitals_ranges: 'მნიშვნელობა ფიზიოლოგიურ საზღვრებს სცდება — გადაამოწმეთ (მაგ. 1200 ნაცვლად 120?)' });
   }
 
+  /** ICD-10: აქტიური ვიზიტი; 0090 — ER-ის გასული შემთხვევა დოკუმენტაციის ფანჯარაში (doc_window_h) */
+  private async erDocLock(trx: Parameters<EncounterCoreService['lock']>[0], encounterId: string) {
+    const e = await this.core.lock(trx, encounterId, ['active', 'discharged']);
+    if (e.status !== 'active' && !(e.type === 'emergency' && (await erDocOpen(trx, encounterId)))) {
+      throw new ConflictException(`ოპერაცია დაუშვებელია ვიზიტის სტატუსზე "${e.status}" (საჭიროა: active)`);
+    }
+    return e;
+  }
+
   addDiagnosis(encounterId: string, dto: DiagnosisDto, user: AuthUser, ctx: AuditContext) {
     return withPgErrors(() => this.db.transaction().execute(async (trx) => {
-      const e = await this.core.lock(trx, encounterId, ['active']);
+      const e = await this.erDocLock(trx, encounterId);
       await this.core.assertWriter(e, user);
       const icd = await trx.selectFrom('icd10_codes').select(['code', 'title', 'is_asterisk', 'is_active'])
         .where('code', '=', dto.icd10_code).executeTakeFirst();
@@ -56,7 +66,7 @@ export class ClinicalService {
 
   removeDiagnosis(encounterId: string, dxId: string, user: AuthUser, ctx: AuditContext) {
     return this.db.transaction().execute(async (trx) => {
-      const e = await this.core.lock(trx, encounterId, ['active']);
+      const e = await this.erDocLock(trx, encounterId);
       await this.core.assertWriter(e, user);
       const dx = await trx.deleteFrom('encounter_diagnoses').where('id', '=', dxId).where('encounter_id', '=', encounterId)
         .returningAll().executeTakeFirst();

@@ -17,7 +17,7 @@ import { RosterLookup } from '../roster/roster-common';
 import { erCanWrite, type ErClinicalSettings } from './er-access';
 
 /**
- * გადაუდებელი დახმარება (ER), 0087 — რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი, დაფა / TV, ადგილები, ცნობარები.
+ * გადაუდებელი დახმარება (ER), 0087 (+ 0090: გამოსავალი — er-disposition.ts) — რეგისტრაცია (+ უცნობი პაციენტი), ტრიაჟი, დაფა / TV, ადგილები, ცნობარები.
  *  • ER-ის შემთხვევა = encounters.type 'emergency' + er_visits (ცარიელი ინვოისით — ბილინგი 0090-ში);
  *  • ტრიაჟის დონეს ირჩევს ადამიანი — NEWS2 მხოლოდ მინიშნებაა (სისტემა დონეს არ ანიჭებს);
  *  • რბილი კავშირი: roster — „მორიგე ექიმი ახლა“ (RosterLookup: არააქტიურზე ცარიელი).
@@ -506,7 +506,10 @@ export class ErService {
     // 0088: კლინიკური ჩაწერა (ჩანაწერი / ICD-10 / დიაგნოსტიკა / კონსულტაცია) — ER აქტიური, შემთხვევა მიმდინარე, doctor_write
     const s = await this.settings();
     const active = await this.modules.isActive('er').catch(() => false);
-    const clinical = { write: !!u && active && !v.ended_at && await erCanWrite(u, v.doctor_id && v.doctor_at ? v.doctor_id : null),
+    // 0090: დოკუმენტაციის ფანჯარა — გასულ შემთხვევაზე ICD-10 / ჩანაწერი (კვლევა / დანიშვნა — არა)
+    const docOpen = v.status === 'departed' && !!v.doc_closes_at && new Date(v.doc_closes_at).getTime() > Date.now();
+    const writer = !!u && active && await erCanWrite(u, v.doctor_id && v.doctor_at ? v.doctor_id : null);
+    const clinical = { write: writer && !v.ended_at, doc_write: writer && (!v.ended_at || docOpen), doc_open: docOpen,
       dx_default_priority: s.dx_default_priority ?? 'urgent', doctor_write: s.doctor_write ?? 'team' };
     // 0089: დანიშნულებები — მოკლე სტატუსი ბარათის ჩანართისთვის
     const ord = await this.db.selectFrom('er_orders').select([sql<number>`count(*) FILTER (WHERE status = 'active')::int`.as('active'),

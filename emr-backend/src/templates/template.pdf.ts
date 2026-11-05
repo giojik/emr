@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { join } from 'node:path';
-import { fillText, type Block } from './template-blocks';
+import { fillText, type Block, type ErSection } from './template-blocks';
 
 const FONT_DIR = join(__dirname, '..', '..', 'assets', 'fonts');
 
@@ -25,6 +25,7 @@ export interface TemplatePdfInput {
     lab?: LabRow[];
     dx?: DxResultRow[];
     signatures?: Partial<Record<'attending' | 'department_head' | 'patient', Signer>>;
+    er?: Partial<Record<ErSection, string | null>>;           // 0090: ER-ის ფურცლის სექციები (წინასწარ ფორმატირებული ტექსტი)
   };
   footer?: string | null;
 }
@@ -124,6 +125,9 @@ export async function renderTemplatePdf(p: TemplatePdfInput): Promise<Buffer> {
         section(b.label, rows.length ? rows.map((r) => `${r.date} — ${r.title}${r.conclusion ? `: ${r.conclusion}` : ''}`).join('\n') : null);
         break;
       }
+      case 'er_section':
+        section(b.label, p.data.er?.[b.section] ?? null);
+        break;
       case 'signatures': {
         room(40 + 45 * b.signers.length); doc.moveDown(0.6);
         for (const s of b.signers) {

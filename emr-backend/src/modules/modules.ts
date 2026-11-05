@@ -341,6 +341,14 @@ export const VALIDATORS: Record<string, { keys: Record<string, (v: unknown) => b
       prn_max_h: (v) => int(v, 1, 24), verbal_orders: bool, verbal_confirm_h: (v) => int(v, 1, 24),
       double_check: (v) => oneOf(v, ['off', 'high_alert', 'high_alert_controlled']), dose_rule: (v) => oneOf(v, ['warn', 'reason']),
       allow_no_stock: bool, stock_deduct: bool, stat_due_min: (v) => int(v, 5, 120),
+      // 0090: გამოსავალი
+      admit_mode: (v) => oneOf(v, ['direct', 'request']), transfer_orders: (v) => oneOf(v, ['reconcile', 'stop_all']),
+      require_initial_note: (v) => oneOf(v, ['block', 'warn', 'off']), require_diagnosis: (v) => oneOf(v, ['block', 'warn', 'off']),
+      verbal_unconfirmed: (v) => oneOf(v, ['block', 'warn']), open_items_check: (v) => oneOf(v, ['warn', 'off']), recommendations_required: bool,
+      ama_proof: (v) => oneOf(v, ['consent_or_witnesses', 'reason']), doc_window_h: (v) => int(v, 0, 168), reopen_h: (v) => int(v, 0, 72),
+      summary_mode: (v) => oneOf(v, ['builtin', 'template']),
+      summary_sections: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 10 && new Set(v).size === v.length
+        && v.every((x) => typeof x === 'string' && ['arrival', 'triage', 'notes', 'diagnoses', 'lab', 'dx', 'consults', 'orders', 'disposition', 'recommendations'].includes(x)),
     },
     extra: async (s, db) => {
       const c = s.triage_scale as string | undefined;

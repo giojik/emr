@@ -4,7 +4,7 @@ import { z } from 'zod';
  * დოკუმენტის შაბლონი (0041) = ბლოკების სია. ტექსტში ცვლადი — {{group.key}} (მხოლოდ კატალოგიდან).
  * ბლოკების ნაკრები დამოკიდებულია შაბლონის სახეობაზე (kind); ვალიდაცია — გამოქვეყნებისას (და draft-ის შენახვისას — გაფრთხილებად).
  */
-export const KINDS = ['consent', 'refusal', 'epicrisis', 'other'] as const;
+export const KINDS = ['consent', 'refusal', 'epicrisis', 'er_summary', 'other'] as const;
 export type Kind = (typeof KINDS)[number];
 
 const text = z.string().max(20_000);
@@ -21,7 +21,11 @@ export const BlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('lab_results'), label }),
   z.object({ type: z.literal('dx_results'), label }),
   z.object({ type: z.literal('signatures'), signers: z.array(z.enum(['attending', 'department_head', 'patient'])).min(1).max(3) }),
+  // 0090: ER-ის ფურცლის სექცია (მონაცემი — ER-ის შემთხვევიდან: შემოსვლა, ტრიაჟი, ჩანაწერები, კონსულტაციები, დანიშნულებები, გამოსავალი)
+  z.object({ type: z.literal('er_section'), section: z.enum(['arrival', 'triage', 'notes', 'consults', 'orders', 'disposition']), label }),
 ]);
+export const ER_SECTIONS = ['arrival', 'triage', 'notes', 'consults', 'orders', 'disposition'] as const;
+export type ErSection = (typeof ER_SECTIONS)[number];
 export type Block = z.infer<typeof BlockSchema>;
 export const BodySchema = z.object({ blocks: z.array(BlockSchema).min(1).max(80) });
 export type Body = z.infer<typeof BodySchema>;
@@ -31,7 +35,10 @@ const ALLOWED: Record<Kind, Block['type'][]> = {
   refusal:   ['heading', 'text'],
   other:     ['header', 'heading', 'text', 'patient', 'signatures'],
   epicrisis: ['header', 'heading', 'text', 'patient', 'diagnoses', 'field', 'lab_results', 'dx_results', 'signatures'],
+  er_summary: ['header', 'heading', 'text', 'patient', 'diagnoses', 'field', 'lab_results', 'dx_results', 'er_section', 'signatures'],
 };
+/** 0090: ER-ის ფურცლის შესავსები ველები (field.key) — გამოსავლის დიალოგიდან */
+export const ER_SUMMARY_FIELDS = ['recommendations', 'note'] as const;
 
 /** ცვლადების კატალოგი: გასაღები → აღწერა + ნიმუში (preview). მნიშვნელობებს ავსებს TemplateContextService. */
 export const VARIABLES: Record<string, { label: string; sample: string }> = {
@@ -59,6 +66,15 @@ export const VARIABLES: Record<string, { label: string; sample: string }> = {
   'stay.discharged_at':      { label: 'გაწერის თარიღი და დრო', sample: '06/10/2026 12:00' },
   'stay.discharge_type':     { label: 'გაწერის ტიპი', sample: 'ბინაზე' },
   'stay.bed_days':           { label: 'საწოლდღეები', sample: '5' },
+  'er.visit_no':             { label: 'ER — შემთხვევის №', sample: 'ER26-000045' },
+  'er.department':           { label: 'ER — განყოფილება', sample: 'გადაუდებელი განყოფილება' },
+  'er.arrived_at':           { label: 'ER — შემოსვლის თარიღი და დრო', sample: '06/10/2026 09:15' },
+  'er.departed_at':          { label: 'ER — გასვლის თარიღი და დრო', sample: '06/10/2026 13:40' },
+  'er.disposition':          { label: 'ER — გამოსავალი', sample: 'გაწერა სახლში' },
+  'er.doctor':               { label: 'ER — ექიმი', sample: 'ნ. გელაშვილი' },
+  'er.triage_level':         { label: 'ER — ტრიაჟის დონე', sample: 'ESI 3' },
+  'er.chief_complaint':      { label: 'ER — მთავარი ჩივილი', sample: 'გულმკერდის ტკივილი' },
+  'er.destination':          { label: 'ER — სად გადავიდა (განყოფილება / დაწესებულება)', sample: 'კარდიოლოგიის განყოფილება' },
   'doc.date':                { label: 'დოკუმენტის თარიღი (დღეს)', sample: '06/10/2026' },
   'user.name':               { label: 'თანამშრომელი (ვინც ბეჭდავს)', sample: 'მ. ნოზაძე' },
 };

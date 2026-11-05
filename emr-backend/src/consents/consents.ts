@@ -213,7 +213,7 @@ export class ConsentsService {
   }
 }
 
-const FRONT = ['admin', 'receptionist', 'doctor', 'nurse'] as const;
+const FRONT = ['admin', 'receptionist', 'doctor', 'nurse', 'er_triage', 'er_doctor', 'er_manage'] as const;   // 0090: + ER (ხელწერილი ER_SELF_DISCHARGE)
 
 @Controller()
 @RequireModule('mpi')

@@ -1606,12 +1606,68 @@ export interface ErAdministrations {
   witness_id: string | null;
 }
 
+export interface ErAdmitRequests {
+  attending_doctor_id: string | null;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_reason: string | null;
+  department_id: string;
+  encounter_id: string;
+  icd10_code: string;
+  icd10_title: string;
+  id: Generated<string>;
+  inpatient_encounter_id: string | null;
+  isolation: string | null;
+  note: string | null;
+  orders_plan: Generated<Json>;
+  overrides: Json | null;
+  patient_id: string;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  severity: string | null;
+  status: Generated<string>;
+}
+
 export interface ErArrivalModes {
   code: string;
   is_active: Generated<boolean>;
   kind: string;
   name: string;
   sort_order: Generated<number>;
+}
+
+export interface ErDispositions {
+  admit_request_id: string | null;
+  ama_reason: string | null;
+  autopsy_required: boolean | null;
+  dead_on_arrival: Generated<boolean>;
+  death_at: Timestamp | null;
+  death_icd10_code: string | null;
+  death_icd10_title: string | null;
+  decided_at: Generated<Timestamp>;
+  decided_by: string;
+  departed_at: Timestamp;
+  destination_id: string | null;
+  destination_text: string | null;
+  encounter_id: string;
+  id: Generated<string>;
+  inpatient_encounter_id: string | null;
+  kind: string;
+  note: string | null;
+  orders_plan: Generated<Json>;
+  orders_result: Generated<Json>;
+  overrides: Json | null;
+  prev_status: string;
+  receiver: string | null;
+  recommendations: string | null;
+  refusal_consent_id: string | null;
+  refusal_witnesses: string[] | null;
+  reopen_reason: string | null;
+  reopened_at: Timestamp | null;
+  reopened_by: string | null;
+  summary_document_id: string | null;
+  transfer_reason: string | null;
+  transport: string | null;
 }
 
 export interface ErOrders {
@@ -1709,6 +1765,8 @@ export interface ErVisits {
   created_at: Generated<Timestamp>;
   created_by: string | null;
   department_id: string;
+  disposition: string | null;
+  doc_closes_at: Timestamp | null;
   doctor_at: Timestamp | null;
   doctor_id: string | null;
   encounter_id: string;
@@ -3265,6 +3323,7 @@ export interface MedOrders {
   end_at: Timestamp | null;
   end_notified_at: Timestamp | null;
   entered_by: string;
+  er_order_id: string | null;
   frequency_code: string | null;
   generic_id: string | null;
   hold_reason: string | null;
@@ -6184,7 +6243,9 @@ export interface DB {
   epicrises: Epicrises;
   epicrisis_revisions: EpicrisisRevisions;
   er_administrations: ErAdministrations;
+  er_admit_requests: ErAdmitRequests;
   er_arrival_modes: ErArrivalModes;
+  er_dispositions: ErDispositions;
   er_orders: ErOrders;
   er_spots: ErSpots;
   er_triage: ErTriage;

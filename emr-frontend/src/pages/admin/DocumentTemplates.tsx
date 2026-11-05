@@ -4,11 +4,13 @@ import { api, ApiError } from '../../api/client';
 import { ErrorBox, Field, Loading, Modal, useToast } from '../../components/ui';
 import { tsDate } from '../../lib/format';
 
-type Kind = 'consent' | 'refusal' | 'epicrisis' | 'other';
+type Kind = 'consent' | 'refusal' | 'epicrisis' | 'er_summary' | 'other';
+type ErSection = 'arrival' | 'triage' | 'notes' | 'consults' | 'orders' | 'disposition';
 type Block =
   | { type: 'header' } | { type: 'patient' } | { type: 'heading'; text: string } | { type: 'text'; text: string }
   | { type: 'diagnoses'; which: 'final' | 'admission'; label: string } | { type: 'field'; key: string; label: string; required?: boolean; prefill?: string }
-  | { type: 'lab_results'; label: string } | { type: 'dx_results'; label: string } | { type: 'signatures'; signers: ('attending' | 'department_head' | 'patient')[] };
+  | { type: 'lab_results'; label: string } | { type: 'dx_results'; label: string } | { type: 'signatures'; signers: ('attending' | 'department_head' | 'patient')[] }
+  | { type: 'er_section'; section: ErSection; label: string };
 interface ListItem { code: string; kind: Kind; name: string; scope: string; required_on_admission: boolean; is_system: boolean; is_active: boolean; sort_order: number;
   published_version: number | null; text_approved: boolean | null; published_at: string | null; draft_version: number | null }
 interface Version { id: string; version: number; status: 'draft' | 'published' | 'archived'; body: { blocks: Block[] }; text_approved: boolean; change_note: string | null;
@@ -16,19 +18,22 @@ interface Version { id: string; version: number; status: 'draft' | 'published' |
 interface Detail extends Omit<ListItem, 'published_version' | 'text_approved' | 'published_at' | 'draft_version'> { versions: Version[]; draft_errors: string[] }
 interface Variable { key: string; label: string; sample: string }
 
-const KIND_KA: Record<Kind, string> = { consent: 'თანხმობა', refusal: 'ხელწერილი / უარი', epicrisis: 'ეპიკრიზი', other: 'სხვა დოკუმენტი' };
+const KIND_KA: Record<Kind, string> = { consent: 'თანხმობა', refusal: 'ხელწერილი / უარი', epicrisis: 'ეპიკრიზი', er_summary: 'ER-ის ფურცელი', other: 'სხვა დოკუმენტი' };
+/** 0090: ER-ის ფურცლის სექციები (მონაცემი — ER-ის შემთხვევიდან); field-ის გასაღებები: recommendations, note */
+const ER_SECTION_KA: Record<ErSection, string> = { arrival: 'შემოსვლა', triage: 'ტრიაჟი / ვიტალები', notes: 'ექიმის ჩანაწერები', consults: 'კონსულტაციები', orders: 'დანიშნულებები / მიცემა', disposition: 'გამოსავალი' };
 const ALLOWED: Record<Kind, Block['type'][]> = {
   consent: ['heading', 'text'], refusal: ['heading', 'text'], other: ['header', 'heading', 'text', 'patient', 'signatures'],
   epicrisis: ['header', 'heading', 'text', 'patient', 'diagnoses', 'field', 'lab_results', 'dx_results', 'signatures'],
+  er_summary: ['header', 'heading', 'text', 'patient', 'diagnoses', 'field', 'lab_results', 'dx_results', 'er_section', 'signatures'],
 };
 const BLOCK_KA: Record<Block['type'], string> = { header: 'სათაური: დაწესებულება + № + QR', heading: 'სათაური', text: 'ტექსტი', patient: 'პაციენტის რეკვიზიტები', diagnoses: 'დიაგნოზები',
-  field: 'შესავსები სექცია (ექიმი)', lab_results: 'ლაბ. შედეგები (ცხრილი)', dx_results: 'რადიოლოგია / ენდოსკოპია', signatures: 'ხელმოწერები' };
+  field: 'შესავსები სექცია (ექიმი)', lab_results: 'ლაბ. შედეგები (ცხრილი)', dx_results: 'რადიოლოგია / ენდოსკოპია', signatures: 'ხელმოწერები', er_section: 'ER-ის სექცია' };
 const SIGNER_KA = { attending: 'მკურნალი ექიმი', department_head: 'განყოფილების ხელმძღვანელი', patient: 'პაციენტი' } as const;
 const newBlock = (t: Block['type']): Block => ({
   header: { type: 'header' }, patient: { type: 'patient' }, heading: { type: 'heading', text: '' }, text: { type: 'text', text: '' },
   diagnoses: { type: 'diagnoses', which: 'final', label: 'საბოლოო კლინიკური დიაგნოზი' }, field: { type: 'field', key: '', label: '', required: false },
   lab_results: { type: 'lab_results', label: 'ჩატარებული გამოკვლევები — ლაბორატორია' }, dx_results: { type: 'dx_results', label: 'ჩატარებული გამოკვლევები — რადიოლოგია / ენდოსკოპია' },
-  signatures: { type: 'signatures', signers: ['attending'] },
+  signatures: { type: 'signatures', signers: ['attending'] }, er_section: { type: 'er_section', section: 'disposition', label: 'გამოსავალი' },
 } as Record<Block['type'], Block>)[t];
 
 /** ადმინისტრირება → დოკუმენტების შაბლონები (0041): ეპიკრიზი, თანხმობები, ხელწერილი; ვერსიები, ცვლადები, PDF preview */
@@ -41,7 +46,7 @@ export default function DocumentTemplates() {
       <div className="row"><h2 style={{ margin: 0 }} className="grow">დოკუმენტების შაბლონები</h2><button className="btn primary" type="button" onClick={() => setCreating(true)}>+ ახალი შაბლონი</button></div>
       <ErrorBox error={list.error} />
       <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
-        <div className="card">{list.isLoading ? <Loading /> : (['epicrisis', 'consent', 'refusal', 'other'] as Kind[]).map((k) => {
+        <div className="card">{list.isLoading ? <Loading /> : (['epicrisis', 'er_summary', 'consent', 'refusal', 'other'] as Kind[]).map((k) => {
           const xs = (list.data ?? []).filter((t) => t.kind === k); if (!xs.length) return null;
           return <div key={k}><div className="small muted" style={{ padding: '10px 12px 4px' }}>{KIND_KA[k]}</div>
             {xs.map((t) => <button key={t.code} type="button" className="row" onClick={() => setSel(t.code)}
@@ -145,6 +150,10 @@ function Editor({ code }: { code: string }) {
                 {b.type === 'diagnoses' && <div className="row" style={{ gap: 8, marginTop: 6 }}>
                   <select className="select" style={{ maxWidth: 200 }} value={b.which} onChange={(e) => upd(i, { which: e.target.value as 'final' | 'admission' })}>
                     <option value="final">საბოლოო</option><option value="admission">შემოსვლისას</option></select>
+                  <input className="input grow" value={b.label} onChange={(e) => upd(i, { label: e.target.value })} /></div>}
+                {b.type === 'er_section' && <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                  <select className="select" style={{ maxWidth: 220 }} value={b.section} onChange={(e) => upd(i, { section: e.target.value as ErSection })}>
+                    {(Object.keys(ER_SECTION_KA) as ErSection[]).map((k) => <option key={k} value={k}>{ER_SECTION_KA[k]}</option>)}</select>
                   <input className="input grow" value={b.label} onChange={(e) => upd(i, { label: e.target.value })} /></div>}
                 {(b.type === 'lab_results' || b.type === 'dx_results') && <input className="input" style={{ marginTop: 6 }} value={b.label} onChange={(e) => upd(i, { label: e.target.value })} />}
                 {b.type === 'signatures' && <div className="row" style={{ gap: 14, marginTop: 6 }}>{(Object.keys(SIGNER_KA) as (keyof typeof SIGNER_KA)[]).map((k) => (

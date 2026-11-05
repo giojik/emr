@@ -36,7 +36,7 @@ export const MODULES: ModuleDef[] = [
   m('icu', 'clinical', ['inpatient'], ['mar']),
   m('or', 'clinical', ['inpatient'], ['stock', 'cssd', 'roster', 'bme', 'ipc']),   // 0086: + ipc (SSI / პროფილაქტიკის ფანჯარა)
   // 0087: გადაუდებელი (ER) — მკაცრი წინაპირობა არ აქვს; რბილი კავშირები ემატება ეტაპობრივად, როცა ქცევა კოდშია (0087: roster — „მორიგე ახლა“ დაფაზე)
-  m('er', 'clinical', [], ['roster', 'lab', 'radiology', 'endoscopy', 'stock', 'pharmacy']),   // 0088: + lab / radiology / endoscopy (დიაგნოსტიკა ER-ის შემთხვევაზე); 0089: + stock (ჩამოწერა), pharmacy (დოზა / ურთიერთქმედება)
+  m('er', 'clinical', [], ['roster', 'lab', 'radiology', 'endoscopy', 'stock', 'pharmacy', 'inpatient', 'ipd_orders']),   // 0090: + inpatient (ჰოსპიტალიზაცია), ipd_orders (დანიშნულებების გადატანა)   // 0088: + lab / radiology / endoscopy; 0089: + stock, pharmacy
   // დიაგნოსტიკა
   m('lab', 'diagnostics', [], ['outpatient', 'inpatient', 'worklist']),   // 0086: + worklist (კრიტიკული ზარი / პასუხის გაცნობა)
   m('lab_gateway', 'diagnostics', ['lab'], ['lab_qc']),

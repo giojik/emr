@@ -11,6 +11,12 @@ export const DISCHARGE_KA: Record<string, string> = {
   home: 'ბინაზე', other_clinic: 'სხვა სამედიცინო დაწესებულებაში', against_advice: 'თვითნებურად (ხელწერილით)', death: 'გარდაცვალება',
 };
 
+/** 0090: ER-ის გამოსავალი */
+export const ER_DISPOSITION_KA: Record<string, string> = {
+  home: 'გაწერა სახლში', admitted: 'ჰოსპიტალიზაცია', transfer: 'გადაყვანა სხვა კლინიკაში', ama: 'წავიდა ექიმის რეკომენდაციის საწინააღმდეგოდ',
+  lwbs: 'წავიდა ექიმის ნახვამდე', death: 'გარდაცვალება',
+};
+
 export const fmtDate = (v: string | Date | null | undefined) => {
   if (!v) return null;
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) { const [y, m, d] = v.split('-'); return `${d}/${m}/${y}`; }
@@ -59,6 +65,22 @@ export class TemplateContextService {
       if (e && e.patient_id === patientId) {
         v['encounter.date'] = fmtDate(e.start_time);
         v['stay.attending_doctor'] = e.doctor;
+        // 0090: ER-ის შემთხვევა (ხელწერილი ER_SELF_DISCHARGE, ER-ის ფურცელი ER_SUMMARY)
+        const er = await ex.selectFrom('er_visits as v').innerJoin('departments as dp', 'dp.id', 'v.department_id').leftJoin('users as d', 'd.id', 'v.doctor_id')
+          .leftJoin('er_dispositions as x', (j) => j.onRef('x.encounter_id', '=', 'v.encounter_id').on('x.reopened_at', 'is', null))
+          .select(['v.visit_no', 'v.arrived_at', 'v.ended_at', 'v.disposition', 'v.triage_scale', 'v.triage_level', 'v.chief_complaint', 'dp.name as department',
+            sql<string | null>`d.first_name || ' ' || d.last_name`.as('doctor'), 'x.destination_text', 'x.inpatient_encounter_id',
+            sql<string | null>`(SELECT ei.name FROM external_institutions ei WHERE ei.id = x.destination_id)`.as('destination_name'),
+            sql<string | null>`(SELECT dd.name FROM encounters ie JOIN departments dd ON dd.id = ie.department_id WHERE ie.id = x.inpatient_encounter_id)`.as('admit_department')])
+          .where('v.encounter_id', '=', encounterId).executeTakeFirst();
+        if (er) {
+          Object.assign(v, {
+            'er.visit_no': er.visit_no, 'er.department': er.department, 'er.arrived_at': fmtDateTime(er.arrived_at), 'er.departed_at': er.disposition ? fmtDateTime(er.ended_at) : null,
+            'er.disposition': er.disposition ? ER_DISPOSITION_KA[er.disposition] : null, 'er.doctor': er.doctor,
+            'er.triage_level': er.triage_scale ? `${er.triage_scale} ${er.triage_level}` : null, 'er.chief_complaint': er.chief_complaint,
+            'er.destination': er.admit_department ?? er.destination_name ?? er.destination_text ?? null,
+          });
+        }
         const st = await ex.selectFrom('inpatient_stays as st')
           .select(['st.adm_no', 'st.admitted_at', 'st.ended_at', 'st.status', 'st.discharge_type', bedDaysSql('st').as('bed_days')])
           .where('st.encounter_id', '=', encounterId).executeTakeFirst();

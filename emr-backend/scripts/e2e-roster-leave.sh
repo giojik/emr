@@ -78,6 +78,9 @@ HOL=$(api GET /roster/holidays "$ADM" | jq -r '.[].day|.[0:10]')
 isw() { [ "$(date -d "$1" +%u)" -le 5 ] && ! grep -qx "$1" <<< "$HOL"; }
 wd() { local x=$1 n=0; while [[ ! "$x" > "$2" ]]; do isw "$x" && n=$((n+1)); x=$(date -d "$x +1 day" +%F); done; echo $n; }
 W=(); x="$M-01"; while [ "${x:0:7}" = "$M" ]; do isw "$x" && W+=("$x"); x=$(date -d "$x +1 day" +%F); done   # W[k] — k-ე სამუშაო დღე (0-დან)
+# ექთან 2-ის შვებულების წყვილი (W[K], W[K1]): არ უნდა დაემთხვეს ფიქსირებულ დღეებს (1 / 8 / 20 / 21 / 28 — ცვლები, გაცვლა);
+# ადრე W[10] / W[11] იყო — თვეში, სადაც უქმეები ამ დღეებს 20 / 21-ზე გადაწევს (მაგ. 2027-01: 7 და 19 — უქმე), გაცვლის ბლოკი ვარდებოდა
+K=10; while :; do case " $(d 1) $(d 8) $(d 20) $(d 21) $(d 28) " in *" ${W[$K]} "*|*" ${W[$((K+1))]} "*) K=$((K+1)) ;; *) break ;; esac; done; K1=$((K+1))
 [ ${#W[@]} -ge 17 ] || die "თვეში სამუშაო დღე < 17"
 
 step "1. უფლება, პარამეტრები, არყოფნის ტიპები"
@@ -105,7 +108,7 @@ SJ=$(api POST /roster/staff "$ADM" -d "{\"first_name\":\"სანიტარ�
 [ -n "$S1" ] && [ -n "$S2" ] && [ -n "$S3" ] && [ -n "$SDOC" ] && [ -n "$SH2" ] && [ -n "$SJ" ] && ok "6 თანამშრომელი (ექთნები D1 ×2, D2 ×2, ექიმი D1, სანიტარი ანგარიშის გარეშე)" || die "თანამშრომლები ვერ შეიქმნა ($(echo "$FU$FD" | head -c 300))"
 R1=$(api POST /roster/rosters "$PL" -d "{\"department_id\":\"$D1\",\"month\":\"$M\"}" | jq -r '.id // empty')
 [ -n "$R1" ] || die "განრიგი ვერ შეიქმნა"
-R=$(add "$R1" "$PL" "[$(item "$S1" "${W[3]}" "$TD"),$(item "$S1" "${W[4]}" "$TD"),$(item "$S1" "${W[5]}" "$TN"),$(item "$S1" "$(d 1)" "$TD"),$(item "$S1" "$(d 20)" "$TD"),$(item "$S1" "$(d 28)" "$TD"),$(item "$S2" "${W[10]}" "$TD"),$(item "$S2" "${W[11]}" "$TD"),$(item "$S2" "$(d 21)" "$TD"),$(item "$S2" "$(d 8)" "$TN"),$(item "$SJ" "$(d 6)" "$TD")]" ',"mode":"skip"')
+R=$(add "$R1" "$PL" "[$(item "$S1" "${W[3]}" "$TD"),$(item "$S1" "${W[4]}" "$TD"),$(item "$S1" "${W[5]}" "$TN"),$(item "$S1" "$(d 1)" "$TD"),$(item "$S1" "$(d 20)" "$TD"),$(item "$S1" "$(d 28)" "$TD"),$(item "$S2" "${W[$K]}" "$TD"),$(item "$S2" "${W[$K1]}" "$TD"),$(item "$S2" "$(d 21)" "$TD"),$(item "$S2" "$(d 8)" "$TN"),$(item "$SJ" "$(d 6)" "$TD")]" ',"mode":"skip"')
 chk "მონახაზი: 11 ჩანაწერი" "$(echo "$R" | jq '.created|length'):$(echo "$R" | jq '.skipped|length')" "11:0"
 
 step "3. ბალანსი"
@@ -166,13 +169,13 @@ chk "HR მიზეზით — დადასტურებული, გ�
 step "6. გამოქვეყნებულ განრიგზე: დასაფარი (D1, E)"
 chk "გამოქვეყნება" "$(api POST "/roster/rosters/$R1/publish" "$PL" -d '{"confirm_warnings":true}' | jq -r .ok)" "true"
 V0=$(api GET "/roster/rosters/$R1" "$PL" | jq .version)
-A6=$(absreq "$N2" "{\"absence_type_id\":\"$TA\",\"date_from\":\"${W[10]}\",\"date_to\":\"${W[11]}\"}" | jq -r '.id // empty')
+A6=$(absreq "$N2" "{\"absence_type_id\":\"$TA\",\"date_from\":\"${W[$K]}\",\"date_to\":\"${W[$K1]}\"}" | jq -r '.id // empty')
 api POST "/roster/absences/$A6/approve" "$HD" -d '{}' >/dev/null
-chk "ექთანი 2: ANNUAL ${W[10]} … ${W[11]} — დადასტურებული; 2 ცვლა გაუქმდა" "$(api POST "/roster/absences/$A6/approve" "$HR" -d '{}' | jq -r .status):$(api GET "/roster/absences/$A6" "$HR" | jq '.roster_applied.cancelled|length')" "approved:2"
+chk "ექთანი 2: ANNUAL ${W[$K]} … ${W[$K1]} — დადასტურებული; 2 ცვლა გაუქმდა" "$(api POST "/roster/absences/$A6/approve" "$HR" -d '{}' | jq -r .status):$(api GET "/roster/absences/$A6" "$HR" | jq '.roster_applied.cancelled|length')" "approved:2"
 G=$(api GET "/roster/rosters/$R1" "$PL")
 chk "ბადე: ვერსია +1; დასაფარი 2 (წყარო — არყოფნა); ისტორიაში absence × 2" "$(( $(echo "$G" | jq .version) - V0 )):$(echo "$G" | jq '[.open_shifts[]|select(.source=="absence")]|length'):$(api GET "/roster/rosters/$R1/changes" "$PL" | jq '[.[]|select(.kind=="absence")]|length')" "1:2:2"
 chk "ბადე (შემდგენი): არყოფნა ტიპით — „შ“; ნახვის უფლებით — „—“ / „არყოფნა“ (D4)" "$(echo "$G" | jq -r --arg s "$S2" '[.absences[]|select(.staff_id==$s and .status=="approved")|.short]|unique|join(",")'):$(echo "$G" | jq -r .absence_detail):$(api GET "/roster/rosters/$R1" "$VW" | jq -r --arg s "$S2" '([.absences[]|select(.staff_id==$s)|"\(.short)/\(.name)"]|unique|join(",")) + ":" + (.absence_detail|tostring)')" "ბ,შ:true:—/არყოფნა:false"
-OS1=$(echo "$G" | jq -r --arg d "${W[10]}" '.open_shifts[]|select(.day==$d).id'); OS2=$(echo "$G" | jq -r --arg d "${W[11]}" '.open_shifts[]|select(.day==$d).id')
+OS1=$(echo "$G" | jq -r --arg d "${W[$K]}" '.open_shifts[]|select(.day==$d).id'); OS2=$(echo "$G" | jq -r --arg d "${W[$K1]}" '.open_shifts[]|select(.day==$d).id')
 chk "შეტყობინება „დასაფარი“: ექთანი 1 (იგივე განყ. / კატეგორია) — 2; ექიმი / D2-ის ექთანი — 0" "$(api GET /notifications "$N1" | jq -r '[.[]|select(.kind=="open_shift_new")|.items|length]|add // 0'):$(api GET /notifications "$DOC" | jq '[.[]|select(.kind=="open_shift_new")]|length'):$(api GET /notifications "$N3" | jq '[.[]|select(.kind=="open_shift_new")]|length')" "2:0:0"
 MY=$(api GET "/roster/open-shifts?mine=1" "$N1")
 chk "ექთანი 1: ჩემთვის ხელმისაწვდომი დასაფარი — 2" "$(echo "$MY" | jq --arg a "$OS1" --arg b "$OS2" '[.items[]|select(.id==$a or .id==$b)]|length')" "2"
@@ -180,7 +183,7 @@ chk "„ავიღებ“: ექთანი 1 — OK; ექიმი — 
 chk "შემდგენს — შეტყობინება open_shift_offer; „დასადასტურებელში“ — 1 დასაფარი მოხალისით" "$(api GET /notifications "$PL" | jq '[.[]|select(.kind=="open_shift_offer")]|length'):$(api GET /roster/inbox "$PL" | jq -r --arg o "$OS1" '[.offers[]|select(.id==$o)|.offers|length]|first')" "1:1"
 chk "შევსება: ექთანი 2 (არყოფნაშია) — 409 ROSTER_ABSENCE; ექთანი 1 — OK" "$(api POST "/roster/open-shifts/$OS1/assign" "$PL" -d "{\"staff_id\":\"$S2\"}" | jq -r .code):$(api POST "/roster/open-shifts/$OS1/assign" "$PL" -d "{\"staff_id\":\"$S1\"}" | jq -r '.entry_id != null')" "ROSTER_ABSENCE:true"
 G=$(api GET "/roster/rosters/$R1" "$PL")
-chk "  … ბადეში ექთანი 1 — ${W[10]} D; დასაფარი 1 დარჩა; ისტორია fill; ხელახლა შევსება — 409" "$(echo "$G" | jq -r --arg s "$S1" --arg d "${W[10]}" '[.entries[]|select(.staff_id==$s and .day==$d)|.code]|join(",")'):$(echo "$G" | jq '.open_shifts|length'):$(api GET "/roster/rosters/$R1/changes" "$PL" | jq '[.[]|select(.kind=="fill")]|length'):$(code POST "/roster/open-shifts/$OS1/assign" "$PL" -d "{\"staff_id\":\"$S1\"}")" "D:1:1:409"
+chk "  … ბადეში ექთანი 1 — ${W[$K]} D; დასაფარი 1 დარჩა; ისტორია fill; ხელახლა შევსება — 409" "$(echo "$G" | jq -r --arg s "$S1" --arg d "${W[$K]}" '[.entries[]|select(.staff_id==$s and .day==$d)|.code]|join(",")'):$(echo "$G" | jq '.open_shifts|length'):$(api GET "/roster/rosters/$R1/changes" "$PL" | jq '[.[]|select(.kind=="fill")]|length'):$(code POST "/roster/open-shifts/$OS1/assign" "$PL" -d "{\"staff_id\":\"$S1\"}")" "D:1:1:409"
 chk "დასაფარის გაუქმება: ექთანი — 403; შემდგენი მიზეზით — OK" "$(code POST "/roster/open-shifts/$OS2/cancel" "$N1" -d '{"reason":"ტესტ ტესტ"}'):$(api POST "/roster/open-shifts/$OS2/cancel" "$PL" -d '{"reason":"ტესტ-E2E: საჭირო აღარ არის"}' | jq -r .ok)" "403:true"
 EJ=$(echo "$G" | jq -r --arg s "$SJ" '.entries[]|select(.staff_id==$s)|.id')
 R=$(api POST "/roster/entries/$EJ/remove" "$PL" -d '{"reason":"ტესტ-E2E: სანიტარი ავადაა","open_shift":true}')
@@ -233,8 +236,8 @@ chk "ხელმძღვანელი ეთანხმება → გა
 chk "ექთანი 2: ბიულეტენის გაუქმების თხოვნა → HR უარს ამბობს → რჩება" "$(api POST "/roster/absences/$A2/cancel" "$N2" -d '{"reason":"ტესტ-E2E"}' | jq -r .cancel_requested):$(api POST "/roster/absences/$A2/cancel-decision" "$HR" -d '{"approve":false,"note":"ტესტ-E2E"}' | jq -r .ok):$(api GET "/roster/absences/$A2" "$N2" | jq -r '"\(.status):\(.cancel_requested_at)"')" "true:true:approved:null"
 A7=$(absreq "$N1" "{\"absence_type_id\":\"$TA\",\"date_from\":\"${W[13]}\",\"date_to\":\"${W[13]}\"}" | jq -r '.id // empty')
 chk "განხილვაში მყოფი — თავად აუქმებს; კოლეგა — 403" "$(code POST "/roster/absences/$A7/cancel" "$N2" -d '{"reason":"ტესტ ტესტ"}'):$(api POST "/roster/absences/$A7/cancel" "$N1" -d '{"reason":"ტესტ-E2E: აღარ მჭირდება"}' | jq -r .status)" "403:cancelled"
-KEPT=$(wd "${W[10]}" "${W[10]}"); BACK=$(( $(wd "${W[10]}" "${W[11]}") - KEPT ))
-chk "ადრე დასრულება: შემდგენი — 403; HR → ${W[10]}: დღე $KEPT, ბალანსს უბრუნდება $BACK" "$(code POST "/roster/absences/$A6/shorten" "$PL" -d "{\"date_to\":\"${W[10]}\",\"reason\":\"ტესტ ტესტ\"}"):$(api POST "/roster/absences/$A6/shorten" "$HR" -d "{\"date_to\":\"${W[10]}\",\"reason\":\"ტესტ-E2E: დაბრუნდა\"}" | jq -r '"\(.days):\(.restored)"')" "403:$KEPT:$BACK"
+KEPT=$(wd "${W[$K]}" "${W[$K]}"); BACK=$(( $(wd "${W[$K]}" "${W[$K1]}") - KEPT ))
+chk "ადრე დასრულება: შემდგენი — 403; HR → ${W[$K]}: დღე $KEPT, ბალანსს უბრუნდება $BACK" "$(code POST "/roster/absences/$A6/shorten" "$PL" -d "{\"date_to\":\"${W[$K]}\",\"reason\":\"ტესტ ტესტ\"}"):$(api POST "/roster/absences/$A6/shorten" "$HR" -d "{\"date_to\":\"${W[$K]}\",\"reason\":\"ტესტ-E2E: დაბრუნდა\"}" | jq -r '"\(.days):\(.restored)"')" "403:$KEPT:$BACK"
 chk "  … ბალანსი (ექთანი 2, $Y): 30 − $KEPT = $((30 - KEPT))" "$(api GET "/roster/balances?staff_id=$S2&year=$Y" "$HR" | jq -r '.items[]|select(.type.code=="ANNUAL")|.available')" "$((30 - KEPT))"
 LST=$(api GET "/roster/absences?scope=all&department_id=$D1" "$PL")
 chk "სიები: ჩემი (ექთანი 1) ≥ 3; შემდგენი — განყოფილების ყველა ≥ 7; ექთანი scope=all — 403" "$(api GET "/roster/absences?scope=my" "$N1" | jq 'length >= 3'):$(echo "$LST" | jq 'length >= 7'):$(code GET "/roster/absences?scope=all" "$N2")" "true:true:403"

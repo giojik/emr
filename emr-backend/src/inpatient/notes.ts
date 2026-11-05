@@ -131,14 +131,16 @@ export class NotesService {
   private async erChart(encounterId: string, ex: Ex) {
     const v = await ex.selectFrom('er_visits as v').innerJoin('encounters as e', 'e.id', 'v.encounter_id').innerJoin('patients as p', 'p.id', 'v.patient_id')
       .select(['v.encounter_id', 'v.patient_id', 'v.status as er_status', 'v.visit_no as adm_no', 'v.arrived_at as admitted_at', 'v.ended_at', 'v.doctor_at', 'e.attending_doctor_id',
+        sql<boolean>`v.status = 'departed' AND v.doc_closes_at > now()`.as('doc_open'),
         'p.first_name', 'p.last_name', 'v.department_id',
         sql<string>`to_char(v.arrived_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD')`.as('admitted_day'),
         sql<string>`to_char(coalesce(v.ended_at, now()) AT TIME ZONE ${TZ}, 'YYYY-MM-DD')`.as('last_day')])
       .where('v.encounter_id', '=', encounterId).executeTakeFirst();
     if (!v) throw new NotFoundException('ER-ის შემთხვევა ვერ მოიძებნა');
-    // ER: მიმდინარე → active; გაუქმებული → cancelled; დასრულებული (0089) → დოკუმენტაცია დახურულია
+    // ER: მიმდინარე → active; გაუქმებული → cancelled; გასული (0090) → დოკუმენტაციის ფანჯარაში (doc_window_h) ჩაწერა შეიძლება, შემდეგ — დახურულია
     const status = v.er_status === 'cancelled' ? 'cancelled' : v.ended_at ? 'discharged' : 'active';
-    return { ...v, status, closed_at: v.ended_at, type: 'emergency' as ChartType, module: 'er' };
+    const { doc_open, ...rest } = v;
+    return { ...rest, status, closed_at: doc_open ? null : v.ended_at, type: 'emergency' as ChartType, module: 'er' };
   }
   /** ჩაწერა: შემთხვევის მოდული აქტიური უნდა იყოს (გამორთული / ვადაგასული → 403; ისტორია იკითხება) */
   private async assertWritable(st: { module: string }) {

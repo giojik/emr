@@ -92,6 +92,7 @@ chk "რბილი წყვილები რეესტრში: 0086-ი
 chk "0087: er → roster რეესტრში (მორიგე ექიმი დაფაზე)" "$(echo "$PAIRS" | grep -cx 'er>roster')" "1"
 chk "0088: er → lab / radiology / endoscopy რეესტრში (დიაგნოსტიკა ER-ის შემთხვევაზე)" "$(echo "$PAIRS" | grep -cxE 'er>lab|er>radiology|er>endoscopy')" "3"
 chk "0089: er → stock / pharmacy რეესტრში (ჩამოწერა / დოზა-ურთიერთქმედება)" "$(echo "$PAIRS" | grep -cxE 'er>stock|er>pharmacy')" "2"
+chk "0090: er → inpatient / ipd_orders რეესტრში (ჰოსპიტალიზაცია / დანიშნულებების გადატანა)" "$(echo "$PAIRS" | grep -cxE 'er>inpatient|er>ipd_orders')" "2"
 echo "  (წყვილები სულ: $(echo "$PAIRS" | wc -l | tr -d ' '))"
 for P in $PAIRS; do
   A=${P%>*}; Bm=${P#*>}; CL=$(closure "$Bm")

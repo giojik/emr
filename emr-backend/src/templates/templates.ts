@@ -217,7 +217,7 @@ export class TemplatesService {
         encounterDate: null, mode: 'blank' });
     }
     return renderTemplatePdf({
-      clinic, title: t.name, number: 'EPI26-000000', verifyUrl: 'https://example.invalid/verify/preview', watermark: 'ნიმუში', vars, blocks: vb.body.blocks,
+      clinic, title: t.name, number: kind === 'er_summary' ? 'ERS26-000000' : 'EPI26-000000', verifyUrl: 'https://example.invalid/verify/preview', watermark: 'ნიმუში', vars, blocks: vb.body.blocks,
       footer: vb.errors.length ? `შეცდომები: ${vb.errors.length}` : null,
       data: {
         patient: { full_name: vars['patient.full_name'], birth_date: vars['patient.birth_date'], id_number: vars['patient.id_number'], address: vars['patient.address'], phone: vars['patient.phone'] },
@@ -227,7 +227,15 @@ export class TemplatesService {
         lab: [{ date: '02/10/2026', test: 'ტროპონინი I', value: '1.84', unit: 'ng/mL', ref: '< 0.04', flag: 'H' },
               { date: '02/10/2026', test: 'ჰემოგლობინი', value: '138', unit: 'g/L', ref: '120–160', flag: null }],
         dx: [{ date: '01/10/2026', title: 'ექოკარდიოგრაფია', conclusion: 'LVEF 50%, წინა კედლის ჰიპოკინეზი' }],
-        signatures: { attending: { name: vars['stay.attending_doctor'] } },
+        signatures: { attending: { name: vars['stay.attending_doctor'] || vars['er.doctor'] } },
+        er: kind === 'er_summary' ? {
+          arrival: '06/10/2026 09:15 — თვითდინება. ჩივილი: გულმკერდის ტკივილი',
+          triage: '09:22 — ESI 2 (წნ. 150/90, HR 104, SpO₂ 95%, NEWS2 3)',
+          notes: 'პირველადი გასინჯვა (09:40): …',
+          consults: 'კარდიოლოგი (10:30): …',
+          orders: 'ასპირინი 300 მგ per os — 09:45 (მიცემულია)',
+          disposition: 'ჰოსპიტალიზაცია — კარდიოლოგიის განყოფილება (13:40)',
+        } : undefined,
       },
     });
   }
